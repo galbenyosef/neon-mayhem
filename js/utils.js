@@ -1,0 +1,253 @@
+window.GAME = {
+  time: 0,
+  timeScale: 1,
+  started: false,
+  paused: false,
+  isTouch: false,
+  settings: { pixelRatioCap: 2, bubbleRadius: 150, maxTraffic: 12, maxPeds: 18, maxParked: 14 }
+};
+
+function mulberry32(seed) {
+  var a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+var U = {
+  clamp: function (v, a, b) { return v < a ? a : (v > b ? b : v); },
+  lerp: function (a, b, t) { return a + (b - a) * t; },
+  damp: function (a, b, lambda, dt) { return U.lerp(a, b, 1 - Math.exp(-lambda * dt)); },
+  wrapPI: function (a) {
+    while (a > Math.PI) a -= Math.PI * 2;
+    while (a < -Math.PI) a += Math.PI * 2;
+    return a;
+  },
+  angleLerp: function (a, b, t) { return a + U.wrapPI(b - a) * t; },
+  dist2: function (ax, az, bx, bz) { var dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; },
+  dist: function (ax, az, bx, bz) { return Math.sqrt(U.dist2(ax, az, bx, bz)); },
+  len: function (x, z) { return Math.sqrt(x * x + z * z); },
+  randRange: function (rng, a, b) { return a + rng() * (b - a); },
+  randInt: function (rng, a, b) { return a + Math.floor(rng() * (b - a + 1)); },
+  pick: function (rng, arr) { return arr[Math.floor(rng() * arr.length) % arr.length]; }
+};
+
+// Batches transformed boxes/quads into one BufferGeometry (vertex colors + tiled uvs).
+function GeoBatch() {
+  this.pos = []; this.nrm = []; this.col = []; this.uv = [];
+}
+GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvScale) {
+  var hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  var c = Math.cos(rotY || 0), s = Math.sin(rotY || 0);
+  var r = (color >> 16 & 255) / 255, g = (color >> 8 & 255) / 255, b = (color & 255) / 255;
+  var us = uvScale || 0;
+  // faces: +x -x +y -y +z -z ; each as [corner order for two tris]
+  var faces = [
+    [[hx, -hy, hz], [hx, -hy, -hz], [hx, hy, -hz], [hx, hy, hz], [1, 0, 0], sz, sy],
+    [[-hx, -hy, -hz], [-hx, -hy, hz], [-hx, hy, hz], [-hx, hy, -hz], [-1, 0, 0], sz, sy],
+    [[-hx, hy, hz], [hx, hy, hz], [hx, hy, -hz], [-hx, hy, -hz], [0, 1, 0], sx, sz],
+    [[-hx, -hy, -hz], [hx, -hy, -hz], [hx, -hy, hz], [-hx, -hy, hz], [0, -1, 0], sx, sz],
+    [[-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz], [0, 0, 1], sx, sy],
+    [[hx, -hy, -hz], [-hx, -hy, -hz], [-hx, hy, -hz], [hx, hy, -hz], [0, 0, -1], sx, sy]
+  ];
+  var uoff = Math.floor(Math.random() * 8);
+  for (var f = 0; f < 6; f++) {
+    var F = faces[f], n = F[4];
+    var nx = n[0] * c + n[2] * s, nz = -n[0] * s + n[2] * c;
+    var fw = F[5], fh = F[6];
+    var uw = us ? fw / us : 1, vh = us ? fh / (us * 0.75) : 1;
+    if (us && f >= 2 && f <= 3) { uw = 0.01; vh = 0.01; }
+    var quv = [[uoff, 0], [uoff + uw, 0], [uoff + uw, vh], [uoff, vh]];
+    var idx = [0, 1, 2, 0, 2, 3];
+    for (var i = 0; i < 6; i++) {
+      var v = F[idx[i]];
+      var vx = v[0] * c + v[2] * s, vz = -v[0] * s + v[2] * c;
+      this.pos.push(cx + vx, cy + v[1], cz + vz);
+      this.nrm.push(nx, n[1], nz);
+      this.col.push(r, g, b);
+      this.uv.push(quv[idx[i]][0], quv[idx[i]][1]);
+    }
+  }
+};
+// Horizontal quad (facing +y) at height y.
+GeoBatch.prototype.addGroundQuad = function (cx, y, cz, sx, sz, rotY, color) {
+  var hx = sx / 2, hz = sz / 2;
+  var c = Math.cos(rotY || 0), s = Math.sin(rotY || 0);
+  var r = (color >> 16 & 255) / 255, g = (color >> 8 & 255) / 255, b = (color & 255) / 255;
+  var corners = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+  var uvq = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  var idx = [0, 2, 1, 0, 3, 2];
+  for (var i = 0; i < 6; i++) {
+    var v = corners[idx[i]];
+    var vx = v[0] * c + v[1] * s, vz = -v[0] * s + v[1] * c;
+    this.pos.push(cx + vx, y, cz + vz);
+    this.nrm.push(0, 1, 0);
+    this.col.push(r, g, b);
+    this.uv.push(uvq[idx[i]][0], uvq[idx[i]][1]);
+  }
+};
+// Vertical quad centered at (cx,cy,cz), width w, height h, facing rotY direction; custom uv rect.
+GeoBatch.prototype.addWallQuad = function (cx, cy, cz, w, h, rotY, color, u0, v0, u1, v1) {
+  var hw = w / 2, hh = h / 2;
+  var c = Math.cos(rotY), s = Math.sin(rotY);
+  var r = (color >> 16 & 255) / 255, g = (color >> 8 & 255) / 255, b = (color & 255) / 255;
+  if (u0 === undefined) { u0 = 0; v0 = 0; u1 = 1; v1 = 1; }
+  var corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+  var uvq = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+  var idx = [0, 1, 2, 0, 2, 3];
+  var nx = s, nz = c;
+  for (var i = 0; i < 6; i++) {
+    var v = corners[idx[i]];
+    // local +x maps along the wall, facing normal (s, c)
+    var vx = v[0] * c, vz = -v[0] * s;
+    this.pos.push(cx + vx, cy + v[1], cz + vz);
+    this.nrm.push(nx, 0, nz);
+    this.col.push(r, g, b);
+    this.uv.push(uvq[idx[i]][0], uvq[idx[i]][1]);
+  }
+};
+GeoBatch.prototype.build = function () {
+  var g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+  return g;
+};
+
+// Uniform-grid broadphase for static AABBs {minX,maxX,minZ,maxZ,h,tag}.
+function SpatialHash(cell) {
+  this.cell = cell || 25;
+  this.map = {};
+  this.all = [];
+}
+SpatialHash.prototype.insert = function (box) {
+  this.all.push(box);
+  var c = this.cell;
+  var i0 = Math.floor(box.minX / c), i1 = Math.floor(box.maxX / c);
+  var j0 = Math.floor(box.minZ / c), j1 = Math.floor(box.maxZ / c);
+  for (var i = i0; i <= i1; i++) for (var j = j0; j <= j1; j++) {
+    var k = i + ',' + j;
+    (this.map[k] || (this.map[k] = [])).push(box);
+  }
+};
+SpatialHash.prototype.query = function (x, z, r) {
+  var c = this.cell, out = [], seen = null;
+  var i0 = Math.floor((x - r) / c), i1 = Math.floor((x + r) / c);
+  var j0 = Math.floor((z - r) / c), j1 = Math.floor((z + r) / c);
+  var multi = (i1 > i0 || j1 > j0);
+  if (multi) seen = new Set();
+  for (var i = i0; i <= i1; i++) for (var j = j0; j <= j1; j++) {
+    var arr = this.map[i + ',' + j];
+    if (!arr) continue;
+    for (var k = 0; k < arr.length; k++) {
+      var b = arr[k];
+      if (multi) { if (seen.has(b)) continue; seen.add(b); }
+      if (x + r < b.minX || x - r > b.maxX || z + r < b.minZ || z - r > b.maxZ) continue;
+      out.push(b);
+    }
+  }
+  return out;
+};
+// Segment LOS test: returns true if segment is clear of all boxes.
+SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1) {
+  var dx = x1 - x0, dz = z1 - z0;
+  var len = Math.sqrt(dx * dx + dz * dz);
+  var steps = Math.max(1, Math.ceil(len / (this.cell * 0.8)));
+  var checked = new Set();
+  for (var s = 0; s <= steps; s++) {
+    var t = s / steps;
+    var arr = this.query(x0 + dx * t, z0 + dz * t, this.cell * 0.6);
+    for (var k = 0; k < arr.length; k++) {
+      var b = arr[k];
+      if (checked.has(b)) continue;
+      checked.add(b);
+      if (b.noLOS) continue;
+      if (segIntersectsAABB(x0, z0, x1, z1, b)) return false;
+    }
+  }
+  return true;
+};
+
+function segIntersectsAABB(x0, z0, x1, z1, b) {
+  var dx = x1 - x0, dz = z1 - z0;
+  var tmin = 0, tmax = 1;
+  if (Math.abs(dx) < 1e-9) { if (x0 < b.minX || x0 > b.maxX) return false; }
+  else {
+    var t1 = (b.minX - x0) / dx, t2 = (b.maxX - x0) / dx;
+    if (t1 > t2) { var tt = t1; t1 = t2; t2 = tt; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+  }
+  if (Math.abs(dz) < 1e-9) { if (z0 < b.minZ || z0 > b.maxZ) return false; }
+  else {
+    var t3 = (b.minZ - z0) / dz, t4 = (b.maxZ - z0) / dz;
+    if (t3 > t4) { var tt2 = t3; t3 = t4; t4 = tt2; }
+    tmin = Math.max(tmin, t3); tmax = Math.min(tmax, t4);
+  }
+  return tmax >= tmin;
+}
+
+// Ray vs AABB along a 2d direction; returns nearest t or Infinity.
+function rayAABB(x0, z0, dx, dz, b) {
+  var tmin = -Infinity, tmax = Infinity;
+  if (Math.abs(dx) < 1e-9) { if (x0 < b.minX || x0 > b.maxX) return Infinity; }
+  else {
+    var t1 = (b.minX - x0) / dx, t2 = (b.maxX - x0) / dx;
+    if (t1 > t2) { var tt = t1; t1 = t2; t2 = tt; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+  }
+  if (Math.abs(dz) < 1e-9) { if (z0 < b.minZ || z0 > b.maxZ) return Infinity; }
+  else {
+    var t3 = (b.minZ - z0) / dz, t4 = (b.maxZ - z0) / dz;
+    if (t3 > t4) { var tt2 = t3; t3 = t4; t4 = tt2; }
+    tmin = Math.max(tmin, t3); tmax = Math.min(tmax, t4);
+  }
+  if (tmax < tmin || tmax < 0) return Infinity;
+  return tmin >= 0 ? tmin : 0;
+}
+
+GAME.input = {
+  keys: {},
+  mouseDX: 0, mouseDY: 0,
+  lmb: false, rmb: false,
+  lmbPressed: false,
+  wheel: 0,
+  pointerLocked: false,
+  touch: { active: false, stickX: 0, stickY: 0, fire: false, aim: false, brake: false, handbrake: false, enter: false, weaponCycle: false, radio: false, driveByL: false, driveByR: false }
+};
+
+GAME.initInput = function (canvas) {
+  var inp = GAME.input;
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Tab') e.preventDefault();
+    if (!e.repeat) inp.keys[e.code] = true;
+    if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(e.code);
+  });
+  window.addEventListener('keyup', function (e) { inp.keys[e.code] = false; });
+  window.addEventListener('blur', function () { inp.keys = {}; inp.lmb = false; inp.rmb = false; });
+
+  canvas.addEventListener('mousedown', function (e) {
+    if (e.button === 0) { inp.lmb = true; inp.lmbPressed = true; }
+    if (e.button === 2) inp.rmb = true;
+    if (GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas) {
+      canvas.requestPointerLock && canvas.requestPointerLock();
+    }
+  });
+  window.addEventListener('mouseup', function (e) {
+    if (e.button === 0) inp.lmb = false;
+    if (e.button === 2) inp.rmb = false;
+  });
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  window.addEventListener('mousemove', function (e) {
+    if (inp.pointerLocked) { inp.mouseDX += e.movementX; inp.mouseDY += e.movementY; }
+  });
+  document.addEventListener('pointerlockchange', function () {
+    inp.pointerLocked = (document.pointerLockElement === canvas);
+  });
+  window.addEventListener('wheel', function (e) { inp.wheel += e.deltaY > 0 ? 1 : -1; }, { passive: true });
+};
+
+GAME.key = function (code) { return !!GAME.input.keys[code]; };

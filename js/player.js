@@ -1,0 +1,396 @@
+GAME.player = {
+  pos: null, mesh: null, heading: 0,
+  inCar: false, car: null,
+  health: 100, armor: 0, cash: 250,
+  state: 'alive', stateT: 0,
+  weapons: { fist: { have: true, ammo: Infinity } },
+  currentWeapon: 'fist',
+  moveSpeed: 0
+};
+
+GAME.cam = { yaw: Math.PI, pitch: 0.32, dist: 6, freeT: 0, x: 0, y: 5, z: 0 };
+GAME.cameraShake = 0;
+
+GAME.initPlayer = function () {
+  var P = GAME.player;
+  var mesh = GAME.peds.buildPedMesh({});
+  // fixed outfit so the player reads distinctly
+  mesh.userData.joints.torso.material = new THREE.MeshLambertMaterial({ color: 0xf0f0f8 });
+  mesh.userData.joints.armL.children[0].material = mesh.userData.joints.torso.material;
+  mesh.userData.joints.armR.children[0].material = mesh.userData.joints.torso.material;
+  mesh.userData.joints.legL.children[0].material = new THREE.MeshLambertMaterial({ color: 0x38b8c8 });
+  mesh.userData.joints.legR.children[0].material = mesh.userData.joints.legL.children[0].material;
+  GAME.scene.add(mesh);
+  P.mesh = mesh;
+  P.pos = mesh.position;
+  P.pos.set(356, 0.18, 40);
+  P.heading = Math.PI;
+  // weapon prop in right hand
+  var wm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.42), new THREE.MeshLambertMaterial({ color: 0x222228 }));
+  wm.position.set(0, -0.55, 0.2);
+  wm.visible = false;
+  mesh.userData.joints.armR.add(wm);
+  P.weaponMesh = wm;
+  loadSave();
+};
+
+function loadSave() {
+  try {
+    var s = JSON.parse(localStorage.getItem('neonMayhemSave') || '{}');
+    if (typeof s.cash === 'number') GAME.player.cash = s.cash;
+    GAME.bests = s.bests || {};
+  } catch (e) { GAME.bests = {}; }
+}
+GAME.save = function () {
+  try {
+    localStorage.setItem('neonMayhemSave', JSON.stringify({ cash: GAME.player.cash, bests: GAME.bests || {} }));
+  } catch (e) { }
+};
+GAME.addCash = function (n) {
+  GAME.player.cash = Math.max(0, GAME.player.cash + n);
+  GAME.hud.cashChanged();
+  GAME.save();
+};
+
+GAME.playerDamage = function (amt, cause) {
+  var P = GAME.player;
+  if (P.state !== 'alive' || GAME.godMode) return;
+  if (P.armor > 0) {
+    var absorbed = Math.min(P.armor, amt * 0.7);
+    P.armor -= absorbed;
+    amt -= absorbed;
+  }
+  P.health -= amt;
+  GAME.hud.damageFlash();
+  if (P.health <= 0) {
+    P.health = 0;
+    GAME.playerWasted(cause);
+  }
+};
+
+GAME.playerWasted = function (cause) {
+  var P = GAME.player;
+  if (P.state !== 'alive') return;
+  P.state = 'wasted'; P.stateT = 0;
+  GAME.timeScale = 0.35;
+  GAME.audio.sting('wasted');
+  GAME.hud.showBig('wasted', 'You wake up at the hospital. Weapons gone, cash intact.');
+  GAME.missions.failActive('You got wasted.');
+};
+
+GAME.playerBusted = function () {
+  var P = GAME.player;
+  if (P.state !== 'alive') return;
+  P.state = 'busted'; P.stateT = 0;
+  GAME.timeScale = 0.4;
+  GAME.audio.sting('busted');
+  var fine = Math.min(P.cash, 200);
+  P.pendingFine = fine;
+  GAME.hud.showBig('busted', 'Released with a $' + fine + ' fine. Weapons confiscated.');
+  GAME.missions.failActive('You got busted.');
+};
+
+GAME.playerDrown = function () {
+  var P = GAME.player;
+  if (P.drowning || P.state !== 'alive') return;
+  P.drowning = true;
+  GAME.audio.splash();
+  GAME.hud.fade(function () {
+    if (P.inCar) forceExitCar(true);
+    var z = U.clamp(P.pos.z, -460, 460);
+    P.pos.set(GAME.city.shoreline(z) - 22, 0, z);
+    P.heading = -Math.PI / 2;
+    P.drowning = false;
+    GAME.hud.message('You wash up on the beach, soaked.');
+  });
+};
+
+function respawnAfterScreen() {
+  var P = GAME.player;
+  var kind = P.state;
+  GAME.hud.fade(function () {
+    GAME.hud.hideBig();
+    GAME.timeScale = 1;
+    if (P.inCar) forceExitCar(true);
+    P.health = 100;
+    if (kind === 'busted') {
+      GAME.addCash(-(P.pendingFine || 0));
+      P.pendingFine = 0;
+      var sp = GAME.city.pois.police.spawn;
+      P.pos.set(sp.x, 0, sp.z);
+    } else {
+      P.armor = 0;
+      var sh = GAME.city.pois.hospital.spawn;
+      P.pos.set(sh.x, 0, sh.z);
+    }
+    P.weapons = { fist: { have: true, ammo: Infinity } };
+    P.currentWeapon = 'fist';
+    GAME.combat.refreshWeaponHud();
+    GAME.police.clearWanted();
+    P.state = 'alive';
+  });
+}
+
+function nearestEnterableCar() {
+  var P = GAME.player;
+  return GAME.vehicles.findNearestCar(P.pos.x + Math.sin(P.heading) * 1.2, P.pos.z + Math.cos(P.heading) * 1.2, 4.6, null);
+}
+
+GAME.enterCar = function (car) {
+  var P = GAME.player;
+  if (!car || car.dead || P.inCar) return false;
+  if (car.occupied === 'ai') {
+    // jack: driver bails and flees
+    var side = car.heading + Math.PI / 2;
+    var dx = Math.sin(side) * 1.6, dz = Math.cos(side) * 1.6;
+    var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz);
+    driver.state = 'flee';
+    driver.fleeT = 8;
+    driver.fleeX = car.pos.x; driver.fleeZ = car.pos.z;
+    GAME.audio.yelp();
+    GAME.police.reportCrime('jack', car.pos);
+    GAME.missions.notifyChaos(100);
+  }
+  car.occupied = 'player';
+  if (car.ai) car.ai = null;
+  car.controls = { throttle: 0, steer: 0, handbrake: false };
+  P.inCar = true;
+  P.car = car;
+  P.mesh.visible = false;
+  GAME.cam.freeT = 0;
+  GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.5);
+  GAME.hud.message(car.spec.label, 1.6);
+  return true;
+};
+
+function forceExitCar(silent) {
+  var P = GAME.player;
+  if (!P.inCar) return;
+  var car = P.car;
+  car.controls = { throttle: 0, steer: 0, handbrake: false };
+  car.occupied = null;
+  var side = car.heading - Math.PI / 2;
+  var ex = car.pos.x + Math.sin(side) * 2.2, ez = car.pos.z + Math.cos(side) * 2.2;
+  var rp = GAME.resolveCircle(ex, ez, 0.45);
+  P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
+  P.heading = car.heading;
+  P.inCar = false;
+  P.car = null;
+  P.mesh.visible = true;
+  GAME.audio.engineState(false, 0);
+  GAME.audio.radio.setVolume(0);
+  GAME.audio.skid(0);
+}
+GAME.exitCar = forceExitCar;
+
+GAME.updatePlayer = function (dt) {
+  var P = GAME.player, inp = GAME.input, T = inp.touch;
+  if (P.state !== 'alive') {
+    P.stateT += dt;
+    if (P.stateT > 1.2 && !P.respawnQueued && (P.stateT > 3.2 || GAME.key('KeyR') || GAME.key('Enter'))) {
+      P.respawnQueued = true;
+      respawnAfterScreen();
+      setTimeout(function () { P.respawnQueued = false; }, 1500);
+    }
+    updateCamera(dt);
+    return;
+  }
+
+  if (P.inCar) updateDriving(dt);
+  else updateOnFoot(dt);
+
+  // pickups
+  GAME.combat.checkPickups();
+  updateCamera(dt);
+};
+
+var enterLatch = false;
+function wantsEnter() {
+  var v = GAME.key('KeyF') || GAME.input.touch.enter;
+  var fired = v && !enterLatch;
+  enterLatch = v;
+  return fired;
+}
+
+function updateOnFoot(dt) {
+  var P = GAME.player, inp = GAME.input, T = inp.touch;
+  var aiming = GAME.combat.aiming;
+  var mx = 0, mz = 0;
+  if (GAME.key('KeyW')) mz += 1;
+  if (GAME.key('KeyS')) mz -= 1;
+  if (GAME.key('KeyA')) mx -= 1;
+  if (GAME.key('KeyD')) mx += 1;
+  if (T.active) { mx += T.stickX; mz += -T.stickY; }
+  var mag = Math.min(1, U.len(mx, mz));
+  var run = (GAME.key('ShiftLeft') || GAME.key('ShiftRight')) && !aiming;
+  var target = mag * (aiming ? 2.0 : run ? 5.2 : 2.6);
+  P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
+
+  if (mag > 0.05) {
+    var camYaw = GAME.cam.yaw;
+    var wx = Math.sin(camYaw) * mz + Math.sin(camYaw + Math.PI / 2) * mx;
+    var wz = Math.cos(camYaw) * mz + Math.cos(camYaw + Math.PI / 2) * mx;
+    var moveH = Math.atan2(wx, wz);
+    if (!aiming) P.heading = U.angleLerp(P.heading, moveH, Math.min(1, dt * 10));
+    P.moveH = moveH;
+  }
+  if (aiming) P.heading = GAME.cam.yaw;
+
+  var h = (mag > 0.05) ? P.moveH : P.heading;
+  var nx = P.pos.x + Math.sin(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
+  var nz = P.pos.z + Math.cos(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
+  var rp = GAME.resolveCircle(nx, nz, 0.45);
+  nx = rp.x; nz = rp.z;
+  // solid cars
+  var cars = GAME.world.cars;
+  for (var i = 0; i < cars.length; i++) {
+    var c = cars[i];
+    var dx = nx - c.pos.x, dz = nz - c.pos.z;
+    var d2 = dx * dx + dz * dz;
+    var rr = c.radius + 0.4;
+    if (d2 < rr * rr && d2 > 0.001) {
+      var d = Math.sqrt(d2);
+      nx = c.pos.x + dx / d * rr;
+      nz = c.pos.z + dz / d * rr;
+      if (Math.abs(c.speed) > 7) GAME.playerDamage(Math.abs(c.speed) * 1.6, 'car');
+    }
+  }
+  P.pos.x = nx; P.pos.z = nz;
+  if (GAME.city.isInWater(P.pos.x, P.pos.z)) { GAME.playerDrown(); return; }
+  P.pos.y = GAME.city.groundY(P.pos.x, P.pos.z);
+  P.mesh.rotation.y = P.heading;
+
+  // walk anim
+  P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * 2.2;
+  var j = P.mesh.userData.joints;
+  var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * 0.7;
+  j.legL.rotation.x = s; j.legR.rotation.x = -s;
+  if (aiming && P.currentWeapon !== 'fist') {
+    j.armR.rotation.x = -Math.PI / 2 + GAME.cam.pitch * 0.5;
+    j.armL.rotation.x = -s * 0.4;
+  } else {
+    j.armL.rotation.x = -s * 0.8;
+    j.armR.rotation.x = s * 0.8;
+  }
+
+  if (wantsEnter()) {
+    var car = nearestEnterableCar();
+    if (car) GAME.enterCar(car);
+  }
+  GAME.audio.engineState(false, 0);
+}
+
+function updateDriving(dt) {
+  var P = GAME.player, inp = GAME.input, T = inp.touch;
+  var car = P.car;
+  if (!car || car.dead) {
+    if (car && car.dead) forceExitCar();
+    return;
+  }
+  var c = car.controls;
+  if (GAME.autopilot) {
+    if (!car.ai || car.ai.mode !== 'traffic') car.ai = { mode: 'traffic', desired: 13, laneX: 0, laneZ: 0 };
+    var tc = GAME.vehicles.trafficControls(car, dt);
+    c.throttle = tc.throttle; c.steer = tc.steer; c.handbrake = false;
+  } else {
+    var th = 0, st = 0;
+    if (GAME.key('KeyW')) th += 1;
+    if (GAME.key('KeyS')) th -= 1;
+    if (GAME.key('KeyA')) st -= 1;
+    if (GAME.key('KeyD')) st += 1;
+    if (T.active) {
+      th += T.autoThrottle ? (T.brake ? -1 : 0.85) : 0;
+      st += T.stickX;
+    }
+    c.throttle = U.clamp(th, -1, 1);
+    c.steer = U.clamp(st, -1, 1);
+    c.handbrake = GAME.key('Space') || T.handbrake;
+  }
+
+  var sp = Math.abs(car.speed);
+  GAME.audio.engineState(true, sp / car.spec.maxSpeed);
+  var slide = Math.abs(car.lat);
+  GAME.audio.skid(slide > 2.5 || (c.handbrake && sp > 8) ? Math.min(1, slide / 8 + 0.3) : 0);
+
+  if (wantsEnter()) { forceExitCar(); return; }
+
+  // radio switching
+  if (GAME.keyPressed('Comma')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(-1));
+  if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
+}
+
+var pressedCache = {};
+GAME.keyPressed = function (code) {
+  var down = GAME.key(code);
+  var fired = down && !pressedCache[code];
+  pressedCache[code] = down;
+  return fired;
+};
+
+function updateCamera(dt) {
+  var P = GAME.player, inp = GAME.input, cam = GAME.cam;
+  var mdx = inp.mouseDX, mdy = inp.mouseDY;
+  inp.mouseDX = 0; inp.mouseDY = 0;
+  if (inp.touch.camDX) { mdx += inp.touch.camDX; mdy += inp.touch.camDY; inp.touch.camDX = 0; inp.touch.camDY = 0; }
+
+  var aiming = GAME.combat.aiming && !P.inCar;
+
+  if (P.inCar && P.car) {
+    if (Math.abs(mdx) > 1 || Math.abs(mdy) > 1) cam.freeT = 2.2;
+    cam.freeT = Math.max(0, cam.freeT - dt);
+    if (cam.freeT > 0) {
+      cam.yaw -= mdx * 0.0032;
+      cam.pitch = U.clamp(cam.pitch + mdy * 0.002, 0.08, 1.1);
+    } else {
+      var behind = P.car.heading + Math.PI + (P.car.speed < -2 ? Math.PI : 0);
+      cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 2.4));
+      cam.pitch = U.damp(cam.pitch, 0.26, 2, dt);
+    }
+    var sp = Math.abs(P.car.speed);
+    cam.dist = U.damp(cam.dist, 7.2 + sp * 0.13, 3, dt);
+  } else {
+    cam.yaw -= mdx * 0.0032;
+    cam.pitch = U.clamp(cam.pitch + mdy * 0.002, -0.15, 1.2);
+    cam.dist = U.damp(cam.dist, aiming ? 3.1 : 5.6, 6, dt);
+  }
+
+  var focus = P.inCar && P.car ? P.car.pos : P.pos;
+  var fy = focus.y + (P.inCar ? 1.7 : 1.55);
+  var fx = focus.x, fz = focus.z;
+  if (aiming) {
+    // over-the-shoulder offset
+    fx += Math.sin(cam.yaw + Math.PI / 2) * 0.75;
+    fz += Math.cos(cam.yaw + Math.PI / 2) * 0.75;
+  }
+  var cy = fy + Math.sin(cam.pitch) * cam.dist + (P.inCar ? 0.6 : 0);
+  var horiz = Math.cos(cam.pitch) * cam.dist;
+  var cx = fx - Math.sin(cam.yaw) * horiz;
+  var cz = fz - Math.cos(cam.yaw) * horiz;
+
+  // pull camera in when a building blocks the view
+  var boxes = GAME.city.hash.query((fx + cx) / 2, (fz + cz) / 2, cam.dist + 2);
+  var dirX = cx - fx, dirZ = cz - fz;
+  var bestT = 1;
+  for (var i = 0; i < boxes.length; i++) {
+    var b = boxes[i];
+    if (b.noLOS || (b.h && b.h < cy - 1)) continue;
+    var t = rayAABB(fx, fz, dirX, dirZ, b);
+    if (t < bestT) bestT = Math.max(0.12, t - 0.05);
+  }
+  cx = fx + dirX * bestT; cz = fz + dirZ * bestT;
+  cy = fy + (cy - fy) * (0.4 + 0.6 * bestT);
+
+  if (GAME.cameraShake > 0.01) {
+    GAME.cameraShake *= Math.exp(-5 * dt);
+    cx += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
+    cy += (Math.random() - 0.5) * GAME.cameraShake * 0.5;
+    cz += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
+  }
+
+  cam.x = U.damp(cam.x || cx, cx, 20, dt);
+  cam.y = U.damp(cam.y || cy, cy, 20, dt);
+  cam.z = U.damp(cam.z || cz, cz, 20, dt);
+  GAME.cameraObj.position.set(cam.x, Math.max(cam.y, GAME.city.groundY(cam.x, cam.z) + 0.5), cam.z);
+  var lookY = fy + (aiming ? Math.tan(-cam.pitch + 0.2) * 10 * 0 : 0);
+  GAME.cameraObj.lookAt(fx + Math.sin(cam.yaw) * 4 * (aiming ? 1 : 0), lookY, fz + Math.cos(cam.yaw) * 4 * (aiming ? 1 : 0));
+}

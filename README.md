@@ -1,1 +1,51 @@
-# neon-mayhem
+# NEON MAYHEM
+
+A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Auto: Vice City (2002) — that sentence is the only place the original game is named; everything in this project is original work.
+
+Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on.
+
+**Play it:** serve this folder from any static host (GitHub Pages works as-is) or a local static server:
+
+```
+python3 -m http.server 8000
+# open http://localhost:8000
+```
+
+No build step, no server code, no external requests, no accounts, no ads. Progress (cash + best runs) is saved in `localStorage` only.
+
+## Features
+
+- ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
+- Curving beach coastline, boardwalk, piers, a ferris wheel, and an animated ocean under a permanent dusk
+- Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
+- Arcade driving with handbrake drifts; 5 vehicle archetypes with 3-stage damage (smoke → fire → boom)
+- Lock-on shooting (aim assist, target cycling) with fists, pistol, SMG (drive-bys!), shotgun
+- 0–5 star wanted system: tailing cruisers, rams, foot pursuits, roadblocks, spike strips — and a respray garage to clear the heat
+- 9 arcade missions: street races, timed couriers, rampages
+- 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
+- Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
+
+## Controls
+
+| Input | On foot | In car |
+|---|---|---|
+| W A S D | Move | Throttle / steer / brake |
+| Mouse | Camera | Camera |
+| RMB / Tab | Aim (lock-on) | — |
+| LMB | Fire | Fire (drive-by w/ SMG) |
+| Q / E | Cycle lock target | Drive-by left/right |
+| Space | — | Handbrake |
+| F | Enter / jack car | Exit car |
+| 1–4 | Weapon select | — |
+| , / . | — | Radio station |
+| Shift | Sprint | — |
+
+`M` mute · `T` CRT filter · `R` respawn/skip · `Esc` pause
+
+## Tech
+
+Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. Three.js r128 (MIT) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, and a spawn/despawn bubble keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test` for headless verification.
+
+## Disclaimer
+
+Fan-made tribute. Not affiliated with Rockstar Games or Take-Two Interactive. No original game assets used. All city names, brands, characters, and music in this project are invented; audio is synthesized at runtime.
