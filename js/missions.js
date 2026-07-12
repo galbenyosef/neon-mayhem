@@ -55,11 +55,12 @@ GAME.missions = (function () {
     cpMarker = makeMarkerMesh(0xffe14f, 3.2);
     cpMarker.visible = false;
     GAME.scene.add(cpMarker);
-    // respray marker
-    var g = GAME.city.pois.respray;
-    var rm = makeMarkerMesh(0xff4fa3, 3.0);
-    rm.position.set(g.door.x - 4, 1.7, g.door.z);
-    GAME.scene.add(rm);
+    // respray markers
+    GAME.city.pois.resprays.forEach(function (g) {
+      var rm = makeMarkerMesh(0xc86bff, 3.0);
+      rm.position.set(g.door.x - 4, 1.7, g.door.z);
+      GAME.scene.add(rm);
+    });
   }
 
   function bestKey(d) { return d.id; }
@@ -270,8 +271,12 @@ GAME.missions = (function () {
   function checkRespray() {
     var P = GAME.player;
     if (!P.inCar || !P.car || resprayCooldown > 0 || P.state !== 'alive') return;
-    var door = GAME.city.pois.respray.door;
-    if (U.dist2(P.car.pos.x, P.car.pos.z, door.x, door.z) > 36) return;
+    var doors = GAME.city.pois.resprays;
+    var near = false;
+    for (var i = 0; i < doors.length; i++) {
+      if (U.dist2(P.car.pos.x, P.car.pos.z, doors[i].door.x, doors[i].door.z) <= 36) { near = true; break; }
+    }
+    if (!near) return;
     if (P.cash < 100) {
       GAME.hud.message('Respray costs $100 — you\'re short.', 2.5);
       resprayCooldown = 4;
@@ -297,10 +302,20 @@ GAME.missions = (function () {
     failActive: failActive,
     notifyChaos: notifyChaos,
     objectiveText: objectiveText,
+    getRoutePoints: function () {
+      if (!active || active.state === 'countdown') return null;
+      if (active.def.type === 'race') return active.def.cps.slice(active.cpIndex);
+      if (active.def.type === 'courier') {
+        var s = active.def.stops[active.cpIndex];
+        return s ? [s] : null;
+      }
+      return null;
+    },
     getBlips: function () {
       var out = [];
-      var g = GAME.city.pois.respray.door;
-      out.push({ x: g.x, z: g.z, color: '#ff4fa3', size: 4 });
+      GAME.city.pois.resprays.forEach(function (g) {
+        out.push({ x: g.door.x, z: g.door.z, color: '#c86bff', size: 4 });
+      });
       if (!active) {
         for (var i = 0; i < markers.length; i++) {
           var d = markers[i].def;

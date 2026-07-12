@@ -14,9 +14,16 @@ GAME.city = (function () {
     palmSpots: [],
     signNames: [],
     pois: {
-      hospital: { x: 0, z: 128, spawn: { x: 0, z: 138 } },
+      hospitals: [
+        { x: 0, z: 128, spawn: { x: 0, z: 138 } },
+        { x: -400, z: 18, spawn: { x: -400, z: 40 } }
+      ],
       police: { x: -150, z: -122, spawn: { x: -150, z: -134 } },
-      respray: { x: 180, z: -80, door: { x: 166, z: -80 } }
+      resprays: [
+        { x: 180, z: -80, door: { x: 166, z: -80 } },
+        { x: -428, z: -180, door: { x: -442, z: -180 } },
+        { x: 272, z: -420, door: { x: 258, z: -420 } }
+      ]
     },
     landBounds: { minX: -500, maxX: 356, minZ: -500, maxZ: 500 }
   };
@@ -24,13 +31,20 @@ GAME.city = (function () {
   city.shoreline = function (z) {
     return 432 + 20 * Math.sin(z * 0.006) + 8 * Math.sin(z * 0.021 + 2);
   };
+  // the city is an island: curved waterlines on the other three sides
+  city.westShore = function (z) { return -512 + 7 * Math.sin(z * 0.009 + 1.5); };
+  city.northShore = function (x) { return -512 + 7 * Math.sin(x * 0.011 + 4); };
+  city.southShore = function (x) { return 512 + 7 * Math.sin(x * 0.013 + 2); };
   city.isOnPier = function (x, z) {
     return x > 356 && x < 505 && (Math.abs(z - 150) < 8 || Math.abs(z + 180) < 8);
   };
   city.isInWater = function (x, z) {
-    if (x < SAND_X0 + 4) return false;
     if (city.isOnPier(x, z)) return false;
-    return x > city.shoreline(z) + 2;
+    if (x > city.shoreline(z) + 2) return true;
+    if (x < city.westShore(z)) return true;
+    if (z < city.northShore(x)) return true;
+    if (z > city.southShore(x)) return true;
+    return false;
   };
   city.isOnSand = function (x, z) {
     if (city.isOnPier(x, z)) return false;
@@ -70,9 +84,12 @@ GAME.city = (function () {
 
   // reserved rects that block generation must not overlap
   var reserved = [
-    { minX: -40, maxX: 40, minZ: 95, maxZ: 165 },      // hospital
+    { minX: -40, maxX: 40, minZ: 95, maxZ: 165 },      // hospitals
+    { minX: -440, maxX: -360, minZ: -10, maxZ: 48 },
     { minX: -195, maxX: -105, minZ: -138, maxZ: -85 }, // police station
-    { minX: 155, maxX: 215, minZ: -110, maxZ: -50 }    // respray garage
+    { minX: 155, maxX: 215, minZ: -110, maxZ: -50 },   // respray garages
+    { minX: -448, maxX: -408, minZ: -200, maxZ: -160 },
+    { minX: 252, maxX: 292, minZ: -440, maxZ: -400 }
   ];
   function overlapsReserved(minX, maxX, minZ, maxZ) {
     for (var i = 0; i < reserved.length; i++) {
@@ -195,10 +212,7 @@ GAME.city = (function () {
     buildBeach(scene, batches);
     buildSky(scene);
 
-    // boundary walls
-    addSolid(-505, 0, 10, 1020, 30, 'wall');
-    addSolid(-70, -505, 880, 10, 30, 'wall');
-    addSolid(-70, 505, 880, 10, 30, 'wall');
+    // no boundary walls: the surrounding sea is the soft boundary
 
     // materials + meshes
     var texDowntown = windowTexture('#101322', ['#ffe9a8', '#a8e8ff', '#ffd0e8', '#c8ffe0'], 10, 8, 0.5);
@@ -335,24 +349,27 @@ GAME.city = (function () {
 
   function buildPOIs(batches, atlas) {
     var P = city.pois;
-    // hospital
-    batches.generic.addBox(P.hospital.x, 9, P.hospital.z - 12, 60, 18, 28, 0, 0xd8e8f0, 28);
-    addSolid(P.hospital.x, P.hospital.z - 12, 60, 28, 18);
-    addSign(batches.signs, 19, P.hospital.x, 14, P.hospital.z + 2.3, 0, 30, 5);
+    // hospitals
+    P.hospitals.forEach(function (H) {
+      batches.generic.addBox(H.x, 9, H.z - 12, 60, 18, 28, 0, 0xd8e8f0, 28);
+      addSolid(H.x, H.z - 12, 60, 28, 18);
+      addSign(batches.signs, 19, H.x, 14, H.z + 2.3, 0, 30, 5);
+    });
     // police station
     batches.generic.addBox(P.police.x, 7, P.police.z + 10, 70, 14, 26, 0, 0x8a94c0, 28);
     addSolid(P.police.x, P.police.z + 10, 70, 26, 14);
     addSign(batches.signs, 20, P.police.x, 11, P.police.z - 3.3, Math.PI, 26, 4.5);
-    // respray garage: three walls + roof, opening faces west
-    var G = P.respray;
-    batches.generic.addBox(G.x, 4, G.z - 7, 24, 8, 2, 0, 0x585068, 0);
-    batches.generic.addBox(G.x, 4, G.z + 7, 24, 8, 2, 0, 0x585068, 0);
-    batches.generic.addBox(G.x + 11, 4, G.z, 2, 8, 12, 0, 0x585068, 0);
-    batches.generic.addBox(G.x, 8.5, G.z, 26, 1.4, 17, 0, 0x484058, 0);
-    addSolid(G.x, G.z - 7, 24, 2, 8, 'building');
-    addSolid(G.x, G.z + 7, 24, 2, 8, 'building');
-    addSolid(G.x + 11, G.z, 2, 12, 8, 'building');
-    addSign(batches.signs, 18, G.x - 12.6, 6.4, G.z, -Math.PI / 2, 12, 3);
+    // respray garages: three walls + roof, opening faces west toward a road
+    P.resprays.forEach(function (G) {
+      batches.generic.addBox(G.x, 4, G.z - 7, 24, 8, 2, 0, 0x585068, 0);
+      batches.generic.addBox(G.x, 4, G.z + 7, 24, 8, 2, 0, 0x585068, 0);
+      batches.generic.addBox(G.x + 11, 4, G.z, 2, 8, 12, 0, 0x585068, 0);
+      batches.generic.addBox(G.x, 8.5, G.z, 26, 1.4, 17, 0, 0x484058, 0);
+      addSolid(G.x, G.z - 7, 24, 2, 8, 'building');
+      addSolid(G.x, G.z + 7, 24, 2, 8, 'building');
+      addSolid(G.x + 11, G.z, 2, 12, 8, 'building');
+      addSign(batches.signs, 18, G.x - 12.6, 6.4, G.z, -Math.PI / 2, 12, 3);
+    });
   }
 
   var containerData = [];
@@ -378,6 +395,17 @@ GAME.city = (function () {
       // darker wet band at the waterline
       sand.addGroundQuad(SAND_X0 + w - 4, 0.07, mid, 9, 20.5, 0, 0xb0a078);
     }
+    // narrow sand fringes along the island's other shores
+    for (var fz = -520; fz < 520; fz += 20) {
+      var wsh = city.westShore(fz + 10);
+      sand.addGroundQuad(wsh + 6, 0.05, fz + 10, 26, 20.5, 0, U.pick(rng, sandShades));
+    }
+    for (var fx = -520; fx < 380; fx += 20) {
+      var nsh = city.northShore(fx + 10);
+      sand.addGroundQuad(fx + 10, 0.05, nsh + 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      var ssh = city.southShore(fx + 10);
+      sand.addGroundQuad(fx + 10, 0.05, ssh - 6, 20.5, 26, 0, U.pick(rng, sandShades));
+    }
     var sandMesh = new THREE.Mesh(sand.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     sandMesh.matrixAutoUpdate = false;
     scene.add(sandMesh);
@@ -400,10 +428,10 @@ GAME.city = (function () {
     addSign(batches.signs, 22, 380, 5.5, 143, -Math.PI / 2, 20, 4);
     addSign(batches.signs, 23, 470, 7, -173, -Math.PI / 2, 14, 3.5);
 
-    // ocean
-    var og = new THREE.PlaneGeometry(460, 1040, 36, 72);
+    // ocean surrounds the island
+    var og = new THREE.PlaneGeometry(2600, 2600, 52, 52);
     og.rotateX(-Math.PI / 2);
-    og.translate(640, -0.35, 0);
+    og.translate(50, -0.35, 0);
     city.oceanGeo = og;
     city.oceanBase = og.attributes.position.array.slice();
     var om = new THREE.MeshPhongMaterial({ color: 0x0d2242, shininess: 120, specular: 0x8899cc, transparent: true, opacity: 0.93 });
@@ -497,15 +525,19 @@ GAME.city = (function () {
     }
     scene.add(trunkMesh); scene.add(frondMesh);
 
-    // streetlights along roads
+    // streetlights along roads; skip spots that land inside a crossing road
+    function nearAnyRoad(v) {
+      for (var r = 0; r < R.length; r++) if (Math.abs(v - R[r]) < 13) return true;
+      return false;
+    }
     var lightSpots = [];
     for (var i = 0; i < R.length; i++) {
       for (var d = -450; d <= 450; d += 60) {
-        lightSpots.push({ x: R[i] + 7.4, z: d + 20, rot: Math.PI });
-        lightSpots.push({ x: R[i] - 7.4, z: d - 10, rot: 0 });
+        if (!nearAnyRoad(d + 20)) lightSpots.push({ x: R[i] + 7.4, z: d + 20, rot: Math.PI });
+        if (!nearAnyRoad(d - 10)) lightSpots.push({ x: R[i] - 7.4, z: d - 10, rot: 0 });
         if (d >= -480 && d + 20 < 356) {
-          lightSpots.push({ x: d + 20, z: R[i] + 7.4, rot: Math.PI / 2 });
-          lightSpots.push({ x: d - 10, z: R[i] - 7.4, rot: -Math.PI / 2 });
+          if (!nearAnyRoad(d + 20)) lightSpots.push({ x: d + 20, z: R[i] + 7.4, rot: Math.PI / 2 });
+          if (!nearAnyRoad(d - 10)) lightSpots.push({ x: d - 10, z: R[i] - 7.4, rot: -Math.PI / 2 });
         }
       }
     }
@@ -681,12 +713,12 @@ GAME.city = (function () {
   }
 
   function buildSpots() {
-    // parked cars along curbs
+    // parked cars hugging the curbs, clear of the driving lanes
     for (var i = 0; i < R.length; i++) {
       for (var d = -430; d < 440; d += U.randRange(rng, 45, 90)) {
-        if (rng() < 0.55) city.parkedSpots.push({ x: R[i] + (rng() < 0.5 ? 4.2 : -4.2), z: d, heading: 0 });
+        if (rng() < 0.55) city.parkedSpots.push({ x: R[i] + (rng() < 0.5 ? 5.3 : -5.3), z: d, heading: 0 });
         var hx = d + U.randRange(rng, 0, 30);
-        if (hx < 340 && rng() < 0.45) city.parkedSpots.push({ x: hx, z: R[i] + (rng() < 0.5 ? 4.2 : -4.2), heading: Math.PI / 2 });
+        if (hx < 340 && rng() < 0.45) city.parkedSpots.push({ x: hx, z: R[i] + (rng() < 0.5 ? 5.3 : -5.3), heading: Math.PI / 2 });
       }
     }
     // pickups at seeded sidewalk corners

@@ -98,9 +98,15 @@ GAME.playerDrown = function () {
   GAME.audio.splash();
   GAME.hud.fade(function () {
     if (P.inCar) forceExitCar(true);
-    var z = U.clamp(P.pos.z, -460, 460);
-    P.pos.set(GAME.city.shoreline(z) - 22, 0, z);
-    P.heading = -Math.PI / 2;
+    // wash up on whichever shore was crossed
+    var c = GAME.city;
+    var x = U.clamp(P.pos.x, -560, 560), z = U.clamp(P.pos.z, -560, 560);
+    if (x > c.shoreline(z)) x = c.shoreline(z) - 22;
+    if (x < c.westShore(z)) x = c.westShore(z) + 24;
+    if (z < c.northShore(x)) z = c.northShore(x) + 24;
+    if (z > c.southShore(x)) z = c.southShore(x) - 24;
+    P.pos.set(x, c.groundY(x, z), z);
+    P.heading = Math.atan2(-x, -z);
     P.drowning = false;
     GAME.hud.message('You wash up on the beach, soaked.');
   });
@@ -121,7 +127,14 @@ function respawnAfterScreen() {
       P.pos.set(sp.x, 0, sp.z);
     } else {
       P.armor = 0;
-      var sh = GAME.city.pois.hospital.spawn;
+      // wake up at the nearest hospital
+      var hs = GAME.city.pois.hospitals;
+      var sh = hs[0].spawn;
+      var bd = 1e18;
+      for (var hi = 0; hi < hs.length; hi++) {
+        var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
+        if (d < bd) { bd = d; sh = hs[hi].spawn; }
+      }
       P.pos.set(sh.x, 0, sh.z);
     }
     P.weapons = { fist: { have: true, ammo: Infinity } };

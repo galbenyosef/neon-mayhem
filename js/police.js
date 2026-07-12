@@ -83,7 +83,7 @@ GAME.police = (function () {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 90, 150);
       var rp = GAME.city.nearestRoadPoint(px + Math.cos(a) * r, pz + Math.sin(a) * r);
-      if (rp.x < -480 || rp.x > 345 || Math.abs(rp.z) > 480) continue;
+      if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
       var clear = true;
       for (var c = 0; c < GAME.world.cars.length; c++) {
         if (U.dist2(GAME.world.cars[c].pos.x, GAME.world.cars[c].pos.z, rp.x, rp.z) < 80) { clear = false; break; }

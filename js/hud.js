@@ -37,6 +37,15 @@ GAME.hud = (function () {
     el['bigmap'].addEventListener('click', onMapClick);
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
     el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
+
+    var legend = [
+      ['#ff8a3d', 'Race'], ['#38e8ff', 'Courier'], ['#ff4fa3', 'Rampage'],
+      ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
+      ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
+    ];
+    $('map-legend').innerHTML = legend.map(function (e) {
+      return '<span class="lgd"><i style="background:' + e[0] + '"></i>' + e[1] + '</span>';
+    }).join('');
   }
 
   // ---------- full-screen map ----------
@@ -70,6 +79,22 @@ GAME.hud = (function () {
       g.fill();
       g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();
     }
+    // active mission route
+    var mroute = GAME.missions.getRoutePoints();
+    if (mroute && mroute.length) {
+      g.strokeStyle = 'rgba(255,138,61,.95)';
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.moveTo(w2mx(px), w2my(pz));
+      for (var mr = 0; mr < mroute.length; mr++) g.lineTo(w2mx(mroute[mr][0]), w2my(mroute[mr][1]));
+      g.stroke();
+      for (var mc = 0; mc < mroute.length; mc++) {
+        g.fillStyle = mc === 0 ? '#ffe14f' : 'rgba(255,138,61,.9)';
+        g.beginPath();
+        g.arc(w2mx(mroute[mc][0]), w2my(mroute[mc][1]), mc === 0 ? 5 : 3.5, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
     // mission / respray blips
     var mb = GAME.missions.getBlips();
     for (var i = 0; i < mb.length; i++) {
@@ -78,6 +103,21 @@ GAME.hud = (function () {
       g.arc(w2mx(mb[i].x), w2my(mb[i].z), 5, 0, Math.PI * 2);
       g.fill();
     }
+    // labelled POI badges
+    function badge(x, z, color, letter) {
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(w2mx(x), w2my(z), 8, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 1.2; g.stroke();
+      g.fillStyle = '#0c0816';
+      g.font = 'bold 11px Arial, sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(letter, w2mx(x), w2my(z) + 0.5);
+    }
+    GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
+    badge(GAME.city.pois.police.x, GAME.city.pois.police.z, '#5aa0ff', 'P');
+    GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -120,27 +160,33 @@ GAME.hud = (function () {
     mapBuffer = document.createElement('canvas');
     mapBuffer.width = 700; mapBuffer.height = 520;
     var g = mapBuffer.getContext('2d');
-    g.fillStyle = '#141020';
-    g.fillRect(0, 0, 700, 520);
     function mx(x) { return (x + MAP_OX) * MAP_S; }
     function my(z) { return (z + MAP_OY) * MAP_S; }
-    // sand + water
+    // island: water everywhere, then scan-fill the landmass with a sand rim
+    var c = GAME.city;
+    g.fillStyle = '#16305a';
+    g.fillRect(0, 0, 700, 520);
+    function isLand(x, z) {
+      return !(x > c.shoreline(z) || x < c.westShore(z) || z < c.northShore(x) || z > c.southShore(x));
+    }
+    var CELL = 8;
+    for (var wx = -520; wx < 880; wx += CELL) {
+      for (var wz = -520; wz < 520; wz += CELL) {
+        var cxm = wx + CELL / 2, czm = wz + CELL / 2;
+        if (!isLand(cxm, czm)) continue;
+        var rim = !isLand(cxm + CELL, czm) || !isLand(cxm - CELL, czm) || !isLand(cxm, czm + CELL) || !isLand(cxm, czm - CELL);
+        g.fillStyle = rim ? '#8a7a58' : '#141020';
+        g.fillRect(mx(wx), my(wz), CELL * MAP_S + 0.5, CELL * MAP_S + 0.5);
+      }
+    }
+    // east beach band
     g.fillStyle = '#3a3350';
     g.beginPath();
-    g.moveTo(mx(365), my(-500));
-    for (var z = -500; z <= 500; z += 25) g.lineTo(mx(GAME.city.shoreline(z)), my(z));
-    g.lineTo(mx(365), my(500));
+    g.moveTo(mx(368), my(-500));
+    for (var z = -500; z <= 500; z += 25) g.lineTo(mx(GAME.city.shoreline(z) - 4), my(z));
+    g.lineTo(mx(368), my(500));
     g.closePath();
     g.fill();
-    g.fillStyle = '#16305a';
-    g.beginPath();
-    g.moveTo(mx(880), my(-500));
-    for (var z2 = -500; z2 <= 500; z2 += 25) g.lineTo(mx(GAME.city.shoreline(z2)), my(z2));
-    g.moveTo(mx(880), my(-500));
-    g.lineTo(mx(880), my(500));
-    g.closePath();
-    g.fill();
-    g.fillRect(mx(500), my(-500), 700 - mx(500), 520);
     // roads
     g.strokeStyle = '#4a4462';
     g.lineWidth = 5 * MAP_S * 2.4;
@@ -156,10 +202,12 @@ GAME.hud = (function () {
     g.beginPath(); g.moveTo(mx(360), my(150)); g.lineTo(mx(505), my(150)); g.stroke();
     g.beginPath(); g.moveTo(mx(360), my(-180)); g.lineTo(mx(470), my(-180)); g.stroke();
     // POIs
-    var H = GAME.city.pois.hospital;
-    g.fillStyle = '#ff8aa8'; g.fillRect(mx(H.x) - 3, my(H.z) - 3, 6, 6);
+    g.fillStyle = '#ff8aa8';
+    GAME.city.pois.hospitals.forEach(function (H) { g.fillRect(mx(H.x) - 3, my(H.z) - 3, 6, 6); });
     var PD = GAME.city.pois.police;
     g.fillStyle = '#5aa0ff'; g.fillRect(mx(PD.x) - 3, my(PD.z) - 3, 6, 6);
+    g.fillStyle = '#c86bff';
+    GAME.city.pois.resprays.forEach(function (r) { g.fillRect(mx(r.door.x) - 3, my(r.door.z) - 3, 6, 6); });
   }
 
   function drawMinimap() {
@@ -179,6 +227,17 @@ GAME.hud = (function () {
       g.beginPath();
       g.arc((x - px) * MAP_S, (z - pz) * MAP_S, size, 0, Math.PI * 2);
       g.fill();
+    }
+    // active mission route (race checkpoints / current delivery stop)
+    var mroute = GAME.missions.getRoutePoints();
+    if (mroute && mroute.length) {
+      g.strokeStyle = 'rgba(255,138,61,.95)';
+      g.lineWidth = 2.4 / zoom;
+      g.beginPath();
+      g.moveTo(0, 0);
+      for (var mr = 0; mr < mroute.length; mr++) g.lineTo((mroute[mr][0] - px) * MAP_S, (mroute[mr][1] - pz) * MAP_S);
+      g.stroke();
+      blip(mroute[0][0], mroute[0][1], '#ffe14f', 4.5 / zoom);
     }
     // nav route
     if (GAME.nav.dest) {

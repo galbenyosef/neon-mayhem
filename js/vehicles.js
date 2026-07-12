@@ -467,7 +467,7 @@ GAME.vehicles = (function () {
       var r = U.randRange(Math.random, 80, GAME.settings.bubbleRadius);
       var x = P.pos.x + Math.cos(ang) * r, z = P.pos.z + Math.sin(ang) * r;
       var rp = city.nearestRoadPoint(x, z);
-      if (rp.x < -480 || rp.x > 345 || Math.abs(rp.z) > 480) continue;
+      if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
       // avoid spawning on top of others
       var clear = true;
       for (var c = 0; c < world.cars.length; c++) {
