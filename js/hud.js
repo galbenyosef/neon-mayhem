@@ -32,6 +32,7 @@ GAME.hud = (function () {
     else if (GAME.player.cash !== 250) el['title-best'].textContent = 'Cash: $' + GAME.player.cash;
 
     el['press-enter'].addEventListener('click', function () { GAME.startGame(); });
+    el['title-screen'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('touchend', function () { GAME.startGame(); });
 
     el['bigmap'].addEventListener('click', onMapClick);

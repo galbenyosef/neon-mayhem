@@ -59,7 +59,8 @@
 
   #title-screen { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center; flex-direction:column;
     background:radial-gradient(120% 90% at 50% 110%, #3d1155 0%, #1b0b33 45%, #0b0714 100%); }
-  #title-screen .sun { width:220px; height:220px; border-radius:50%; position:absolute; top:12%;
+  #title-screen > * { position:relative; z-index:1; }
+  #title-screen .sun { width:220px; height:220px; border-radius:50%; position:absolute; top:12%; z-index:0;
     background:linear-gradient(180deg,#ffe27a 0%,#ff9d5c 45%,#ff4d9d 100%); filter:blur(1px);
     box-shadow:0 0 80px rgba(255,120,80,.55);
     -webkit-mask-image:linear-gradient(180deg,#000 55%,transparent 56%,transparent 60%,#000 61%,#000 68%,transparent 69%,transparent 74%,#000 75%,#000 84%,transparent 85%);
@@ -68,9 +69,21 @@
     background:linear-gradient(180deg,#e8fbff 0%,#9df3ff 30%,#3ec7f0 48%,#173a66 52%,#9df3ff 60%,#ff7ac2 100%);
     -webkit-background-clip:text; background-clip:text; color:transparent;
     filter:drop-shadow(0 0 16px rgba(80,220,255,.6)) drop-shadow(4px 6px 0 rgba(150,20,90,.85)); }
-  #title-sub { color:#ffb3e2; font-weight:700; letter-spacing:5px; font-size:15px; margin-top:6px; text-shadow:0 0 10px rgba(255,80,170,.8); }
-  #press-enter { margin-top:34px; font-size:22px; font-weight:800; color:#8dffd8; letter-spacing:3px;
-    text-shadow:0 0 12px rgba(60,255,190,.9); animation:blink 1.2s step-end infinite; pointer-events:auto; cursor:pointer; }
+  #title-sub { color:#ffb3e2; font-weight:700; letter-spacing:5px; font-size:15px; margin-top:6px;
+    text-shadow:0 0 10px rgba(255,80,170,.8), 0 2px 6px rgba(10,4,20,.95); }
+  #press-enter { margin-top:30px; font-size:22px; font-weight:800; color:#8dffd8; letter-spacing:3px;
+    text-shadow:0 0 12px rgba(60,255,190,.9); animation:blink 1.2s step-end infinite; pointer-events:auto; cursor:pointer;
+    background:rgba(8,4,20,.6); border:1px solid rgba(90,255,200,.35); border-radius:10px; padding:10px 26px; }
+  /* short landscape screens (phones): shrink the sun and tighten the stack */
+  @media (max-height: 560px) {
+    #title-screen .sun { width:120px; height:120px; top:3%; }
+    #title-logo { font-size:min(9vw,60px); }
+    #title-sub { font-size:12px; margin-top:2px; }
+    #press-enter { margin-top:12px; font-size:17px; padding:8px 20px; }
+    #controls-card { margin-top:10px; font-size:10.5px; line-height:1.55; padding:6px 14px; max-height:26vh; }
+    #title-best { margin-top:4px; font-size:12px; }
+    #title-footer { font-size:9.5px; bottom:4px; }
+  }
   @keyframes blink { 50% { opacity:.25; } }
   #controls-card { margin-top:22px; color:#cfe6ff; font-size:12.5px; line-height:1.75; background:rgba(8,4,20,.55);
     border:1px solid rgba(120,200,255,.3); border-radius:10px; padding:10px 22px; max-height:34vh; overflow:auto; }
@@ -188,6 +201,27 @@
 </div>
 <div id="rotate-hint">Rotate your device to landscape<br>to play NEON MAYHEM</div>
 
+<script>
+// Inline watchdog: external scripts can fail when the page is opened through a
+// file manager (Android content:// URLs block sibling-file loads). Inline code
+// still runs, so surface the problem instead of a dead title screen.
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    if (window.GAME && window.THREE) return;
+    var pe = document.getElementById('press-enter');
+    if (!pe) return;
+    pe.textContent = 'GAME FILES DID NOT LOAD';
+    pe.style.animation = 'none';
+    pe.style.color = '#ff5d7a';
+    pe.style.borderColor = 'rgba(255,90,120,.6)';
+    pe.style.textShadow = '0 0 12px rgba(255,60,100,.8)';
+    var d = document.createElement('div');
+    d.style.cssText = 'position:relative;z-index:1;margin-top:12px;color:#cfe6ff;font-size:13px;line-height:1.6;max-width:620px;text-align:center;padding:0 18px;';
+    d.innerHTML = 'The browser could not load the <b>js/</b> folder. This happens when index.html is opened directly from a file manager or downloads app.<br>Play it over HTTP instead: host the folder (e.g. GitHub Pages) or run a local web-server app and open its URL.';
+    pe.parentNode.insertBefore(d, pe.nextSibling);
+  }, 2500);
+});
+</script>
 <script src="js/lib/three.min.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/audio.js"></script>
