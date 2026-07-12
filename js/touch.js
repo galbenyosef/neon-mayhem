@@ -3,9 +3,13 @@ GAME.touch = (function () {
   var stickId = null, camId = null, camLX = 0, camLY = 0;
   var baseX = 0, baseY = 0;
   var footBtns = [], carBtns = [];
+  var enabled = false;
 
   function detect() {
-    return ('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
+    if ('ontouchstart' in window) return true;
+    if (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) return true;
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+    return false;
   }
 
   function mkBtn(label, right, bottom, size, opts) {
@@ -38,14 +42,28 @@ GAME.touch = (function () {
   }
 
   function init() {
-    GAME.isTouch = detect();
-    if (!GAME.isTouch) return;
+    if (detect()) enable();
+    // a real touch at any point enables the layer even if boot-time detection missed
+    window.addEventListener('touchstart', function () { enable(); }, { passive: true, once: true });
+  }
+
+  function enable() {
+    if (enabled) return;
+    enabled = true;
+    GAME.isTouch = true;
     var S = GAME.settings;
     S.pixelRatioCap = 1.4;
     S.bubbleRadius = 110;
     S.maxTraffic = 8;
     S.maxPeds = 12;
     S.maxParked = 9;
+    // late enable (after boot): apply what the renderer already consumed
+    if (GAME.renderer) GAME.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, S.pixelRatioCap));
+    if (GAME.scene && GAME.scene.fog) GAME.scene.fog.far = 320;
+    if (!GAME.started) {
+      var pe = document.getElementById('press-enter');
+      if (pe) pe.textContent = 'TAP TO START';
+    }
 
     layer = document.getElementById('touch-layer');
     stickZone = document.getElementById('tstick-zone');
@@ -138,7 +156,7 @@ GAME.touch = (function () {
   }
 
   function update() {
-    if (!GAME.isTouch || !GAME.started) return;
+    if (!enabled || !GAME.started) return;
     layer.style.display = 'block';
     var inCar = GAME.player.inCar;
     for (var i = 0; i < footBtns.length; i++) footBtns[i].style.display = inCar ? 'none' : 'flex';
