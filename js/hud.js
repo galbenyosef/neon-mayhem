@@ -35,6 +35,30 @@ GAME.hud = (function () {
     el['title-screen'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('touchend', function () { GAME.startGame(); });
 
+    // pause: tap anywhere resumes; buttons stop the bubble
+    el['pause-screen'].addEventListener('click', function () { if (GAME.paused) GAME.togglePause(); });
+    el['pause-screen'].addEventListener('touchend', function (e) { e.preventDefault(); if (GAME.paused) GAME.togglePause(); });
+    function pauseBtn(id, fn) {
+      var b = $(id);
+      ['click', 'touchend'].forEach(function (ev) {
+        b.addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); fn(); });
+      });
+    }
+    pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
+    pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
+    pauseBtn('pause-exit', function () { location.reload(); });
+    // death screens: tap to skip the wait
+    ['wasted-screen', 'busted-screen'].forEach(function (id) {
+      ['click', 'touchend'].forEach(function (ev) {
+        el[id].addEventListener(ev, function () { GAME.skipScreen = true; });
+      });
+    });
+    // corner fullscreen button
+    var fsb = $('fs-btn');
+    ['click', 'touchend'].forEach(function (ev) {
+      fsb.addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); GAME.toggleFullscreen(); });
+    });
+
     el['bigmap'].addEventListener('click', onMapClick);
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
     el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
@@ -386,7 +410,10 @@ GAME.hud = (function () {
         }
       }, 550);
     },
-    hideTitle: function () { el['title-screen'].style.display = 'none'; },
+    hideTitle: function () {
+      el['title-screen'].style.display = 'none';
+      document.getElementById('hud').style.display = 'block';
+    },
     setPaused: function (p) { el['pause-screen'].style.display = p ? 'flex' : 'none'; },
     toggleCRT: function () {
       var on = el['crt-layer'].style.display !== 'block';

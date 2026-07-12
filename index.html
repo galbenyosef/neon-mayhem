@@ -57,8 +57,9 @@
     filter:drop-shadow(0 0 18px rgba(60,150,255,.85)) drop-shadow(3px 5px 0 rgba(0,10,40,.9)); }
   .big-sub { color:#ffd9f2; font-size:17px; margin-top:10px; text-shadow:0 1px 4px #000; }
 
+  /* translucent so the live attract-mode city shows through */
   #title-screen { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center; flex-direction:column;
-    background:radial-gradient(120% 90% at 50% 110%, #3d1155 0%, #1b0b33 45%, #0b0714 100%); }
+    background:radial-gradient(120% 90% at 50% 110%, rgba(61,17,85,.62) 0%, rgba(27,11,51,.66) 45%, rgba(11,7,20,.78) 100%); }
   #title-screen > * { position:relative; z-index:1; }
   #title-screen .sun { width:220px; height:220px; border-radius:50%; position:absolute; top:12%; z-index:0;
     background:linear-gradient(180deg,#ffe27a 0%,#ff9d5c 45%,#ff4d9d 100%); filter:blur(1px);
@@ -94,6 +95,12 @@
   #pause-screen { position:fixed; inset:0; z-index:35; display:none; align-items:center; justify-content:center; flex-direction:column;
     background:rgba(8,4,18,.82); }
   #pause-screen h2 { font-size:44px; font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:5px; text-shadow:0 0 16px rgba(60,220,255,.8); margin:0 0 14px; }
+
+  #fs-btn { position:fixed; right:14px; bottom:14px; z-index:45; width:36px; height:36px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:rgba(8,4,20,.55); border:1px solid rgba(120,200,255,.35); color:#9df3ff; font-size:19px;
+    text-shadow:0 0 8px rgba(60,220,255,.7); }
+  #fs-btn:active { background:rgba(60,220,255,.3); }
 
   #controls-bar { position:fixed; left:50%; bottom:8px; transform:translateX(-50%); z-index:12; display:none;
     color:#cfe6ff; font-size:12px; background:rgba(8,4,20,.6); border:1px solid rgba(120,200,255,.25);
@@ -138,7 +145,7 @@
 <body>
 <canvas id="game-canvas"></canvas>
 
-<div id="hud">
+<div id="hud" style="display:none">
   <div class="panel" id="minimap-wrap"><canvas id="minimap" width="180" height="180"></canvas></div>
   <div class="panel" id="stat-block">
     <div id="cash">$0</div>
@@ -164,8 +171,15 @@
 <div id="pause-screen">
   <h2>PAUSED</h2>
   <div id="pause-controls" style="color:#cfe6ff;font-size:13px;line-height:1.8;text-align:center;"></div>
-  <div style="margin-top:18px;color:#8dffd8;font-weight:700;">ESC — resume</div>
+  <div>
+    <span class="mbtn" id="pause-resume">RESUME</span>
+    <span class="mbtn" id="pause-fs">⛶ FULLSCREEN</span>
+    <span class="mbtn" id="pause-exit">EXIT TO TITLE</span>
+  </div>
+  <div style="margin-top:12px;color:#8dffd8;font-weight:700;">ESC or tap anywhere — resume</div>
 </div>
+
+<div id="fs-btn" title="Fullscreen">⛶</div>
 
 <div id="title-screen">
   <div class="sun"></div>

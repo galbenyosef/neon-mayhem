@@ -4,7 +4,13 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on.
 
-**Play it:** serve this folder from any static host (GitHub Pages works as-is) or a local static server:
+<p align="center">
+  <b><a href="https://pranshuparmar.github.io/neon-mayhem/">▶ PLAY NOW — free, in your browser</a></b>
+</p>
+
+📱 On phones and tablets, touch controls appear automatically: virtual stick on the left, context buttons on the right, and a top row for pause, mute, map, CRT filter (📺) and fullscreen (⛶). Starting the game enters fullscreen and asks to rotate to landscape.
+
+**Play it locally:** serve this folder from any static host (GitHub Pages works as-is) or a local static server:
 
 ```
 python3 -m http.server 8000
@@ -40,11 +46,13 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 | , / . | — | Radio station |
 | Shift | Sprint | — |
 
-`P` map & destination routing · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause
+`P` map & destination routing · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` (bottom-right) fullscreen
+
+The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
 
 ## Tech
 
-Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. Three.js r128 (MIT) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, and a spawn/despawn bubble keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test` for headless verification.
+Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, and a spawn/despawn bubble keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test` for headless verification.
 
 ## Disclaimer
 

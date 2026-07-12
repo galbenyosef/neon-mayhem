@@ -92,6 +92,14 @@ GAME.touch = (function () {
     var mapB = mkBtn('MAP', 0, 0, 44, { press: function () { GAME.hud.toggleMap(); } });
     mapB.style.right = ''; mapB.style.bottom = ''; mapB.style.left = '314px'; mapB.style.top = '8px';
     mapB.style.fontSize = '11px';
+    var crtB = mkBtn('📺', 0, 0, 44, { press: function () { GAME.hud.toggleCRT(); } });
+    crtB.style.right = ''; crtB.style.bottom = ''; crtB.style.left = '366px'; crtB.style.top = '8px';
+    // fold the corner fullscreen button into the top row, clear of the FIRE cluster
+    var fsb = document.getElementById('fs-btn');
+    fsb.style.right = ''; fsb.style.bottom = '';
+    fsb.style.left = '418px'; fsb.style.top = '8px';
+    fsb.style.width = '44px'; fsb.style.height = '44px';
+    fsb.style.borderRadius = '50%';
 
     // virtual stick
     stickZone.addEventListener('touchstart', function (e) {

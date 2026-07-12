@@ -63,12 +63,67 @@
     requestAnimationFrame(loop);
   }
 
+  GAME.enterFullscreen = function () {
+    try {
+      if (document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+      document.documentElement.requestFullscreen()
+        .then(function () {
+          try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(function () { }); } catch (e) { }
+        })
+        .catch(function () { });
+    } catch (e) { }
+  };
+  GAME.toggleFullscreen = function () {
+    if (document.fullscreenElement) { document.exitFullscreen().catch(function () { }); }
+    else GAME.enterFullscreen();
+  };
+
   GAME.startGame = function () {
     if (GAME.started) return;
     GAME.started = true;
     GAME.audio.init();
+    // leave attract mode: place the player on the strip, camera snaps behind
+    var P = GAME.player;
+    P.pos.set(356, 0.18, 40);
+    P.heading = Math.PI;
+    P.mesh.visible = true;
+    GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
+    GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
+    if (GAME.isTouch) GAME.enterFullscreen(); // same user gesture
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
+  };
+
+  // attract mode: the live city plays behind the title with spectator cuts
+  var ATTRACT_CUTS = [
+    { pos: [330, 10, -80], look: [351, 1, -10], drift: [0.3, 0.05, 2.0] },
+    { pos: [400, 8, 205], look: [490, 14, 150], drift: [-0.8, 0.1, -1.2] },
+    { pos: [-30, 46, -30], look: [-100, 52, -100], drift: [1.6, 0.3, 1.6] },
+    { pos: [55, 12, -165], look: [50, 2, -95], drift: [-1.5, 0.1, 0.5] },
+    { pos: [393, 7, 35], look: [364, 2, 110], drift: [0.2, 0.05, 2.2] }
+  ];
+  var attractIdx = -1, attractT = 1e9;
+  function tickAttractCam(dt) {
+    attractT += dt;
+    if (attractT > 13) {
+      attractT = 0;
+      attractIdx = (attractIdx + 1) % ATTRACT_CUTS.length;
+      var nc = ATTRACT_CUTS[attractIdx];
+      // the hidden player anchors the traffic/ped spawn bubble at the shot
+      GAME.player.pos.set(nc.look[0], 0, nc.look[2]);
+    }
+    var c = ATTRACT_CUTS[attractIdx];
+    GAME.cameraObj.position.set(c.pos[0] + c.drift[0] * attractT, c.pos[1] + c.drift[1] * attractT, c.pos[2] + c.drift[2] * attractT);
+    GAME.cameraObj.lookAt(c.look[0], c.look[1], c.look[2]);
+  }
+  GAME.tickAttract = function (dt) {
+    GAME.time += dt;
+    GAME.frame++;
+    GAME.city.update(dt, GAME.time);
+    GAME.vehicles.update(dt);
+    GAME.peds.update(dt);
+    GAME.fx.update(dt);
+    tickAttractCam(dt);
   };
 
   GAME.togglePause = function () {
@@ -104,7 +159,16 @@
     requestAnimationFrame(loop);
     var real = Math.min(0.1, (now - lastT) / 1000);
     lastT = now;
-    if (GAME.started && !GAME.paused && !GAME.mapOpen) {
+    if (!GAME.started) {
+      accumulator += real;
+      var g0 = 0;
+      while (accumulator >= STEP && g0 < 5) {
+        GAME.tickAttract(STEP);
+        accumulator -= STEP;
+        g0++;
+      }
+      if (g0 === 5) accumulator = 0;
+    } else if (!GAME.paused && !GAME.mapOpen) {
       accumulator += real * GAME.timeScale;
       var guard = 0;
       while (accumulator >= STEP && guard < 5) {

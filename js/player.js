@@ -25,6 +25,7 @@ GAME.initPlayer = function () {
   P.pos = mesh.position;
   P.pos.set(356, 0.18, 40);
   P.heading = Math.PI;
+  mesh.visible = false; // hidden during title attract mode; shown on start
   // weapon prop in right hand
   var wm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.42), new THREE.MeshLambertMaterial({ color: 0x222228 }));
   wm.position.set(0, -0.55, 0.2);
@@ -55,7 +56,7 @@ GAME.addCash = function (n) {
 
 GAME.playerDamage = function (amt, cause) {
   var P = GAME.player;
-  if (P.state !== 'alive' || GAME.godMode) return;
+  if (!GAME.started || P.state !== 'alive' || GAME.godMode) return;
   if (P.armor > 0) {
     var absorbed = Math.min(P.armor, amt * 0.7);
     P.armor -= absorbed;
@@ -229,7 +230,8 @@ GAME.updatePlayer = function (dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
   if (P.state !== 'alive') {
     P.stateT += dt;
-    if (P.stateT > 1.2 && !P.respawnQueued && (P.stateT > 3.2 || GAME.key('KeyR') || GAME.key('Enter'))) {
+    if (P.stateT > 1.2 && !P.respawnQueued && (P.stateT > 3.2 || GAME.key('KeyR') || GAME.key('Enter') || GAME.skipScreen)) {
+      GAME.skipScreen = false;
       P.respawnQueued = true;
       respawnAfterScreen();
       setTimeout(function () { P.respawnQueued = false; }, 1500);
