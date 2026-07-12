@@ -89,6 +89,9 @@ GAME.touch = (function () {
     pauseB.style.right = ''; pauseB.style.bottom = ''; pauseB.style.left = '210px'; pauseB.style.top = '8px';
     var muteB = mkBtn('♬', 0, 0, 44, { press: function () { GAME.audio.toggleMute(); } });
     muteB.style.right = ''; muteB.style.bottom = ''; muteB.style.left = '262px'; muteB.style.top = '8px';
+    var mapB = mkBtn('MAP', 0, 0, 44, { press: function () { GAME.hud.toggleMap(); } });
+    mapB.style.right = ''; mapB.style.bottom = ''; mapB.style.left = '314px'; mapB.style.top = '8px';
+    mapB.style.fontSize = '11px';
 
     // virtual stick
     stickZone.addEventListener('touchstart', function (e) {
@@ -177,8 +180,8 @@ GAME.touch = (function () {
           side = (dx * Math.cos(car.heading) - dz * Math.sin(car.heading)) > 0 ? 1 : -1;
         }
       }
-      T.driveByL = side < 0;
-      T.driveByR = side > 0;
+      T.driveByL = side > 0;
+      T.driveByR = side < 0;
     } else {
       T.driveByL = false; T.driveByR = false;
     }

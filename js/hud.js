@@ -11,7 +11,8 @@ GAME.hud = (function () {
   function init() {
     ['minimap', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
       'msg-line', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
-      'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls']
+      'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
+      'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
       .forEach(function (id) { el[id] = $(id); });
     var stars = '';
     for (var i = 0; i < 5; i++) stars += '<span>★</span>';
@@ -32,6 +33,87 @@ GAME.hud = (function () {
 
     el['press-enter'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('touchend', function () { GAME.startGame(); });
+
+    el['bigmap'].addEventListener('click', onMapClick);
+    el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
+    el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
+  }
+
+  // ---------- full-screen map ----------
+  var mapScale = 1, mapOffY = 0;
+  function drawBigMap() {
+    var cv = el.bigmap;
+    var size = Math.floor(Math.min(window.innerWidth * 0.86, window.innerHeight * 0.68, 560));
+    cv.width = size; cv.height = Math.floor(size * 520 / 700);
+    var g = cv.getContext('2d');
+    mapScale = size / 700; mapOffY = 0;
+    g.fillStyle = '#141020';
+    g.fillRect(0, 0, cv.width, cv.height);
+    g.drawImage(mapBuffer, 0, 0, 700 * mapScale, 520 * mapScale);
+    function w2mx(x) { return (x + MAP_OX) * MAP_S * mapScale; }
+    function w2my(z) { return mapOffY + (z + MAP_OY) * MAP_S * mapScale; }
+    // route + destination
+    var P = GAME.player;
+    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
+    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    if (GAME.nav.dest) {
+      g.strokeStyle = 'rgba(141,255,216,.95)';
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.moveTo(w2mx(px), w2my(pz));
+      GAME.nav.path.forEach(function (n) { g.lineTo(w2mx(n.x), w2my(n.z)); });
+      g.lineTo(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z));
+      g.stroke();
+      g.fillStyle = '#ff8aff';
+      g.beginPath();
+      g.arc(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z), 6, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();
+    }
+    // mission / respray blips
+    var mb = GAME.missions.getBlips();
+    for (var i = 0; i < mb.length; i++) {
+      g.fillStyle = mb[i].color;
+      g.beginPath();
+      g.arc(w2mx(mb[i].x), w2my(mb[i].z), 5, 0, Math.PI * 2);
+      g.fill();
+    }
+    // player arrow
+    var h = P.inCar && P.car ? P.car.heading : P.heading;
+    g.save();
+    g.translate(w2mx(px), w2my(pz));
+    g.rotate(-h);
+    g.fillStyle = '#ffffff'; g.strokeStyle = '#ff4fa3'; g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(0, 8); g.lineTo(6, -7); g.lineTo(0, -3); g.lineTo(-6, -7);
+    g.closePath(); g.fill(); g.stroke();
+    g.restore();
+  }
+
+  function onMapClick(e) {
+    var rect = el.bigmap.getBoundingClientRect();
+    var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    var wx = cx / mapScale / MAP_S - MAP_OX;
+    var wz = (cy - mapOffY) / mapScale / MAP_S - MAP_OY;
+    wx = U.clamp(wx, -495, 500);
+    wz = U.clamp(wz, -495, 495);
+    GAME.nav.setDest(wx, wz);
+    drawBigMap();
+  }
+
+  // ---------- controls hint bar ----------
+  var ctlMode = '';
+  function refreshControlsBar() {
+    if (GAME.isTouch) { el['controls-bar'].style.display = 'none'; return; }
+    var hidden = GAME.prefs && GAME.prefs.hideCtl;
+    if (!GAME.started || hidden) { el['controls-bar'].style.display = 'none'; ctlMode = ''; return; }
+    var mode = GAME.player.inCar ? 'car' : 'foot';
+    if (mode === ctlMode && el['controls-bar'].style.display === 'block') return;
+    ctlMode = mode;
+    el['controls-bar'].innerHTML = mode === 'car'
+      ? '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide'
+      : '<b>WASD</b> move · <b>Shift</b> sprint · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide';
+    el['controls-bar'].style.display = 'block';
   }
 
   function buildMapBuffer() {
@@ -98,6 +180,18 @@ GAME.hud = (function () {
       g.arc((x - px) * MAP_S, (z - pz) * MAP_S, size, 0, Math.PI * 2);
       g.fill();
     }
+    // nav route
+    if (GAME.nav.dest) {
+      g.strokeStyle = 'rgba(141,255,216,.95)';
+      g.lineWidth = 2.4 / zoom;
+      g.beginPath();
+      g.moveTo(0, 0);
+      var path = GAME.nav.path;
+      for (var np = 0; np < path.length; np++) g.lineTo((path[np].x - px) * MAP_S, (path[np].z - pz) * MAP_S);
+      g.lineTo((GAME.nav.dest.x - px) * MAP_S, (GAME.nav.dest.z - pz) * MAP_S);
+      g.stroke();
+      blip(GAME.nav.dest.x, GAME.nav.dest.z, '#ff8aff', 4.5 / zoom);
+    }
     var mb = GAME.missions.getBlips();
     for (var i = 0; i < mb.length; i++) blip(mb[i].x, mb[i].z, mb[i].color, mb[i].size);
     var cars = GAME.world.cars;
@@ -109,11 +203,11 @@ GAME.hud = (function () {
       if (peds[pd].isCop && !peds[pd].dead) blip(peds[pd].pos.x, peds[pd].pos.z, '#5aa0ff', 2);
     }
     g.restore();
-    // player arrow (rotates with heading)
+    // player arrow (tip toward heading; map draws +z downward)
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
     g.translate(90, 90);
-    g.rotate(Math.atan2(Math.sin(h), Math.cos(h)) * -1 + Math.PI);
+    g.rotate(-h);
     g.fillStyle = '#ffffff';
     g.strokeStyle = '#ff4fa3';
     g.lineWidth = 1.5;
@@ -129,7 +223,9 @@ GAME.hud = (function () {
 
   function update(dt) {
     if (!mapBuffer) return;
+    GAME.nav.update(dt);
     if (GAME.frame % 3 === 0) drawMinimap();
+    if (GAME.frame % 10 === 0) refreshControlsBar();
     // cash tick-up
     if (shownCash !== targetCash) {
       var diff = targetCash - shownCash;
@@ -157,9 +253,26 @@ GAME.hud = (function () {
     }
   }
 
-  return {
+  var api = {
     init: init,
     update: update,
+    toggleMap: function (force) {
+      if (!GAME.started) return;
+      var open = force !== undefined ? force : !GAME.mapOpen;
+      GAME.mapOpen = open;
+      el['map-screen'].style.display = open ? 'flex' : 'none';
+      if (open) drawBigMap();
+    },
+    mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
+    redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },
+    toggleControlsBar: function () {
+      GAME.prefs = GAME.prefs || {};
+      GAME.prefs.hideCtl = !GAME.prefs.hideCtl;
+      GAME.save();
+      ctlMode = '';
+      refreshControlsBar();
+      return !GAME.prefs.hideCtl;
+    },
     cashChanged: function () { targetCash = GAME.player.cash; },
     wantedChanged: function (n) {
       var spans = el['wanted-stars'].children;
@@ -219,6 +332,61 @@ GAME.hud = (function () {
       var on = el['crt-layer'].style.display !== 'block';
       el['crt-layer'].style.display = on ? 'block' : 'none';
       return on;
+    }
+  };
+  return api;
+})();
+
+// destination routing along the road graph
+GAME.nav = (function () {
+  var dest = null, path = [], recompT = 0;
+
+  function key(n) { return n.i + ',' + n.j; }
+
+  function computePath() {
+    if (!dest) { path = []; return; }
+    var P = GAME.player;
+    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
+    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var start = GAME.city.nearestNode(px, pz);
+    var goal = GAME.city.nearestNode(dest.x, dest.z);
+    var prev = {}, q = [start];
+    prev[key(start)] = false;
+    while (q.length) {
+      var n = q.shift();
+      if (n === goal) break;
+      var nbs = GAME.city.neighbors(n);
+      for (var i = 0; i < nbs.length; i++) {
+        var k = key(nbs[i]);
+        if (!(k in prev)) { prev[k] = n; q.push(nbs[i]); }
+      }
+    }
+    path = [];
+    var cur = goal;
+    while (cur) { path.unshift(cur); cur = prev[key(cur)]; }
+  }
+
+  return {
+    get dest() { return dest; },
+    get path() { return path; },
+    setDest: function (x, z) {
+      dest = { x: x, z: z };
+      computePath();
+      GAME.hud.message('Destination set — follow the route.', 2);
+    },
+    clear: function () { dest = null; path = []; },
+    update: function (dt) {
+      if (!dest) return;
+      recompT -= dt;
+      if (recompT <= 0) { recompT = 1.5; computePath(); }
+      var P = GAME.player;
+      var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
+      var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+      if (U.dist2(px, pz, dest.x, dest.z) < 240) {
+        dest = null; path = [];
+        GAME.hud.message('You have arrived.', 2.5);
+        GAME.audio.pickup();
+      }
     }
   };
 })();

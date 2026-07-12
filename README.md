@@ -40,7 +40,7 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 | , / . | — | Radio station |
 | Shift | Sprint | — |
 
-`M` mute · `T` CRT filter · `R` respawn/skip · `Esc` pause
+`P` map & destination routing · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause
 
 ## Tech
 

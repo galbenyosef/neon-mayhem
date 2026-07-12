@@ -39,11 +39,12 @@ function loadSave() {
     var s = JSON.parse(localStorage.getItem('neonMayhemSave') || '{}');
     if (typeof s.cash === 'number') GAME.player.cash = s.cash;
     GAME.bests = s.bests || {};
-  } catch (e) { GAME.bests = {}; }
+    GAME.prefs = s.prefs || {};
+  } catch (e) { GAME.bests = {}; GAME.prefs = {}; }
 }
 GAME.save = function () {
   try {
-    localStorage.setItem('neonMayhemSave', JSON.stringify({ cash: GAME.player.cash, bests: GAME.bests || {} }));
+    localStorage.setItem('neonMayhemSave', JSON.stringify({ cash: GAME.player.cash, bests: GAME.bests || {}, prefs: GAME.prefs || {} }));
   } catch (e) { }
 };
 GAME.addCash = function (n) {
@@ -138,7 +139,7 @@ function nearestEnterableCar() {
 
 GAME.enterCar = function (car) {
   var P = GAME.player;
-  if (!car || car.dead || P.inCar) return false;
+  if (!car || car.dead || P.inCar || P.entering) return false;
   if (car.occupied === 'ai') {
     // jack: driver bails and flees
     var side = car.heading + Math.PI / 2;
@@ -153,15 +154,43 @@ GAME.enterCar = function (car) {
   }
   car.occupied = 'player';
   if (car.ai) car.ai = null;
-  car.controls = { throttle: 0, steer: 0, handbrake: false };
-  P.inCar = true;
-  P.car = car;
-  P.mesh.visible = false;
-  GAME.cam.freeT = 0;
-  GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.5);
-  GAME.hud.message(car.spec.label, 1.6);
+  car.controls = { throttle: 0, steer: 0, handbrake: true };
+  // short walk-to-the-door transition before sitting in
+  P.entering = { car: car, t: 0, dur: 0.55 };
   return true;
 };
+
+function stepEnter(dt) {
+  var P = GAME.player;
+  var e = P.entering;
+  var car = e.car;
+  if (!car || car.dead) { P.entering = null; return; }
+  e.t += dt;
+  var side = car.heading - Math.PI / 2;
+  var doorX = car.pos.x + Math.sin(side) * 1.5;
+  var doorZ = car.pos.z + Math.cos(side) * 1.5;
+  P.heading = U.angleLerp(P.heading, Math.atan2(doorX - P.pos.x, doorZ - P.pos.z), Math.min(1, dt * 10));
+  P.pos.x = U.damp(P.pos.x, doorX, 9, dt);
+  P.pos.z = U.damp(P.pos.z, doorZ, 9, dt);
+  P.pos.y = GAME.city.groundY(P.pos.x, P.pos.z);
+  P.mesh.rotation.y = P.heading;
+  P.walkPhase = (P.walkPhase || 0) + dt * 11;
+  var j = P.mesh.userData.joints;
+  var s = Math.sin(P.walkPhase) * 0.6;
+  j.legL.rotation.x = s; j.legR.rotation.x = -s;
+  j.armL.rotation.x = -s * 0.7; j.armR.rotation.x = s * 0.7;
+  if (e.t >= e.dur) {
+    P.entering = null;
+    j.legL.rotation.x = j.legR.rotation.x = j.armL.rotation.x = j.armR.rotation.x = 0;
+    car.controls = { throttle: 0, steer: 0, handbrake: false };
+    P.inCar = true;
+    P.car = car;
+    P.mesh.visible = false;
+    GAME.cam.freeT = 0;
+    GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.5);
+    GAME.hud.message(car.spec.label, 1.6);
+  }
+}
 
 function forceExitCar(silent) {
   var P = GAME.player;
@@ -196,6 +225,7 @@ GAME.updatePlayer = function (dt) {
     return;
   }
 
+  if (P.entering) { stepEnter(dt); updateCamera(dt); return; }
   if (P.inCar) updateDriving(dt);
   else updateOnFoot(dt);
 
@@ -227,9 +257,10 @@ function updateOnFoot(dt) {
   P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
 
   if (mag > 0.05) {
+    // camera-relative: forward = dir(yaw), screen-right = dir(yaw - pi/2) = (-cos, sin)
     var camYaw = GAME.cam.yaw;
-    var wx = Math.sin(camYaw) * mz + Math.sin(camYaw + Math.PI / 2) * mx;
-    var wz = Math.cos(camYaw) * mz + Math.cos(camYaw + Math.PI / 2) * mx;
+    var wx = Math.sin(camYaw) * mz - Math.cos(camYaw) * mx;
+    var wz = Math.cos(camYaw) * mz + Math.sin(camYaw) * mx;
     var moveH = Math.atan2(wx, wz);
     if (!aiming) P.heading = U.angleLerp(P.heading, moveH, Math.min(1, dt * 10));
     P.moveH = moveH;
@@ -293,14 +324,15 @@ function updateDriving(dt) {
     var tc = GAME.vehicles.trafficControls(car, dt);
     c.throttle = tc.throttle; c.steer = tc.steer; c.handbrake = false;
   } else {
+    // steering: positive heading delta turns left in this parametrization, so D maps to -1
     var th = 0, st = 0;
     if (GAME.key('KeyW')) th += 1;
     if (GAME.key('KeyS')) th -= 1;
-    if (GAME.key('KeyA')) st -= 1;
-    if (GAME.key('KeyD')) st += 1;
+    if (GAME.key('KeyA')) st += 1;
+    if (GAME.key('KeyD')) st -= 1;
     if (T.active) {
       th += T.autoThrottle ? (T.brake ? -1 : 0.85) : 0;
-      st += T.stickX;
+      st -= T.stickX;
     }
     c.throttle = U.clamp(th, -1, 1);
     c.steer = U.clamp(st, -1, 1);
@@ -342,7 +374,7 @@ function updateCamera(dt) {
       cam.yaw -= mdx * 0.0032;
       cam.pitch = U.clamp(cam.pitch + mdy * 0.002, 0.08, 1.1);
     } else {
-      var behind = P.car.heading + Math.PI + (P.car.speed < -2 ? Math.PI : 0);
+      var behind = P.car.heading + (P.car.speed < -2 ? Math.PI : 0);
       cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 2.4));
       cam.pitch = U.damp(cam.pitch, 0.26, 2, dt);
     }

@@ -168,7 +168,7 @@ GAME.combat = (function () {
   function update(dt) {
     var P = GAME.player, inp = GAME.input, T = inp.touch;
     cooldown -= dt;
-    if (P.state !== 'alive') { setAiming(false); return; }
+    if (P.state !== 'alive' || P.entering) { setAiming(false); inp.lmbPressed = false; return; }
 
     // weapon select
     for (var i = 0; i < WEAPON_ORDER.length; i++) {
@@ -222,9 +222,10 @@ GAME.combat = (function () {
       if (hasSMG && (left || right || ((inp.lmb || T.fire) && (inp.rmb || T.aim)))) {
         if (cooldown <= 0) {
           cooldown = WEAPONS.smg.rate;
+          // left of travel = heading + pi/2 in this parametrization
           var side;
-          if (left) side = -1;
-          else if (right) side = 1;
+          if (left) side = 1;
+          else if (right) side = -1;
           else side = U.wrapPI(GAME.cam.yaw - P.car.heading) > 0 ? 1 : -1;
           var yaw = P.car.heading + side * Math.PI / 2 + (Math.random() - 0.5) * 0.15;
           fireGun('smg', yaw, true);

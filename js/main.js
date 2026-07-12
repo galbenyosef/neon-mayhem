@@ -45,7 +45,13 @@
     GAME.onKeyDown = function (code) {
       if (code === 'Enter' && !GAME.started) { GAME.startGame(); return; }
       if (!GAME.started) return;
-      if (code === 'Escape') GAME.togglePause();
+      if (code === 'Escape') {
+        if (GAME.mapOpen) GAME.hud.toggleMap(false);
+        else GAME.togglePause();
+      }
+      if (code === 'KeyP') GAME.hud.toggleMap();
+      if (code === 'KeyC' && GAME.mapOpen) GAME.hud.mapClear();
+      if (code === 'KeyH') GAME.hud.toggleControlsBar();
       if (code === 'KeyM') {
         var m = GAME.audio.toggleMute();
         GAME.hud.message(m ? 'Muted' : 'Sound on', 1.2);
@@ -98,7 +104,7 @@
     requestAnimationFrame(loop);
     var real = Math.min(0.1, (now - lastT) / 1000);
     lastT = now;
-    if (GAME.started && !GAME.paused) {
+    if (GAME.started && !GAME.paused && !GAME.mapOpen) {
       accumulator += real * GAME.timeScale;
       var guard = 0;
       while (accumulator >= STEP && guard < 5) {
