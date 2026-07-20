@@ -218,6 +218,7 @@ GAME.peds = (function () {
       var rp2 = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
       if (GAME.city.isInWater(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
+      if (!ped.jobPed && GAME.city.inAirport(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
       ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z);
       animateWalk(ped, dt);
 
@@ -255,6 +256,7 @@ GAME.peds = (function () {
       if (x > 340) { px = x; pz = z; }
       if (px < -490 || px > 372 || Math.abs(pz) > 490) continue;
       if (GAME.city.isInWater(px, pz)) continue;
+      if (GAME.city.inAirport(px, pz)) continue; // no strollers on the runway
       var ped = spawnPed(px, pz);
       newWaypoint(ped);
       live++;

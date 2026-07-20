@@ -28,25 +28,17 @@ GAME.aircraft = (function () {
     car.heliSpeed = U.damp(car.heliSpeed || 0, fwd * car.spec.maxSpeed, 1.6, dt);
     var nx = car.pos.x + Math.sin(car.heading) * car.heliSpeed * dt;
     var nz = car.pos.z + Math.cos(car.heading) * car.heliSpeed * dt;
-
-    // building collision below the rooftops
-    var boxes = GAME.city.hash.query(nx, nz, 3);
-    for (var i = 0; i < boxes.length; i++) {
-      var b = boxes[i];
-      if (b.noLOS) continue;
-      if (car.pos.y < b.h + 1 && nx > b.minX - 2 && nx < b.maxX + 2 && nz > b.minZ - 2 && nz < b.maxZ + 2) {
-        nx = car.pos.x; nz = car.pos.z;
-        if (Math.abs(car.heliSpeed) > 9) { GAME.vehicles.damageCar(car, 7, 'wall'); GAME.cameraShake = 0.5; }
-        car.heliSpeed *= 0.25;
-        break;
-      }
+    // blocked only when flying into a wall below its roof; above the roof you fly over / land on it
+    if (car.pos.y < GAME.city.surfaceY(nx, nz) - 0.8) {
+      nx = car.pos.x; nz = car.pos.z;
+      if (Math.abs(car.heliSpeed) > 9) { GAME.vehicles.damageCar(car, 7, 'wall'); GAME.cameraShake = 0.5; }
+      car.heliSpeed *= 0.25;
     }
     car.pos.x = U.clamp(nx, -524, 524);
     car.pos.z = U.clamp(nz, -524, 524);
 
-    // ground / water contact
-    var gy = GAME.city.groundY(car.pos.x, car.pos.z);
-    var minY = gy + 1.4;
+    // land on whatever surface is below (terrain or a rooftop)
+    var minY = GAME.city.surfaceY(car.pos.x, car.pos.z) + 1.4;
     if (car.pos.y < minY) {
       car.pos.y = minY;
       if (car.vy < -9) { GAME.vehicles.damageCar(car, -car.vy * 3, 'wall'); GAME.cameraShake = Math.min(1, -car.vy / 12); }
@@ -70,7 +62,7 @@ GAME.aircraft = (function () {
     if (GAME.key('KeyD')) yawIn -= 1;
     if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += -T.stickY; yawIn += -T.stickX; }
 
-    var gy = GAME.city.groundY(car.pos.x, car.pos.z);
+    var gy = GAME.city.surfaceY(car.pos.x, car.pos.z);
     var onGround = car.pos.y <= gy + car.spec.wheelH + 0.35;
 
     car.speed = U.clamp((car.speed || 0) + thr * car.spec.accel * dt, 0, car.spec.maxSpeed);
@@ -98,23 +90,17 @@ GAME.aircraft = (function () {
     var horiz = car.speed * Math.cos(car.pitch);
     var nx = car.pos.x + Math.sin(car.heading) * horiz * dt;
     var nz = car.pos.z + Math.cos(car.heading) * horiz * dt;
-    var boxes = GAME.city.hash.query(nx, nz, 4);
-    for (var i = 0; i < boxes.length; i++) {
-      var b = boxes[i];
-      if (b.noLOS) continue;
-      if (car.pos.y < b.h + 1 && nx > b.minX - 3 && nx < b.maxX + 3 && nz > b.minZ - 3 && nz < b.maxZ + 3) {
-        if (car.speed > 20) { GAME.vehicles.damageCar(car, car.speed, 'wall'); GAME.cameraShake = 0.8; }
-        car.speed *= 0.3; nx = car.pos.x; nz = car.pos.z;
-        break;
-      }
+    if (car.pos.y < GAME.city.surfaceY(nx, nz) - 0.8) {
+      if (car.speed > 20) { GAME.vehicles.damageCar(car, car.speed, 'wall'); GAME.cameraShake = 0.8; }
+      car.speed *= 0.3; nx = car.pos.x; nz = car.pos.z;
     }
     car.pos.x = U.clamp(nx, -524, 524);
     car.pos.z = U.clamp(nz, -524, 524);
 
-    var gy2 = GAME.city.groundY(car.pos.x, car.pos.z);
-    if (car.pos.y < gy2 + car.spec.wheelH) {
+    var surf = GAME.city.surfaceY(car.pos.x, car.pos.z);
+    if (car.pos.y < surf + car.spec.wheelH) {
       var hard = vy < -11;
-      car.pos.y = gy2 + car.spec.wheelH;
+      car.pos.y = surf + car.spec.wheelH;
       if (hard) { GAME.vehicles.damageCar(car, -vy * 3, 'wall'); GAME.cameraShake = Math.min(1, -vy / 12); }
     }
 

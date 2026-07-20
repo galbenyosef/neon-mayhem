@@ -60,6 +60,19 @@ GAME.city = (function () {
     }
     return 0;
   };
+  // top surface at a point: the tallest solid building roof containing it,
+  // else the terrain height. Used so aircraft can set down on rooftops.
+  city.surfaceY = function (x, z) {
+    var y = city.groundY(x, z);
+    var boxes = city.hash.query(x, z, 1);
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      if (b.tag !== 'building') continue; // land on buildings, not props/fences
+      if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ && b.h > y) y = b.h;
+    }
+    return y;
+  };
+
   city.districtAt = function (x, z) {
     if (x >= 160) return 'strip';
     if (x <= -140 && z >= 140) return 'harbor';
@@ -708,9 +721,13 @@ GAME.city = (function () {
   }
 
   // long runway in the open southern strip (no blocks are generated past z=350)
-  city.airport = { cx: -230, cz: 432, minX: -430, maxX: -30, z0: 419, z1: 445, apron: { x: -412, z: 432 } };
+  city.airport = {
+    cx: -230, cz: 432, minX: -430, maxX: -30, z0: 419, z1: 445, apron: { x: -412, z: 432 },
+    fx0: -448, fx1: -12, fz0: 404, fz1: 488, gate: { x: -160, w: 26 } // perimeter fence + a gate gap
+  };
   function buildAirport(scene) {
     var A = city.airport;
+    buildAirportFence(scene, A);
     var b = new GeoBatch();
     var marks = new GeoBatch();
     // runway asphalt
@@ -749,8 +766,40 @@ GAME.city = (function () {
   }
   city.inAirport = function (x, z) {
     var A = city.airport;
-    return x > A.minX - 6 && x < A.maxX + 6 && z > A.z0 - 4 && z < A.z1 + 4;
+    return x > A.fx0 && x < A.fx1 && z > A.fz0 && z < A.fz1;
   };
+
+  function buildAirportFence(scene, A) {
+    var b = new GeoBatch();
+    var railColor = 0x9aa0ac, postColor = 0x6a7078;
+    // posts + top rail along a segment (x0,z0)->(x1,z1)
+    function run(x0, z0, x1, z1) {
+      var len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 5));
+      for (var k = 0; k <= n; k++) {
+        var t = k / n, px = x0 + (x1 - x0) * t, pz = z0 + (z1 - z0) * t;
+        b.addBox(px, 1.4, pz, 0.24, 2.8, 0.24, 0, postColor, 0);
+      }
+      var mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, ang = Math.atan2(x1 - x0, z1 - z0);
+      b.addBox(mx, 2.5, mz, 0.1, 0.16, len, ang, railColor, 0);
+      b.addBox(mx, 1.7, mz, 0.1, 0.12, len, ang, railColor, 0);
+      b.addBox(mx, 0.9, mz, 0.1, 0.12, len, ang, railColor, 0);
+    }
+    // north edge split around the gate
+    var gL = A.gate.x - A.gate.w / 2, gR = A.gate.x + A.gate.w / 2;
+    run(A.fx0, A.fz0, gL, A.fz0); run(gR, A.fz0, A.fx1, A.fz0);
+    run(A.fx0, A.fz1, A.fx1, A.fz1);       // south
+    run(A.fx0, A.fz0, A.fx0, A.fz1);       // west
+    run(A.fx1, A.fz0, A.fx1, A.fz1);       // east
+    var mesh = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    mesh.matrixAutoUpdate = false;
+    scene.add(mesh);
+    // solid collision segments (thin walls), leaving the gate open
+    addSolid((A.fx0 + gL) / 2, A.fz0, gL - A.fx0, 0.5, 3, 'fence', true);
+    addSolid((gR + A.fx1) / 2, A.fz0, A.fx1 - gR, 0.5, 3, 'fence', true);
+    addSolid((A.fx0 + A.fx1) / 2, A.fz1, A.fx1 - A.fx0, 0.5, 3, 'fence', true);
+    addSolid(A.fx0, (A.fz0 + A.fz1) / 2, 0.5, A.fz1 - A.fz0, 3, 'fence', true);
+    addSolid(A.fx1, (A.fz0 + A.fz1) / 2, 0.5, A.fz1 - A.fz0, 3, 'fence', true);
+  }
 
   city.helipad = { x: 402, z: 300 };
   function buildHelipad(scene) {

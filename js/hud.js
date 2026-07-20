@@ -162,7 +162,7 @@ GAME.hud = (function () {
     GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
     badge(GAME.city.pois.police.x, GAME.city.pois.police.z, '#5aa0ff', 'P');
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
-    badge(GAME.city.airport.cx, GAME.city.airport.cz, '#8de0ff', '✈');
+    badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
     badge(GAME.city.helipad.x, GAME.city.helipad.z, '#8de0ff', 'e');
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;

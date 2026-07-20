@@ -575,6 +575,7 @@ GAME.vehicles = (function () {
       var x = fc.x + Math.cos(ang) * r, z = fc.z + Math.sin(ang) * r;
       var rp = city.nearestRoadPoint(x, z);
       if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
+      if (city.inAirport(rp.x, rp.z)) continue; // keep the airfield clear
       // avoid spawning on top of others
       var clear = true;
       for (var c = 0; c < world.cars.length; c++) {
@@ -598,9 +599,14 @@ GAME.vehicles = (function () {
     for (var s = 0; s < spots.length; s++) {
       var sp = spots[s];
       var d2 = U.dist2(sp.x, sp.z, fc.x, fc.z);
-      // special vehicles (police/ambulance/bikes) may spawn even when you're close
-      var minD = (sp.police || sp.vtype) ? 0 : 40 * 40;
-      if (!sp.live && live < GAME.settings.maxParked && d2 < 140 * 140 && d2 > minD) {
+      // special vehicles (police/ambulance/bikes/aircraft) are guaranteed near their
+      // spot — no distance floor, larger spawn range, and exempt from the parked cap
+      var special = sp.police || sp.vtype;
+      if (!special && GAME.city.inAirport(sp.x, sp.z)) continue; // no random cars on the airfield
+      var minD = special ? 0 : 40 * 40;
+      var range = special ? 210 : 140;
+      var despawnR = special ? 260 : 190;
+      if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 > minD) {
         var clear = true;
         for (var c = 0; c < world.cars.length; c++) {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60) { clear = false; break; }
@@ -609,11 +615,11 @@ GAME.vehicles = (function () {
         var types = ['sedan', 'sports', 'taxi', 'van', 'sedan'];
         var type = sp.police ? 'police' : (sp.vtype || types[Math.floor(Math.random() * types.length)]);
         // special vehicles keep their exact heading; ordinary parked cars flip randomly
-        var head = (sp.police || sp.vtype) ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
+        var head = special ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
         sp.live = car;
         live++;
-      } else if (sp.live && d2 > 190 * 190 && sp.live !== GAME.player.car && sp.live.hp === sp.live.spec.hp) {
+      } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && sp.live.hp === sp.live.spec.hp) {
         removeCar(sp.live);
       }
     }
