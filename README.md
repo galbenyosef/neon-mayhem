@@ -22,7 +22,7 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 ## Features
 
 - ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
-- Curving beach coastline, boardwalk, piers, a ferris wheel, and an animated ocean under a permanent dusk
+- Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts at dusk, night ~30s in, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
 - Arcade driving with handbrake drifts; 5 vehicle archetypes with 3-stage damage (smoke → fire → boom)
 - Lock-on shooting (aim assist, target cycling) with fists, pistol, SMG (drive-bys!), shotgun
@@ -46,11 +46,11 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 | , / . | — | Radio station |
 | Shift | Sprint | — |
 
-`P` map & destination routing · `N` day/night · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` (bottom-right) fullscreen
+`P` map & destination routing · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` (bottom-right) fullscreen
 
 The minimap is a heading-up radar that rotates with you — tap it to open the full map. The full map (`P`) shows a labelled legend, POI badges (H hospital, P police, S respray), weapon/health/armour pickups, and mission routes drawn along the streets — click anywhere to set a destination.
 
-**Touch controls** follow the classic console-port layout: a floating stick under the left thumb (move / steer, full deflection sprints on foot), and a context-sensitive action cluster under the right thumb. Buttons appear only when they apply — ENTER near a car, AIM with a gun drawn, weapon-switch with more than one weapon, drive-by only when you're carrying the SMG. Driving is an explicit GAS / BRAKE / handbrake with an EXIT and radio switch. The radar sits bottom-left; a single PAUSE button is the only persistent chrome, and sound, CRT filter, day/night and fullscreen all live in the pause menu.
+**Touch controls** follow the classic console-port layout: a floating stick under the left thumb (move / steer, full deflection sprints on foot), and a context-sensitive action cluster under the right thumb. Buttons appear only when they apply — ENTER near a car, AIM with a gun drawn, weapon-switch with more than one weapon, drive-by only when you're carrying the SMG. Driving is an explicit GAS / BRAKE / handbrake with an EXIT and radio switch. The radar sits bottom-left; a single PAUSE button is the only persistent chrome, and sound, CRT filter and fullscreen live in the pause menu.
 
 **Take to the sky:** a helicopter waits on the beach helipad (yellow **H**, south end of the sand). Climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. There's also an **airport** with a runway along the southern edge of the island (the ✈ on the map) — a light plane is parked on the apron: `W` to throttle up the runway, `Space` to rotate and climb once you're fast, `A/D` to turn, `Shift` to dive. Bail out of either aircraft with `F` while airborne and a **parachute** opens — steer your descent with `WASD` and glide down.
 

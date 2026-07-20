@@ -62,6 +62,9 @@
       if (code === 'KeyN') GAME.setDaytime();
     };
 
+    // start at dusk so the title/attract screen glows like ~5PM
+    GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
+
     lastT = performance.now();
     requestAnimationFrame(loop);
   }
@@ -81,28 +84,44 @@
     else GAME.enterFullscreen();
   };
 
-  GAME.daytime = false;
+  // night (df 0) and day (df 1) endpoint palettes; intermediate df gives dusk
+  var TOD_NIGHT = { fog: 0x2a1440, near: 110, hemi: 0x4a3a7a, ground: 0x1a1024, hemiI: 0.85, dir: 0x8a94ff, dirI: 0.55, amb: 0x40203a, ambI: 0.7, clear: 0x0a0714 };
+  var TOD_DAY = { fog: 0xbcd0e8, near: 150, hemi: 0xcfe0ff, ground: 0x9a8a70, hemiI: 1.05, dir: 0xfff2d0, dirI: 1.0, amb: 0x6a6674, ambI: 0.5, clear: 0x9fbce0 };
+  var _cN = new THREE.Color(), _cD = new THREE.Color(), _cT = new THREE.Color();
+  function lerpHex(a, b, t, target) { _cN.setHex(a); _cD.setHex(b); target.copy(_cN).lerp(_cD, t); return target; }
+
+  GAME.timeOfDay = 0.4;
+  GAME.applyTimeOfDay = function (df) {
+    GAME.timeOfDay = df;
+    GAME.city.applyTimeOfDay(df);
+    var scene = GAME.scene, L = GAME.lights, farBase = GAME.isTouch ? 320 : 430;
+    lerpHex(TOD_NIGHT.fog, TOD_DAY.fog, df, scene.fog.color);
+    scene.fog.near = U.lerp(TOD_NIGHT.near, TOD_DAY.near, df);
+    scene.fog.far = farBase + df * 90;
+    lerpHex(TOD_NIGHT.hemi, TOD_DAY.hemi, df, L.hemi.color);
+    lerpHex(TOD_NIGHT.ground, TOD_DAY.ground, df, L.hemi.groundColor);
+    L.hemi.intensity = U.lerp(TOD_NIGHT.hemiI, TOD_DAY.hemiI, df);
+    lerpHex(TOD_NIGHT.dir, TOD_DAY.dir, df, L.dir.color);
+    L.dir.intensity = U.lerp(TOD_NIGHT.dirI, TOD_DAY.dirI, df);
+    lerpHex(TOD_NIGHT.amb, TOD_DAY.amb, df, L.ambient.color);
+    L.ambient.intensity = U.lerp(TOD_NIGHT.ambI, TOD_DAY.ambI, df);
+    renderer.setClearColor(lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT), 1);
+  };
+
+  // auto day/night cycle. Start at dusk (~5PM), roll to night ~30s later, then
+  // the sun rises again and it loops. df = 0.5 - 0.5*cos(2*pi*phase).
+  var CYCLE = 140, START_PHASE = 0.78; // phase 0.78 -> df~0.40 dusk; phase 1.0 -> night
+  GAME.dayPhase = START_PHASE;
   GAME.setDaytime = function (force) {
-    var day = force !== undefined ? !!force : !GAME.daytime;
-    GAME.daytime = day;
-    GAME.city.setDaytime(day);
-    var scene = GAME.scene, L = GAME.lights;
-    var farBase = GAME.isTouch ? 320 : 430;
-    if (day) {
-      scene.fog.color.setHex(0xbcd0e8); scene.fog.near = 150; scene.fog.far = farBase + 90;
-      L.hemi.color.setHex(0xcfe0ff); L.hemi.groundColor.setHex(0x9a8a70); L.hemi.intensity = 1.05;
-      L.dir.color.setHex(0xfff2d0); L.dir.intensity = 1.0;
-      L.ambient.color.setHex(0x6a6674); L.ambient.intensity = 0.5;
-      renderer.setClearColor(0x9fbce0, 1);
-    } else {
-      scene.fog.color.setHex(0x2a1440); scene.fog.near = 110; scene.fog.far = farBase;
-      L.hemi.color.setHex(0x4a3a7a); L.hemi.groundColor.setHex(0x1a1024); L.hemi.intensity = 0.85;
-      L.dir.color.setHex(0x8a94ff); L.dir.intensity = 0.55;
-      L.ambient.color.setHex(0x40203a); L.ambient.intensity = 0.7;
-      renderer.setClearColor(0x000000, 1);
-    }
-    if (GAME.started && GAME.hud) GAME.hud.message(day ? 'Daytime' : 'Dusk', 1.4);
+    // manual override (switch is hidden but kept): jump the cycle to day/night
+    var day = force !== undefined ? !!force : GAME.timeOfDay < 0.5;
+    GAME.dayPhase = day ? 0.5 : 0.0;
+    GAME.applyTimeOfDay(day ? 1 : 0);
     return day;
+  };
+  GAME.advanceDayCycle = function (dt) {
+    GAME.dayPhase = (GAME.dayPhase + dt / CYCLE) % 1;
+    GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
   };
 
   GAME.startGame = function () {
@@ -117,6 +136,7 @@
     GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
     if (GAME.isTouch) GAME.enterFullscreen(); // same user gesture
+    GAME.dayPhase = 0.78; // reset the clock to dusk; night falls ~30s in
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
   };
@@ -185,6 +205,7 @@
   GAME.tick = function (dt) {
     GAME.time += dt;
     GAME.frame++;
+    GAME.advanceDayCycle(dt);
     GAME.city.update(dt, GAME.time);
     GAME.vehicles.update(dt);
     GAME.peds.update(dt);

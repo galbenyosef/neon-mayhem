@@ -488,10 +488,15 @@ GAME.city = (function () {
       [0.55, '#5a92d8'], [1, '#2f63b0']
     ]);
     city.skyTextures = { night: nightTex, day: dayTex };
+    // base dusk/night dome (tinted darker at deep night) with a day dome fading over it
     var sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 20, 14), new THREE.MeshBasicMaterial({ map: nightTex, side: THREE.BackSide, fog: false, depthWrite: false }));
     sky.renderOrder = -10;
     scene.add(sky);
     city.sky = sky;
+    var skyDay = new THREE.Mesh(new THREE.SphereGeometry(1390, 20, 14), new THREE.MeshBasicMaterial({ map: dayTex, side: THREE.BackSide, fog: false, depthWrite: false, transparent: true, opacity: 0 }));
+    skyDay.renderOrder = -9;
+    scene.add(skyDay);
+    city.skyDay = skyDay;
 
     var starPos = [];
     for (var i = 0; i < 420; i++) {
@@ -517,15 +522,16 @@ GAME.city = (function () {
     city.moonHalo = halo;
   }
 
-  city.setDaytime = function (day) {
-    if (city.sky) city.sky.material.map = day ? city.skyTextures.day : city.skyTextures.night;
-    if (city.sky) city.sky.material.needsUpdate = true;
-    if (city.stars) city.stars.visible = !day;
-    if (city.moon) { city.moon.material.color.setHex(day ? 0xfff4d8 : 0xf0ead8); }
-    if (city.moonHalo) city.moonHalo.material.opacity = day ? 0.25 : 0.5;
-    // daylight softens the signs' emissive punch
-    city.dayMode = day;
+  // df in [0,1]: 0 = deep night, ~0.4 = dusk/sunset, 1 = full day
+  city.applyTimeOfDay = function (df) {
+    if (city.sky) city.sky.material.color.setScalar(U.clamp(0.32 + df * 1.1, 0.32, 1));
+    if (city.skyDay) city.skyDay.material.opacity = U.clamp((df - 0.6) / 0.32, 0, 1);
+    if (city.stars) { city.stars.material.opacity = U.clamp(1 - df * 2.2, 0, 1); city.stars.material.transparent = true; city.stars.visible = df < 0.5; }
+    if (city.moon) city.moon.material.opacity = U.clamp(1 - df * 1.6, 0.05, 1), city.moon.material.transparent = true;
+    if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5);
+    city.dayMode = df > 0.7;
   };
+  city.setDaytime = function (day) { city.applyTimeOfDay(day ? 1 : 0); };
 
   function buildInstancedProps(scene) {
     var dummy = new THREE.Object3D();
@@ -678,21 +684,25 @@ GAME.city = (function () {
     sm.matrixAutoUpdate = false;
     scene.add(sm);
 
-    // ferris wheel at the end of the long pier
+    // ferris wheel at the end of the long pier — an outer group orients it,
+    // an inner group spins about the hub (local Z) with rim, spokes and cabs rigid
     var wheel = new THREE.Group();
+    var spin = new THREE.Group();
+    wheel.add(spin);
     var rim = new THREE.Mesh(new THREE.TorusGeometry(15, 0.5, 6, 22), new THREE.MeshBasicMaterial({ color: 0x38e8ff }));
-    wheel.add(rim);
-    var spokeB = new GeoBatch();
-    for (var sI = 0; sI < 8; sI++) {
-      spokeB.addBox(0, 0, 0, 30, 0.34, 0.34, sI / 8 * Math.PI, 0xff4fa3, 0);
+    spin.add(rim);
+    var spokeMat = new THREE.MeshBasicMaterial({ color: 0xff4fa3 });
+    for (var sI = 0; sI < 4; sI++) {
+      var spoke = new THREE.Mesh(new THREE.BoxGeometry(30, 0.34, 0.34), spokeMat);
+      spoke.rotation.z = sI / 4 * Math.PI; // spread in the wheel's XY plane
+      spin.add(spoke);
     }
-    var spokes = new THREE.Mesh(spokeB.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
-    wheel.add(spokes);
     var cabGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
     var cabs = new THREE.InstancedMesh(cabGeo, new THREE.MeshBasicMaterial({ color: 0xffe14f }), 8);
-    wheel.add(cabs);
+    spin.add(cabs);
     city.wheelCabs = cabs;
-    // spokes lie in the local XY plane; rotate so the wheel faces the shore
+    city.wheelSpin = spin;
+    // stand the wheel up facing the shore
     wheel.rotation.y = Math.PI / 2;
     wheel.position.set(492, 17.5, 150);
     scene.add(wheel);
@@ -905,8 +915,8 @@ GAME.city = (function () {
       }
       pos.needsUpdate = true;
     }
-    if (city.wheel) {
-      city.wheel.rotation.x += dt * 0.15;
+    if (city.wheelSpin) {
+      city.wheelSpin.rotation.z += dt * 0.15; // spin about the hub axis
       if (!city.cabsSet) {
         var dummy = new THREE.Object3D();
         for (var c = 0; c < 8; c++) {
