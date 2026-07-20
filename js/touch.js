@@ -182,7 +182,7 @@ GAME.touch = (function () {
     var T = GAME.input.touch;
     var P = GAME.player;
     // hide all controls behind menus / death screens
-    var playing = !GAME.paused && !GAME.mapOpen && P.state === 'alive';
+    var playing = !GAME.paused && !GAME.mapOpen && P.state === 'alive' && !P.parachuting;
     layer.style.display = 'block';
     if (!playing) {
       for (var i = 0; i < footBtns.length; i++) footBtns[i].style.display = 'none';
@@ -205,13 +205,16 @@ GAME.touch = (function () {
       show(btns.enter, !!near);
       for (var c = 0; c < carBtns.length; c++) carBtns[c].style.display = 'none';
     } else {
-      show(btns.gas, true); show(btns.brake, true);
-      show(btns.handbrake, true); show(btns.exit, true); show(btns.radio, true);
-      // drive-by only when armed with a full-auto weapon
-      var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
+      var heli = P.car && P.car.spec.heli;
+      show(btns.gas, true); show(btns.brake, true); show(btns.exit, true);
+      // in a helicopter GAS/BRAKE become climb/descend; hide ground-only buttons
+      btns.gas.textContent = heli ? '▲ UP' : 'GAS';
+      btns.brake.textContent = heli ? '▼ DN' : 'BRAKE';
+      show(btns.handbrake, !heli);
+      show(btns.radio, !heli);
+      var hasSMG = !heli && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       show(btns.driveby, hasSMG);
-      // JOB only when sitting in a taxi/ambulance with no active mission
-      show(btns.job, !!GAME.jobAvailable);
+      show(btns.job, !heli && !!GAME.jobAvailable);
       for (var f = 0; f < footBtns.length; f++) footBtns[f].style.display = 'none';
       // leaving foot-aim behind when you get in
       if (T.aim) { T.aim = false; if (btns.aim) btns.aim.style.background = ''; }

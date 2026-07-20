@@ -190,12 +190,18 @@ GAME.hud = (function () {
     if (GAME.isTouch) { el['controls-bar'].style.display = 'none'; return; }
     var hidden = GAME.prefs && GAME.prefs.hideCtl;
     if (!GAME.started || hidden) { el['controls-bar'].style.display = 'none'; ctlMode = ''; return; }
-    var mode = GAME.player.inCar ? 'car' : 'foot';
+    var mode = GAME.player.parachuting ? 'chute'
+      : (GAME.player.inCar && GAME.player.car && GAME.player.car.spec.heli) ? 'heli'
+        : GAME.player.inCar ? 'car' : 'foot';
     if (mode === ctlMode && el['controls-bar'].style.display === 'block') return;
     ctlMode = mode;
-    el['controls-bar'].innerHTML = mode === 'car'
-      ? '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide'
-      : '<b>WASD</b> move · <b>Shift</b> sprint · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide';
+    var txt = {
+      car: '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide',
+      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
+      heli: '<b>Space</b> up · <b>Shift</b> down · <b>W/S</b> forward · <b>A/D</b> yaw · <b>F</b> exit / bail out · <b>P</b> map',
+      chute: '<b>WASD</b> steer your descent · glide down to land'
+    };
+    el['controls-bar'].innerHTML = txt[mode];
     el['controls-bar'].style.display = 'block';
   }
 

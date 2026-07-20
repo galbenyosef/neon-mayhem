@@ -243,6 +243,7 @@ GAME.city = (function () {
 
     buildInstancedProps(scene);
     buildLandmarks(scene);
+    buildHelipad(scene);
     buildLaneGraph();
     buildSpots();
   };
@@ -704,6 +705,26 @@ GAME.city = (function () {
     scene.add(craneMesh);
   }
 
+  city.helipad = { x: 402, z: 300 };
+  function buildHelipad(scene) {
+    var H = city.helipad;
+    var y = city.groundY(H.x, H.z) + 0.08;
+    var b = new GeoBatch();
+    b.addGroundQuad(H.x, y, H.z, 16, 16, 0, 0x1a1a22);
+    // yellow H
+    b.addGroundQuad(H.x - 2.2, y + 0.02, H.z, 1, 7, 0, 0xf0d020);
+    b.addGroundQuad(H.x + 2.2, y + 0.02, H.z, 1, 7, 0, 0xf0d020);
+    b.addGroundQuad(H.x, y + 0.02, H.z, 3.6, 1, 0, 0xf0d020);
+    var pad = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    pad.matrixAutoUpdate = false;
+    scene.add(pad);
+    var ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 24),
+      new THREE.MeshBasicMaterial({ color: 0xf0d020, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(H.x, y + 0.03, H.z);
+    scene.add(ring);
+  }
+
   function buildLaneGraph() {
     var nodes = [], edges = {};
     for (var i = 0; i < R.length; i++) for (var j = 0; j < R.length; j++) {
@@ -758,6 +779,8 @@ GAME.city = (function () {
     city.pois.hospitals.forEach(function (H) {
       city.parkedSpots.push({ x: H.x + 22, z: H.spawn.z, heading: Math.PI / 2, vtype: 'ambulance' });
     });
+    // helicopter on its beach pad
+    city.parkedSpots.push({ x: city.helipad.x, z: city.helipad.z, heading: Math.PI, vtype: 'helicopter' });
     // motorcycles: a couple along the boardwalk and by the strip
     city.parkedSpots.push({ x: 360, z: 20, heading: 0, vtype: 'motorcycle' });
     city.parkedSpots.push({ x: 360, z: -40, heading: 0, vtype: 'motorcycle' });

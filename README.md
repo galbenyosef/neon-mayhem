@@ -52,6 +52,8 @@ The minimap is a heading-up radar that rotates with you — tap it to open the f
 
 **Touch controls** follow the classic console-port layout: a floating stick under the left thumb (move / steer, full deflection sprints on foot), and a context-sensitive action cluster under the right thumb. Buttons appear only when they apply — ENTER near a car, AIM with a gun drawn, weapon-switch with more than one weapon, drive-by only when you're carrying the SMG. Driving is an explicit GAS / BRAKE / handbrake with an EXIT and radio switch. The radar sits bottom-left; a single PAUSE button is the only persistent chrome, and sound, CRT filter, day/night and fullscreen all live in the pause menu.
 
+**Take to the sky:** a helicopter waits on the beach helipad (yellow **H**, south end of the sand). Climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Bail out with `F` while airborne and a **parachute** opens — steer your descent with `WASD` and glide down.
+
 The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
 
 ## Tech
