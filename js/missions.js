@@ -65,6 +65,28 @@ GAME.missions = (function () {
 
   function bestKey(d) { return d.id; }
 
+  // seed a crowd + traffic around the player so a rampage always has targets
+  function spawnRampageTargets(nPeds, nCars) {
+    var P = GAME.player;
+    var px = P.pos.x, pz = P.pos.z;
+    for (var i = 0; i < nPeds; i++) {
+      var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 7, 34);
+      var x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r;
+      if (GAME.city.isInWater(x, z)) continue;
+      var rp = GAME.resolveCircle(x, z, 0.5);
+      GAME.peds.spawnPed(rp.x, rp.z);
+    }
+    var types = ['sedan', 'taxi', 'sports', 'van'];
+    for (var c = 0; c < nCars; c++) {
+      var a2 = Math.random() * Math.PI * 2, r2 = U.randRange(Math.random, 12, 40);
+      var rp2 = GAME.city.nearestRoadPoint(px + Math.cos(a2) * r2, pz + Math.sin(a2) * r2);
+      if (GAME.city.isInWater(rp2.x, rp2.z)) continue;
+      GAME.vehicles.spawnCar(types[Math.floor(Math.random() * types.length)], rp2.x, rp2.z,
+        Math.random() * Math.PI * 2,
+        { occupied: 'ai', ai: { mode: 'traffic', desired: U.randRange(Math.random, 7, 11), laneX: 0, laneZ: 0 } });
+    }
+  }
+
   function start(def) {
     var P = GAME.player;
     active = {
@@ -87,7 +109,9 @@ GAME.missions = (function () {
     } else if (def.type === 'rampage') {
       GAME.combat.giveWeapon(def.weapon, def.ammo);
       active.state = 'run';
-      GAME.hud.message('Cause $' + def.target + ' of mayhem!', 3);
+      active.topupT = 0;
+      spawnRampageTargets(14, 6);
+      GAME.hud.message('Cause $' + def.target + ' of mayhem! Wreck cars and crowds.', 3.5);
     } else {
       active.state = 'run';
       GAME.hud.message('First delivery is marked. Go!', 3);
@@ -257,12 +281,37 @@ GAME.missions = (function () {
         if (active.cpIndex >= d2.stops.length) { finish(true); return; }
         GAME.hud.message('Delivered! Next stop is marked.', 2);
         GAME.hud.missionObjective(objectiveText());
+        active.routeCp = -1; // force route recompute for the new stop
         updateCp();
+      }
+      // road-route the line to the current stop so it follows streets
+      active.routeT = (active.routeT || 0) - dt;
+      if (active.routeT <= 0 || active.routeCp !== active.cpIndex) {
+        active.routeT = 1.0; active.routeCp = active.cpIndex;
+        var st2 = currentCp();
+        if (st2) {
+          var rp = GAME.nav.roadPath(px2, pz2, st2[0], st2[1]);
+          var pts = [];
+          for (var ri = 0; ri < rp.length; ri++) pts.push([rp[ri].x, rp[ri].z]);
+          pts.push([st2[0], st2[1]]);
+          active.courierRoute = pts;
+        } else active.courierRoute = null;
       }
       GAME.hud.missionTimer(active.timeLeft, true);
     } else if (d2.type === 'rampage') {
       active.timeLeft -= dt;
       GAME.hud.missionTimer(active.timeLeft, true);
+      // keep a crowd around the player so there's always something to wreck
+      active.topupT -= dt;
+      if (active.topupT <= 0) {
+        active.topupT = 3;
+        var near = 0, px = P.pos.x, pz = P.pos.z;
+        for (var pi = 0; pi < GAME.world.peds.length; pi++) {
+          var pd = GAME.world.peds[pi];
+          if (!pd.dead && !pd.isCop && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 55 * 55) near++;
+        }
+        if (near < 8) spawnRampageTargets(9, 3);
+      }
       if (active.score >= d2.target) { finish(true); return; }
       if (active.timeLeft <= 0) { finish(false, 'Time up — $' + Math.floor(active.score) + ' of $' + d2.target); return; }
     }
@@ -305,11 +354,15 @@ GAME.missions = (function () {
     getRoutePoints: function () {
       if (!active || active.state === 'countdown') return null;
       if (active.def.type === 'race') return active.def.cps.slice(active.cpIndex);
-      if (active.def.type === 'courier') {
-        var s = active.def.stops[active.cpIndex];
-        return s ? [s] : null;
-      }
+      if (active.def.type === 'courier') return active.courierRoute || null;
       return null;
+    },
+    // the immediate target marker (next checkpoint / current delivery stop)
+    getObjectivePoint: function () {
+      if (!active || active.state === 'countdown') return null;
+      var arr = active.def.type === 'race' ? active.def.cps : active.def.type === 'courier' ? active.def.stops : null;
+      if (!arr) return null;
+      return arr[active.cpIndex] || null;
     },
     getBlips: function () {
       var out = [];

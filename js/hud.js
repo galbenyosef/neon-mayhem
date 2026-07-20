@@ -5,6 +5,10 @@ GAME.hud = (function () {
   var radioT = 0;
   var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 520;
   var dmgFlash = null;
+  var PICKUP_BLIP = {
+    pistol: '#eef0ff', smg: '#ffe14f', shotgun: '#ff8a3d',
+    health: '#ff4d6a', armor: '#39c8ff'
+  };
 
   function $(id) { return document.getElementById(id); }
 
@@ -66,6 +70,7 @@ GAME.hud = (function () {
     var legend = [
       ['#ff8a3d', 'Race'], ['#38e8ff', 'Courier'], ['#ff4fa3', 'Rampage'],
       ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
+      ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
       ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
     ];
     $('map-legend').innerHTML = legend.map(function (e) {
@@ -113,10 +118,11 @@ GAME.hud = (function () {
       g.moveTo(w2mx(px), w2my(pz));
       for (var mr = 0; mr < mroute.length; mr++) g.lineTo(w2mx(mroute[mr][0]), w2my(mroute[mr][1]));
       g.stroke();
-      for (var mc = 0; mc < mroute.length; mc++) {
-        g.fillStyle = mc === 0 ? '#ffe14f' : 'rgba(255,138,61,.9)';
+      var mobj2 = GAME.missions.getObjectivePoint();
+      if (mobj2) {
+        g.fillStyle = '#ffe14f';
         g.beginPath();
-        g.arc(w2mx(mroute[mc][0]), w2my(mroute[mc][1]), mc === 0 ? 5 : 3.5, 0, Math.PI * 2);
+        g.arc(w2mx(mobj2[0]), w2my(mobj2[1]), 5, 0, Math.PI * 2);
         g.fill();
       }
     }
@@ -140,6 +146,14 @@ GAME.hud = (function () {
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(letter, w2mx(x), w2my(z) + 0.5);
     }
+    // weapon / health / armor pickups
+    GAME.world.pickups.forEach(function (pk) {
+      if (pk.taken || !PICKUP_BLIP[pk.type]) return;
+      g.fillStyle = PICKUP_BLIP[pk.type];
+      g.beginPath();
+      g.arc(w2mx(pk.pos.x), w2my(pk.pos.z), 3.5, 0, Math.PI * 2);
+      g.fill();
+    });
     GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
     badge(GAME.city.pois.police.x, GAME.city.pois.police.z, '#5aa0ff', 'P');
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
@@ -240,18 +254,29 @@ GAME.hud = (function () {
     var P = GAME.player;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.clearRect(0, 0, 180, 180);
     var zoom = P.inCar ? 0.62 : 0.85;
     g.save();
     g.translate(90, 90);
+    // heading-up radar: rotate so the player's forward direction points up
+    g.rotate(h - Math.PI);
     g.scale(zoom, zoom);
     g.drawImage(mapBuffer, -(px + MAP_OX) * MAP_S, -(pz + MAP_OY) * MAP_S);
-    // blips
+    // blips (drawn in the rotated frame so they track the map)
     function blip(x, z, color, size) {
       g.fillStyle = color;
       g.beginPath();
       g.arc((x - px) * MAP_S, (z - pz) * MAP_S, size, 0, Math.PI * 2);
       g.fill();
+    }
+    // weapon / health / armor pickups near the player
+    var pk = GAME.world.pickups;
+    for (var pu = 0; pu < pk.length; pu++) {
+      var pp = pk[pu];
+      if (pp.taken || !PICKUP_BLIP[pp.type]) continue;
+      if (U.dist2(pp.pos.x, pp.pos.z, px, pz) > 150 * 150) continue;
+      blip(pp.pos.x, pp.pos.z, PICKUP_BLIP[pp.type], 2.6 / zoom);
     }
     // active mission route (race checkpoints / current delivery stop)
     var mroute = GAME.missions.getRoutePoints();
@@ -262,7 +287,8 @@ GAME.hud = (function () {
       g.moveTo(0, 0);
       for (var mr = 0; mr < mroute.length; mr++) g.lineTo((mroute[mr][0] - px) * MAP_S, (mroute[mr][1] - pz) * MAP_S);
       g.stroke();
-      blip(mroute[0][0], mroute[0][1], '#ffe14f', 4.5 / zoom);
+      var mobj = GAME.missions.getObjectivePoint();
+      if (mobj) blip(mobj[0], mobj[1], '#ffe14f', 4.5 / zoom);
     }
     // nav route
     if (GAME.nav.dest) {
@@ -287,16 +313,14 @@ GAME.hud = (function () {
       if (peds[pd].isCop && !peds[pd].dead) blip(peds[pd].pos.x, peds[pd].pos.z, '#5aa0ff', 2);
     }
     g.restore();
-    // player arrow (tip toward heading; map draws +z downward)
-    var h = P.inCar && P.car ? P.car.heading : P.heading;
+    // player arrow: fixed, always pointing up (the radar rotates beneath it)
     g.save();
     g.translate(90, 90);
-    g.rotate(-h);
     g.fillStyle = '#ffffff';
     g.strokeStyle = '#ff4fa3';
     g.lineWidth = 1.5;
     g.beginPath();
-    g.moveTo(0, 6); g.lineTo(4.5, -5); g.lineTo(0, -2); g.lineTo(-4.5, -5);
+    g.moveTo(0, -8); g.lineTo(6, 6); g.lineTo(0, 2); g.lineTo(-6, 6);
     g.closePath(); g.fill(); g.stroke();
     g.restore();
   }
@@ -431,15 +455,13 @@ GAME.nav = (function () {
 
   function key(n) { return n.i + ',' + n.j; }
 
-  function computePath() {
-    if (!dest) { path = []; return; }
-    var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    var start = GAME.city.nearestNode(px, pz);
-    var goal = GAME.city.nearestNode(dest.x, dest.z);
+  // BFS along the road-node graph; returns [{x,z}...] start->goal
+  function roadPath(x0, z0, x1, z1) {
+    var start = GAME.city.nearestNode(x0, z0);
+    var goal = GAME.city.nearestNode(x1, z1);
+    if (!start || !goal) return [];
     var prev = {}, q = [start];
-    prev[key(start)] = false;
+    prev[key(start)] = null;
     while (q.length) {
       var n = q.shift();
       if (n === goal) break;
@@ -449,14 +471,23 @@ GAME.nav = (function () {
         if (!(k in prev)) { prev[k] = n; q.push(nbs[i]); }
       }
     }
-    path = [];
-    var cur = goal;
-    while (cur) { path.unshift(cur); cur = prev[key(cur)]; }
+    var out = [], cur = goal;
+    while (cur) { out.unshift({ x: cur.x, z: cur.z }); cur = prev[key(cur)]; }
+    return out;
+  }
+
+  function computePath() {
+    if (!dest) { path = []; return; }
+    var P = GAME.player;
+    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
+    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    path = roadPath(px, pz, dest.x, dest.z);
   }
 
   return {
     get dest() { return dest; },
     get path() { return path; },
+    roadPath: roadPath,
     setDest: function (x, z) {
       dest = { x: x, z: z };
       computePath();

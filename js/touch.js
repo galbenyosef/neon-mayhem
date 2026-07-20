@@ -77,29 +77,42 @@ GAME.touch = (function () {
     footBtns.push(mkBtn('FIRE', 26, 60, 84, { flag: 'fire', press: function () { T.firePressed = true; } }));
     footBtns.push(mkBtn('AIM', 124, 46, 64, { flag: 'aim', toggle: true }));
     footBtns.push(mkBtn('CAR', 30, 160, 60, { flag: 'enter' }));
-    footBtns.push(mkBtn('WPN', 116, 128, 56, { press: function () { T.weaponCycle = true; } }));
+    footBtns.push(mkBtn('WPN', 116, 132, 56, { press: function () { T.weaponCycle = true; } }));
+    footBtns.push(mkBtn('RUN', 196, 150, 54, { flag: 'run', toggle: true }));
     // in-car buttons
     carBtns.push(mkBtn('BRAKE', 26, 60, 84, { flag: 'brake' }));
     carBtns.push(mkBtn('DRIFT', 124, 46, 66, { flag: 'handbrake' }));
     carBtns.push(mkBtn('FIRE', 30, 162, 62, { flag: 'driveByAuto' }));
     carBtns.push(mkBtn('EXIT', 118, 132, 56, { flag: 'enter' }));
-    carBtns.push(mkBtn('♪', 190, 40, 48, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } }));
-    // persistent corner buttons
-    var pauseB = mkBtn('❚❚', 0, 0, 44, { press: function () { GAME.togglePause(); } });
-    pauseB.style.right = ''; pauseB.style.bottom = ''; pauseB.style.left = '210px'; pauseB.style.top = '8px';
-    var muteB = mkBtn('♬', 0, 0, 44, { press: function () { GAME.audio.toggleMute(); } });
-    muteB.style.right = ''; muteB.style.bottom = ''; muteB.style.left = '262px'; muteB.style.top = '8px';
-    var mapB = mkBtn('MAP', 0, 0, 44, { press: function () { GAME.hud.toggleMap(); } });
-    mapB.style.right = ''; mapB.style.bottom = ''; mapB.style.left = '314px'; mapB.style.top = '8px';
-    mapB.style.fontSize = '11px';
-    var crtB = mkBtn('📺', 0, 0, 44, { press: function () { GAME.hud.toggleCRT(); } });
-    crtB.style.right = ''; crtB.style.bottom = ''; crtB.style.left = '366px'; crtB.style.top = '8px';
-    // fold the corner fullscreen button into the top row, clear of the FIRE cluster
+    carBtns.push(mkBtn('♪', 196, 150, 52, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } }));
+
+    // top utility row: a centered flex strip so buttons never overlap
+    var topRow = document.createElement('div');
+    topRow.id = 'top-btn-row';
+    topRow.style.cssText = 'position:absolute;top:6px;left:50%;transform:translateX(-50%);' +
+      'display:flex;gap:8px;z-index:20;pointer-events:none;';
+    layer.appendChild(topRow);
+    function topBtn(label, opts) {
+      var b = mkBtn(label, 0, 0, 46, opts);
+      b.style.position = 'static';
+      b.style.right = ''; b.style.bottom = ''; b.style.left = ''; b.style.top = '';
+      b.style.width = '46px'; b.style.height = '46px';
+      b.style.minWidth = '46px'; b.style.minHeight = '46px';
+      b.style.fontSize = '16px';
+      topRow.appendChild(b);
+      return b;
+    }
+    topBtn('❚❚', { press: function () { GAME.togglePause(); } });
+    topBtn('♬', { press: function () { GAME.audio.toggleMute(); } });
+    topBtn('🗺', { press: function () { GAME.hud.toggleMap(); } });
+    topBtn('📺', { press: function () { GAME.hud.toggleCRT(); } });
+    topBtn('☀', { press: function () { var d = GAME.setDaytime(); this.textContent = d ? '🌙' : '☀'; } });
+    // fold the standalone fullscreen element into the same row
     var fsb = document.getElementById('fs-btn');
-    fsb.style.right = ''; fsb.style.bottom = '';
-    fsb.style.left = '418px'; fsb.style.top = '8px';
-    fsb.style.width = '44px'; fsb.style.height = '44px';
-    fsb.style.borderRadius = '50%';
+    fsb.className = 'tbtn';
+    fsb.style.cssText = 'position:static;width:46px;height:46px;min-width:46px;min-height:46px;' +
+      'font-size:16px;pointer-events:auto;';
+    topRow.appendChild(fsb);
 
     // virtual stick
     stickZone.addEventListener('touchstart', function (e) {

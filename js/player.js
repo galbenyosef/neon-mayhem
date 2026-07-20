@@ -267,8 +267,10 @@ function updateOnFoot(dt) {
   if (GAME.key('KeyD')) mx += 1;
   if (T.active) { mx += T.stickX; mz += -T.stickY; }
   var mag = Math.min(1, U.len(mx, mz));
-  var run = (GAME.key('ShiftLeft') || GAME.key('ShiftRight')) && !aiming;
-  var target = mag * (aiming ? 2.0 : run ? 5.2 : 2.6);
+  if (P.carHurtCd > 0) P.carHurtCd -= dt;
+  // run: Shift on desktop, RUN toggle or full stick deflection on touch
+  var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run || (T.active && mag > 0.85)) && !aiming;
+  var target = mag * (aiming ? 2.0 : run ? 6.0 : 2.8);
   P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
 
   if (mag > 0.05) {
@@ -298,7 +300,14 @@ function updateOnFoot(dt) {
       var d = Math.sqrt(d2);
       nx = c.pos.x + dx / d * rr;
       nz = c.pos.z + dz / d * rr;
-      if (Math.abs(c.speed) > 7) GAME.playerDamage(Math.abs(c.speed) * 1.6, 'car');
+      // one hit per contact: gate by a short cooldown so a single bump can't
+      // drain health across many frames of overlap
+      if (Math.abs(c.speed) > 8 && P.carHurtCd <= 0) {
+        GAME.playerDamage(Math.min(30, Math.abs(c.speed) * 0.9), 'car');
+        P.carHurtCd = 0.8;
+        var kb = 3.2;
+        nx += dx / d * kb; nz += dz / d * kb;
+      }
     }
   }
   P.pos.x = nx; P.pos.z = nz;

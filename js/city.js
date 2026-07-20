@@ -453,20 +453,27 @@ GAME.city = (function () {
     }
   }
 
+    function skyGradient(stops) {
+      var cv = document.createElement('canvas');
+      cv.width = 32; cv.height = 256;
+      var g = cv.getContext('2d');
+      var gr = g.createLinearGradient(0, 256, 0, 0);
+      for (var i = 0; i < stops.length; i++) gr.addColorStop(stops[i][0], stops[i][1]);
+      g.fillStyle = gr; g.fillRect(0, 0, 32, 256);
+      return new THREE.CanvasTexture(cv);
+    }
+
   function buildSky(scene) {
-    var cv = document.createElement('canvas');
-    cv.width = 32; cv.height = 256;
-    var g = cv.getContext('2d');
-    var gr = g.createLinearGradient(0, 256, 0, 0);
-    gr.addColorStop(0, '#3a1440');
-    gr.addColorStop(0.12, '#5a1e52');
-    gr.addColorStop(0.24, '#8a2a5e');
-    gr.addColorStop(0.38, '#4a2266');
-    gr.addColorStop(0.6, '#221244');
-    gr.addColorStop(1, '#0a0620');
-    g.fillStyle = gr; g.fillRect(0, 0, 32, 256);
-    var skyTex = new THREE.CanvasTexture(cv);
-    var sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 20, 14), new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false }));
+    var nightTex = skyGradient([
+      [0, '#3a1440'], [0.12, '#5a1e52'], [0.24, '#8a2a5e'],
+      [0.38, '#4a2266'], [0.6, '#221244'], [1, '#0a0620']
+    ]);
+    var dayTex = skyGradient([
+      [0, '#ffd7a8'], [0.14, '#ffb98a'], [0.3, '#8fb8e8'],
+      [0.55, '#5a92d8'], [1, '#2f63b0']
+    ]);
+    city.skyTextures = { night: nightTex, day: dayTex };
+    var sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 20, 14), new THREE.MeshBasicMaterial({ map: nightTex, side: THREE.BackSide, fog: false, depthWrite: false }));
     sky.renderOrder = -10;
     scene.add(sky);
     city.sky = sky;
@@ -481,16 +488,29 @@ GAME.city = (function () {
     sg.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
     var stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 2.6, fog: false, sizeAttenuation: false }));
     scene.add(stars);
+    city.stars = stars;
 
     var moon = new THREE.Mesh(new THREE.CircleGeometry(60, 24), new THREE.MeshBasicMaterial({ color: 0xf0ead8, fog: false }));
     moon.position.set(1150, 520, -220);
     moon.lookAt(0, 0, 0);
     scene.add(moon);
+    city.moon = moon;
     var halo = new THREE.Mesh(new THREE.CircleGeometry(130, 24), new THREE.MeshBasicMaterial({ map: radialGlowTexture('rgba(220,225,255,0.5)'), transparent: true, blending: THREE.AdditiveBlending, fog: false, depthWrite: false }));
     halo.position.copy(moon.position).multiplyScalar(0.985);
     halo.lookAt(0, 0, 0);
     scene.add(halo);
+    city.moonHalo = halo;
   }
+
+  city.setDaytime = function (day) {
+    if (city.sky) city.sky.material.map = day ? city.skyTextures.day : city.skyTextures.night;
+    if (city.sky) city.sky.material.needsUpdate = true;
+    if (city.stars) city.stars.visible = !day;
+    if (city.moon) { city.moon.material.color.setHex(day ? 0xfff4d8 : 0xf0ead8); }
+    if (city.moonHalo) city.moonHalo.material.opacity = day ? 0.25 : 0.5;
+    // daylight softens the signs' emissive punch
+    city.dayMode = day;
+  };
 
   function buildInstancedProps(scene) {
     var dummy = new THREE.Object3D();
@@ -731,6 +751,9 @@ GAME.city = (function () {
       }
     }
     // guarantee some key ones
+    // starter pickups within sight of the spawn point (356, 40)
+    city.pickupSpots.push({ x: 358, z: 34, type: 'pistol' });
+    city.pickupSpots.push({ x: 358, z: 48, type: 'health' });
     city.pickupSpots.push({ x: 358, z: 60, type: 'smg' });
     city.pickupSpots.push({ x: 358, z: -260, type: 'shotgun' });
     city.pickupSpots.push({ x: 8.4, z: 158.4, type: 'health' });

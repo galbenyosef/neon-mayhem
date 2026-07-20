@@ -112,11 +112,11 @@ GAME.fx = (function () {
 })();
 
 var VEHICLES = {
-  sports: { label: 'Vulture GT', maxSpeed: 40, accel: 17, grip: 3.6, turn: 2.7, hp: 90, l: 4.3, w: 1.95, cabinH: 0.5, bodyH: 0.5, colors: [0xff2f7a, 0x38e8ff, 0xffe14f, 0xffffff, 0xb040ff] },
-  sedan: { label: 'Cadenza', maxSpeed: 29, accel: 10, grip: 5.2, turn: 2.1, hp: 110, l: 4.5, w: 1.9, cabinH: 0.62, bodyH: 0.55, colors: [0x9fb4c8, 0xc0a0d8, 0x88c8a8, 0xd8d0c0, 0x8090b0] },
-  taxi: { label: 'Taxi', maxSpeed: 30, accel: 10.5, grip: 5.2, turn: 2.2, hp: 110, l: 4.5, w: 1.9, cabinH: 0.62, bodyH: 0.55, colors: [0xf0c020] },
-  van: { label: 'Cargo Van', maxSpeed: 23, accel: 7, grip: 6, turn: 1.7, hp: 170, l: 5.1, w: 2.1, cabinH: 1.0, bodyH: 0.9, colors: [0x9a8a78, 0x7888a0, 0xa87868] },
-  police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 130, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] }
+  sports: { label: 'Vulture GT', maxSpeed: 40, accel: 17, grip: 3.6, turn: 2.7, hp: 150, l: 4.3, w: 1.95, cabinH: 0.5, bodyH: 0.5, colors: [0xff2f7a, 0x38e8ff, 0xffe14f, 0xffffff, 0xb040ff] },
+  sedan: { label: 'Cadenza', maxSpeed: 29, accel: 10, grip: 5.2, turn: 2.1, hp: 175, l: 4.5, w: 1.9, cabinH: 0.62, bodyH: 0.55, colors: [0x9fb4c8, 0xc0a0d8, 0x88c8a8, 0xd8d0c0, 0x8090b0] },
+  taxi: { label: 'Taxi', maxSpeed: 30, accel: 10.5, grip: 5.2, turn: 2.2, hp: 175, l: 4.5, w: 1.9, cabinH: 0.62, bodyH: 0.55, colors: [0xf0c020] },
+  van: { label: 'Cargo Van', maxSpeed: 23, accel: 7, grip: 6, turn: 1.7, hp: 260, l: 5.1, w: 2.1, cabinH: 1.0, bodyH: 0.9, colors: [0x9a8a78, 0x7888a0, 0xa87868] },
+  police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 200, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] }
 };
 
 function buildCarMesh(type, colorHex) {
@@ -329,8 +329,8 @@ GAME.vehicles = (function () {
   function damageCar(car, amt, source) {
     if (car.dead) return;
     car.hp -= amt;
-    if (car.hp < 45 && car.stage < 1) car.stage = 1;
-    if (car.hp < 18 && car.stage < 2) { car.stage = 2; car.fireFuse = 3.5; }
+    if (car.hp < car.spec.hp * 0.35 && car.stage < 1) car.stage = 1;
+    if (car.hp < car.spec.hp * 0.14 && car.stage < 2) { car.stage = 2; car.fireFuse = 5.5; }
     if (car.hp <= 0) explodeCar(car, source);
   }
 

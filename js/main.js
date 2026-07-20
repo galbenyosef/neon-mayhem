@@ -19,12 +19,14 @@
     camera.position.set(340, 6, 30);
     GAME.cameraObj = camera;
 
-    scene.add(new THREE.HemisphereLight(0x4a3a7a, 0x1a1024, 0.85));
+    var hemi = new THREE.HemisphereLight(0x4a3a7a, 0x1a1024, 0.85);
+    scene.add(hemi);
     var moon = new THREE.DirectionalLight(0x8a94ff, 0.55);
     moon.position.set(500, 400, -150);
     scene.add(moon);
     var warm = new THREE.AmbientLight(0x40203a, 0.7);
     scene.add(warm);
+    GAME.lights = { hemi: hemi, dir: moon, ambient: warm };
 
     GAME.city.build(scene);
     GAME.fx.init(scene);
@@ -57,6 +59,7 @@
         GAME.hud.message(m ? 'Muted' : 'Sound on', 1.2);
       }
       if (code === 'KeyT') GAME.hud.toggleCRT();
+      if (code === 'KeyN') GAME.setDaytime();
     };
 
     lastT = performance.now();
@@ -76,6 +79,30 @@
   GAME.toggleFullscreen = function () {
     if (document.fullscreenElement) { document.exitFullscreen().catch(function () { }); }
     else GAME.enterFullscreen();
+  };
+
+  GAME.daytime = false;
+  GAME.setDaytime = function (force) {
+    var day = force !== undefined ? !!force : !GAME.daytime;
+    GAME.daytime = day;
+    GAME.city.setDaytime(day);
+    var scene = GAME.scene, L = GAME.lights;
+    var farBase = GAME.isTouch ? 320 : 430;
+    if (day) {
+      scene.fog.color.setHex(0xbcd0e8); scene.fog.near = 150; scene.fog.far = farBase + 90;
+      L.hemi.color.setHex(0xcfe0ff); L.hemi.groundColor.setHex(0x9a8a70); L.hemi.intensity = 1.05;
+      L.dir.color.setHex(0xfff2d0); L.dir.intensity = 1.0;
+      L.ambient.color.setHex(0x6a6674); L.ambient.intensity = 0.5;
+      renderer.setClearColor(0x9fbce0, 1);
+    } else {
+      scene.fog.color.setHex(0x2a1440); scene.fog.near = 110; scene.fog.far = farBase;
+      L.hemi.color.setHex(0x4a3a7a); L.hemi.groundColor.setHex(0x1a1024); L.hemi.intensity = 0.85;
+      L.dir.color.setHex(0x8a94ff); L.dir.intensity = 0.55;
+      L.ambient.color.setHex(0x40203a); L.ambient.intensity = 0.7;
+      renderer.setClearColor(0x000000, 1);
+    }
+    if (GAME.started && GAME.hud) GAME.hud.message(day ? 'Daytime' : 'Dusk', 1.4);
+    return day;
   };
 
   GAME.startGame = function () {

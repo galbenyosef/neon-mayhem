@@ -46,7 +46,9 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 | , / . | — | Radio station |
 | Shift | Sprint | — |
 
-`P` map & destination routing · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` (bottom-right) fullscreen
+`P` map & destination routing · `N` day/night · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` (bottom-right) fullscreen
+
+The minimap is a heading-up radar that rotates with you. The full map (`P`) shows a labelled legend, POI badges (H hospital, P police, S respray), weapon/health/armour pickups, and mission routes drawn along the streets — click anywhere to set a destination. On touch, the RUN button (and full stick deflection) sprints on foot; the top button row covers pause, mute, map, CRT, day/night and fullscreen.
 
 The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
 
