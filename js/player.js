@@ -215,7 +215,8 @@ function stepEnter(dt) {
     GAME.cam.freeT = 0;
     GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.5);
     GAME.hud.message(car.spec.label, 1.6);
-    if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
+    if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
+    else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
     else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
     else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
   }
@@ -384,14 +385,15 @@ function updateDriving(dt) {
     if (car && car.dead) forceExitCar();
     return;
   }
-  if (car.spec.heli) {
+  if (car.spec.heli || car.spec.plane) {
     if (wantsEnter()) {
       var gy = GAME.city.groundY(car.pos.x, car.pos.z);
       if (car.pos.y > gy + 3.5) GAME.aircraft.startParachute(car.pos.x, car.pos.y, car.pos.z, car.heading);
       else forceExitCar();
       return;
     }
-    GAME.aircraft.updateHeli(dt);
+    if (car.spec.plane) GAME.aircraft.updatePlane(dt);
+    else GAME.aircraft.updateHeli(dt);
     if (GAME.keyPressed('Comma')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(-1));
     if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
     return;
@@ -475,9 +477,10 @@ function updateCamera(dt) {
       cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 2.4));
       cam.pitch = U.damp(cam.pitch, 0.26, 2, dt);
     }
-    var heli = P.car.spec.heli;
+    var heli = P.car.spec.heli, plane = P.car.spec.plane;
     var sp = heli ? Math.abs(P.car.heliSpeed || 0) : Math.abs(P.car.speed);
-    cam.dist = U.damp(cam.dist, (heli ? 13 : 7.2) + sp * 0.13, 3, dt);
+    var base = plane ? 16 : heli ? 13 : 7.2;
+    cam.dist = U.damp(cam.dist, base + sp * (plane ? 0.06 : 0.13), 3, dt);
   } else {
     cam.yaw -= mdx * 0.0032;
     cam.pitch = U.clamp(cam.pitch + mdy * 0.002, -0.15, 1.2);

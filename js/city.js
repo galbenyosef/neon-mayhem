@@ -244,6 +244,7 @@ GAME.city = (function () {
     buildInstancedProps(scene);
     buildLandmarks(scene);
     buildHelipad(scene);
+    buildAirport(scene);
     buildLaneGraph();
     buildSpots();
   };
@@ -552,13 +553,14 @@ GAME.city = (function () {
       return false;
     }
     var lightSpots = [];
+    function addLight(x, z, rot) { if (!city.inAirport(x, z)) lightSpots.push({ x: x, z: z, rot: rot }); }
     for (var i = 0; i < R.length; i++) {
       for (var d = -450; d <= 450; d += 60) {
-        if (!nearAnyRoad(d + 20)) lightSpots.push({ x: R[i] + 7.4, z: d + 20, rot: Math.PI });
-        if (!nearAnyRoad(d - 10)) lightSpots.push({ x: R[i] - 7.4, z: d - 10, rot: 0 });
+        if (!nearAnyRoad(d + 20)) addLight(R[i] + 7.4, d + 20, Math.PI);
+        if (!nearAnyRoad(d - 10)) addLight(R[i] - 7.4, d - 10, 0);
         if (d >= -480 && d + 20 < 356) {
-          if (!nearAnyRoad(d + 20)) lightSpots.push({ x: d + 20, z: R[i] + 7.4, rot: Math.PI / 2 });
-          if (!nearAnyRoad(d - 10)) lightSpots.push({ x: d - 10, z: R[i] - 7.4, rot: -Math.PI / 2 });
+          if (!nearAnyRoad(d + 20)) addLight(d + 20, R[i] + 7.4, Math.PI / 2);
+          if (!nearAnyRoad(d - 10)) addLight(d - 10, R[i] - 7.4, -Math.PI / 2);
         }
       }
     }
@@ -705,6 +707,51 @@ GAME.city = (function () {
     scene.add(craneMesh);
   }
 
+  // long runway in the open southern strip (no blocks are generated past z=350)
+  city.airport = { cx: -230, cz: 432, minX: -430, maxX: -30, z0: 419, z1: 445, apron: { x: -412, z: 432 } };
+  function buildAirport(scene) {
+    var A = city.airport;
+    var b = new GeoBatch();
+    var marks = new GeoBatch();
+    // runway asphalt
+    b.addGroundQuad((A.minX + A.maxX) / 2, 0.04, A.cz, A.maxX - A.minX, 26, 0, 0x0e0c14);
+    // dashed centerline
+    for (var x = A.minX + 12; x < A.maxX - 12; x += 14) marks.addGroundQuad(x, 0.07, A.cz, 6, 0.5, 0, 0xd8c46a);
+    // threshold bars at each end
+    for (var t = -1; t <= 1; t += 2) {
+      for (var k = -4; k <= 4; k += 2) {
+        marks.addGroundQuad(A.cx + t * ((A.maxX - A.minX) / 2 - 6), 0.07, A.cz + k * 1.4, 4, 0.9, 0, 0xf0f0f0);
+      }
+    }
+    // apron pad
+    b.addGroundQuad(A.apron.x, 0.05, A.apron.z, 34, 34, 0, 0x1a1a22);
+    var rw = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    rw.matrixAutoUpdate = false; scene.add(rw);
+    var mk = new THREE.Mesh(marks.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    mk.matrixAutoUpdate = false; scene.add(mk);
+    // terminal building + control tower, south of the runway
+    var tb = new GeoBatch();
+    tb.addBox(A.cx, 5, A.cz + 28, 90, 10, 16, 0, 0x8a94b0, 28);
+    tb.addBox(A.cx + 40, 12, A.cz + 26, 8, 24, 8, 0, 0x9aa8c8, 0); // tower
+    tb.addBox(A.cx + 40, 25, A.cz + 26, 11, 4, 11, 0, 0x141824, 0); // tower cab
+    var tbm = new THREE.Mesh(tb.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    tbm.matrixAutoUpdate = false; scene.add(tbm);
+    addSolid(A.cx, A.cz + 28, 90, 16, 10);
+    addSolid(A.cx + 40, A.cz + 26, 8, 8, 24);
+    // runway edge lights
+    var glowB = new GeoBatch();
+    for (var gx = A.minX; gx <= A.maxX; gx += 24) {
+      glowB.addGroundQuad(gx, 0.06, A.cz - 13.5, 2, 2, 0, 0xffffff);
+      glowB.addGroundQuad(gx, 0.06, A.cz + 13.5, 2, 2, 0, 0xffffff);
+    }
+    var glowMesh = new THREE.Mesh(glowB.build(), new THREE.MeshBasicMaterial({ map: radialGlowTexture('rgba(120,180,255,0.6)'), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glowMesh.matrixAutoUpdate = false; scene.add(glowMesh);
+  }
+  city.inAirport = function (x, z) {
+    var A = city.airport;
+    return x > A.minX - 6 && x < A.maxX + 6 && z > A.z0 - 4 && z < A.z1 + 4;
+  };
+
   city.helipad = { x: 402, z: 300 };
   function buildHelipad(scene) {
     var H = city.helipad;
@@ -781,6 +828,8 @@ GAME.city = (function () {
     });
     // helicopter on its beach pad
     city.parkedSpots.push({ x: city.helipad.x, z: city.helipad.z, heading: Math.PI, vtype: 'helicopter' });
+    // airplane on the runway apron, lined up to taxi east
+    city.parkedSpots.push({ x: city.airport.apron.x, z: city.airport.apron.z, heading: Math.PI / 2, vtype: 'airplane' });
     // motorcycles: a couple along the boardwalk and by the strip
     city.parkedSpots.push({ x: 360, z: 20, heading: 0, vtype: 'motorcycle' });
     city.parkedSpots.push({ x: 360, z: -40, heading: 0, vtype: 'motorcycle' });

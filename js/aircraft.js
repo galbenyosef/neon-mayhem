@@ -57,6 +57,71 @@ GAME.aircraft = (function () {
     car.mesh.rotation.set(fwd * -0.16, car.heading, -yaw * 0.18);
   }
 
+  // arcade fixed-wing: throttle for speed, pitch to climb once past stall,
+  // yaw to turn. Needs runway room to take off and land.
+  function updatePlane(dt) {
+    var P = GAME.player, car = P.car, inp = GAME.input, T = inp.touch;
+    var thr = 0, pitchIn = 0, yawIn = 0;
+    if (GAME.key('KeyW')) thr += 1;
+    if (GAME.key('KeyS')) thr -= 1;
+    if (GAME.key('Space')) pitchIn += 1;
+    if (GAME.key('ShiftLeft') || GAME.key('ShiftRight') || GAME.key('ControlLeft')) pitchIn -= 1;
+    if (GAME.key('KeyA')) yawIn += 1;
+    if (GAME.key('KeyD')) yawIn -= 1;
+    if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += -T.stickY; yawIn += -T.stickX; }
+
+    var gy = GAME.city.groundY(car.pos.x, car.pos.z);
+    var onGround = car.pos.y <= gy + car.spec.wheelH + 0.35;
+
+    car.speed = U.clamp((car.speed || 0) + thr * car.spec.accel * dt, 0, car.spec.maxSpeed);
+    car.speed *= Math.exp(-0.09 * dt);
+
+    car.pitch = car.pitch || 0;
+    // on the ground the nose only rotates up once you're at rotation (stall) speed
+    if (onGround && car.speed < car.spec.stall) car.pitch = U.damp(car.pitch, 0, 6, dt);
+    else car.pitch = U.clamp(car.pitch + pitchIn * 1.1 * dt, onGround ? 0 : -0.7, 0.7);
+
+    var yawEff = Math.min(1, car.speed / 22);
+    car.heading += yawIn * 1.15 * yawEff * dt;
+
+    var flying = car.speed >= car.spec.stall;
+    var vy;
+    if (onGround && (!flying || car.pitch <= 0.06)) {
+      vy = 0; car.pos.y = gy + car.spec.wheelH;
+    } else if (flying) {
+      vy = car.speed * Math.sin(car.pitch);
+    } else {
+      vy = -9; car.pitch = U.damp(car.pitch, -0.3, 3, dt); // stall — sinking
+    }
+    car.pos.y += vy * dt;
+
+    var horiz = car.speed * Math.cos(car.pitch);
+    var nx = car.pos.x + Math.sin(car.heading) * horiz * dt;
+    var nz = car.pos.z + Math.cos(car.heading) * horiz * dt;
+    var boxes = GAME.city.hash.query(nx, nz, 4);
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      if (b.noLOS) continue;
+      if (car.pos.y < b.h + 1 && nx > b.minX - 3 && nx < b.maxX + 3 && nz > b.minZ - 3 && nz < b.maxZ + 3) {
+        if (car.speed > 20) { GAME.vehicles.damageCar(car, car.speed, 'wall'); GAME.cameraShake = 0.8; }
+        car.speed *= 0.3; nx = car.pos.x; nz = car.pos.z;
+        break;
+      }
+    }
+    car.pos.x = U.clamp(nx, -524, 524);
+    car.pos.z = U.clamp(nz, -524, 524);
+
+    var gy2 = GAME.city.groundY(car.pos.x, car.pos.z);
+    if (car.pos.y < gy2 + car.spec.wheelH) {
+      var hard = vy < -11;
+      car.pos.y = gy2 + car.spec.wheelH;
+      if (hard) { GAME.vehicles.damageCar(car, -vy * 3, 'wall'); GAME.cameraShake = Math.min(1, -vy / 12); }
+    }
+
+    GAME.audio.engineState(true, 0.35 + Math.min(0.6, car.speed / car.spec.maxSpeed * 0.6));
+    car.mesh.rotation.set(-car.pitch, car.heading, -yawIn * 0.4);
+  }
+
   function startParachute(x, y, z, heading) {
     var P = GAME.player;
     P.parachuting = true;
@@ -119,6 +184,7 @@ GAME.aircraft = (function () {
 
   return {
     updateHeli: updateHeli,
+    updatePlane: updatePlane,
     startParachute: startParachute,
     updateParachute: updateParachute,
     get parachuting() { return GAME.player.parachuting; }

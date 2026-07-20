@@ -206,15 +206,17 @@ GAME.touch = (function () {
       for (var c = 0; c < carBtns.length; c++) carBtns[c].style.display = 'none';
     } else {
       var heli = P.car && P.car.spec.heli;
+      var plane = P.car && P.car.spec.plane;
+      var air = heli || plane;
       show(btns.gas, true); show(btns.brake, true); show(btns.exit, true);
-      // in a helicopter GAS/BRAKE become climb/descend; hide ground-only buttons
-      btns.gas.textContent = heli ? '▲ UP' : 'GAS';
-      btns.brake.textContent = heli ? '▼ DN' : 'BRAKE';
-      show(btns.handbrake, !heli);
-      show(btns.radio, !heli);
-      var hasSMG = !heli && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
+      // aircraft repurpose GAS/BRAKE; hide ground-only buttons
+      btns.gas.textContent = heli ? '▲ UP' : plane ? 'THR+' : 'GAS';
+      btns.brake.textContent = heli ? '▼ DN' : plane ? 'THR−' : 'BRAKE';
+      show(btns.handbrake, !air);
+      show(btns.radio, !air);
+      var hasSMG = !air && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       show(btns.driveby, hasSMG);
-      show(btns.job, !heli && !!GAME.jobAvailable);
+      show(btns.job, !air && !!GAME.jobAvailable);
       for (var f = 0; f < footBtns.length; f++) footBtns[f].style.display = 'none';
       // leaving foot-aim behind when you get in
       if (T.aim) { T.aim = false; if (btns.aim) btns.aim.style.background = ''; }

@@ -119,7 +119,8 @@ var VEHICLES = {
   police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 200, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] },
   ambulance: { label: 'Ambulance', maxSpeed: 27, accel: 8.5, grip: 5.6, turn: 1.8, hp: 240, l: 5.3, w: 2.15, cabinH: 1.15, bodyH: 1.0, colors: [0xf2f2f6] },
   motorcycle: { label: 'Vice Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 75, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
-  helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true }
+  helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
+  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 }
 };
 
 function buildBikeMesh(colorHex) {
@@ -177,8 +178,40 @@ function buildHeliMesh(colorHex) {
   return g;
 }
 
+function buildPlaneMesh(colors) {
+  var body = colors[0], accent = colors[1] || 0xff2f7a;
+  var g = new THREE.Group();
+  g.rotation.order = 'YXZ';
+  var b = new GeoBatch();
+  b.addBox(0, 1.2, 0, 1.5, 1.5, 9, 0, body, 0);            // fuselage
+  b.addBox(0, 1.5, 3.0, 1.1, 0.9, 2.2, 0, 0x141824, 0);    // cockpit glass
+  b.addBox(0, 1.35, -0.4, 12, 0.28, 2.2, 0, body, 0);      // main wing
+  b.addBox(0, 1.35, -0.4, 12, 0.3, 0.3, 0, accent, 0);     // wing stripe
+  b.addBox(0, 1.4, -4.4, 4.4, 0.22, 1.2, 0, body, 0);      // tailplane
+  b.addBox(0, 2.1, -4.4, 0.22, 1.6, 1.2, 0, accent, 0);    // vertical fin
+  b.addBox(-0.55, 0.35, 1.0, 0.14, 0.7, 0.14, 0, 0x0c0c10, 0);
+  b.addBox(0.55, 0.35, 1.0, 0.14, 0.7, 0.14, 0, 0x0c0c10, 0);
+  b.addBox(0, 0.4, -3.5, 0.12, 0.5, 0.12, 0, 0x0c0c10, 0);
+  var mesh = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  g.add(mesh);
+  // nose light + spinning prop
+  var pg = new GeoBatch();
+  pg.addBox(0, 0, 0, 0.24, 3.4, 0.14, 0, 0x1a1a20, 0);
+  pg.addBox(0, 0, 0, 3.4, 0.24, 0.14, 0, 0x1a1a20, 0);
+  var prop = new THREE.Mesh(pg.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  prop.position.set(0, 1.2, 4.7);
+  g.add(prop);
+  var hl = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.06), new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
+  hl.position.set(0, 1.2, 4.8);
+  g.add(hl);
+  g.userData.bodyMesh = mesh;
+  g.userData.prop = prop;
+  return g;
+}
+
 function buildCarMesh(type, colorHex) {
   var s = VEHICLES[type];
+  if (s.plane) return buildPlaneMesh(s.colors);
   if (s.heli) return buildHeliMesh(colorHex);
   if (s.bike) return buildBikeMesh(colorHex);
   var g = new THREE.Group();
@@ -366,10 +399,10 @@ GAME.vehicles = (function () {
     var cars = world.cars;
     for (var i = 0; i < cars.length; i++) {
       var a = cars[i];
-      if (a.spec.heli) continue; // aircraft don't shove ground traffic
+      if (a.spec.heli || a.spec.plane) continue; // aircraft don't shove ground traffic
       for (var j = i + 1; j < cars.length; j++) {
         var b = cars[j];
-        if (b.spec.heli) continue;
+        if (b.spec.heli || b.spec.plane) continue;
         var dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
         var rr = a.radius + b.radius;
         var d2 = dx * dx + dz * dz;
@@ -575,7 +608,8 @@ GAME.vehicles = (function () {
         if (!clear) continue;
         var types = ['sedan', 'sports', 'taxi', 'van', 'sedan'];
         var type = sp.police ? 'police' : (sp.vtype || types[Math.floor(Math.random() * types.length)]);
-        var head = sp.police ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
+        // special vehicles keep their exact heading; ordinary parked cars flip randomly
+        var head = (sp.police || sp.vtype) ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
         sp.live = car;
         live++;
@@ -614,24 +648,27 @@ GAME.vehicles = (function () {
           if (car.fireFuse <= 0) explodeCar(car, 'fire');
         }
       }
-      if (car.spec.heli) {
-        // helicopters are flown from player.js (updateHeli); abandoned ones fall.
+      if (car.spec.heli || car.spec.plane) {
+        // aircraft are flown from player.js; abandoned airborne ones fall.
         var powered = (car === P.car && P.inCar);
+        var restY = car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4;
         if (!powered) {
           var hgy = GAME.city.groundY(car.pos.x, car.pos.z);
-          if (car.pos.y > hgy + 1.45) {
+          if (car.pos.y > hgy + restY + 0.05) {
             car.vy = (car.vy || 0) - 12 * dt;
             car.pos.y += car.vy * dt;
-            if (car.pos.y <= hgy + 1.4) {
-              car.pos.y = hgy + 1.4;
+            if (car.pos.y <= hgy + restY) {
+              car.pos.y = hgy + restY;
               if (car.vy < -6) { explodeCar(car, 'fire'); continue; }
               car.vy = 0;
             }
           }
+          car.speed = (car.speed || 0) * Math.exp(-1.5 * dt);
         }
         car.rotorSpin = U.damp(car.rotorSpin || 0, (powered || (car.vy || 0) < -2) ? 42 : 0, 1.5, dt);
         if (car.mesh.userData.rotor) car.mesh.userData.rotor.rotation.y += car.rotorSpin * dt;
         if (car.mesh.userData.tailRotor) car.mesh.userData.tailRotor.rotation.x += car.rotorSpin * dt;
+        if (car.mesh.userData.prop) car.mesh.userData.prop.rotation.z += (powered ? 40 : car.rotorSpin) * dt;
         continue;
       }
       if (car === P.car && P.inCar) {
