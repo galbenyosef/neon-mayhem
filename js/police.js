@@ -1,5 +1,5 @@
 GAME.police = (function () {
-  var heat = 0, lastSeen = 0, pinTimer = 0;
+  var heat = 0, lastSeen = 0, pinTimer = 0, grabTimer = 0;
   var crimeCooldown = {};
   var roadblockT = 0, spikes = [];
   var THRESH = [0, 60, 140, 240, 340, 440];
@@ -11,15 +11,33 @@ GAME.police = (function () {
     return s;
   }
 
-  var CRIME_HEAT = { hit_ped: 25, kill_ped: 60, jack: 60, shoot_car: 18, hit_car: 8, kill_cop: 130 };
+  var CRIME_HEAT = { hit_ped: 16, kill_ped: 55, jack: 62, shoot_car: 14, hit_car: 3, kill_cop: 130, steal_police: 70 };
+  // crimes that always draw heat even unwitnessed (attacking the law, loud gunfire)
+  var ALWAYS = { kill_cop: 1, steal_police: 1 };
+
+  // a crime only raises the alarm if a cop (any range, LOS) or a civilian
+  // (close, LOS) actually sees it — bumping a fender in an empty street is free
+  function witnessed(pos) {
+    var peds = GAME.world.peds;
+    for (var i = 0; i < peds.length; i++) {
+      var p = peds[i];
+      if (p.dead) continue;
+      var range = p.isCop ? 95 : 32;
+      if (U.dist2(p.pos.x, p.pos.z, pos.x, pos.z) < range * range &&
+        GAME.city.hash.segmentClear(p.pos.x, p.pos.z, pos.x, pos.z)) return true;
+    }
+    return false;
+  }
 
   function reportCrime(type, pos) {
     var now = GAME.time;
     if (crimeCooldown[type] && now - crimeCooldown[type] < 1.2) return;
+    if (!ALWAYS[type] && !witnessed(pos)) return; // nobody saw it
     crimeCooldown[type] = now;
     var before = stars();
     heat = Math.min(560, heat + (CRIME_HEAT[type] || 20));
     if (type === 'kill_cop') heat = Math.max(heat, THRESH[Math.min(5, before + 2)]);
+    if (type === 'steal_police') heat = Math.max(heat, THRESH[1] + 5);
     lastSeen = 0;
     var after = stars();
     if (after > before) GAME.hud.wantedChanged(after);
@@ -56,7 +74,9 @@ GAME.police = (function () {
     var cars = GAME.world.cars;
     for (var i = cars.length - 1; i >= 0; i--) {
       var c = cars[i];
-      if (c.isPolice && !c.dead && c !== GAME.player.car) GAME.vehicles.removeCar(c);
+      // leave parked/idle cruisers (and the one you're driving) in place
+      var pursuing = c.ai && (c.ai.mode === 'chase' || c.ai.mode === 'roadblock');
+      if (c.isPolice && !c.dead && pursuing && c !== GAME.player.car) GAME.vehicles.removeCar(c);
     }
     var peds = GAME.world.peds;
     for (var j = peds.length - 1; j >= 0; j--) {
@@ -81,7 +101,7 @@ GAME.police = (function () {
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
     for (var tries = 0; tries < 6; tries++) {
       var a = Math.random() * Math.PI * 2;
-      var r = U.randRange(Math.random, 90, 150);
+      var r = U.randRange(Math.random, 130, 190);
       var rp = GAME.city.nearestRoadPoint(px + Math.cos(a) * r, pz + Math.sin(a) * r);
       if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
       var clear = true;
@@ -165,12 +185,12 @@ GAME.police = (function () {
       }
     }
 
-    // deploy foot cops when close and player is on foot
-    if (!P.inCar && car.copsOut < 2 && Math.abs(car.speed) < 3) {
+    // deploy foot cops to chase on foot when the player is out of their car
+    if (!P.inCar && car.copsOut < 2 && Math.abs(car.speed) < 5) {
       var d = U.dist(car.pos.x, car.pos.z, P.pos.x, P.pos.z);
-      if (d < 22) {
+      if (d < 32) {
         var footCount = GAME.world.peds.filter(function (p) { return p.isCop && !p.dead; }).length;
-        if (footCount < Math.min(2 * s, 6)) {
+        if (footCount < Math.min(2 + s, 7)) {
           var side = car.heading + Math.PI / 2;
           spawnFootCop(car.pos.x + Math.sin(side) * 1.8, car.pos.z + Math.cos(side) * 1.8);
           car.copsOut++;
@@ -213,8 +233,8 @@ GAME.police = (function () {
     } else {
       j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
     }
-    // arrest on touch at low heat
-    if (!P.inCar && dist < 1.4 && s <= 2) GAME.playerBusted();
+    // a cop can only cuff you if you're on foot and not sprinting away
+    if (!P.inCar && dist < 1.7 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
   }
 
   function placeRoadblock(s) {
@@ -288,9 +308,17 @@ GAME.police = (function () {
 
     // foot cops
     var peds = GAME.world.peds.slice();
+    var anyGrab = false;
     for (var f = 0; f < peds.length; f++) {
-      if (peds[f].isCop && !peds[f].dead) updateFootCop(peds[f], dt, s);
+      if (peds[f].isCop && !peds[f].dead) {
+        peds[f].grabbing = false;
+        updateFootCop(peds[f], dt, s);
+        if (peds[f].grabbing) anyGrab = true;
+      }
     }
+    // arrest needs a cop holding you for a moment, not mere contact
+    if (anyGrab) { grabTimer += dt; if (grabTimer > 0.6) GAME.playerBusted(); }
+    else grabTimer = Math.max(0, grabTimer - dt * 2);
 
     // roadblocks
     if (s >= 3) {

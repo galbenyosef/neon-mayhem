@@ -116,15 +116,46 @@ var VEHICLES = {
   sedan: { label: 'Cadenza', maxSpeed: 29, accel: 10, grip: 5.2, turn: 2.1, hp: 175, l: 4.5, w: 1.9, cabinH: 0.62, bodyH: 0.55, colors: [0x9fb4c8, 0xc0a0d8, 0x88c8a8, 0xd8d0c0, 0x8090b0] },
   taxi: { label: 'Taxi', maxSpeed: 30, accel: 10.5, grip: 5.2, turn: 2.2, hp: 175, l: 4.5, w: 1.9, cabinH: 0.62, bodyH: 0.55, colors: [0xf0c020] },
   van: { label: 'Cargo Van', maxSpeed: 23, accel: 7, grip: 6, turn: 1.7, hp: 260, l: 5.1, w: 2.1, cabinH: 1.0, bodyH: 0.9, colors: [0x9a8a78, 0x7888a0, 0xa87868] },
-  police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 200, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] }
+  police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 200, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] },
+  ambulance: { label: 'Ambulance', maxSpeed: 27, accel: 8.5, grip: 5.6, turn: 1.8, hp: 240, l: 5.3, w: 2.15, cabinH: 1.15, bodyH: 1.0, colors: [0xf2f2f6] },
+  motorcycle: { label: 'Vice Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 75, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true }
 };
+
+function buildBikeMesh(colorHex) {
+  var g = new THREE.Group();
+  var b = new GeoBatch();
+  b.addBox(0, 0.62, 0, 0.28, 0.34, 1.5, 0, colorHex, 0);       // fuel tank / frame
+  b.addBox(0, 0.78, -0.55, 0.42, 0.14, 0.5, 0, 0x141824, 0);    // seat
+  b.addBox(0, 0.98, 0.62, 0.5, 0.1, 0.1, 0, 0x101014, 0);       // handlebars
+  b.addBox(0, 0.7, 0.7, 0.16, 0.24, 0.24, 0, 0x0c0c10, 0);      // front cowl
+  var wheel = new GeoBatch();
+  wheel.addBox(0, 0.34, 0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
+  wheel.addBox(0, 0.34, -0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
+  var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  g.add(body);
+  g.add(new THREE.Mesh(wheel.build(), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  var hl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.06), new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
+  hl.position.set(0, 0.72, 0.83);
+  g.add(hl);
+  g.userData.bodyMesh = body;
+  return g;
+}
 
 function buildCarMesh(type, colorHex) {
   var s = VEHICLES[type];
+  if (s.bike) return buildBikeMesh(colorHex);
   var g = new THREE.Group();
   var b = new GeoBatch();
   var hl = s.l / 2, hw = s.w / 2;
   b.addBox(0, 0.42, 0, s.w, s.bodyH, s.l, 0, colorHex, 0);
+  if (type === 'ambulance') {
+    // tall box body + red cross panels
+    b.addBox(0, 0.42 + s.bodyH / 2 + 0.5, -0.2, s.w, 1.0, s.l * 0.62, 0, colorHex, 0);
+    b.addBox(hw + 0.01, 1.3, -0.2, 0.05, 0.5, 0.16, 0, 0xd83040, 0);
+    b.addBox(hw + 0.01, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
+    b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.5, 0.16, 0, 0xd83040, 0);
+    b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
+  }
   var cabL = s.l * (type === 'van' ? 0.85 : 0.5);
   var cabZ = type === 'sports' ? -0.35 : type === 'van' ? -0.1 : -0.15;
   b.addBox(0, 0.42 + s.bodyH / 2 + s.cabinH / 2 - 0.05, cabZ, s.w * 0.82, s.cabinH, cabL, 0, type === 'police' ? 0x20242e : 0x141824, 0);
@@ -283,6 +314,10 @@ GAME.vehicles = (function () {
             GAME.audio.crash(impact / 18);
             GAME.fx.spawn(px, 0.7, pz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
             if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
+            // riders get thrown off in a hard wall hit
+            if (car.spec.bike && car === GAME.player.car && GAME.player.onBike && impact > 9) {
+              GAME.ejectBike(impact);
+            }
           }
           return;
         }
@@ -454,7 +489,7 @@ GAME.vehicles = (function () {
   }
 
   function spawnTraffic() {
-    var P = GAME.player;
+    var fc = GAME.focus();
     var live = 0;
     for (var i = 0; i < world.cars.length; i++) {
       if (world.cars[i].ai && world.cars[i].ai.mode === 'traffic') live++;
@@ -465,7 +500,7 @@ GAME.vehicles = (function () {
     for (var tries = 0; tries < 6 && live < maxT; tries++) {
       var ang = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 80, GAME.settings.bubbleRadius);
-      var x = P.pos.x + Math.cos(ang) * r, z = P.pos.z + Math.sin(ang) * r;
+      var x = fc.x + Math.cos(ang) * r, z = fc.z + Math.sin(ang) * r;
       var rp = city.nearestRoadPoint(x, z);
       if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
       // avoid spawning on top of others
@@ -484,21 +519,25 @@ GAME.vehicles = (function () {
   }
 
   function spawnParked() {
-    var P = GAME.player;
+    var fc = GAME.focus();
     var spots = GAME.city.parkedSpots;
     var live = 0;
     for (var i = 0; i < spots.length; i++) if (spots[i].live) live++;
     for (var s = 0; s < spots.length; s++) {
       var sp = spots[s];
-      var d2 = U.dist2(sp.x, sp.z, P.pos.x, P.pos.z);
-      if (!sp.live && live < GAME.settings.maxParked && d2 < 140 * 140 && d2 > 40 * 40) {
+      var d2 = U.dist2(sp.x, sp.z, fc.x, fc.z);
+      // special vehicles (police/ambulance/bikes) may spawn even when you're close
+      var minD = (sp.police || sp.vtype) ? 0 : 40 * 40;
+      if (!sp.live && live < GAME.settings.maxParked && d2 < 140 * 140 && d2 > minD) {
         var clear = true;
         for (var c = 0; c < world.cars.length; c++) {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60) { clear = false; break; }
         }
         if (!clear) continue;
         var types = ['sedan', 'sports', 'taxi', 'van', 'sedan'];
-        var car = spawnCar(types[Math.floor(Math.random() * types.length)], sp.x, sp.z, sp.heading + (Math.random() < 0.5 ? 0 : Math.PI), { parkedSpot: sp, ai: { mode: 'parked' } });
+        var type = sp.police ? 'police' : (sp.vtype || types[Math.floor(Math.random() * types.length)]);
+        var head = sp.police ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
+        var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
         sp.live = car;
         live++;
       } else if (sp.live && d2 > 190 * 190 && sp.live !== GAME.player.car && sp.live.hp === sp.live.spec.hp) {
@@ -509,12 +548,13 @@ GAME.vehicles = (function () {
 
   function update(dt) {
     var P = GAME.player;
+    var fc = GAME.focus();
     var cars = world.cars;
     for (var i = cars.length - 1; i >= 0; i--) {
       var car = cars[i];
       // despawn far traffic
       if (car.ai && car.ai.mode === 'traffic' && !car.mission) {
-        if (U.dist2(car.pos.x, car.pos.z, P.pos.x, P.pos.z) > 200 * 200) { removeCar(car); continue; }
+        if (U.dist2(car.pos.x, car.pos.z, fc.x, fc.z) > 200 * 200) { removeCar(car); continue; }
       }
       if (car.dead) {
         if (!car.deadT) car.deadT = 0;

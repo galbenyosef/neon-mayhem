@@ -11,6 +11,12 @@ GAME.player = {
 GAME.cam = { yaw: Math.PI, pitch: 0.32, dist: 6, freeT: 0, x: 0, y: 5, z: 0 };
 GAME.cameraShake = 0;
 
+// where the player effectively is (their vehicle when driving, else on foot)
+GAME.focus = function () {
+  var P = GAME.player;
+  return P.inCar && P.car ? P.car.pos : P.pos;
+};
+
 GAME.initPlayer = function () {
   var P = GAME.player;
   var mesh = GAME.peds.buildPedMesh({});
@@ -158,14 +164,19 @@ GAME.enterCar = function (car) {
     // jack: driver bails and flees
     var side = car.heading + Math.PI / 2;
     var dx = Math.sin(side) * 1.6, dz = Math.cos(side) * 1.6;
-    var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz);
+    var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz, car.isPolice ? { cop: true } : undefined);
     driver.state = 'flee';
     driver.fleeT = 8;
     driver.fleeX = car.pos.x; driver.fleeZ = car.pos.z;
+    if (car.isPolice) driver.isCop = false; // he's fleeing his stolen cruiser, not chasing
     GAME.audio.yelp();
-    GAME.police.reportCrime('jack', car.pos);
+    GAME.police.reportCrime(car.isPolice ? 'steal_police' : 'jack', car.pos);
     GAME.missions.notifyChaos(100);
+  } else if (car.isPolice) {
+    // stealing an empty/parked cruiser is still a crime
+    GAME.police.reportCrime('steal_police', car.pos);
   }
+  if (car.isPolice && car.ai) car.ai = null;
   car.occupied = 'player';
   if (car.ai) car.ai = null;
   car.controls = { throttle: 0, steer: 0, handbrake: true };
@@ -199,10 +210,13 @@ function stepEnter(dt) {
     car.controls = { throttle: 0, steer: 0, handbrake: false };
     P.inCar = true;
     P.car = car;
-    P.mesh.visible = false;
+    P.onBike = !!car.spec.bike;
+    P.mesh.visible = P.onBike; // riders stay visible on a bike
     GAME.cam.freeT = 0;
     GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.5);
     GAME.hud.message(car.spec.label, 1.6);
+    if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
+    else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
   }
 }
 
@@ -219,12 +233,38 @@ function forceExitCar(silent) {
   P.heading = car.heading;
   P.inCar = false;
   P.car = null;
+  P.onBike = false;
+  resetRiderPose();
   P.mesh.visible = true;
   GAME.audio.engineState(false, 0);
   GAME.audio.radio.setVolume(0);
   GAME.audio.skid(0);
 }
 GAME.exitCar = forceExitCar;
+
+function resetRiderPose() {
+  var j = GAME.player.mesh.userData.joints;
+  j.legL.rotation.x = j.legR.rotation.x = 0;
+  j.armL.rotation.x = j.armR.rotation.x = 0;
+  j.torso.rotation.x = 0;
+  GAME.player.mesh.rotation.z = 0;
+}
+
+// thrown off the bike on a hard crash
+GAME.ejectBike = function (impact) {
+  var P = GAME.player;
+  if (!P.onBike || !P.car) return;
+  var car = P.car;
+  var side = car.heading + (Math.random() < 0.5 ? 1.4 : -1.4);
+  forceExitCar();
+  var tx = car.pos.x + Math.sin(side) * 4, tz = car.pos.z + Math.cos(side) * 4;
+  var rp = GAME.resolveCircle(tx, tz, 0.45);
+  P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
+  GAME.fx.spawn(P.pos.x, 0.6, P.pos.z, { count: 6, color: 0xffd890, spread: 3, life: 0.5 });
+  GAME.cameraShake = 0.8;
+  GAME.playerDamage(Math.min(35, 10 + impact * 1.2), 'crash');
+  GAME.hud.message('Thrown off the bike!', 2);
+};
 
 GAME.updatePlayer = function (dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
@@ -370,9 +410,28 @@ function updateDriving(dt) {
 
   if (wantsEnter()) { forceExitCar(); return; }
 
+  if (P.onBike) updateBikeRider(dt);
+
   // radio switching
   if (GAME.keyPressed('Comma')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(-1));
   if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
+}
+
+function updateBikeRider(dt) {
+  var P = GAME.player, car = P.car;
+  // lean the bike into turns / slides
+  var lean = U.clamp(-car.controls.steer * Math.min(1, Math.abs(car.speed) / 12) * 0.5 - car.lat * 0.03, -0.6, 0.6);
+  car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, lean, Math.min(1, dt * 8));
+  // seat the rider on the bike, sharing its lean
+  var m = P.mesh;
+  m.visible = true;
+  m.position.set(car.pos.x, car.pos.y, car.pos.z);
+  m.rotation.set(0, car.heading, car.mesh.rotation.z);
+  m.translateY(0.55);
+  var j = m.userData.joints;
+  j.legL.rotation.x = 0.9; j.legR.rotation.x = 0.9;
+  j.armL.rotation.x = -0.6; j.armR.rotation.x = -0.6;
+  j.torso.rotation.x = 0.25;
 }
 
 var pressedCache = {};

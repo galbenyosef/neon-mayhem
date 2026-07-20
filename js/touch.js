@@ -86,12 +86,13 @@ GAME.touch = (function () {
     footBtns.push(btns.fire, btns.aim, btns.enter, btns.wpn, btns.run);
     // in car
     btns.gas = mkBtn('GAS', 26, 62, 86, { flag: 'gas' });
-    btns.brake = mkBtn('BRAKE', 128, 118, 62, { flag: 'brake' });
+    btns.brake = mkBtn('BRAKE', 40, 176, 62, { flag: 'brake' });
     btns.handbrake = mkBtn('⇋', 150, 34, 58, { flag: 'handbrake' });
-    btns.driveby = mkBtn('FIRE', 40, 176, 56, { flag: 'driveByAuto' });
+    btns.driveby = mkBtn('FIRE', 128, 118, 56, { flag: 'driveByAuto' });
     btns.exit = mkBtn('EXIT', 210, 64, 52, { flag: 'enter' });
     btns.radio = mkBtn('♪', 128, 196, 46, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } });
-    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio);
+    btns.job = mkBtn('JOB', 210, 132, 50, { press: function () { T.job = true; } });
+    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job);
 
     // the only persistent utility on the HUD is PAUSE (top-left corner);
     // sound / CRT / day-night / fullscreen all live in the pause menu
@@ -209,6 +210,8 @@ GAME.touch = (function () {
       // drive-by only when armed with a full-auto weapon
       var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       show(btns.driveby, hasSMG);
+      // JOB only when sitting in a taxi/ambulance with no active mission
+      show(btns.job, !!GAME.jobAvailable);
       for (var f = 0; f < footBtns.length; f++) footBtns[f].style.display = 'none';
       // leaving foot-aim behind when you get in
       if (T.aim) { T.aim = false; if (btns.aim) btns.aim.style.background = ''; }

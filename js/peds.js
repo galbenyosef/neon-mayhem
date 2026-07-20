@@ -151,15 +151,16 @@ GAME.peds = (function () {
 
   function update(dt) {
     var P = GAME.player;
+    var fc = GAME.focus();
     for (var i = world.peds.length - 1; i >= 0; i--) {
       var ped = world.peds[i];
-      var d2p = U.dist2(ped.pos.x, ped.pos.z, P.pos.x, P.pos.z);
+      var d2p = U.dist2(ped.pos.x, ped.pos.z, fc.x, fc.z);
       if (ped.dead) {
         ped.deadT += dt;
         if (ped.deadT > 12 || d2p > 190 * 190) removePed(ped);
         continue;
       }
-      if (!ped.isCop && d2p > 180 * 180) { removePed(ped); continue; }
+      if (!ped.isCop && !ped.jobPed && d2p > 180 * 180) { removePed(ped); continue; }
       if (ped.isCop) continue; // driven by police.js
 
       // dive away from fast cars
@@ -238,14 +239,14 @@ GAME.peds = (function () {
   }
 
   function spawnBubble() {
-    var P = GAME.player;
+    var fc = GAME.focus();
     var live = 0;
     for (var i = 0; i < world.peds.length; i++) if (!world.peds[i].isCop && !world.peds[i].dead) live++;
     var maxP = GAME.settings.maxPeds;
     for (var tries = 0; tries < 5 && live < maxP; tries++) {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 60, GAME.settings.bubbleRadius);
-      var x = P.pos.x + Math.cos(a) * r, z = P.pos.z + Math.sin(a) * r;
+      var x = fc.x + Math.cos(a) * r, z = fc.z + Math.sin(a) * r;
       if (x > 340) x = U.randRange(Math.random, 356, 372); // boardwalk strollers
       var rp = GAME.city.nearestRoadPoint(x, z);
       var off = 8.4 * (Math.random() < 0.5 ? 1 : -1);
