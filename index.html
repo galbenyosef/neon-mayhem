@@ -32,7 +32,7 @@
 
   #radio-popup { left:50%; top:16%; transform:translateX(-50%); font-size:22px; font-weight:800; font-style:italic;
     color:#9df3ff; text-shadow:0 0 12px rgba(60,220,255,.9); opacity:0; transition:opacity .4s; }
-  #zone-popup { left:24px; top:14px; font-size:22px; font-weight:800; font-style:italic; color:#ffd9f2;
+  #zone-popup { left:50%; top:12px; transform:translateX(-50%); text-align:center; font-size:22px; font-weight:800; font-style:italic; color:#ffd9f2;
     text-shadow:0 0 12px rgba(255,100,200,.9), 2px 2px 0 #3a0f33; opacity:0; transition:opacity .6s; }
 
   #msg-line { left:50%; bottom:24%; transform:translateX(-50%); font-size:19px; font-weight:700; color:#fff;
@@ -171,8 +171,12 @@
 <div id="pause-screen">
   <h2>PAUSED</h2>
   <div id="pause-controls" style="color:#cfe6ff;font-size:13px;line-height:1.8;text-align:center;"></div>
-  <div>
+  <div style="max-width:520px;text-align:center;">
     <span class="mbtn" id="pause-resume">RESUME</span>
+    <span class="mbtn" id="pause-map">🗺 MAP</span>
+    <span class="mbtn" id="pause-mute">🔊 SOUND</span>
+    <span class="mbtn" id="pause-crt">📺 CRT</span>
+    <span class="mbtn" id="pause-day">☀ DAY</span>
     <span class="mbtn" id="pause-fs">⛶ FULLSCREEN</span>
     <span class="mbtn" id="pause-exit">EXIT TO TITLE</span>
   </div>

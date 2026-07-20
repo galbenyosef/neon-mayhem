@@ -355,7 +355,7 @@ function updateDriving(dt) {
     if (GAME.key('KeyA')) st += 1;
     if (GAME.key('KeyD')) st -= 1;
     if (T.active) {
-      th += T.autoThrottle ? (T.brake ? -1 : 0.85) : 0;
+      th += (T.gas ? 1 : 0) + (T.brake ? -1 : 0);
       st -= T.stickX;
     }
     c.throttle = U.clamp(th, -1, 1);

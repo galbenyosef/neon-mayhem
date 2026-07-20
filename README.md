@@ -48,7 +48,9 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 
 `P` map & destination routing · `N` day/night · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` (bottom-right) fullscreen
 
-The minimap is a heading-up radar that rotates with you. The full map (`P`) shows a labelled legend, POI badges (H hospital, P police, S respray), weapon/health/armour pickups, and mission routes drawn along the streets — click anywhere to set a destination. On touch, the RUN button (and full stick deflection) sprints on foot; the top button row covers pause, mute, map, CRT, day/night and fullscreen.
+The minimap is a heading-up radar that rotates with you — tap it to open the full map. The full map (`P`) shows a labelled legend, POI badges (H hospital, P police, S respray), weapon/health/armour pickups, and mission routes drawn along the streets — click anywhere to set a destination.
+
+**Touch controls** follow the classic console-port layout: a floating stick under the left thumb (move / steer, full deflection sprints on foot), and a context-sensitive action cluster under the right thumb. Buttons appear only when they apply — ENTER near a car, AIM with a gun drawn, weapon-switch with more than one weapon, drive-by only when you're carrying the SMG. Driving is an explicit GAS / BRAKE / handbrake with an EXIT and radio switch. The radar sits bottom-left; a single PAUSE button is the only persistent chrome, and sound, CRT filter, day/night and fullscreen all live in the pause menu.
 
 The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
 

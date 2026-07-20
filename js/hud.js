@@ -49,6 +49,10 @@ GAME.hud = (function () {
       });
     }
     pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
+    pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
+    pauseBtn('pause-mute', function () { var m = GAME.audio.toggleMute(); $('pause-mute').textContent = m ? '🔇 MUTED' : '🔊 SOUND'; });
+    pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
+    pauseBtn('pause-day', function () { var d = GAME.setDaytime(); $('pause-day').textContent = d ? '🌙 NIGHT' : '☀ DAY'; });
     pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
     pauseBtn('pause-exit', function () { location.reload(); });
     // death screens: tap to skip the wait

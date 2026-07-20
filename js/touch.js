@@ -3,6 +3,7 @@ GAME.touch = (function () {
   var stickId = null, camId = null, camLX = 0, camLY = 0;
   var baseX = 0, baseY = 0;
   var footBtns = [], carBtns = [];
+  var btns = {};
   var enabled = false;
 
   function detect() {
@@ -20,6 +21,8 @@ GAME.touch = (function () {
     b.style.bottom = bottom + 'px';
     b.style.width = size + 'px';
     b.style.height = size + 'px';
+    b.style.minWidth = size + 'px';
+    b.style.minHeight = size + 'px';
     layer.appendChild(b);
     opts = opts || {};
     var T = GAME.input.touch;
@@ -71,48 +74,40 @@ GAME.touch = (function () {
     stickNub = document.getElementById('tstick-nub');
     var T = GAME.input.touch;
     T.active = true;
-    T.autoThrottle = true;
 
-    // on-foot buttons
-    footBtns.push(mkBtn('FIRE', 26, 60, 84, { flag: 'fire', press: function () { T.firePressed = true; } }));
-    footBtns.push(mkBtn('AIM', 124, 46, 64, { flag: 'aim', toggle: true }));
-    footBtns.push(mkBtn('CAR', 30, 160, 60, { flag: 'enter' }));
-    footBtns.push(mkBtn('WPN', 116, 132, 56, { press: function () { T.weaponCycle = true; } }));
-    footBtns.push(mkBtn('RUN', 196, 150, 54, { flag: 'run', toggle: true }));
-    // in-car buttons
-    carBtns.push(mkBtn('BRAKE', 26, 60, 84, { flag: 'brake' }));
-    carBtns.push(mkBtn('DRIFT', 124, 46, 66, { flag: 'handbrake' }));
-    carBtns.push(mkBtn('FIRE', 30, 162, 62, { flag: 'driveByAuto' }));
-    carBtns.push(mkBtn('EXIT', 118, 132, 56, { flag: 'enter' }));
-    carBtns.push(mkBtn('♪', 196, 150, 52, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } }));
+    // ---- right-thumb action cluster (GTA-style): a big primary button with
+    // smaller satellites; buttons show/hide by context in update() ----
+    // on foot
+    btns.fire = mkBtn('FIRE', 26, 62, 86, { flag: 'fire', press: function () { T.firePressed = true; } });
+    btns.aim = mkBtn('AIM', 128, 118, 62, { flag: 'aim', toggle: true });
+    btns.enter = mkBtn('ENTER', 150, 34, 58, { flag: 'enter' });
+    btns.wpn = mkBtn('WPN', 40, 176, 52, { press: function () { T.weaponCycle = true; } });
+    btns.run = mkBtn('RUN', 210, 64, 52, { flag: 'run', toggle: true });
+    footBtns.push(btns.fire, btns.aim, btns.enter, btns.wpn, btns.run);
+    // in car
+    btns.gas = mkBtn('GAS', 26, 62, 86, { flag: 'gas' });
+    btns.brake = mkBtn('BRAKE', 128, 118, 62, { flag: 'brake' });
+    btns.handbrake = mkBtn('⇋', 150, 34, 58, { flag: 'handbrake' });
+    btns.driveby = mkBtn('FIRE', 40, 176, 56, { flag: 'driveByAuto' });
+    btns.exit = mkBtn('EXIT', 210, 64, 52, { flag: 'enter' });
+    btns.radio = mkBtn('♪', 128, 196, 46, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } });
+    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio);
 
-    // top utility row: a centered flex strip so buttons never overlap
-    var topRow = document.createElement('div');
-    topRow.id = 'top-btn-row';
-    topRow.style.cssText = 'position:absolute;top:6px;left:50%;transform:translateX(-50%);' +
-      'display:flex;gap:8px;z-index:20;pointer-events:none;';
-    layer.appendChild(topRow);
-    function topBtn(label, opts) {
-      var b = mkBtn(label, 0, 0, 46, opts);
-      b.style.position = 'static';
-      b.style.right = ''; b.style.bottom = ''; b.style.left = ''; b.style.top = '';
-      b.style.width = '46px'; b.style.height = '46px';
-      b.style.minWidth = '46px'; b.style.minHeight = '46px';
-      b.style.fontSize = '16px';
-      topRow.appendChild(b);
-      return b;
-    }
-    topBtn('❚❚', { press: function () { GAME.togglePause(); } });
-    topBtn('♬', { press: function () { GAME.audio.toggleMute(); } });
-    topBtn('🗺', { press: function () { GAME.hud.toggleMap(); } });
-    topBtn('📺', { press: function () { GAME.hud.toggleCRT(); } });
-    topBtn('☀', { press: function () { var d = GAME.setDaytime(); this.textContent = d ? '🌙' : '☀'; } });
-    // fold the standalone fullscreen element into the same row
+    // the only persistent utility on the HUD is PAUSE (top-left corner);
+    // sound / CRT / day-night / fullscreen all live in the pause menu
+    var pauseB = mkBtn('❚❚', 0, 0, 46, { press: function () { GAME.togglePause(); } });
+    pauseB.style.right = ''; pauseB.style.bottom = '';
+    pauseB.style.left = '10px'; pauseB.style.top = '8px';
+    pauseB.style.fontSize = '15px';
+    // desktop corner fullscreen button is redundant on touch
     var fsb = document.getElementById('fs-btn');
-    fsb.className = 'tbtn';
-    fsb.style.cssText = 'position:static;width:46px;height:46px;min-width:46px;min-height:46px;' +
-      'font-size:16px;pointer-events:auto;';
-    topRow.appendChild(fsb);
+    if (fsb) fsb.style.display = 'none';
+    // tap the radar to open the full map (GTA convention)
+    var mm = document.getElementById('minimap-wrap');
+    if (mm) {
+      mm.style.pointerEvents = 'auto';
+      mm.addEventListener('touchend', function (e) { e.preventDefault(); e.stopPropagation(); GAME.hud.toggleMap(true); }, { passive: false });
+    }
 
     // virtual stick
     stickZone.addEventListener('touchstart', function (e) {
@@ -179,18 +174,49 @@ GAME.touch = (function () {
     document.getElementById('rotate-hint').style.display = portrait ? 'flex' : 'none';
   }
 
+  function show(btn, on) { if (btn) btn.style.display = on ? 'flex' : 'none'; }
+
   function update() {
     if (!enabled || !GAME.started) return;
-    layer.style.display = 'block';
-    var inCar = GAME.player.inCar;
-    for (var i = 0; i < footBtns.length; i++) footBtns[i].style.display = inCar ? 'none' : 'flex';
-    for (var j = 0; j < carBtns.length; j++) carBtns[j].style.display = inCar ? 'flex' : 'none';
-    // single drive-by button picks the side with the nearest threat
     var T = GAME.input.touch;
-    if (inCar && T.driveByAuto && GAME.player.car) {
-      var car = GAME.player.car;
-      var side = 1;
-      var bd = 1e9, peds = GAME.world.peds;
+    var P = GAME.player;
+    // hide all controls behind menus / death screens
+    var playing = !GAME.paused && !GAME.mapOpen && P.state === 'alive';
+    layer.style.display = 'block';
+    if (!playing) {
+      for (var i = 0; i < footBtns.length; i++) footBtns[i].style.display = 'none';
+      for (var j = 0; j < carBtns.length; j++) carBtns[j].style.display = 'none';
+      return;
+    }
+    var inCar = P.inCar;
+
+    if (!inCar) {
+      show(btns.fire, true);
+      show(btns.run, true);
+      // AIM only with a gun drawn (fists auto-target on the fire button)
+      show(btns.aim, P.currentWeapon !== 'fist');
+      // weapon switch only when more than one weapon is owned
+      var owned = 0;
+      for (var w in P.weapons) if (P.weapons[w] && P.weapons[w].have) owned++;
+      show(btns.wpn, owned > 1);
+      // ENTER only when a car is within reach
+      var near = GAME.vehicles.findNearestCar(P.pos.x, P.pos.z, 5.5, null);
+      show(btns.enter, !!near);
+      for (var c = 0; c < carBtns.length; c++) carBtns[c].style.display = 'none';
+    } else {
+      show(btns.gas, true); show(btns.brake, true);
+      show(btns.handbrake, true); show(btns.exit, true); show(btns.radio, true);
+      // drive-by only when armed with a full-auto weapon
+      var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
+      show(btns.driveby, hasSMG);
+      for (var f = 0; f < footBtns.length; f++) footBtns[f].style.display = 'none';
+      // leaving foot-aim behind when you get in
+      if (T.aim) { T.aim = false; if (btns.aim) btns.aim.style.background = ''; }
+    }
+
+    // drive-by auto-aims at the nearest side
+    if (inCar && T.driveByAuto && P.car) {
+      var car = P.car, side = 1, bd = 1e9, peds = GAME.world.peds;
       for (var p = 0; p < peds.length; p++) {
         var pd = peds[p];
         if (pd.dead) continue;
@@ -201,11 +227,8 @@ GAME.touch = (function () {
           side = (dx * Math.cos(car.heading) - dz * Math.sin(car.heading)) > 0 ? 1 : -1;
         }
       }
-      T.driveByL = side > 0;
-      T.driveByR = side < 0;
-    } else {
-      T.driveByL = false; T.driveByR = false;
-    }
+      T.driveByL = side > 0; T.driveByR = side < 0;
+    } else { T.driveByL = false; T.driveByR = false; }
   }
 
   return { init: init, update: update };
