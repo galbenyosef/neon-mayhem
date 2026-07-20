@@ -75,7 +75,7 @@ GAME.hud = (function () {
       ['#ff8a3d', 'Race'], ['#38e8ff', 'Courier'], ['#ff4fa3', 'Rampage'],
       ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
       ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
-      ['#8de0ff', '✈ Airport / e Helipad'],
+      ['#8de0ff', '✈ Airport · Ⓗ Helipad'],
       ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
     ];
     $('map-legend').innerHTML = legend.map(function (e) {
@@ -163,7 +163,17 @@ GAME.hud = (function () {
     badge(GAME.city.pois.police.x, GAME.city.pois.police.z, '#5aa0ff', 'P');
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
-    badge(GAME.city.helipad.x, GAME.city.helipad.z, '#8de0ff', 'e');
+    // helipad: a ringed cyan disc with an H
+    var hpb = GAME.city.helipad;
+    g.fillStyle = '#8de0ff';
+    g.beginPath(); g.arc(w2mx(hpb.x), w2my(hpb.z), 8, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+    g.strokeStyle = '#0c0816'; g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) - 3, w2my(hpb.z) + 3.5);
+    g.moveTo(w2mx(hpb.x) + 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z) + 3.5);
+    g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z)); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z));
+    g.stroke();
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -255,12 +265,21 @@ GAME.hud = (function () {
     g.strokeStyle = '#6a5a48'; g.lineWidth = 4;
     g.beginPath(); g.moveTo(mx(360), my(150)); g.lineTo(mx(505), my(150)); g.stroke();
     g.beginPath(); g.moveTo(mx(360), my(-180)); g.lineTo(mx(470), my(-180)); g.stroke();
-    // airport runway + helipad
+    // airport: fenced apron, a runway strip with a dashed centreline
     var A = GAME.city.airport;
-    g.strokeStyle = '#6a6a78'; g.lineWidth = 5;
-    g.beginPath(); g.moveTo(mx(A.minX), my(A.cz)); g.lineTo(mx(A.maxX), my(A.cz)); g.stroke();
-    g.fillStyle = '#8de0ff';
-    var hp = GAME.city.helipad; g.fillRect(mx(hp.x) - 3, my(hp.z) - 3, 6, 6);
+    g.fillStyle = 'rgba(60,66,84,0.55)';
+    g.fillRect(mx(A.fx0), my(A.fz0), (A.fx1 - A.fx0) * MAP_S, (A.fz1 - A.fz0) * MAP_S);
+    g.strokeStyle = '#7a808e'; g.lineWidth = 1;
+    g.strokeRect(mx(A.fx0), my(A.fz0), (A.fx1 - A.fx0) * MAP_S, (A.fz1 - A.fz0) * MAP_S);
+    g.fillStyle = '#2a2c34';
+    g.fillRect(mx(A.minX), my(A.cz - 13), (A.maxX - A.minX) * MAP_S, 26 * MAP_S);
+    g.strokeStyle = '#d8c46a'; g.lineWidth = 1; g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(mx(A.minX + 8), my(A.cz)); g.lineTo(mx(A.maxX - 8), my(A.cz)); g.stroke();
+    g.setLineDash([]);
+    // helipad: cyan ring
+    var hp = GAME.city.helipad;
+    g.strokeStyle = '#8de0ff'; g.lineWidth = 2;
+    g.beginPath(); g.arc(mx(hp.x), my(hp.z), 5, 0, Math.PI * 2); g.stroke();
     // POIs
     g.fillStyle = '#ff8aa8';
     GAME.city.pois.hospitals.forEach(function (H) { g.fillRect(mx(H.x) - 3, my(H.z) - 3, 6, 6); });
@@ -325,6 +344,16 @@ GAME.hud = (function () {
     }
     var mb = GAME.missions.getBlips();
     for (var i = 0; i < mb.length; i++) blip(mb[i].x, mb[i].z, mb[i].color, mb[i].size);
+    // airport + helipad landmarks: a ringed cyan blip so they stand out on the radar
+    function landmark(x, z) {
+      var lx = (x - px) * MAP_S, lz = (z - pz) * MAP_S;
+      g.fillStyle = '#8de0ff';
+      g.beginPath(); g.arc(lx, lz, 3.4 / zoom, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 / zoom;
+      g.beginPath(); g.arc(lx, lz, 5.6 / zoom, 0, Math.PI * 2); g.stroke();
+    }
+    landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
+    landmark(GAME.city.helipad.x, GAME.city.helipad.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
       if (cars[c].isPolice && !cars[c].dead && cars[c].ai) blip(cars[c].pos.x, cars[c].pos.z, '#5aa0ff', 3);
