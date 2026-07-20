@@ -124,6 +124,28 @@ GAME.police = (function () {
     return cop;
   }
 
+  // at 2+ stars officers close in on foot too, appearing from nearby streets
+  var footSpawnT = 0;
+  function maintainFootCops(s, dt) {
+    if (s < 2) return;
+    footSpawnT -= dt;
+    if (footSpawnT > 0) return;
+    footSpawnT = U.randRange(Math.random, 1.6, 3.2);
+    var footCount = 0;
+    for (var i = 0; i < GAME.world.peds.length; i++) if (GAME.world.peds[i].isCop && !GAME.world.peds[i].dead) footCount++;
+    if (footCount >= Math.min(1 + s, 6)) return;
+    var f = GAME.focus();
+    for (var t = 0; t < 8; t++) {
+      var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 26, 48);
+      var rp = GAME.city.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
+      if (rp.x < -470 || rp.x > 352 || Math.abs(rp.z) > 470) continue;
+      if (GAME.city.isInWater(rp.x, rp.z)) continue;
+      if (U.dist2(rp.x, rp.z, f.x, f.z) < 22 * 22) continue;
+      spawnFootCop(rp.x, rp.z);
+      return;
+    }
+  }
+
   function chaseControls(car, dt, s) {
     var P = GAME.player;
     var tx = P.inCar && P.car ? P.car.pos.x : P.pos.x;
@@ -147,6 +169,8 @@ GAME.police = (function () {
 
     var steer = U.clamp(dh * 2.4, -1, 1);
     var throttle = 1;
+    // pull up and stop near an on-foot target so officers can get out
+    if (!P.inCar && dist < 22) return { throttle: car.speed > 2 ? -0.7 : 0, steer: steer, handbrake: dist < 12 };
     if (s === 1) {
       // tail from a distance
       throttle = dist > 18 ? 0.8 : (dist > 10 ? 0.25 : -0.4);
@@ -185,13 +209,18 @@ GAME.police = (function () {
       }
     }
 
-    // deploy foot cops to chase on foot when the player is out of their car
-    if (!P.inCar && car.copsOut < 2 && Math.abs(car.speed) < 5) {
-      var d = U.dist(car.pos.x, car.pos.z, P.pos.x, P.pos.z);
-      if (d < 32) {
+    // officers bail out to engage on foot: when the player is out of their
+    // car, or when the player's car is cornered (stopped)
+    var onFoot = !P.inCar;
+    var cornered = P.inCar && P.car && Math.abs(P.car.speed) < 3.5;
+    if ((onFoot || cornered) && car.copsOut < 2 && Math.abs(car.speed) < 8) {
+      var f = GAME.focus();
+      var d = U.dist(car.pos.x, car.pos.z, f.x, f.z);
+      if (d < (onFoot ? 26 : 18)) {
         var footCount = GAME.world.peds.filter(function (p) { return p.isCop && !p.dead; }).length;
-        if (footCount < Math.min(2 + s, 7)) {
-          var side = car.heading + Math.PI / 2;
+        if (footCount < Math.min(2 + s, 7) && (car.deployT = (car.deployT || 0) + dt) > 0.5) {
+          car.deployT = 0;
+          var side = car.heading + Math.PI / 2 * (Math.random() < 0.5 ? 1 : -1);
           spawnFootCop(car.pos.x + Math.sin(side) * 1.8, car.pos.z + Math.cos(side) * 1.8);
           car.copsOut++;
         }
@@ -201,16 +230,21 @@ GAME.police = (function () {
 
   function updateFootCop(cop, dt, s) {
     var P = GAME.player;
-    var dx = P.pos.x - cop.pos.x, dz = P.pos.z - cop.pos.z;
+    // track wherever the player actually is (their car when driving)
+    var f = GAME.focus();
+    var dx = f.x - cop.pos.x, dz = f.z - cop.pos.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
-    if (s === 0 || dist > 110) {
+    if (s === 0 || dist > 120) {
       GAME.peds.removePed(cop);
       return;
     }
     var th = Math.atan2(dx, dz);
     cop.heading = U.angleLerp(cop.heading, th, Math.min(1, dt * 6));
-    var wantShoot = s >= 2 && dist < 26 && !P.inCar;
-    var chaseSpeed = P.inCar ? 4.6 : 4.3;
+    // fire at the player on foot, or at a slow/stopped car
+    var playerSlow = !P.inCar || (P.car && Math.abs(P.car.speed) < 9);
+    var los = GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, f.x, f.z);
+    var wantShoot = s >= 2 && dist < 28 && playerSlow && los;
+    var chaseSpeed = P.inCar ? 4.8 : 4.3;
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
     cop.pos.x += Math.sin(cop.heading) * cop.speed * dt;
     cop.pos.z += Math.cos(cop.heading) * cop.speed * dt;
@@ -226,7 +260,7 @@ GAME.police = (function () {
     if (wantShoot) {
       j.armR.rotation.x = -Math.PI / 2;
       cop.shootT -= dt;
-      if (cop.shootT <= 0 && GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, P.pos.x, P.pos.z)) {
+      if (cop.shootT <= 0) {
         GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s);
         cop.shootT = U.randRange(Math.random, 0.9, 1.8);
       }
@@ -301,10 +335,13 @@ GAME.police = (function () {
     var active = copCars();
     var chasing = active.filter(function (c) { return c.ai.mode === 'chase'; });
     if (chasing.length < CAR_CAP[s] && GAME.frame % 45 === 0) spawnCruiser();
+    var pf = GAME.focus();
     for (var a = 0; a < active.length; a++) {
       updateCopCar(active[a], dt, s);
-      if (U.dist2(active[a].pos.x, active[a].pos.z, P.pos.x, P.pos.z) > 260 * 260) GAME.vehicles.removeCar(active[a]);
+      if (U.dist2(active[a].pos.x, active[a].pos.z, pf.x, pf.z) > 260 * 260) GAME.vehicles.removeCar(active[a]);
     }
+
+    maintainFootCops(s, dt);
 
     // foot cops
     var peds = GAME.world.peds.slice();
