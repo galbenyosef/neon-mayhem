@@ -345,7 +345,8 @@ GAME.hud = (function () {
       var open = force !== undefined ? force : !GAME.mapOpen;
       GAME.mapOpen = open;
       el['map-screen'].style.display = open ? 'flex' : 'none';
-      if (open) drawBigMap();
+      // the sim loop halts while the map is open; silence the engine drone
+      if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },

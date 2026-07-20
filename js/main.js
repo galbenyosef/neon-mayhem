@@ -134,9 +134,26 @@
       GAME.audio.engineState(false, 0);
       GAME.audio.skid(0);
       GAME.audio.siren(0);
+      GAME.audio.suspend();
       if (document.exitPointerLock) document.exitPointerLock();
+    } else {
+      GAME.audio.resume();
     }
   };
+
+  // auto-pause when the tab/app is backgrounded or loses focus, and freeze audio
+  function onHide() {
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && GAME.player.state === 'alive') GAME.togglePause();
+    else GAME.audio.suspend();
+  }
+  function onShow() {
+    if (!GAME.paused && !GAME.mapOpen) GAME.audio.resume();
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) onHide(); else onShow();
+  });
+  window.addEventListener('blur', onHide);
+  window.addEventListener('focus', onShow);
 
   GAME.tick = function (dt) {
     GAME.time += dt;

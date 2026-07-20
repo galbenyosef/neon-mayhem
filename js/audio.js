@@ -152,7 +152,7 @@ GAME.audio = (function () {
       }
     ];
     function schedule() {
-      if (!ctx || !playing) return;
+      if (!ctx || !playing || ctx.state !== 'running') return;
       var s = stations[current];
       var spb = 60 / s.bpm / 4;
       while (nextTime < ctx.currentTime + 0.25) {
@@ -189,6 +189,13 @@ GAME.audio = (function () {
     get ctx() { return ctx; },
     init: init,
     radio: radio,
+    // freeze all audio (pause / tab backgrounded); resume brings it back
+    suspend: function () {
+      if (ctx && ctx.state === 'running') { engineBus.gain.value = 0; try { ctx.suspend(); } catch (e) { } }
+    },
+    resume: function () {
+      if (ctx && ctx.state === 'suspended') { try { ctx.resume(); } catch (e) { } }
+    },
     get muted() { return muted; },
     toggleMute: function () {
       muted = !muted;
