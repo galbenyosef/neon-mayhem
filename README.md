@@ -7,6 +7,10 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on.
 
 <p align="center">
+  <img src="media/gameplay.gif" alt="Neon Mayhem gameplay — a night drive through downtown Costa Rosa with a 3-star wanted level" width="600">
+</p>
+
+<p align="center">
   <b><a href="https://pranshuparmar.github.io/neon-mayhem/">▶ PLAY NOW — free, in your browser</a></b>
 </p>
 
