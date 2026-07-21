@@ -178,7 +178,9 @@ GAME.enterCar = function (car) {
   }
   if (car.isPolice && car.ai) car.ai = null;
   // an AI bike's seated rider gives way to the player (driver flees separately)
-  if (car.riderMesh) { car.mesh.remove(car.riderMesh); car.riderMesh = null; }
+  if (car.riderMesh) { car.mesh.remove(car.riderMesh); disposeTree(car.riderMesh); car.riderMesh = null; }
+  // once you take it, it's no longer a parked-spot car (else its spot despawns it)
+  if (car.parkedSpot) { car.parkedSpot.live = null; car.parkedSpot = null; }
   car.occupied = 'player';
   if (car.ai) car.ai = null;
   car.controls = { throttle: 0, steer: 0, handbrake: true };
@@ -414,8 +416,10 @@ function updateDriving(dt) {
   if (car.spec.heli || car.spec.plane) {
     if (wantsEnter()) {
       var gy = GAME.city.groundY(car.pos.x, car.pos.z);
-      if (car.pos.y > gy + 3.5) GAME.aircraft.startParachute(car.pos.x, car.pos.y, car.pos.z, car.heading);
-      else forceExitCar();
+      if (car.pos.y > gy + 3.5) {
+        car.occupied = null; // the abandoned airframe is now ownerless (it will fall)
+        GAME.aircraft.startParachute(car.pos.x, car.pos.y, car.pos.z, car.heading);
+      } else forceExitCar();
       return;
     }
     if (car.spec.plane) GAME.aircraft.updatePlane(dt);

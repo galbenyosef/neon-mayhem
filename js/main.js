@@ -62,7 +62,7 @@
       if (code === 'KeyN') GAME.setDaytime();
     };
 
-    // start at dusk so the title/attract screen glows like ~5PM
+    // start on a bright late afternoon (the cycle then rolls toward sunset/night)
     GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
 
     lastT = performance.now();
@@ -196,7 +196,9 @@
     else GAME.audio.suspend();
   }
   function onShow() {
-    if (!GAME.paused && !GAME.mapOpen) GAME.audio.resume();
+    // resume whenever we're not paused — the map being open must not strand the
+    // audio context suspended (closing the map doesn't itself resume it)
+    if (!GAME.paused) GAME.audio.resume();
   }
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) onHide(); else onShow();

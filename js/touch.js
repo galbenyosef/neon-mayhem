@@ -35,12 +35,16 @@ GAME.touch = (function () {
       } else if (opts.flag) T[opts.flag] = true;
       if (opts.press) opts.press();
     }, { passive: false });
-    b.addEventListener('touchend', function (e) {
+    var release = function (e) {
       e.preventDefault(); e.stopPropagation();
       b.classList.remove('held');
       if (opts.flag && !opts.toggle) T[opts.flag] = false;
       if (opts.release) opts.release();
-    }, { passive: false });
+    };
+    b.addEventListener('touchend', release, { passive: false });
+    // touchcancel fires instead of touchend on an OS interruption (call, shade,
+    // app switch) — without this the button would stay stuck held
+    b.addEventListener('touchcancel', release, { passive: false });
     return b;
   }
 
@@ -133,7 +137,9 @@ GAME.touch = (function () {
         }
       }
     }, { passive: true });
-    window.addEventListener('touchend', function (e) {
+    // release the stick / camera finger on lift OR on an OS-cancelled touch,
+    // otherwise the stick can stay deflected (car drives itself) after an interruption
+    function endTouch(e) {
       for (var i = 0; i < e.changedTouches.length; i++) {
         var t = e.changedTouches[i];
         if (t.identifier === stickId) {
@@ -144,7 +150,9 @@ GAME.touch = (function () {
         }
         if (t.identifier === camId) camId = null;
       }
-    });
+    }
+    window.addEventListener('touchend', endTouch);
+    window.addEventListener('touchcancel', endTouch);
     // camera drag on the game canvas outside the stick zone / buttons
     document.getElementById('game-canvas').addEventListener('touchstart', function (e) {
       var t = e.changedTouches[0];

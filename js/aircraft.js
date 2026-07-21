@@ -145,7 +145,8 @@ GAME.aircraft = (function () {
     P.pos.y -= 4.5 * dt;
     if (mx || mz) P.heading = U.angleLerp(P.heading, Math.atan2(wx, wz), Math.min(1, dt * 5));
 
-    var gy = GAME.city.groundY(P.pos.x, P.pos.z);
+    // land on whatever's below — street or a rooftop
+    var gy = GAME.city.surfaceY(P.pos.x, P.pos.z);
     P.mesh.position.set(P.pos.x, P.pos.y, P.pos.z);
     P.mesh.rotation.set(0, P.heading, 0);
     var j = P.mesh.userData.joints;
@@ -156,7 +157,7 @@ GAME.aircraft = (function () {
     if (GAME.city.isInWater(P.pos.x, P.pos.z)) { land(); GAME.playerDrown(); return; }
     if (P.pos.y <= gy + 0.05) {
       land();
-      P.pos.y = gy;
+      P.pos.y = gy; P.velY = 0;
       GAME.hud.message('Feet dry.', 1.5);
     }
   }

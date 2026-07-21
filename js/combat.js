@@ -36,6 +36,19 @@ GAME.combat = (function () {
       if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z)) continue;
       list.push({ t: t, score: ang * 30 + d });
     }
+    // vehicles are lockable too (pursuing cruisers etc.), weighted after people
+    var cars = GAME.world.cars;
+    for (var ci = 0; ci < cars.length; ci++) {
+      var car = cars[ci];
+      if (car.dead || car === P.car) continue;
+      var cdx = car.pos.x - P.pos.x, cdz = car.pos.z - P.pos.z;
+      var cd = Math.sqrt(cdx * cdx + cdz * cdz);
+      if (cd > 44 || cd < 0.5) continue;
+      var cang = Math.abs(U.wrapPI(Math.atan2(cdx, cdz) - cam.yaw));
+      if (cang > 0.7) continue;
+      if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, car.pos.x, car.pos.z)) continue;
+      list.push({ t: car, score: cang * 30 + cd + 14 });
+    }
     list.sort(function (a, b) { return a.score - b.score; });
     return list.map(function (e) { return e.t; });
   }
@@ -214,12 +227,14 @@ GAME.combat = (function () {
     var w = P.currentWeapon, wd = WEAPONS[w];
     if (P.weaponMesh) P.weaponMesh.visible = (w !== 'fist' && !P.inCar);
 
-    // drive-by
+    // drive-by: Q/E pick a side; LMB (or FIRE) alone fires toward the side you're
+    // looking, matching the on-screen prompt "LMB — Fire (drive-by w/ SMG)"
     if (P.inCar) {
       var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       var left = GAME.key('KeyQ') || T.driveByL;
       var right = GAME.key('KeyE') || T.driveByR;
-      if (hasSMG && (left || right || ((inp.lmb || T.fire) && (inp.rmb || T.aim)))) {
+      var fireBtn = inp.lmb || T.fire;
+      if (hasSMG && (left || right || fireBtn)) {
         if (cooldown <= 0) {
           cooldown = WEAPONS.smg.rate;
           // left of travel = heading + pi/2 in this parametrization
@@ -335,7 +350,7 @@ GAME.combat = (function () {
       }
       if (!p.fixed) {
         p.ttl -= dt;
-        if (p.ttl <= 0) { GAME.scene.remove(p.mesh); ps.splice(i, 1); continue; }
+        if (p.ttl <= 0) { GAME.scene.remove(p.mesh); disposeTree(p.mesh); ps.splice(i, 1); continue; }
       }
       if (U.dist2(p.pos.x, p.pos.z, GAME.player.pos.x, GAME.player.pos.z) < 90 * 90) {
         p.mesh.rotation.y += dt * 2.4;
@@ -359,7 +374,7 @@ GAME.combat = (function () {
       GAME.audio.pickup();
       GAME.hud.message(label, 1.2);
       if (p.fixed) { p.taken = true; p.respawnT = 45; p.mesh.visible = false; }
-      else { GAME.scene.remove(p.mesh); ps.splice(i, 1); }
+      else { GAME.scene.remove(p.mesh); disposeTree(p.mesh); ps.splice(i, 1); }
     }
   }
 

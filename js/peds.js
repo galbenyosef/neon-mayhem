@@ -94,6 +94,7 @@ GAME.peds = (function () {
     var i = world.peds.indexOf(ped);
     if (i >= 0) world.peds.splice(i, 1);
     GAME.scene.remove(ped.mesh);
+    disposeTree(ped.mesh);
   }
 
   function kill(ped, cause, byPlayer) {

@@ -28,13 +28,13 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 ## Features
 
 - ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
-- Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts at dusk, night ~30s in, then the sun rises again and it loops)
+- Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts on a bright late afternoon, slides into sunset and then night within the first minute, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
 - Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom)
 - Flyable helicopter and airplane (with a beach helipad and an airport), plus a parachute when you bail out mid-air
-- Lock-on shooting (aim assist, target cycling) with fists, pistol, SMG (drive-bys!), shotgun
-- 0–5 star wanted system: tailing cruisers, rams, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage to clear the heat
-- Arcade missions — street races, timed couriers, rampages — plus taxi fares and paramedic runs
+- Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun
+- 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
+- Arcade missions — street races, timed couriers, rampages — plus continuous taxi and paramedic shifts (back-to-back fares with a streak bonus)
 - 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
 - Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
 

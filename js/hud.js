@@ -356,7 +356,9 @@ GAME.hud = (function () {
     landmark(GAME.city.helipad.x, GAME.city.helipad.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
-      if (cars[c].isPolice && !cars[c].dead && cars[c].ai) blip(cars[c].pos.x, cars[c].pos.z, '#5aa0ff', 3);
+      var pc = cars[c];
+      // only actively-pursuing cruisers show as blips (not idle/parked ones)
+      if (pc.isPolice && !pc.dead && pc.ai && (pc.ai.mode === 'chase' || pc.ai.mode === 'roadblock')) blip(pc.pos.x, pc.pos.z, '#5aa0ff', 3);
     }
     var peds = GAME.world.peds;
     for (var pd = 0; pd < peds.length; pd++) {
@@ -401,7 +403,8 @@ GAME.hud = (function () {
     zoneT -= dt;
     if (zoneT <= 0) {
       zoneT = 2;
-      var zn = GAME.city.districtName(P.pos.x, P.pos.z);
+      var zf = GAME.focus();
+      var zn = GAME.city.districtName(zf.x, zf.z);
       if (zn !== lastZone) {
         lastZone = zn;
         el['zone-popup'].textContent = zn;
@@ -421,6 +424,7 @@ GAME.hud = (function () {
       el['map-screen'].style.display = open ? 'flex' : 'none';
       // the sim loop halts while the map is open; silence the engine drone
       if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
+      else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },

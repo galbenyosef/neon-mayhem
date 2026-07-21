@@ -14,6 +14,8 @@ GAME.police = (function () {
   var CRIME_HEAT = { hit_ped: 16, kill_ped: 55, jack: 62, shoot_car: 14, hit_car: 3, kill_cop: 130, steal_police: 70 };
   // crimes that always draw heat even unwitnessed (attacking the law, loud gunfire)
   var ALWAYS = { kill_cop: 1, steal_police: 1 };
+  // deaths count per victim — mowing down a crowd shouldn't dedupe to one crime
+  var PER_VICTIM = { kill_ped: 1, kill_cop: 1 };
 
   // a crime only raises the alarm if a cop (any range, LOS) or a civilian
   // (close, LOS) actually sees it — bumping a fender in an empty street is free
@@ -31,7 +33,7 @@ GAME.police = (function () {
 
   function reportCrime(type, pos) {
     var now = GAME.time;
-    if (crimeCooldown[type] && now - crimeCooldown[type] < 1.2) return;
+    if (!PER_VICTIM[type] && crimeCooldown[type] && now - crimeCooldown[type] < 1.2) return;
     if (!ALWAYS[type] && !witnessed(pos)) return; // nobody saw it
     crimeCooldown[type] = now;
     var before = stars();
@@ -87,7 +89,7 @@ GAME.police = (function () {
   }
 
   function clearSpikes() {
-    for (var i = 0; i < spikes.length; i++) GAME.scene.remove(spikes[i].mesh);
+    for (var i = 0; i < spikes.length; i++) { GAME.scene.remove(spikes[i].mesh); disposeTree(spikes[i].mesh); }
     spikes = [];
   }
 
@@ -206,7 +208,7 @@ GAME.police = (function () {
     car.controls = chaseControls(car, dt, s);
 
     // occupant fires from the car at 2 stars and up
-    if (s >= 2 && !P.godMode) {
+    if (s >= 2 && !GAME.godMode) {
       car.shootT -= dt;
       if (car.shootT <= 0) {
         var px2 = P.inCar && P.car ? P.car.pos.x : P.pos.x;

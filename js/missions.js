@@ -202,6 +202,11 @@ GAME.missions = (function () {
       setTimeout(function () { if (active) GAME.hud.message('1...', 1); }, 2000);
       setTimeout(function () { if (active) { GAME.hud.message('GO!', 1); } }, 3000);
     } else if (def.type === 'rampage') {
+      // the rampage arsenal is on loan — remember it so it can be reclaimed at the
+      // end (otherwise the marker is a free-ammo dispenser on repeat)
+      active.grantWeapon = def.weapon;
+      active.grantAmmo = def.ammo;
+      active.grantHad = !!(P.weapons[def.weapon] && P.weapons[def.weapon].have);
       GAME.combat.giveWeapon(def.weapon, def.ammo);
       active.state = 'run';
       active.topupT = 0;
@@ -271,6 +276,16 @@ GAME.missions = (function () {
     if (active) {
       for (var i = 0; i < active.racers.length; i++) GAME.vehicles.removeCar(active.racers[i]);
       if (active.passenger && !active.passenger.dead) GAME.peds.removePed(active.passenger);
+      // reclaim the rampage loadout so the marker can't be farmed for ammo
+      if (active.grantWeapon) {
+        var inv = GAME.player.weapons[active.grantWeapon];
+        if (inv) {
+          inv.ammo = Math.max(0, inv.ammo - (active.grantAmmo || 0));
+          if (!active.grantHad && inv.ammo <= 0) inv.have = false;
+          if (GAME.player.currentWeapon === active.grantWeapon && !inv.have) GAME.player.currentWeapon = 'fist';
+        }
+        GAME.combat.refreshWeaponHud();
+      }
     }
     active = null;
     cpMarker.visible = false;
@@ -346,6 +361,8 @@ GAME.missions = (function () {
         // races and courier deliveries need a vehicle; rampages can start on foot
         var need = d.type === 'race' || d.type === 'courier';
         if (need && !P.inCar) continue;
+        // no cheesing a street race from a helicopter or plane
+        if (d.type === 'race' && P.car && (P.car.spec.heli || P.car.spec.plane)) continue;
         var px = P.inCar ? P.car.pos.x : P.pos.x, pz = P.inCar ? P.car.pos.z : P.pos.z;
         if (U.dist2(px, pz, d.start.x, d.start.z) < (need ? 20 : 7)) {
           start(d);
@@ -383,6 +400,19 @@ GAME.missions = (function () {
         if (active.cpIndex >= d2.cps.length) { finish(true); return; }
         GAME.hud.missionObjective(objectiveText());
         updateCp();
+      }
+      // draw the race line along the streets (checkpoints can be diagonal neighbors)
+      active.routeT = (active.routeT || 0) - dt;
+      if (active.routeT <= 0 || active.routeCp !== active.cpIndex) {
+        active.routeT = 1.0; active.routeCp = active.cpIndex;
+        var rc = P.car ? [P.car.pos.x, P.car.pos.z] : [P.pos.x, P.pos.z];
+        var pts = [];
+        for (var k = active.cpIndex; k < d2.cps.length; k++) {
+          var seg = roadRoute(rc[0], rc[1], d2.cps[k][0], d2.cps[k][1]);
+          for (var si = 0; si < seg.length; si++) pts.push(seg[si]);
+          rc = d2.cps[k];
+        }
+        active.raceRoute = pts;
       }
       GAME.hud.missionTimer(active.t, false);
     } else if (d2.type === 'courier') {
@@ -498,7 +528,7 @@ GAME.missions = (function () {
     objectiveText: objectiveText,
     getRoutePoints: function () {
       if (!active || active.state === 'countdown') return null;
-      if (active.def.type === 'race') return active.def.cps.slice(active.cpIndex);
+      if (active.def.type === 'race') return active.raceRoute || active.def.cps.slice(active.cpIndex);
       if (active.courierRoute) return active.courierRoute; // courier / taxi / ambulance
       return null;
     },

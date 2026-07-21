@@ -318,6 +318,7 @@ GAME.vehicles = (function () {
     if (i >= 0) world.cars.splice(i, 1);
     if (car.parkedSpot) car.parkedSpot.live = null;
     GAME.scene.remove(car.mesh);
+    disposeTree(car.mesh);
   }
 
   function fwdX(car) { return Math.sin(car.heading); }
@@ -452,22 +453,30 @@ GAME.vehicles = (function () {
     }
   }
 
-  function damageCar(car, amt, source) {
+  function damageCar(car, amt, source, byPlayer) {
     if (car.dead) return;
+    var pc = GAME.player.car;
+    // remember if the player is responsible, so a delayed burn-out still counts
+    if (byPlayer || source === 'gun' || source === 'fist' ||
+      (source === pc && pc && Math.abs(pc.speed) > 9)) car.byPlayer = true;
     car.hp -= amt;
     if (car.hp < car.spec.hp * 0.35 && car.stage < 1) car.stage = 1;
     if (car.hp < car.spec.hp * 0.14 && car.stage < 2) { car.stage = 2; car.fireFuse = 5.5; }
-    if (car.hp <= 0) explodeCar(car, source);
+    if (car.hp <= 0) explodeCar(car, source, car.byPlayer);
   }
 
-  function explodeCar(car, source) {
+  function explodeCar(car, source, byPlayerIn) {
     if (car.dead) return;
     car.dead = true; car.stage = 3;
+    // player-caused if this blast (or the damage that led to it) traces to the player
+    var byPlayer = !!(byPlayerIn || car.byPlayer);
     GAME.audio.explosion();
     GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 9);
     GAME.fx.spawn(car.pos.x, 1.2, car.pos.z, { count: 30, color: 0xff9030, spread: 7, vy: 5, life: 1.1, grav: -3 });
     GAME.fx.spawn(car.pos.x, 1.5, car.pos.z, { count: 20, color: 0x333333, spread: 4, vy: 4, life: 1.6, grav: -0.5 });
+    var oldMat = car.mesh.userData.bodyMesh.material;
     car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+    if (oldMat && oldMat.dispose) oldMat.dispose();
     if (car.mesh.userData.lightbar) car.mesh.userData.lightbar.forEach(function (m) { m.visible = false; });
     car.speed *= 0.2;
     // area damage
@@ -477,14 +486,11 @@ GAME.vehicles = (function () {
     }
     if (p.car === car) GAME.playerDamage(200, 'explosion');
     world.peds.forEach(function (ped) {
-      if (!ped.dead && U.dist2(ped.pos.x, ped.pos.z, car.pos.x, car.pos.z) < 55) GAME.peds.kill(ped, 'explosion');
+      if (!ped.dead && U.dist2(ped.pos.x, ped.pos.z, car.pos.x, car.pos.z) < 55) GAME.peds.kill(ped, 'explosion', byPlayer);
     });
     world.cars.forEach(function (c2) {
-      if (c2 !== car && !c2.dead && U.dist2(c2.pos.x, c2.pos.z, car.pos.x, car.pos.z) < 60) damageCar(c2, 40, 'explosion');
+      if (c2 !== car && !c2.dead && U.dist2(c2.pos.x, c2.pos.z, car.pos.x, car.pos.z) < 60) damageCar(c2, 40, 'explosion', byPlayer);
     });
-    var pc = GAME.player.car;
-    var byPlayer = source === 'gun' || source === 'fist' || source === 'explosion' ||
-      (source === pc && pc && Math.abs(pc.speed) > 9);
     if (car.isPolice && byPlayer) GAME.police.reportCrime('kill_cop', car.pos);
     if (car.occupied === 'ai') car.occupied = null;
     GAME.missions.notifyChaos(500);
@@ -638,7 +644,7 @@ GAME.vehicles = (function () {
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
         sp.live = car;
         live++;
-      } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && sp.live.hp === sp.live.spec.hp) {
+      } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && !sp.live.dead) {
         removeCar(sp.live);
       }
     }
