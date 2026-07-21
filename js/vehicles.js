@@ -118,7 +118,7 @@ var VEHICLES = {
   van: { label: 'Cargo Van', maxSpeed: 23, accel: 7, grip: 6, turn: 1.7, hp: 260, l: 5.1, w: 2.1, cabinH: 1.0, bodyH: 0.9, colors: [0x9a8a78, 0x7888a0, 0xa87868] },
   police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 200, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] },
   ambulance: { label: 'Ambulance', maxSpeed: 27, accel: 8.5, grip: 5.6, turn: 1.8, hp: 240, l: 5.3, w: 2.15, cabinH: 1.15, bodyH: 1.0, colors: [0xf2f2f6] },
-  motorcycle: { label: 'Vice Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 75, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
+  motorcycle: { label: 'Neon Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 130, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
   airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 }
 };
@@ -141,6 +141,19 @@ function buildBikeMesh(colorHex) {
   g.add(hl);
   g.userData.bodyMesh = body;
   return g;
+}
+
+// a seated rider posed to straddle a bike, added as a child of the bike group
+// so it moves and leans with it. Used for AI traffic bikes (and reusable).
+function buildBikeRider() {
+  var r = GAME.peds.buildPedMesh({});
+  var j = r.userData.joints;
+  j.torso.rotation.x = 0.34;                       // lean toward the bars
+  j.legL.rotation.x = -0.55; j.legR.rotation.x = -0.55;
+  j.legL.rotation.z = 0.2; j.legR.rotation.z = -0.2; // straddle the tank
+  j.armL.rotation.x = -1.05; j.armR.rotation.x = -1.05; // reach the handlebars
+  r.position.set(0, -0.02, -0.35);                 // hips on the seat
+  return r;
 }
 
 function buildHeliMesh(colorHex) {
@@ -290,6 +303,12 @@ GAME.vehicles = (function () {
       smokeT: 0, unstickT: 0, reverseT: 0,
       radius: spec.l * 0.42
     };
+    // AI-ridden bikes get a visible rider (empty motorbikes look abandoned)
+    if (spec.bike && car.occupied === 'ai') {
+      var rider = buildBikeRider();
+      mesh.add(rider);
+      car.riderMesh = rider;
+    }
     world.cars.push(car);
     return car;
   }
@@ -582,7 +601,7 @@ GAME.vehicles = (function () {
         if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, rp.x, rp.z) < 100) { clear = false; break; }
       }
       if (!clear) continue;
-      var types = ['sedan', 'sedan', 'taxi', 'sports', 'van'];
+      var types = ['sedan', 'sedan', 'taxi', 'sports', 'van', 'motorcycle'];
       var type = types[Math.floor(Math.random() * types.length)];
       var heading = rp.axis === 'z' ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
       var car = spawnCar(type, rp.x, rp.z, heading, { occupied: 'ai', ai: { mode: 'traffic', desired: U.randRange(Math.random, 9, 13), laneX: 0, laneZ: 0 } });

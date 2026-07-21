@@ -531,7 +531,11 @@ GAME.nav = (function () {
     var P = GAME.player;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    path = roadPath(px, pz, dest.x, dest.z);
+    // route to the road nearest the destination, then a short hop off the road,
+    // so the drawn line stays on the streets instead of cutting through blocks
+    var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
+    path = roadPath(px, pz, rp.x, rp.z);
+    path.push({ x: rp.x, z: rp.z });
   }
 
   return {

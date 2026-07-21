@@ -108,9 +108,11 @@
     renderer.setClearColor(lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT), 1);
   };
 
-  // auto day/night cycle. Start at dusk (~5PM), roll to night ~30s later, then
-  // the sun rises again and it loops. df = 0.5 - 0.5*cos(2*pi*phase).
-  var CYCLE = 140, START_PHASE = 0.78; // phase 0.78 -> df~0.40 dusk; phase 1.0 -> night
+  // auto day/night cycle. Start on a bright, low-sun late afternoon that visibly
+  // slides into sunset, then night, then the sun rises again and it loops.
+  // df = 0.5 - 0.5*cos(2*pi*phase).
+  // phase 0.63 -> df~0.85 sunny afternoon; 0.75 -> sunset; 1.0 -> night.
+  var CYCLE = 150, START_PHASE = 0.63;
   GAME.dayPhase = START_PHASE;
   GAME.setDaytime = function (force) {
     // manual override (switch is hidden but kept): jump the cycle to day/night
@@ -136,7 +138,7 @@
     GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
     if (GAME.isTouch) GAME.enterFullscreen(); // same user gesture
-    GAME.dayPhase = 0.78; // reset the clock to dusk; night falls ~30s in
+    GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
   };

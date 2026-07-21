@@ -1,7 +1,9 @@
-GAME.resolveCircle = function (x, z, r) {
+GAME.resolveCircle = function (x, z, r, feetY) {
   var boxes = GAME.city.hash.query(x, z, r + 1);
   for (var i = 0; i < boxes.length; i++) {
     var b = boxes[i];
+    // if the entity is standing on top of this box (a rooftop), don't shove it off
+    if (feetY !== undefined && b.h !== undefined && b.h <= feetY + 0.2) continue;
     var cx = U.clamp(x, b.minX, b.maxX), cz = U.clamp(z, b.minZ, b.maxZ);
     var dx = x - cx, dz = z - cz;
     var d2 = dx * dx + dz * dz;

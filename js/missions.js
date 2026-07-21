@@ -78,26 +78,86 @@ GAME.missions = (function () {
     return [Math.round(fromX), Math.round(fromZ)];
   }
 
+  // a route that stays on the streets: road-graph nodes, then in along the
+  // nearest road line, then a short hop to the exact marker (never across a block)
+  function roadRoute(fromX, fromZ, toX, toZ) {
+    var rp = GAME.city.nearestRoadPoint(toX, toZ);
+    var nodes = GAME.nav.roadPath(fromX, fromZ, rp.x, rp.z);
+    var pts = [];
+    for (var i = 0; i < nodes.length; i++) pts.push([nodes[i].x, nodes[i].z]);
+    pts.push([rp.x, rp.z]);
+    pts.push([toX, toZ]);
+    return pts;
+  }
+
   function startJob(kind) {
     var P = GAME.player;
     if (active || !P.inCar || !P.car) return;
-    var ox = P.car.pos.x, oz = P.car.pos.z;
-    var pickup = randomRoadPoint(ox, oz, 55, 165);
     active = {
       def: { type: kind, name: kind === 'ambulance' ? 'PARAMEDIC' : 'TAXI DRIVER', id: kind, job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
-      phase: 'pickup', pickup: pickup, dropoff: null,
-      timeLeft: kind === 'ambulance' ? 95 : 85,
-      reward: kind === 'ambulance' ? 220 : 140, passenger: null, routeCp: null
+      phase: 'pickup', pickup: null, dropoff: null,
+      timeLeft: kind === 'ambulance' ? 95 : 90,
+      jobCount: 0, earned: 0, passenger: null, routeCp: null
     };
-    var ped = GAME.peds.spawnPed(pickup[0], pickup[1]);
-    ped.state = 'walk'; ped.jobPed = true;
-    active.passenger = ped;
+    nextPickup();
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
-    GAME.hud.message(kind === 'ambulance' ? 'Reach the patient, then rush them to a hospital.' : 'Pick up your fare, then drive them to the drop-off.', 3.5);
+    GAME.hud.message(kind === 'ambulance'
+      ? 'Reach the patient, then rush them to a hospital. It keeps going — leave the ambulance to clock off.'
+      : 'Pick up your fare, then drive them to the drop-off. It keeps going — leave the cab to clock off.', 4.5);
     GAME.audio.pickup();
+  }
+
+  // spawn the next fare/patient waiting on a sidewalk and switch to pickup phase
+  function nextPickup() {
+    var P = GAME.player;
+    var ox = P.car ? P.car.pos.x : P.pos.x, oz = P.car ? P.car.pos.z : P.pos.z;
+    active.pickup = randomRoadPoint(ox, oz, 55, 175);
+    active.phase = 'pickup';
+    var ped = GAME.peds.spawnPed(active.pickup[0], active.pickup[1]);
+    ped.state = 'walk'; ped.jobPed = true;
+    active.passenger = ped;
+    active.routeCp = null;
+  }
+
+  // fare/patient delivered: pay out, drop them off, and queue the next one
+  function completeFare(kind, f, tgt) {
+    active.jobCount++;
+    var fare = (kind === 'ambulance' ? 180 : 130) + active.jobCount * 10;
+    GAME.addCash(fare); active.earned += fare;
+    GAME.audio.sting('win');
+    // the passenger/patient climbs out and hurries off
+    var out = GAME.peds.spawnPed(tgt[0], tgt[1]);
+    out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z;
+    var word = kind === 'ambulance' ? 'Patient delivered' : 'Fare dropped';
+    var msg = word + '! +$' + fare + '  ·  ' + active.jobCount + ' done';
+    // streak bonus every 5 completed
+    if (active.jobCount % 5 === 0) {
+      var bonus = 250 * (active.jobCount / 5);
+      GAME.addCash(bonus); active.earned += bonus;
+      msg += '   —   STREAK x' + active.jobCount + ' BONUS +$' + bonus + '!';
+    }
+    GAME.hud.message(msg, 3.2);
+    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 55 : 50), 130);
+    nextPickup();
+    updateCp();
+    GAME.hud.missionObjective(objectiveText());
+  }
+
+  // end an ongoing taxi/ambulance shift (clock off, totalled, or timed out)
+  function endJob(reason) {
+    var count = active.jobCount, earned = active.earned;
+    var unit = active.def.id === 'ambulance' ? 'run' : 'fare';
+    if (count > 0) {
+      GAME.audio.sting('win');
+      GAME.hud.message('SHIFT OVER — ' + count + ' ' + unit + (count === 1 ? '' : 's') +
+        ', $' + earned + ' earned' + (reason ? '  (' + reason + ')' : ''), 4.5);
+    } else {
+      GAME.hud.message('Shift over.' + (reason ? ' ' + reason + '.' : ''), 2.5);
+    }
+    cleanup();
   }
 
   // seed a crowd + traffic around the player so a rampage always has targets
@@ -162,8 +222,8 @@ GAME.missions = (function () {
     var d = active.def;
     if (d.type === 'race') return 'Checkpoint ' + (active.cpIndex + 1) + ' / ' + d.cps.length;
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + d.stops.length;
-    if (d.type === 'taxifare') return active.phase === 'pickup' ? 'Pick up the fare' : 'To the drop-off';
-    if (d.type === 'ambulance') return active.phase === 'pickup' ? 'Reach the patient' : 'To the hospital';
+    if (d.type === 'taxifare') return (active.phase === 'pickup' ? 'Pick up the fare' : 'To the drop-off') + '  ·  ' + active.jobCount + ' done';
+    if (d.type === 'ambulance') return (active.phase === 'pickup' ? 'Reach the patient' : 'To the hospital') + '  ·  ' + active.jobCount + ' done';
     return '$' + Math.floor(active.score) + ' / $' + d.target;
   }
 
@@ -283,7 +343,8 @@ GAME.missions = (function () {
       }
       for (var m = 0; m < markers.length; m++) {
         var d = markers[m].def;
-        var need = d.type === 'race';
+        // races and courier deliveries need a vehicle; rampages can start on foot
+        var need = d.type === 'race' || d.type === 'courier';
         if (need && !P.inCar) continue;
         var px = P.inCar ? P.car.pos.x : P.pos.x, pz = P.inCar ? P.car.pos.z : P.pos.z;
         if (U.dist2(px, pz, d.start.x, d.start.z) < (need ? 20 : 7)) {
@@ -343,13 +404,7 @@ GAME.missions = (function () {
       if (active.routeT <= 0 || active.routeCp !== active.cpIndex) {
         active.routeT = 1.0; active.routeCp = active.cpIndex;
         var st2 = currentCp();
-        if (st2) {
-          var rp = GAME.nav.roadPath(px2, pz2, st2[0], st2[1]);
-          var pts = [];
-          for (var ri = 0; ri < rp.length; ri++) pts.push([rp[ri].x, rp[ri].z]);
-          pts.push([st2[0], st2[1]]);
-          active.courierRoute = pts;
-        } else active.courierRoute = null;
+        active.courierRoute = st2 ? roadRoute(px2, pz2, st2[0], st2[1]) : null;
       }
       GAME.hud.missionTimer(active.timeLeft, true);
     } else if (d2.type === 'rampage') {
@@ -369,9 +424,11 @@ GAME.missions = (function () {
       if (active.score >= d2.target) { finish(true); return; }
       if (active.timeLeft <= 0) { finish(false, 'Time up — $' + Math.floor(active.score) + ' of $' + d2.target); return; }
     } else if (d2.type === 'taxifare' || d2.type === 'ambulance') {
-      if (!P.inCar || !P.car || P.car.dead) { finish(false, 'You lost the vehicle.'); return; }
+      // clock off simply by leaving the vehicle; the shift also ends if it's totalled
+      if (!P.inCar || !P.car) { endJob('clocked off'); return; }
+      if (P.car.dead) { endJob('vehicle totalled'); return; }
       active.timeLeft -= dt;
-      if (active.timeLeft <= 0) { finish(false, 'Out of time.'); return; }
+      if (active.timeLeft <= 0) { endJob('out of time'); return; }
       var f = GAME.focus(), tgt = currentCp();
       if (active.phase === 'pickup') {
         if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 34 && Math.abs(P.car.speed) < 6) {
@@ -383,7 +440,6 @@ GAME.missions = (function () {
             active.dropoff = [best.x + 20, best.spawn.z];
           } else {
             active.dropoff = randomRoadPoint(f.x, f.z, 90, 210);
-            active.reward += 70;
           }
           active.routeCp = null;
           updateCp();
@@ -392,19 +448,13 @@ GAME.missions = (function () {
           GAME.audio.pickup();
         }
       } else {
-        if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) { finish(true); return; }
+        if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) { completeFare(d2.type, f, tgt); }
       }
       active.routeT = (active.routeT || 0) - dt;
       if (active.routeT <= 0 || active.routeCp !== active.phase) {
         active.routeT = 1.0; active.routeCp = active.phase;
         var jt = currentCp();
-        if (jt) {
-          var jrp = GAME.nav.roadPath(f.x, f.z, jt[0], jt[1]);
-          var jpts = [];
-          for (var ji = 0; ji < jrp.length; ji++) jpts.push([jrp[ji].x, jrp[ji].z]);
-          jpts.push([jt[0], jt[1]]);
-          active.courierRoute = jpts;
-        } else active.courierRoute = null;
+        active.courierRoute = jt ? roadRoute(f.x, f.z, jt[0], jt[1]) : null;
       }
       GAME.hud.missionTimer(active.timeLeft, true);
     }
@@ -426,13 +476,15 @@ GAME.missions = (function () {
     }
     GAME.addCash(-100);
     GAME.police.clearWanted();
+    // works for any driven vehicle, motorcycles included: full repair + fresh paint
     var car = P.car;
     car.hp = car.spec.hp; car.stage = 0; car.spiked = false; car.fireFuse = 0;
-    var colors = car.spec.colors;
-    car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    if (car.mesh.userData.bodyMesh) {
+      car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    }
     GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 4);
     GAME.audio.pickup();
-    GAME.hud.message('Resprayed. The heat is off.', 3);
+    GAME.hud.message('Resprayed & fully repaired — the heat is off.', 3);
     resprayCooldown = 8;
   }
 

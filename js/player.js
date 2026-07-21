@@ -177,6 +177,8 @@ GAME.enterCar = function (car) {
     GAME.police.reportCrime('steal_police', car.pos);
   }
   if (car.isPolice && car.ai) car.ai = null;
+  // an AI bike's seated rider gives way to the player (driver flees separately)
+  if (car.riderMesh) { car.mesh.remove(car.riderMesh); car.riderMesh = null; }
   car.occupied = 'player';
   if (car.ai) car.ai = null;
   car.controls = { throttle: 0, steer: 0, handbrake: true };
@@ -230,8 +232,17 @@ function forceExitCar(silent) {
   car.occupied = null;
   var side = car.heading - Math.PI / 2;
   var ex = car.pos.x + Math.sin(side) * 2.2, ez = car.pos.z + Math.cos(side) * 2.2;
-  var rp = GAME.resolveCircle(ex, ez, 0.45);
-  P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
+  var roofY = GAME.city.surfaceY(car.pos.x, car.pos.z);
+  var onRoof = (car.spec.heli || car.spec.plane) && roofY > GAME.city.groundY(car.pos.x, car.pos.z) + 1;
+  if (onRoof) {
+    // step out onto the rooftop beside the aircraft (don't shove out of the footprint);
+    // if you then walk off the edge, on-foot gravity takes over
+    P.pos.set(ex, roofY, ez);
+  } else {
+    var rp = GAME.resolveCircle(ex, ez, 0.45);
+    P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
+  }
+  P.velY = 0;
   P.heading = car.heading;
   P.inCar = false;
   P.car = null;
@@ -246,8 +257,8 @@ GAME.exitCar = forceExitCar;
 
 function resetRiderPose() {
   var j = GAME.player.mesh.userData.joints;
-  j.legL.rotation.x = j.legR.rotation.x = 0;
-  j.armL.rotation.x = j.armR.rotation.x = 0;
+  j.legL.rotation.set(0, 0, 0); j.legR.rotation.set(0, 0, 0);
+  j.armL.rotation.set(0, 0, 0); j.armR.rotation.set(0, 0, 0);
   j.torso.rotation.x = 0;
   GAME.player.mesh.rotation.z = 0;
 }
@@ -330,7 +341,7 @@ function updateOnFoot(dt) {
   var h = (mag > 0.05) ? P.moveH : P.heading;
   var nx = P.pos.x + Math.sin(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
   var nz = P.pos.z + Math.cos(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
-  var rp = GAME.resolveCircle(nx, nz, 0.45);
+  var rp = GAME.resolveCircle(nx, nz, 0.45, P.pos.y);
   nx = rp.x; nz = rp.z;
   // solid cars
   var cars = GAME.world.cars;
@@ -355,7 +366,22 @@ function updateOnFoot(dt) {
   }
   P.pos.x = nx; P.pos.z = nz;
   if (GAME.city.isInWater(P.pos.x, P.pos.z)) { GAME.playerDrown(); return; }
-  P.pos.y = GAME.city.groundY(P.pos.x, P.pos.z);
+  // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
+  var surf = GAME.city.surfaceY(P.pos.x, P.pos.z);
+  if (P.pos.y > surf + 0.06) {
+    P.velY = (P.velY || 0) - 22 * dt;
+    P.pos.y += P.velY * dt;
+    if (P.pos.y <= surf) {
+      var impact = -(P.velY || 0);
+      P.pos.y = surf; P.velY = 0;
+      if (impact > 12) {
+        GAME.playerDamage(Math.min(95, (impact - 12) * 6), 'fall');
+        GAME.cameraShake = Math.min(1, impact / 18);
+      }
+    }
+  } else {
+    P.pos.y = surf; P.velY = 0;
+  }
   P.mesh.rotation.y = P.heading;
 
   // walk anim
@@ -438,16 +464,17 @@ function updateBikeRider(dt) {
   // lean the bike into turns / slides
   var lean = U.clamp(-car.controls.steer * Math.min(1, Math.abs(car.speed) / 12) * 0.5 - car.lat * 0.03, -0.6, 0.6);
   car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, lean, Math.min(1, dt * 8));
-  // seat the rider on the bike, sharing its lean
+  // seat the rider low on the saddle, sharing the bike's lean, straddling it
   var m = P.mesh;
   m.visible = true;
-  m.position.set(car.pos.x, car.pos.y, car.pos.z);
+  m.position.set(car.pos.x, car.pos.y - 0.02, car.pos.z);
   m.rotation.set(0, car.heading, car.mesh.rotation.z);
-  m.translateY(0.55);
+  m.translateZ(-0.35); // sit back on the seat
   var j = m.userData.joints;
-  j.legL.rotation.x = 0.9; j.legR.rotation.x = 0.9;
-  j.armL.rotation.x = -0.6; j.armR.rotation.x = -0.6;
-  j.torso.rotation.x = 0.25;
+  j.torso.rotation.x = 0.34;                          // lean toward the bars
+  j.legL.rotation.x = -0.55; j.legR.rotation.x = -0.55;
+  j.legL.rotation.z = 0.2; j.legR.rotation.z = -0.2;  // knees out around the tank
+  j.armL.rotation.x = -1.05; j.armR.rotation.x = -1.05; // hands on the handlebars
 }
 
 var pressedCache = {};

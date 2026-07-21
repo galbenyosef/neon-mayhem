@@ -148,13 +148,17 @@ GAME.police = (function () {
 
   function chaseControls(car, dt, s) {
     var P = GAME.player;
-    var tx = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var tz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    if (P.inCar && P.car) {
-      tx += (P.car.vx || 0) * 0.45;
-      tz += (P.car.vz || 0) * 0.45;
-    }
-    var dx = tx - car.pos.x, dz = tz - car.pos.z;
+    var pxr = P.inCar && P.car ? P.car.pos.x : P.pos.x;
+    var pzr = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    // a modest lead on a moving target — enough to cut a corner, not clairvoyant
+    var aimX = pxr + (P.inCar && P.car ? (P.car.vx || 0) * 0.3 : 0);
+    var aimZ = pzr + (P.inCar && P.car ? (P.car.vz || 0) * 0.3 : 0);
+    // reaction lag: pursue a smoothed estimate of the target, so cruisers don't
+    // mirror sharp turns the instant you make them
+    if (car.aiTX === undefined) { car.aiTX = aimX; car.aiTZ = aimZ; }
+    car.aiTX = U.damp(car.aiTX, aimX, 4.5, dt);
+    car.aiTZ = U.damp(car.aiTZ, aimZ, 4.5, dt);
+    var dx = car.aiTX - car.pos.x, dz = car.aiTZ - car.pos.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
     var targetH = Math.atan2(dx, dz);
     var dh = U.wrapPI(targetH - car.heading);
@@ -167,18 +171,24 @@ GAME.police = (function () {
       return { throttle: -1, steer: dh > 0 ? -1 : 1, handbrake: false };
     }
 
-    var steer = U.clamp(dh * 2.4, -1, 1);
-    var throttle = 1;
+    // gentler steering, eased frame-to-frame (no instant snap to your heading)
+    var rawSteer = U.clamp(dh * 1.5, -1, 1);
+    car.aiSteer = U.lerp(car.aiSteer || 0, rawSteer, Math.min(1, dt * 5));
+    var steer = car.aiSteer;
+
     // pull up and stop near an on-foot target so officers can get out
     if (!P.inCar && dist < 22) return { throttle: car.speed > 2 ? -0.7 : 0, steer: steer, handbrake: dist < 12 };
-    if (s === 1) {
-      // tail from a distance
-      throttle = dist > 18 ? 0.8 : (dist > 10 ? 0.25 : -0.4);
-    } else {
-      if (dist < 7 && Math.abs(dh) > 1.6) throttle = -0.5;
-      else if (dist < 5) throttle = 0.4;
-    }
-    if (Math.abs(dh) > 2.2 && car.speed > 4) { throttle = -0.3; }
+
+    // keep a pursuit gap rather than gluing to the bumper
+    var gap = s === 1 ? 22 : 9;
+    var throttle;
+    if (dist > gap + 6) throttle = 1;
+    else if (dist > gap) throttle = 0.55;
+    else if (dist > gap - 4) throttle = 0.1;
+    else throttle = -0.35; // too close — ease back
+    // can't corner flat out: lift or brake for hard turns at speed
+    if (Math.abs(dh) > 0.7 && car.speed > 16) throttle = Math.min(throttle, -0.2);
+    else if (Math.abs(dh) > 0.4 && car.speed > 24) throttle = Math.min(throttle, 0.2);
     return { throttle: throttle, steer: steer, handbrake: false };
   }
 
