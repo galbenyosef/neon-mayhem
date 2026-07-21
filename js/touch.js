@@ -75,8 +75,8 @@ GAME.touch = (function () {
     var T = GAME.input.touch;
     T.active = true;
 
-    // ---- right-thumb action cluster (GTA-style): a big primary button with
-    // smaller satellites; buttons show/hide by context in update() ----
+    // ---- right-thumb action cluster: a big primary button with smaller
+    // satellites; buttons show/hide by context in update() ----
     // on foot
     btns.fire = mkBtn('FIRE', 26, 62, 86, { flag: 'fire', press: function () { T.firePressed = true; } });
     btns.aim = mkBtn('AIM', 128, 118, 62, { flag: 'aim', toggle: true });
@@ -103,7 +103,7 @@ GAME.touch = (function () {
     // desktop corner fullscreen button is redundant on touch
     var fsb = document.getElementById('fs-btn');
     if (fsb) fsb.style.display = 'none';
-    // tap the radar to open the full map (GTA convention)
+    // tap the radar to open the full map
     var mm = document.getElementById('minimap-wrap');
     if (mm) {
       mm.style.pointerEvents = 'auto';

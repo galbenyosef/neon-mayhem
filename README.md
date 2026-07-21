@@ -1,6 +1,8 @@
 # NEON MAYHEM
 
-A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Auto: Vice City (2002) — that sentence is the only place the original game is named; everything in this project is original work.
+> ⚠️ **Active development.** This is an evolving, work-in-progress project — features, balance, controls and the map change frequently, and you may hit rough edges or bugs. Feedback and issues are welcome.
+
+A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Auto: Vice City (2002). Everything in the project is original work — the sentence you just read is the only place the original game is named.
 
 Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on.
 
@@ -8,7 +10,7 @@ Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the p
   <b><a href="https://pranshuparmar.github.io/neon-mayhem/">▶ PLAY NOW — free, in your browser</a></b>
 </p>
 
-📱 On phones and tablets, touch controls appear automatically: virtual stick on the left, context buttons on the right, and a top row for pause, mute, map, CRT filter (📺) and fullscreen (⛶). Starting the game enters fullscreen and asks to rotate to landscape.
+📱 On phones and tablets, touch controls appear automatically: a floating virtual stick on the left, a context-sensitive action cluster on the right, and a single PAUSE button (sound, CRT filter and fullscreen live in the pause menu). Tap the radar to open the full map. Starting the game enters fullscreen and asks you to rotate to landscape.
 
 **Play it locally:** serve this folder from any static host (GitHub Pages works as-is) or a local static server:
 
@@ -24,10 +26,11 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 - ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
 - Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts at dusk, night ~30s in, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
-- Arcade driving with handbrake drifts; 5 vehicle archetypes with 3-stage damage (smoke → fire → boom)
+- Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom)
+- Flyable helicopter and airplane (with a beach helipad and an airport), plus a parachute when you bail out mid-air
 - Lock-on shooting (aim assist, target cycling) with fists, pistol, SMG (drive-bys!), shotgun
-- 0–5 star wanted system: tailing cruisers, rams, foot pursuits, roadblocks, spike strips — and a respray garage to clear the heat
-- 9 arcade missions: street races, timed couriers, rampages
+- 0–5 star wanted system: tailing cruisers, rams, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage to clear the heat
+- Arcade missions — street races, timed couriers, rampages — plus taxi fares and paramedic runs
 - 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
 - Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
 
