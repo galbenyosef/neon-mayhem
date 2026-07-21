@@ -1,0 +1,16 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Node (only if tooling is ever added; the game itself needs none)
+node_modules/
+npm-debug.log*
+
+# Local build / test artifacts
+/dist/
+/screenshots/
+*.local

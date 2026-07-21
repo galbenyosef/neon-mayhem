@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>NEON MAYHEM</title>
+<meta name="description" content="Steal a ride and cruise a neon open world at night — race, deliver, evade the heat, or just drive. A free, fan-made, browser-playable open-world game set in Costa Rosa, 1986.">
+<meta name="theme-color" content="#0b0714">
+<!-- Open Graph / social link preview -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Neon Mayhem">
+<meta property="og:title" content="NEON MAYHEM — Costa Rosa, 1986">
+<meta property="og:description" content="Steal a ride and cruise a neon open world at night — race, deliver, evade the heat, or just drive. Free, in your browser.">
+<meta property="og:url" content="https://pranshuparmar.github.io/neon-mayhem/">
+<meta property="og:image" content="https://pranshuparmar.github.io/neon-mayhem/media/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Neon Mayhem — a night drive down a neon-lit boulevard in Costa Rosa, 1986">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="NEON MAYHEM — Costa Rosa, 1986">
+<meta name="twitter:description" content="Steal a ride and cruise a neon open world at night — race, deliver, evade the heat, or just drive. Free, in your browser.">
+<meta name="twitter:image" content="https://pranshuparmar.github.io/neon-mayhem/media/social-card.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231b0b33'/%3E%3Ccircle cx='8' cy='7' r='4' fill='%23ff4fa3'/%3E%3Crect y='11' width='16' height='2' fill='%2338e8ff'/%3E%3C/svg%3E">
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#0b0714; }
+  * { box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  #game-canvas { display:block; width:100%; height:100%; }
+  .font80s { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+  #hud .panel { position:absolute; }
+
+  #minimap-wrap { left:14px; bottom:14px; width:180px; height:180px; border-radius:50%;
+    border:3px solid rgba(255,105,180,.75); box-shadow:0 0 14px rgba(255,105,180,.5), inset 0 0 20px rgba(0,0,0,.6);
+    overflow:hidden; background:#0d0a18; }
+  #minimap { width:100%; height:100%; }
+
+  #stat-block { right:16px; top:12px; text-align:right; }
+  #cash { font-size:26px; font-weight:800; font-style:italic; color:#8dffd8; text-shadow:0 0 8px rgba(70,255,190,.8), 2px 2px 0 #06281c; letter-spacing:1px; }
+  #wanted-stars { font-size:24px; letter-spacing:3px; color:rgba(255,255,255,.22); text-shadow:none; margin-top:2px; }
+  #wanted-stars .lit { color:#ffd24a; text-shadow:0 0 10px rgba(255,190,40,.9); }
+  #weapon-line { margin-top:4px; font-size:15px; font-weight:700; color:#ffb3e2; text-shadow:0 0 8px rgba(255,80,170,.8); }
+
+  .bar { width:170px; height:11px; margin-top:5px; margin-left:auto; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.35); border-radius:6px; overflow:hidden; }
+  .bar > div { height:100%; transition:width .15s; }
+  #health-fill { background:linear-gradient(90deg,#ff4d88,#ff8fb8); width:100%; }
+  #armor-fill { background:linear-gradient(90deg,#39c8ff,#a8ecff); width:0%; }
+
+  #radio-popup { left:50%; top:16%; transform:translateX(-50%); font-size:22px; font-weight:800; font-style:italic;
+    color:#9df3ff; text-shadow:0 0 12px rgba(60,220,255,.9); opacity:0; transition:opacity .4s; }
+  #zone-popup { left:50%; top:12px; transform:translateX(-50%); text-align:center; font-size:22px; font-weight:800; font-style:italic; color:#ffd9f2;
+    text-shadow:0 0 12px rgba(255,100,200,.9), 2px 2px 0 #3a0f33; opacity:0; transition:opacity .6s; }
+
+  #msg-line { left:50%; bottom:24%; transform:translateX(-50%); font-size:19px; font-weight:700; color:#fff;
+    text-shadow:0 0 10px rgba(255,120,220,.9); opacity:0; transition:opacity .3s; text-align:center; white-space:nowrap; }
+  #mission-hud { left:50%; top:12px; transform:translateX(-50%); text-align:center; display:none; }
+  #mission-title { font-size:18px; font-weight:800; font-style:italic; color:#ffe08a; text-shadow:0 0 10px rgba(255,190,60,.8); }
+  #mission-obj { font-size:15px; color:#e8f6ff; text-shadow:0 1px 3px #000; margin-top:2px; }
+  #mission-timer { font-size:22px; font-weight:800; color:#8dffd8; text-shadow:0 0 8px rgba(60,255,190,.8); margin-top:2px; }
+
+  #crosshair { left:50%; top:50%; transform:translate(-50%,-50%); width:26px; height:26px; display:none; }
+  #crosshair::before, #crosshair::after { content:""; position:absolute; background:#8dffd8; box-shadow:0 0 5px #46ffbe; }
+  #crosshair::before { left:50%; top:0; width:2px; height:100%; transform:translateX(-50%); }
+  #crosshair::after { top:50%; left:0; height:2px; width:100%; transform:translateY(-50%); }
+
+  .big-screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column;
+    z-index:30; text-align:center; }
+  .big-word { font-size:min(15vw,110px); font-weight:900; font-style:italic; letter-spacing:4px;
+    background:linear-gradient(180deg,#fff 0%,#ffd0e8 35%,#ff4d9d 60%,#8a1049 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 18px rgba(255,60,150,.85)) drop-shadow(3px 5px 0 rgba(40,0,30,.9)); }
+  #busted-screen .big-word { background:linear-gradient(180deg,#fff 0%,#cfe8ff 35%,#3aa0ff 60%,#0b3a78 100%);
+    filter:drop-shadow(0 0 18px rgba(60,150,255,.85)) drop-shadow(3px 5px 0 rgba(0,10,40,.9)); }
+  .big-sub { color:#ffd9f2; font-size:17px; margin-top:10px; text-shadow:0 1px 4px #000; }
+
+  /* translucent so the live attract-mode city shows through */
+  #title-screen { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center; flex-direction:column;
+    background:radial-gradient(120% 90% at 50% 110%, rgba(61,17,85,.62) 0%, rgba(27,11,51,.66) 45%, rgba(11,7,20,.78) 100%); }
+  #title-screen > * { position:relative; z-index:1; }
+  #title-screen .sun { width:220px; height:220px; border-radius:50%; position:absolute; top:12%; z-index:0;
+    background:linear-gradient(180deg,#ffe27a 0%,#ff9d5c 45%,#ff4d9d 100%); filter:blur(1px);
+    box-shadow:0 0 80px rgba(255,120,80,.55);
+    -webkit-mask-image:linear-gradient(180deg,#000 55%,transparent 56%,transparent 60%,#000 61%,#000 68%,transparent 69%,transparent 74%,#000 75%,#000 84%,transparent 85%);
+    mask-image:linear-gradient(180deg,#000 55%,transparent 56%,transparent 60%,#000 61%,#000 68%,transparent 69%,transparent 74%,#000 75%,#000 84%,transparent 85%); }
+  #title-logo { position:relative; font-size:min(14vw,96px); font-weight:900; font-style:italic; letter-spacing:6px; line-height:.95;
+    background:linear-gradient(180deg,#e8fbff 0%,#9df3ff 30%,#3ec7f0 48%,#173a66 52%,#9df3ff 60%,#ff7ac2 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 16px rgba(80,220,255,.6)) drop-shadow(4px 6px 0 rgba(150,20,90,.85)); }
+  #title-sub { color:#ffb3e2; font-weight:700; letter-spacing:5px; font-size:15px; margin-top:6px;
+    text-shadow:0 0 10px rgba(255,80,170,.8), 0 2px 6px rgba(10,4,20,.95); }
+  #press-enter { margin-top:30px; font-size:22px; font-weight:800; color:#8dffd8; letter-spacing:3px;
+    text-shadow:0 0 12px rgba(60,255,190,.9); animation:blink 1.2s step-end infinite; pointer-events:auto; cursor:pointer;
+    background:rgba(8,4,20,.6); border:1px solid rgba(90,255,200,.35); border-radius:10px; padding:10px 26px; }
+  /* short landscape screens (phones): shrink the sun and tighten the stack */
+  @media (max-height: 560px) {
+    #title-screen .sun { width:120px; height:120px; top:3%; }
+    #title-logo { font-size:min(9vw,60px); }
+    #title-sub { font-size:12px; margin-top:2px; }
+    #press-enter { margin-top:12px; font-size:17px; padding:8px 20px; }
+    #controls-card { margin-top:10px; font-size:10.5px; line-height:1.55; padding:6px 14px; max-height:26vh; }
+    #title-best { margin-top:4px; font-size:12px; }
+    #title-footer { font-size:9.5px; bottom:4px; }
+  }
+  @keyframes blink { 50% { opacity:.25; } }
+  #controls-card { margin-top:22px; color:#cfe6ff; font-size:12.5px; line-height:1.75; background:rgba(8,4,20,.55);
+    border:1px solid rgba(120,200,255,.3); border-radius:10px; padding:10px 22px; max-height:34vh; overflow:auto; }
+  #controls-card b { color:#9df3ff; }
+  #title-footer { position:absolute; bottom:10px; width:100%; text-align:center; color:rgba(210,220,255,.55); font-size:11.5px; padding:0 12px; }
+  #title-best { margin-top:10px; color:#ffe08a; font-size:14px; text-shadow:0 0 8px rgba(255,190,60,.6); }
+
+  #pause-screen { position:fixed; inset:0; z-index:35; display:none; align-items:center; justify-content:center; flex-direction:column;
+    background:rgba(8,4,18,.82); }
+  #pause-screen h2 { font-size:44px; font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:5px; text-shadow:0 0 16px rgba(60,220,255,.8); margin:0 0 14px; }
+
+  #fs-btn { position:fixed; right:14px; bottom:14px; z-index:45; width:36px; height:36px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:rgba(8,4,20,.55); border:1px solid rgba(120,200,255,.35); color:#9df3ff; font-size:19px;
+    text-shadow:0 0 8px rgba(60,220,255,.7); }
+  #fs-btn:active { background:rgba(60,220,255,.3); }
+
+  #controls-bar { position:fixed; left:50%; bottom:8px; transform:translateX(-50%); z-index:12; display:none;
+    color:#cfe6ff; font-size:12px; background:rgba(8,4,20,.6); border:1px solid rgba(120,200,255,.25);
+    border-radius:8px; padding:4px 14px; pointer-events:none; white-space:nowrap; }
+  #controls-bar b { color:#9df3ff; }
+
+  #map-screen { position:fixed; inset:0; z-index:38; display:none; align-items:center; justify-content:center;
+    flex-direction:column; background:rgba(8,4,18,.9); }
+  #map-title { font-size:26px; font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:4px;
+    text-shadow:0 0 14px rgba(60,220,255,.8); margin-bottom:8px; }
+  #bigmap { border:2px solid rgba(255,105,180,.7); border-radius:10px; box-shadow:0 0 20px rgba(255,105,180,.4);
+    cursor:crosshair; touch-action:none; }
+  #map-hint { color:#cfe6ff; font-size:13px; margin-top:8px; }
+  #map-legend { display:flex; flex-wrap:wrap; gap:3px 16px; justify-content:center; max-width:86vw; margin-top:8px;
+    color:#cfe6ff; font-size:12.5px; }
+  #map-legend .lgd { display:inline-flex; align-items:center; gap:6px; }
+  #map-legend .lgd i { width:10px; height:10px; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.5); }
+  .mbtn { display:inline-block; margin:10px 8px 0; padding:8px 22px; border-radius:8px; cursor:pointer;
+    background:rgba(255,105,180,.18); border:1px solid rgba(255,150,210,.6); color:#ffd9f2; font-weight:800; font-size:14px; }
+  .mbtn:active { background:rgba(255,105,180,.45); }
+
+  #fade-layer { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; z-index:25; transition:opacity .5s; }
+  #crt-layer { position:fixed; inset:0; pointer-events:none; z-index:20; display:none;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
+    mix-blend-mode:multiply; }
+  #crt-layer::after { content:""; position:absolute; inset:0;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(10,0,25,.5) 100%); }
+
+  #touch-layer { position:fixed; inset:0; z-index:15; display:none; pointer-events:none; font-family:inherit; }
+  .tbtn { position:absolute; pointer-events:auto; min-width:60px; min-height:60px; border-radius:50%;
+    background:rgba(255,105,180,.16); border:2px solid rgba(255,150,210,.55); color:#ffd9f2; font-size:13px; font-weight:800;
+    display:flex; align-items:center; justify-content:center; text-shadow:0 1px 3px #000; touch-action:none; }
+  .tbtn:active, .tbtn.held { background:rgba(255,105,180,.42); }
+  #tstick-zone { position:absolute; left:0; bottom:0; width:45%; height:70%; pointer-events:auto; touch-action:none; }
+  #tstick-base { position:absolute; width:120px; height:120px; border-radius:50%; border:2px solid rgba(120,220,255,.45);
+    background:rgba(30,60,90,.25); display:none; }
+  #tstick-nub { position:absolute; width:52px; height:52px; border-radius:50%; background:rgba(140,230,255,.55); display:none; }
+  #rotate-hint { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center;
+    background:rgba(10,5,22,.94); color:#ffd9f2; font-size:22px; font-weight:800; text-align:center; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud" style="display:none">
+  <div class="panel" id="minimap-wrap"><canvas id="minimap" width="180" height="180"></canvas></div>
+  <div class="panel" id="stat-block">
+    <div id="cash">$0</div>
+    <div id="wanted-stars"></div>
+    <div class="bar"><div id="health-fill"></div></div>
+    <div class="bar"><div id="armor-fill"></div></div>
+    <div id="weapon-line"></div>
+  </div>
+  <div class="panel" id="radio-popup"></div>
+  <div class="panel" id="zone-popup"></div>
+  <div class="panel" id="msg-line"></div>
+  <div class="panel" id="mission-hud">
+    <div id="mission-title"></div>
+    <div id="mission-obj"></div>
+    <div id="mission-timer"></div>
+  </div>
+  <div class="panel" id="crosshair"></div>
+</div>
+
+<div id="wasted-screen" class="big-screen"><div class="big-word">WASTED</div><div class="big-sub"></div></div>
+<div id="busted-screen" class="big-screen"><div class="big-word">BUSTED</div><div class="big-sub"></div></div>
+
+<div id="pause-screen">
+  <h2>PAUSED</h2>
+  <div id="pause-controls" style="color:#cfe6ff;font-size:13px;line-height:1.8;text-align:center;"></div>
+  <div style="max-width:520px;text-align:center;">
+    <span class="mbtn" id="pause-resume">RESUME</span>
+    <span class="mbtn" id="pause-map">🗺 MAP</span>
+    <span class="mbtn" id="pause-mute">🔊 SOUND</span>
+    <span class="mbtn" id="pause-crt">📺 CRT</span>
+    <span class="mbtn" id="pause-day" style="display:none">☀ DAY</span>
+    <span class="mbtn" id="pause-fs">⛶ FULLSCREEN</span>
+    <span class="mbtn" id="pause-exit">EXIT TO TITLE</span>
+  </div>
+  <div style="margin-top:12px;color:#8dffd8;font-weight:700;">ESC or tap anywhere — resume</div>
+</div>
+
+<div id="fs-btn" title="Fullscreen">⛶</div>
+
+<div id="title-screen">
+  <div class="sun"></div>
+  <div id="title-logo">NEON&nbsp;MAYHEM</div>
+  <div id="title-sub">COSTA ROSA &nbsp;·&nbsp; 1986</div>
+  <div id="press-enter">PRESS ENTER</div>
+  <div id="title-best"></div>
+  <div id="controls-card">
+    <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / Tab</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>
+    <b>Q / E</b> cycle target · drive-by &nbsp;·&nbsp; <b>Space</b> handbrake &nbsp;·&nbsp; <b>F</b> enter / exit car &nbsp;·&nbsp; <b>Shift</b> sprint<br>
+    <b>1–4</b> weapons &nbsp;·&nbsp; <b>, / .</b> radio &nbsp;·&nbsp; <b>J</b> taxi/ambulance job &nbsp;·&nbsp; <b>P</b> map &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>T</b> CRT &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause
+  </div>
+  <div id="title-footer">Fan-made tribute. Not affiliated with Rockstar Games or Take-Two Interactive. No original game assets used.</div>
+</div>
+
+<div id="controls-bar"></div>
+
+<div id="map-screen">
+  <div id="map-title">COSTA ROSA</div>
+  <canvas id="bigmap" width="560" height="560"></canvas>
+  <div id="map-legend"></div>
+  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
+  <div><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
+</div>
+
+<div id="fade-layer"></div>
+<div id="crt-layer"></div>
+
+<div id="touch-layer">
+  <div id="tstick-zone"></div>
+  <div id="tstick-base"></div>
+  <div id="tstick-nub"></div>
+</div>
+<div id="rotate-hint">Rotate your device to landscape<br>to play NEON MAYHEM</div>
+
+<script>
+// Inline watchdog: external scripts can fail when the page is opened through a
+// file manager (Android content:// URLs block sibling-file loads). Inline code
+// still runs, so surface the problem instead of a dead title screen.
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    if (window.GAME && window.THREE) return;
+    var pe = document.getElementById('press-enter');
+    if (!pe) return;
+    pe.textContent = 'GAME FILES DID NOT LOAD';
+    pe.style.animation = 'none';
+    pe.style.color = '#ff5d7a';
+    pe.style.borderColor = 'rgba(255,90,120,.6)';
+    pe.style.textShadow = '0 0 12px rgba(255,60,100,.8)';
+    var d = document.createElement('div');
+    d.style.cssText = 'position:relative;z-index:1;margin-top:12px;color:#cfe6ff;font-size:13px;line-height:1.6;max-width:620px;text-align:center;padding:0 18px;';
+    d.innerHTML = 'The browser could not load the <b>js/</b> folder. This happens when index.html is opened directly from a file manager or downloads app.<br>Play it over HTTP instead: host the folder (e.g. GitHub Pages) or run a local web-server app and open its URL.';
+    pe.parentNode.insertBefore(d, pe.nextSibling);
+  }, 2500);
+});
+</script>
+<script src="js/lib/three.min.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/city.js"></script>
+<script src="js/vehicles.js"></script>
+<script src="js/peds.js"></script>
+<script src="js/player.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/aircraft.js"></script>
+<script src="js/police.js"></script>
+<script src="js/missions.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/touch.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
