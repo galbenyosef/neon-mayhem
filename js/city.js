@@ -62,7 +62,7 @@ GAME.city = (function () {
       var lz = dx * r.sin + dz * r.cos;      // up the ramp
       if (Math.abs(lx) > r.w / 2 || lz < -r.len / 2 || lz > r.len / 2) continue;
       var t = (lz + r.len / 2) / r.len;
-      return { y: r.h * t, slope: r.h / r.len, rot: r.rot };
+      return { idx: r.idx, y: r.h * t, slope: r.h / r.len, rot: r.rot };
     }
     return null;
   };
@@ -604,6 +604,13 @@ GAME.city = (function () {
     city.dayMode = df > 0.7;
   };
   city.setDaytime = function (day) { city.applyTimeOfDay(day ? 1 : 0); };
+  // reward for finding every stunt jump: a monster truck waiting at the airport
+  city.monsterSpot = null;
+  city.unlockMonsterTruck = function () {
+    if (city.monsterSpot) return;
+    city.monsterSpot = { x: city.airport.apron.x + 14, z: city.airport.apron.z + 16, heading: 0, vtype: 'monster' };
+    city.parkedSpots.push(city.monsterSpot);
+  };
 
   function buildInstancedProps(scene) {
     var dummy = new THREE.Object3D();
@@ -908,25 +915,74 @@ GAME.city = (function () {
 
   // wedge-shaped jump ramps scattered around the city. They are drivable
   // surfaces (see rampAt / groundY), not solids, so you ride up and launch.
-  function buildRamps(scene) {
-    // Construction ramps sit on the verge beside a road, never across the
-    // carriageway — you swing off the street onto one. Each points at something
-    // worth clearing: a low warehouse roof, a block gap, the harbour water.
-    var SPOTS = [
-      // harbour: heavy ramps aimed at the low warehouse roofs
-      { x: -194, z: 208, rot: Math.PI / 2, w: 12, len: 22, h: 6.6 },
-      { x: -294, z: 308, rot: Math.PI / 2, w: 12, len: 22, h: 6.6 },
-      // riverside verge, launching out over the water
-      { x: -430, z: -170, rot: Math.PI, w: 12, len: 24, h: 5.6 },
-      // boardwalk end of the strip, out along the sand
-      { x: 366, z: -230, rot: Math.PI, w: 12, len: 26, h: 5.0 },
-      // airport apron: long run-up, big air
-      { x: -330, z: 462, rot: Math.PI / 2, w: 13, len: 30, h: 6.4 },
-      // downtown verges, clearing the sidewalk and the block gap
-      { x: 68, z: -168, rot: 0, w: 11, len: 20, h: 4.2 },
-      { x: -168, z: -68, rot: Math.PI / 2, w: 11, len: 20, h: 4.2 },
-      { x: 232, z: 132, rot: Math.PI, w: 11, len: 22, h: 4.6 }
+  // Lay out the 25 stunt-jump ramps. Anchors go near landmarks; the rest fill
+  // in along road verges, spread out and clear of buildings and water.
+  function rollStuntSpots() {
+    var A = city.airport, H = city.pois.hospitals, PL = city.pois.police;
+    var anchors = [
+      { x: -194, z: 208, rot: Math.PI / 2, h: 6.6, len: 22 },   // harbour warehouses
+      { x: -294, z: 308, rot: Math.PI / 2, h: 6.6, len: 22 },
+      { x: -430, z: -170, rot: Math.PI, h: 5.6, len: 24 },      // riverside
+      { x: 366, z: -230, rot: Math.PI, h: 5.0, len: 26 },       // boardwalk
+      { x: 366, z: 150, rot: 0, h: 5.0, len: 26 },              // beach, other way
+      { x: A.cx + 30, z: 462, rot: Math.PI / 2, h: 6.4, len: 30 }, // airport apron
+      { x: A.cx - 90, z: 462, rot: -Math.PI / 2, h: 6.4, len: 30 },
+      { x: H[0].x + 34, z: H[0].z + 30, rot: 0, h: 4.6, len: 22 },  // hospital
+      { x: H[1].x + 34, z: H[1].z + 30, rot: 0, h: 4.6, len: 22 },
+      { x: PL.x + 34, z: PL.z + 30, rot: 0, h: 4.6, len: 22 },      // police station
+      { x: 232, z: 132, rot: Math.PI, h: 4.6, len: 22 },            // ferris wheel side
+      { x: 68, z: -168, rot: 0, h: 4.2, len: 20 },
+      { x: -168, z: -68, rot: Math.PI / 2, h: 4.2, len: 20 }
     ];
+    var out = [], TARGET = 25;
+    function ok(x, z) {
+      if (city.isInWater(x, z)) return false;
+      if (x < -470 || x > 396 || Math.abs(z) > 476) return false;
+      for (var i = 0; i < out.length; i++) if (U.dist2(x, z, out[i].x, out[i].z) < 78 * 78) return false;
+      var boxes = city.hash.query(x, z, 18);
+      for (var b = 0; b < boxes.length; b++) {
+        var q = boxes[b];
+        if (x > q.minX - 14 && x < q.maxX + 14 && z > q.minZ - 14 && z < q.maxZ + 14) return false;
+      }
+      return true;
+    }
+    function offRoad(x, z) {
+      for (var i = 0; i < R.length; i++) if (Math.abs(x - R[i]) < 12 || Math.abs(z - R[i]) < 12) return false;
+      return true;
+    }
+    for (var a = 0; a < anchors.length && out.length < TARGET; a++) {
+      var an = anchors[a];
+      // nudge an anchor off the carriageway if it landed on one
+      for (var n = 0; n < 8 && !offRoad(an.x, an.z); n++) { an.x += 4; an.z += 4; }
+      if (offRoad(an.x, an.z) && ok(an.x, an.z)) out.push({ x: an.x, z: an.z, rot: an.rot, w: 12, len: an.len, h: an.h });
+    }
+    // fill the rest along road verges, alternating orientation
+    for (var pass = 0; pass < 4 && out.length < TARGET; pass++) {
+      for (var i2 = 0; i2 < R.length && out.length < TARGET; i2++) {
+        for (var d = -400; d <= 400 && out.length < TARGET; d += 100) {
+          var side = (i2 + pass) % 2 ? 1 : -1;
+          var jitter = ((i2 * 37 + d + pass * 13) % 60) - 30;
+          // verge beside a north-south road, launching along it
+          var vx = R[i2] + side * 15, vz = d + jitter;
+          if (offRoad(vx, vz) && ok(vx, vz)) {
+            out.push({ x: vx, z: vz, rot: side > 0 ? 0 : Math.PI, w: 11, len: 20 + (pass % 3) * 3, h: 4.0 + (pass % 3) * 0.7 });
+            continue;
+          }
+          // verge beside an east-west road
+          var hx = d + jitter, hz = R[i2] + side * 15;
+          if (hx < 340 && offRoad(hx, hz) && ok(hx, hz)) {
+            out.push({ x: hx, z: hz, rot: side > 0 ? Math.PI / 2 : -Math.PI / 2, w: 11, len: 20 + (pass % 3) * 3, h: 4.0 + (pass % 3) * 0.7 });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  function buildRamps(scene) {
+    // 25 unique stunt jumps scattered across the city, GTA-style: construction
+    // ramps parked on verges and aprons near landmarks, each one a find.
+    var SPOTS = rollStuntSpots();
     var pos = [], col = [], nrm = [];
     function tri(ax, ay, az, bx, by, bz, cx2, cy, cz2, r, g, b) {
       var ux = bx - ax, uy = by - ay, uz = bz - az;
@@ -966,10 +1022,16 @@ GAME.city = (function () {
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({
-        x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h,
+        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h,
         cos: c, sin: sn,
         minX: s.x - rad, maxX: s.x + rad, minZ: s.z - rad, maxZ: s.z + rad
       });
+      // the tall back face is solid: come at it from behind and you hit a wall.
+      // It sits just beyond the lip and stops short of it, so a car launching
+      // off the top sails over while one approaching from behind is stopped.
+      var bc = P(0, hl + 1.1, 0);
+      var across = Math.abs(Math.cos(s.rot)) > 0.5;
+      addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, s.h * 0.62, 'building');
     }
     var g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));

@@ -521,7 +521,15 @@ GAME.hud = (function () {
       document.getElementById('hud').style.display = 'block';
       api.refreshFsBtn();
     },
-    setPaused: function (p) { el['pause-screen'].style.display = p ? 'flex' : 'none'; api.refreshFsBtn(); },
+    setPaused: function (p) {
+      el['pause-screen'].style.display = p ? 'flex' : 'none';
+      var sj = $('pause-stunts');
+      if (sj && GAME.stunts) {
+        sj.textContent = 'STUNT JUMPS  ' + GAME.stunts.found + ' / ' + GAME.stunts.total +
+          (GAME.stunts.complete ? '   ·   ALL FOUND' : '');
+      }
+      api.refreshFsBtn();
+    },
     toggleCRT: function () {
       var on = el['crt-layer'].style.display !== 'block';
       el['crt-layer'].style.display = on ? 'block' : 'none';

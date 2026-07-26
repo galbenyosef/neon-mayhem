@@ -1,3 +1,54 @@
+// Unique stunt jumps: 25 ramps hidden around the city. Clear one cleanly and
+// it's logged; find them all and the city opens up.
+GAME.stunts = (function () {
+  var found = {}, total = 25, rewarded = false;
+
+  function count() { var n = 0; for (var k in found) if (found[k]) n++; return n; }
+
+  function load() {
+    var s = (GAME.prefs && GAME.prefs.stunts) || null;
+    if (s) { found = s.found || {}; rewarded = !!s.rewarded; }
+    if (rewarded) GAME.unlimitedAmmo = true;
+  }
+  function save() {
+    if (!GAME.prefs) GAME.prefs = {};
+    GAME.prefs.stunts = { found: found, rewarded: rewarded };
+    GAME.save();
+  }
+
+  // called when a jump that started on ramp `idx` lands successfully
+  function credit(idx, airT, dist) {
+    if (idx === undefined || idx === null) return 0;
+    total = Math.max(total, GAME.city.ramps.length);
+    if (found[idx]) return 0;
+    found[idx] = true;
+    var n = count();
+    var bonus = 250 + n * 50;
+    GAME.addCash(bonus);
+    GAME.audio.sting('win');
+    GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus, 4);
+    if (n >= total && !rewarded) grantReward();
+    save();
+    return bonus;
+  }
+
+  function grantReward() {
+    rewarded = true;
+    GAME.unlimitedAmmo = true;
+    GAME.addCash(50000);
+    GAME.city.unlockMonsterTruck();
+    GAME.hud.message('ALL ' + total + ' STUNT JUMPS!  +$50,000  ·  unlimited ammo  ·  MONSTER TRUCK unlocked at the airport', 8);
+  }
+
+  return {
+    get found() { return count(); },
+    get total() { return total; },
+    get complete() { return rewarded; },
+    load: load, credit: credit,
+    isFound: function (i) { return !!found[i]; }
+  };
+})();
+
 GAME.missions = (function () {
   var DEFS = [
     {

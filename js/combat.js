@@ -124,7 +124,7 @@ GAME.combat = (function () {
     var m = muzzlePos();
     var inv = P.weapons[w];
     if (!inv || inv.ammo <= 0) { GAME.audio.ricochet(); return; }
-    inv.ammo--;
+    if (!GAME.unlimitedAmmo) inv.ammo--;
     GAME.audio.gunshot(w);
     GAME.fx.flash(m.x + Math.sin(dirYaw) * 0.6, m.y, m.z + Math.cos(dirYaw) * 0.6, 0.8);
     var pellets = wd.pellets || 1;

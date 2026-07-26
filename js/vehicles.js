@@ -120,6 +120,7 @@ var VEHICLES = {
   ambulance: { label: 'Ambulance', maxSpeed: 27, accel: 8.5, grip: 5.6, turn: 1.8, hp: 240, l: 5.3, w: 2.15, cabinH: 1.15, bodyH: 1.0, colors: [0xf2f2f6] },
   motorcycle: { label: 'Neon Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 130, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
+  monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
   airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 }
 };
 
@@ -222,8 +223,31 @@ function buildPlaneMesh(colors) {
   return g;
 }
 
+function buildMonsterMesh(colorHex) {
+  var g = new THREE.Group();
+  var b = new GeoBatch();
+  b.addBox(0, 1.85, 0, 2.3, 0.9, 4.6, 0, colorHex, 0);          // chassis
+  b.addBox(0, 2.65, -0.3, 1.9, 0.85, 2.2, 0, 0x141824, 0);      // cab
+  b.addBox(0, 1.25, 0, 0.5, 0.35, 4.0, 0, 0x22262e, 0);         // spine
+  b.addBox(0, 1.85, 2.35, 2.2, 0.5, 0.2, 0, 0x22262e, 0);       // bar
+  var wh = new GeoBatch();
+  [[1.25, 1.5], [-1.25, 1.5], [1.25, -1.5], [-1.25, -1.5]].forEach(function (w) {
+    wh.addBox(w[0], 1.15, w[1], 0.62, 2.3, 2.3, 0, 0x0c0c10, 0);
+  });
+  var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  g.add(body);
+  g.add(new THREE.Mesh(wh.build(), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  var glow = new GeoBatch();
+  glow.addBox(0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
+  glow.addBox(-0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
+  g.add(new THREE.Mesh(glow.build(), new THREE.MeshBasicMaterial({ vertexColors: true })));
+  g.userData.bodyMesh = body;
+  return g;
+}
+
 function buildCarMesh(type, colorHex) {
   var s = VEHICLES[type];
+  if (s.monster) return buildMonsterMesh(colorHex);
   if (s.plane) return buildPlaneMesh(s.colors);
   if (s.heli) return buildHeliMesh(colorHex);
   if (s.bike) return buildBikeMesh(colorHex);
@@ -367,7 +391,7 @@ GAME.vehicles = (function () {
     var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
     var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
     if (car.pos.y > gy + 0.08) {
-      if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; }
+      if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
       car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
       car.vy = (car.vy || 0) - 24 * dt;
       car.pos.y += car.vy * dt;
@@ -381,6 +405,7 @@ GAME.vehicles = (function () {
       car.pos.y = gy;
       // on a ramp the deck itself drives the climb rate; carry that off the lip
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
+      car.onRampIdx = ramp ? ramp.idx : null;
       if (car.air) landStunt(car, 0);
     }
     car.mesh.rotation.y = car.heading;
@@ -409,8 +434,10 @@ GAME.vehicles = (function () {
       GAME.audio.sting('win');
       GAME.hud.message(label + '   ' + airT.toFixed(1) + 's · ' + Math.round(dist) + 'm · +$' + cash, 3);
       GAME.missions.notifyChaos(60);
+      // a jump launched off one of the city's ramps also logs it as found
+      if (car.jumpRamp !== undefined && car.jumpRamp !== null) GAME.stunts.credit(car.jumpRamp, airT, dist);
     }
-    car.jumpSpin = 0;
+    car.jumpSpin = 0; car.jumpRamp = null;
     // hard landings still hurt
     if (impact > 16) {
       damageCar(car, Math.min(40, (impact - 16) * 2.2), 'wall');

@@ -40,6 +40,7 @@
     GAME.initPlayer();
     GAME.combat.initPickups();
     GAME.missions.init();
+    GAME.stunts.load();
     GAME.hud.init();
     GAME.initInput(canvas);
     GAME.combat.refreshWeaponHud();

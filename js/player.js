@@ -158,6 +158,13 @@ function respawnAfterScreen() {
     }
     P.weapons = { fist: { have: true, ammo: Infinity } };
     P.currentWeapon = 'fist';
+    // every stunt jump found: the arsenal survives a hospital or cell visit
+    if (GAME.unlimitedAmmo) {
+      P.weapons.pistol = { have: true, ammo: 999 };
+      P.weapons.smg = { have: true, ammo: 999 };
+      P.weapons.shotgun = { have: true, ammo: 999 };
+      P.currentWeapon = 'pistol';
+    }
     GAME.combat.refreshWeaponHud();
     GAME.police.clearWanted();
     P.state = 'alive';
@@ -340,7 +347,7 @@ function updateOnFoot(dt) {
   if (P.carHurtCd > 0) P.carHurtCd -= dt;
   // run: Shift on desktop, RUN toggle or full stick deflection on touch
   var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run || (T.active && mag > 0.85)) && !aiming;
-  var target = mag * (aiming ? 2.0 : run ? 6.0 : 2.8);
+  var target = mag * (aiming ? 2.0 : run ? 7.5 : 2.8);   // sprint is 1.25x the old 6.0
   P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
 
   if (mag > 0.05) {
@@ -410,9 +417,8 @@ function updateOnFoot(dt) {
   }
   P.mesh.rotation.y = P.heading;
 
-  // walk anim — a run is the same gait, just cycled 1.25x faster
-  var running = P.moveSpeed > 3.6;
-  P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * 2.2 * (running ? 1.25 : 1);
+  // walk anim — the same gait throughout; cadence follows moveSpeed
+  P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * 2.2;
   var j = P.mesh.userData.joints;
   var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * 0.7;
   j.legL.rotation.x = s; j.legR.rotation.x = -s;
@@ -487,7 +493,22 @@ function updateDriving(dt) {
     }
     c.throttle = U.clamp(th, -1, 1);
     c.steer = U.clamp(st, -1, 1);
-    c.handbrake = GAME.key('Space') || T.handbrake;
+    // the monster truck's party trick: Space launches it straight up
+    var wantHop = GAME.key('Space') || T.handbrake;
+    if (car.spec.monster) {
+      var mgy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
+      if (wantHop && !P.hopLatch && car.pos.y <= mgy + 0.1) {
+        car.vy = 13.5;
+        car.pos.y = mgy + 0.12;
+        GAME.audio.crash(0.35);
+        GAME.cameraShake = 0.4;
+      }
+      P.hopLatch = wantHop;
+      c.handbrake = false;
+    } else {
+      P.hopLatch = false;
+      c.handbrake = wantHop;
+    }
   }
 
   var sp = Math.abs(car.speed);
