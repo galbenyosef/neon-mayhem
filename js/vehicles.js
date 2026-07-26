@@ -361,14 +361,62 @@ GAME.vehicles = (function () {
     car.vx = vx; car.vz = vz;
     car.pos.x += vx * dt;
     car.pos.z += vz * dt;
+
+    // vertical: ride the ground (or a ramp deck), and go ballistic off a lip
     var gy = GAME.city.groundY(car.pos.x, car.pos.z);
-    car.pos.y = U.lerp(car.pos.y, gy, Math.min(1, dt * 8));
+    var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
+    if (car.pos.y > gy + 0.08) {
+      if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; }
+      car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
+      car.vy = (car.vy || 0) - 24 * dt;
+      car.pos.y += car.vy * dt;
+      car.air = (car.air || 0) + dt;
+      if (car.pos.y <= gy) {
+        var impact = -(car.vy || 0);
+        car.pos.y = gy; car.vy = 0;
+        landStunt(car, impact);
+      }
+    } else {
+      car.pos.y = gy;
+      // on a ramp the deck itself drives the climb rate; carry that off the lip
+      car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
+      if (car.air) landStunt(car, 0);
+    }
     car.mesh.rotation.y = car.heading;
-    // body roll with slide
+    // pitch to the flight path while airborne, else roll with the slide
+    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? -Math.atan(ramp.slope) : 0);
+    car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 8));
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
+    car.lastHeading = car.heading;
 
     collideStatic(car, dt);
     if (GAME.city.isInWater(car.pos.x, car.pos.z)) sinkCar(car);
+  }
+
+  // a jump has ended: score it if the player pulled it off, and take the knock
+  function landStunt(car, impact) {
+    var airT = car.air || 0;
+    car.air = 0;
+    var isPlayer = car === GAME.player.car && GAME.player.inCar;
+    if (isPlayer && airT > 0.45) {
+      var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
+      var spins = Math.floor(Math.abs(car.jumpSpin || 0) / (Math.PI * 2));
+      var cash = Math.round(airT * 120 + dist * 6 + spins * 400);
+      var label = spins > 0 ? (spins > 1 ? spins + 'x SPIN!' : '360 SPIN!')
+        : airT > 1.6 ? 'INSANE JUMP!' : airT > 1.0 ? 'BIG AIR!' : 'NICE JUMP!';
+      GAME.addCash(cash);
+      GAME.audio.sting('win');
+      GAME.hud.message(label + '   ' + airT.toFixed(1) + 's · ' + Math.round(dist) + 'm · +$' + cash, 3);
+      GAME.missions.notifyChaos(60);
+    }
+    car.jumpSpin = 0;
+    // hard landings still hurt
+    if (impact > 16) {
+      damageCar(car, Math.min(40, (impact - 16) * 2.2), 'wall');
+      GAME.audio.crash(Math.min(1, impact / 30));
+      if (isPlayer) GAME.cameraShake = Math.min(1, impact / 26);
+      if (car.spec.bike && isPlayer && GAME.player.onBike && impact > 24) GAME.ejectBike(impact);
+    }
   }
 
   function collideStatic(car, dt) {
@@ -384,6 +432,8 @@ GAME.vehicles = (function () {
       var pz = car.pos.z + fz * lx + szv * lw;
       for (var bi = 0; bi < boxes.length; bi++) {
         var b = boxes[bi];
+        // jumped clear of it — don't clip a car that's sailing over a fence
+        if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
         if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
           // push out along the smallest penetration axis
           var dxl = px - b.minX, dxr = b.maxX - px, dzl = pz - b.minZ, dzr = b.maxZ - pz;
@@ -442,7 +492,8 @@ GAME.vehicles = (function () {
           var pc = GAME.player.car;
           if ((a === pc || b === pc) && rel > 6) {
             var other = a === pc ? b : a;
-            if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
+            if (other.isPolice) GAME.police.reportCrime('hit_cop_car', pc.pos);
+            else if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
           }
         }
         // transfer momentum crudely

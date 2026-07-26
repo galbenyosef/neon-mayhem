@@ -211,9 +211,9 @@ GAME.hud = (function () {
     ctlMode = mode;
     var txt = {
       car: '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide',
-      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
+      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
       heli: '<b>Space</b> up · <b>Shift</b> down · <b>W/S</b> forward · <b>A/D</b> yaw · <b>F</b> exit / bail out · <b>P</b> map',
-      plane: '<b>W/S</b> throttle · <b>Space</b> climb · <b>Shift</b> dive · <b>A/D</b> turn · <b>F</b> exit / bail out',
+      plane: '<b>W/S</b> throttle · <b>Space</b> climb · <b>Shift</b> dive · <b>A/D</b> turn · <b>Q/E</b> barrel roll · <b>F</b> bail out',
       chute: '<b>WASD</b> steer your descent · glide down to land'
     };
     el['controls-bar'].innerHTML = txt[mode];

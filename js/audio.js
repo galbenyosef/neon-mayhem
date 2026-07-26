@@ -193,6 +193,13 @@ GAME.audio = (function () {
         if (ctx) nextTime = ctx.currentTime + 0.08;
         return stations[current].name;
       },
+      // tune to a random station — the dial isn't always left where you found it
+      randomStation: function () {
+        current = Math.floor(Math.random() * stations.length) % stations.length;
+        step = 0;
+        if (ctx) nextTime = ctx.currentTime + 0.08;
+        return stations[current].name;
+      },
       setVolume: function (v) {
         if (!ctx) return;
         radioBus.gain.setTargetAtTime(v, ctx.currentTime, 0.3);

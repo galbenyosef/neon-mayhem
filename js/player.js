@@ -230,6 +230,8 @@ function stepEnter(dt) {
     GAME.cam.freeT = 0;
     GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
     GAME.hud.message(car.spec.label, 1.6);
+    // the radio comes on tuned to whatever the last driver left it on
+    if (!car.spec.heli && !car.spec.plane) GAME.hud.radioPopup(GAME.audio.radio.randomStation());
     if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
     else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
     else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
@@ -381,6 +383,15 @@ function updateOnFoot(dt) {
   if (GAME.city.isInWater(P.pos.x, P.pos.z)) { GAME.playerDrown(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
   var surf = GAME.city.surfaceY(P.pos.x, P.pos.z);
+  // Space jumps when you're on your feet (running gives you a longer hop)
+  var grounded = P.pos.y <= surf + 0.06;
+  var wantJump = GAME.key('Space') || T.jump;
+  if (grounded && wantJump && !P.jumpLatch) {
+    P.velY = 7.2 + Math.min(P.moveSpeed, 6) * 0.22;
+    P.pos.y = surf + 0.07;
+    GAME.audio.punch();
+  }
+  P.jumpLatch = wantJump;
   if (P.pos.y > surf + 0.06) {
     P.velY = (P.velY || 0) - 22 * dt;
     P.pos.y += P.velY * dt;
@@ -397,17 +408,38 @@ function updateOnFoot(dt) {
   }
   P.mesh.rotation.y = P.heading;
 
-  // walk anim
-  P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * 2.2;
+  // walk / run anim: a run is faster, longer-limbed and leans into the stride
+  var running = P.moveSpeed > 3.6;
+  P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * (running ? 3.0 : 2.2);
   var j = P.mesh.userData.joints;
-  var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * 0.7;
+  var swing = running ? 1.25 : 0.7;
+  var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * swing;
   j.legL.rotation.x = s; j.legR.rotation.x = -s;
-  if (aiming && P.currentWeapon !== 'fist') {
+  // lean forward and bob with the stride when sprinting
+  var lean = running ? U.clamp((P.moveSpeed - 3.6) / 2.4, 0, 1) * 0.32 : 0;
+  j.torso.rotation.x = U.lerp(j.torso.rotation.x, lean, Math.min(1, dt * 8));
+  P.mesh.position.y += running ? Math.abs(Math.sin(P.walkPhase)) * 0.07 : 0;
+  if (P.pos.y > surf + 0.12) {
+    // airborne: tuck the legs and throw the arms up
+    j.legL.rotation.x = -0.75; j.legR.rotation.x = -0.35;
+    j.armL.rotation.x = -2.2; j.armR.rotation.x = -2.2;
+    j.torso.rotation.x = 0.1;
+  } else if (P.punchT > 0) {
+    // throwing a punch: drive the lead arm out, overriding the walk swing
+    P.punchT -= dt;
+    var k = 1 - P.punchT / 0.26;
+    var ext = Math.sin(U.clamp(k, 0, 1) * Math.PI);
+    j.armR.rotation.x = -1.75 * ext;
+    j.armL.rotation.x = -s * 0.5;
+    j.torso.rotation.y = -0.35 * ext;
+  } else if (aiming && P.currentWeapon !== 'fist') {
+    j.torso.rotation.y = 0;
     j.armR.rotation.x = -Math.PI / 2 + GAME.cam.pitch * 0.5;
     j.armL.rotation.x = -s * 0.4;
   } else {
-    j.armL.rotation.x = -s * 0.8;
-    j.armR.rotation.x = s * 0.8;
+    j.torso.rotation.y = 0;
+    j.armL.rotation.x = -s * (running ? 1.15 : 0.8);
+    j.armR.rotation.x = s * (running ? 1.15 : 0.8);
   }
 
   if (wantsEnter()) {

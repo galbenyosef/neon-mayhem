@@ -1,5 +1,6 @@
 GAME.aircraft = (function () {
-  var chute = null;
+  var chute = null, rig = null;
+  var CHUTE_LINES = 6;
 
   // arcade helicopter: collective (up/down), cyclic (nose tilt = forward),
   // pedal (yaw). Called from player.js while the player flies a heli.
@@ -53,13 +54,16 @@ GAME.aircraft = (function () {
   // yaw to turn. Needs runway room to take off and land.
   function updatePlane(dt) {
     var P = GAME.player, car = P.car, inp = GAME.input, T = inp.touch;
-    var thr = 0, pitchIn = 0, yawIn = 0;
+    var thr = 0, pitchIn = 0, yawIn = 0, rollIn = 0;
     if (GAME.key('KeyW')) thr += 1;
     if (GAME.key('KeyS')) thr -= 1;
     if (GAME.key('Space')) pitchIn += 1;
     if (GAME.key('ShiftLeft') || GAME.key('ShiftRight') || GAME.key('ControlLeft')) pitchIn -= 1;
     if (GAME.key('KeyA')) yawIn += 1;
     if (GAME.key('KeyD')) yawIn -= 1;
+    // Q/E barrel-roll the airframe right the way round
+    if (GAME.key('KeyQ')) rollIn += 1;
+    if (GAME.key('KeyE')) rollIn -= 1;
     // touch: THR+/THR- buttons drive throttle; the stick is a yoke — pull it
     // back (down) to bring the nose up and climb, push forward (up) to dive.
     if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; }
@@ -71,9 +75,15 @@ GAME.aircraft = (function () {
     car.speed *= Math.exp(-0.09 * dt);
 
     car.pitch = car.pitch || 0;
+    car.roll = car.roll || 0;
     // on the ground the nose only rotates up once you're at rotation (stall) speed
-    if (onGround && car.speed < car.spec.stall) car.pitch = U.damp(car.pitch, 0, 6, dt);
-    else car.pitch = U.clamp(car.pitch + pitchIn * 1.1 * dt, onGround ? 0 : -0.7, 0.7);
+    if (onGround && car.speed < car.spec.stall) { car.pitch = U.damp(car.pitch, 0, 6, dt); car.roll = U.damp(car.roll, 0, 6, dt); }
+    else if (onGround) car.pitch = U.clamp(car.pitch + pitchIn * 1.1 * dt, 0, 0.7);
+    else {
+      // airborne the elevator is unrestricted, so you can pull a full loop
+      car.pitch = U.wrapPI(car.pitch + pitchIn * 1.35 * dt);
+      car.roll = U.wrapPI(car.roll + rollIn * 3.2 * dt);
+    }
 
     var yawEff = Math.min(1, car.speed / 22);
     car.heading += yawIn * 1.15 * yawEff * dt;
@@ -92,8 +102,15 @@ GAME.aircraft = (function () {
     var horiz = car.speed * Math.cos(car.pitch);
     var nx = car.pos.x + Math.sin(car.heading) * horiz * dt;
     var nz = car.pos.z + Math.cos(car.heading) * horiz * dt;
+    // flying into a building at speed is a crash, not a bump
     if (car.pos.y < GAME.city.surfaceY(nx, nz) - 0.8) {
-      if (car.speed > 20) { GAME.vehicles.damageCar(car, car.speed, 'wall'); GAME.cameraShake = 0.8; }
+      if (car.speed > 18) {
+        GAME.cameraShake = 1;
+        GAME.hud.message('You flew it into a building.', 3);
+        GAME.vehicles.explodeCar(car, 'wall');
+        return;
+      }
+      GAME.vehicles.damageCar(car, car.speed, 'wall');
       car.speed *= 0.3; nx = car.pos.x; nz = car.pos.z;
     }
     car.pos.x = U.clamp(nx, -524, 524);
@@ -101,13 +118,23 @@ GAME.aircraft = (function () {
 
     var surf = GAME.city.surfaceY(car.pos.x, car.pos.z);
     if (car.pos.y < surf + car.spec.wheelH) {
-      var hard = vy < -11;
       car.pos.y = surf + car.spec.wheelH;
-      if (hard) { GAME.vehicles.damageCar(car, -vy * 3, 'wall'); GAME.cameraShake = Math.min(1, -vy / 12); }
+      // a steep arrival, or touching down inverted, writes the aircraft off
+      var inverted = Math.abs(U.wrapPI(car.roll || 0)) > 1.1 || Math.abs(U.wrapPI(car.pitch)) > 1.2;
+      if (vy < -18 || (vy < -6 && inverted)) {
+        GAME.cameraShake = 1;
+        GAME.hud.message('Crash landing.', 3);
+        GAME.vehicles.explodeCar(car, 'wall');
+        return;
+      }
+      if (vy < -11) { GAME.vehicles.damageCar(car, -vy * 3, 'wall'); GAME.cameraShake = Math.min(1, -vy / 12); }
+      // wings level out once you're rolling on the wheels again
+      car.roll = U.damp(car.roll, 0, 5, dt);
     }
 
     GAME.audio.engineState(true, 0.35 + Math.min(0.6, car.speed / car.spec.maxSpeed * 0.6));
-    car.mesh.rotation.set(-car.pitch, car.heading, -yawIn * 0.4);
+    // bank into turns on top of any barrel roll the pilot is holding
+    car.mesh.rotation.set(-car.pitch, car.heading, car.roll - yawIn * 0.4);
   }
 
   function startParachute(x, y, z, heading) {
@@ -123,8 +150,16 @@ GAME.aircraft = (function () {
         new THREE.MeshLambertMaterial({ color: 0xff2f7a, side: THREE.DoubleSide, emissive: 0x40101f })
       );
       GAME.scene.add(chute);
+      // rigging lines from the canopy rim down to the harness, so you read as
+      // hanging from the chute rather than floating under it
+      var lg = new THREE.BufferGeometry();
+      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CHUTE_LINES * 6), 3));
+      rig = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xf7d8e4 }));
+      rig.frustumCulled = false;
+      GAME.scene.add(rig);
     }
     chute.visible = true;
+    if (rig) rig.visible = true;
     GAME.audio.engineState(false, 0);
     GAME.hud.message('Parachute out — WASD to steer, glide to the ground', 3.5);
   }
@@ -153,6 +188,20 @@ GAME.aircraft = (function () {
     j.armL.rotation.set(-2.5, 0, -0.3); j.armR.rotation.set(-2.5, 0, 0.3);
     j.legL.rotation.x = 0.25; j.legR.rotation.x = -0.15;
     if (chute) chute.position.set(P.pos.x, P.pos.y + 3.2, P.pos.z);
+    if (rig) {
+      // canopy rim -> shoulders, swinging with the player's facing
+      var a = rig.geometry.attributes.position.array;
+      var sy = P.pos.y + 1.45, cy = P.pos.y + 3.3, rr = 2.1;
+      for (var i = 0; i < CHUTE_LINES; i++) {
+        var ang = P.heading + i / CHUTE_LINES * Math.PI * 2;
+        var sx = Math.sin(ang) * 0.24, sz = Math.cos(ang) * 0.24;
+        a[i * 6] = P.pos.x + sx; a[i * 6 + 1] = sy; a[i * 6 + 2] = P.pos.z + sz;
+        a[i * 6 + 3] = P.pos.x + Math.sin(ang) * rr;
+        a[i * 6 + 4] = cy;
+        a[i * 6 + 5] = P.pos.z + Math.cos(ang) * rr;
+      }
+      rig.geometry.attributes.position.needsUpdate = true;
+    }
 
     if (GAME.city.isInWater(P.pos.x, P.pos.z)) { land(); GAME.playerDrown(); return; }
     if (P.pos.y <= gy + 0.05) {
@@ -166,6 +215,7 @@ GAME.aircraft = (function () {
     var P = GAME.player;
     P.parachuting = false;
     if (chute) chute.visible = false;
+    if (rig) rig.visible = false;
     var j = P.mesh.userData.joints;
     j.armL.rotation.set(0, 0, 0); j.armR.rotation.set(0, 0, 0);
     j.legL.rotation.x = j.legR.rotation.x = 0;

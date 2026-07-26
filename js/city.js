@@ -18,7 +18,7 @@ GAME.city = (function () {
         { x: 0, z: 128, spawn: { x: 0, z: 138 } },
         { x: -400, z: 18, spawn: { x: -400, z: 40 } }
       ],
-      police: { x: -150, z: -122, spawn: { x: -150, z: -134 } },
+      police: { x: -100, z: -122, spawn: { x: -100, z: -134 } },
       resprays: [
         { x: 180, z: -80, door: { x: 166, z: -80 } },
         { x: -428, z: -180, door: { x: -442, z: -180 } },
@@ -50,7 +50,28 @@ GAME.city = (function () {
     if (city.isOnPier(x, z)) return false;
     return x > BOARDWALK_X1 && x <= city.shoreline(z) + 2;
   };
+  // stunt ramps. Each is a wedge rising along its local +z; rampAt returns the
+  // deck height and the slope so vehicles get launched off the lip.
+  city.ramps = [];
+  city.rampAt = function (x, z) {
+    for (var i = 0; i < city.ramps.length; i++) {
+      var r = city.ramps[i];
+      if (x < r.minX || x > r.maxX || z < r.minZ || z > r.maxZ) continue;
+      var dx = x - r.x, dz = z - r.z;
+      var lx = dx * r.cos - dz * r.sin;      // across the ramp
+      var lz = dx * r.sin + dz * r.cos;      // up the ramp
+      if (Math.abs(lx) > r.w / 2 || lz < -r.len / 2 || lz > r.len / 2) continue;
+      var t = (lz + r.len / 2) / r.len;
+      return { y: r.h * t, slope: r.h / r.len, rot: r.rot };
+    }
+    return null;
+  };
+
   city.groundY = function (x, z) {
+    if (city.ramps.length) {
+      var rp = city.rampAt(x, z);
+      if (rp) return rp.y;
+    }
     if (city.isOnPier(x, z) && x > BOARDWALK_X1) return 0.5;
     if (x > BOARDWALK_X0 && x <= BOARDWALK_X1) return 0.3;
     if (city.isOnSand(x, z)) {
@@ -279,8 +300,21 @@ GAME.city = (function () {
     }
   }
 
+  // true if the footprint would sit on a driving lane of any road
+  function overlapsRoad(minX, maxX, minZ, maxZ) {
+    var m = ROAD_HALF + 1.5;
+    for (var i = 0; i < R.length; i++) {
+      if (minX < R[i] + m && maxX > R[i] - m) return true;
+      if (minZ < R[i] + m && maxZ > R[i] - m) return true;
+    }
+    return false;
+  }
+
   function tryBuilding(batch, cx, cz, sx, sz, h, color, uvScale) {
     if (overlapsReserved(cx - sx / 2, cx + sx / 2, cz - sz / 2, cz + sz / 2)) return false;
+    // never build across a carriageway — it blocks the street and makes map
+    // routes look like they run straight through the block
+    if (overlapsRoad(cx - sx / 2, cx + sx / 2, cz - sz / 2, cz + sz / 2)) return false;
     batch.addBox(cx, h / 2, cz, sx, h, sz, 0, color, uvScale);
     addSolid(cx, cz, sx, sz, h);
     return true;
@@ -449,6 +483,17 @@ GAME.city = (function () {
     og.translate(50, -0.35, 0);
     city.oceanGeo = og;
     city.oceanBase = og.attributes.position.array.slice();
+    // the ocean plane spans the whole map, so its inland vertices sit just under
+    // the streets. Sink those and never animate them — otherwise wave crests rise
+    // through the asphalt as flickering blue patches.
+    var ob = city.oceanBase, mask = new Uint8Array(ob.length / 3);
+    for (var vi = 0, m = 0; vi < ob.length; vi += 3, m++) {
+      var vx = ob[vi], vz = ob[vi + 2];
+      mask[m] = city.isInWater(vx, vz) ? 1 : 0;
+      if (!mask[m]) og.attributes.position.array[vi + 1] = -4;
+    }
+    city.oceanMask = mask;
+    og.attributes.position.needsUpdate = true;
     var om = new THREE.MeshPhongMaterial({ color: 0x0d2242, shininess: 120, specular: 0x8899cc, transparent: true, opacity: 0.93 });
     var ocean = new THREE.Mesh(og, om);
     scene.add(ocean);
@@ -460,6 +505,8 @@ GAME.city = (function () {
     streak.position.set(600, -0.1, -60);
     scene.add(streak);
     city.streak = streak;
+
+    buildRamps(scene);
 
     // beach palms along the boardwalk
     for (var bz = -470; bz < 480; bz += 24) {
@@ -529,6 +576,16 @@ GAME.city = (function () {
     if (city.stars) { city.stars.material.opacity = U.clamp(1 - df * 2.2, 0, 1); city.stars.material.transparent = true; city.stars.visible = df < 0.5; }
     if (city.moon) city.moon.material.opacity = U.clamp(1 - df * 1.6, 0.05, 1), city.moon.material.transparent = true;
     if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5);
+    // street lamps burn at night, fade out through dusk, and are off in daylight
+    var lampOn = U.clamp(1 - (df - 0.45) / 0.35, 0, 1);
+    if (city.lampGlow) {
+      city.lampGlow.material.opacity = lampOn;
+      city.lampGlow.visible = lampOn > 0.02;
+    }
+    if (city.lampHeads) {
+      city.lampHeads.material.color.setRGB(
+        U.lerp(0.42, 1, lampOn), U.lerp(0.44, 0.784, lampOn), U.lerp(0.5, 0.54, lampOn));
+    }
     city.dayMode = df > 0.7;
   };
   city.setDaytime = function (day) { city.applyTimeOfDay(day ? 1 : 0); };
@@ -612,6 +669,9 @@ GAME.city = (function () {
     var glowMesh = new THREE.Mesh(glowGeoB.build(), new THREE.MeshBasicMaterial({ map: radialGlowTexture('rgba(255,170,90,0.34)'), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     glowMesh.matrixAutoUpdate = false;
     scene.add(glowMesh);
+    // the lamps switch off in daylight (see applyTimeOfDay)
+    city.lampHeads = headMesh;
+    city.lampGlow = glowMesh;
 
     // hydrants at intersection corners
     var hyd = [];
@@ -758,12 +818,12 @@ GAME.city = (function () {
     mk.matrixAutoUpdate = false; scene.add(mk);
     // terminal building + control tower, south of the runway
     var tb = new GeoBatch();
-    tb.addBox(A.cx, 5, A.cz + 28, 90, 10, 16, 0, 0x8a94b0, 28);
+    tb.addBox(A.cx + 30, 5, A.cz + 28, 84, 10, 16, 0, 0x8a94b0, 28);
     tb.addBox(A.cx + 40, 12, A.cz + 26, 8, 24, 8, 0, 0x9aa8c8, 0); // tower
     tb.addBox(A.cx + 40, 25, A.cz + 26, 11, 4, 11, 0, 0x141824, 0); // tower cab
     var tbm = new THREE.Mesh(tb.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     tbm.matrixAutoUpdate = false; scene.add(tbm);
-    addSolid(A.cx, A.cz + 28, 90, 16, 10);
+    addSolid(A.cx + 30, A.cz + 28, 84, 16, 10);
     addSolid(A.cx + 40, A.cz + 26, 8, 8, 24);
     // runway edge lights
     var glowB = new GeoBatch();
@@ -831,6 +891,69 @@ GAME.city = (function () {
     scene.add(ring);
   }
 
+  // wedge-shaped jump ramps scattered around the city. They are drivable
+  // surfaces (see rampAt / groundY), not solids, so you ride up and launch.
+  function buildRamps(scene) {
+    // ramps sit in the carriageway, aligned with the road, mid-block between
+    // junctions — so you can line one up and hit it at speed
+    var SPOTS = [
+      { x: 150, z: 0, rot: 0, w: 11, len: 20, h: 3.4 },          // x=150 road, facing +z
+      { x: -50, z: 200, rot: Math.PI, w: 11, len: 20, h: 3.4 },  // x=-50 road, facing -z
+      { x: 250, z: -100, rot: 0, w: 11, len: 22, h: 4.0 },
+      { x: -250, z: 100, rot: Math.PI, w: 11, len: 22, h: 4.0 },
+      { x: 0, z: 250, rot: Math.PI / 2, w: 11, len: 26, h: 5.0 },  // z=250 road, facing +x
+      { x: -200, z: -350, rot: -Math.PI / 2, w: 11, len: 24, h: 4.4 },
+      { x: 50, z: -200, rot: 0, w: 11, len: 20, h: 3.6 },
+      { x: 300, z: 350, rot: Math.PI / 2, w: 11, len: 28, h: 5.4 }
+    ];
+    var pos = [], col = [], nrm = [];
+    function tri(ax, ay, az, bx, by, bz, cx2, cy, cz2, r, g, b) {
+      var ux = bx - ax, uy = by - ay, uz = bz - az;
+      var vx = cx2 - ax, vy = cy - ay, vz = cz2 - az;
+      var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      var l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= l; ny /= l; nz /= l;
+      pos.push(ax, ay, az, bx, by, bz, cx2, cy, cz2);
+      for (var k = 0; k < 3; k++) { nrm.push(nx, ny, nz); col.push(r, g, b); }
+    }
+    for (var i = 0; i < SPOTS.length; i++) {
+      var s = SPOTS[i];
+      var c = Math.cos(s.rot), sn = Math.sin(s.rot);
+      // world position of a local (across, along, up) point
+      function P(lx, lz, ly) {
+        return [s.x + lx * c + lz * sn, ly, s.z - lx * sn + lz * c];
+      }
+      var hw = s.w / 2, hl = s.len / 2;
+      var a0 = P(-hw, -hl, 0), b0 = P(hw, -hl, 0);      // bottom lip
+      var a1 = P(-hw, hl, s.h), b1 = P(hw, hl, s.h);    // top lip
+      var a1g = P(-hw, hl, 0), b1g = P(hw, hl, 0);      // top lip at ground
+      var R1 = 0.85, G1 = 0.30, B1 = 0.55;              // deck
+      // deck (two tris)
+      tri(a0[0], a0[1], a0[2], b0[0], b0[1], b0[2], b1[0], b1[1], b1[2], R1, G1, B1);
+      tri(a0[0], a0[1], a0[2], b1[0], b1[1], b1[2], a1[0], a1[1], a1[2], R1, G1, B1);
+      // back face
+      tri(a1[0], a1[1], a1[2], b1[0], b1[1], b1[2], b1g[0], b1g[1], b1g[2], 0.16, 0.14, 0.22);
+      tri(a1[0], a1[1], a1[2], b1g[0], b1g[1], b1g[2], a1g[0], a1g[1], a1g[2], 0.16, 0.14, 0.22);
+      // side walls
+      tri(a0[0], a0[1], a0[2], a1[0], a1[1], a1[2], a1g[0], a1g[1], a1g[2], 0.22, 0.18, 0.30);
+      tri(b0[0], b0[1], b0[2], b1g[0], b1g[1], b1g[2], b1[0], b1[1], b1[2], 0.22, 0.18, 0.30);
+
+      var rad = Math.max(s.w, s.len) / 2 + 2;
+      city.ramps.push({
+        x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h,
+        cos: c, sin: sn,
+        minX: s.x - rad, maxX: s.x + rad, minZ: s.z - rad, maxZ: s.z + rad
+      });
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nrm), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+    var mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+    mesh.matrixAutoUpdate = false;
+    scene.add(mesh);
+  }
+
   function buildLaneGraph() {
     var nodes = [], edges = {};
     for (var i = 0; i < R.length; i++) for (var j = 0; j < R.length; j++) {
@@ -879,8 +1002,8 @@ GAME.city = (function () {
     }
     // guarantee some key ones
     // parked police cruisers outside the station (stealable)
-    city.parkedSpots.push({ x: -158, z: -95, heading: 0, police: true });
-    city.parkedSpots.push({ x: -158, z: -70, heading: 0, police: true });
+    city.parkedSpots.push({ x: -108, z: -95, heading: 0, police: true });
+    city.parkedSpots.push({ x: -108, z: -70, heading: 0, police: true });
     // an ambulance idling at each hospital (for paramedic jobs)
     city.pois.hospitals.forEach(function (H) {
       city.parkedSpots.push({ x: H.x + 22, z: H.spawn.z, heading: Math.PI / 2, vtype: 'ambulance' });
@@ -908,8 +1031,9 @@ GAME.city = (function () {
   city.update = function (dt, t) {
     if (city.oceanGeo) {
       var pos = city.oceanGeo.attributes.position;
-      var arr = pos.array, base = city.oceanBase;
-      for (var i = 0; i < arr.length; i += 3) {
+      var arr = pos.array, base = city.oceanBase, mask = city.oceanMask;
+      for (var i = 0, mi = 0; i < arr.length; i += 3, mi++) {
+        if (mask && !mask[mi]) continue; // inland vertex: stays sunk under the streets
         var x = base[i], z = base[i + 2];
         arr[i + 1] = base[i + 1] + Math.sin(x * 0.045 + t * 1.1) * 0.28 + Math.sin(z * 0.06 + t * 0.7) * 0.22;
       }

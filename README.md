@@ -7,7 +7,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on.
 
 <p align="center">
-  <img src="media/gameplay.gif" alt="Neon Mayhem gameplay — a night drive through downtown Costa Rosa with a 3-star wanted level" width="600">
+  <img src="media/social-card.png" alt="Neon Mayhem — a night drive down a neon-lit boulevard in Costa Rosa, 1986" width="600">
 </p>
 
 <p align="center">
@@ -30,8 +30,8 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 - ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
 - Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts on a bright late afternoon, slides into sunset and then night within the first minute, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
-- Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom)
-- Flyable helicopter and airplane (with a beach helipad and an airport), plus a parachute when you bail out mid-air
+- Arcade driving with handbrake drifts and stunt ramps (air time, distance and spins pay out); cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom)
+- Flyable helicopter and airplane — loops and barrel rolls included — with a beach helipad and an airport, plus a parachute when you bail out mid-air
 - Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun
 - 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
 - Arcade missions — street races against rival drivers (live position), timed couriers, rampages — plus continuous taxi and paramedic shifts that level up: more people, further out, and an ambulance that fills up before it runs to the hospital
@@ -46,8 +46,8 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 | Mouse | Camera | Camera |
 | RMB / Tab | Aim (lock-on) | — |
 | LMB | Fire | Fire (drive-by w/ SMG) |
-| Q / E | Cycle lock target | Drive-by left/right |
-| Space | — | Handbrake |
+| Q / E | Cycle lock target | Drive-by left/right (barrel roll in a plane) |
+| Space | Jump | Handbrake |
 | F | Enter / jack car | Exit car |
 | 1–4 | Weapon select | — |
 | , / . | — | Radio station |
@@ -59,7 +59,7 @@ The minimap is a heading-up radar that rotates with you — tap it to open the f
 
 **Touch controls** follow the classic console-port layout: a floating stick under the left thumb (move / steer, full deflection sprints on foot), and a context-sensitive action cluster under the right thumb. Buttons appear only when they apply — ENTER near a car, AIM with a gun drawn, weapon-switch with more than one weapon, drive-by only when you're carrying the SMG. Driving is an explicit GAS / BRAKE / handbrake with an EXIT and radio switch. The radar sits bottom-left; a single PAUSE button is the only persistent chrome, and sound, CRT filter and fullscreen live in the pause menu.
 
-**Take to the sky:** a helicopter waits on the beach helipad (yellow **H**, south end of the sand). Climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. There's also an **airport** with a runway along the southern edge of the island (the ✈ on the map) — a light plane is parked on the apron: `W` to throttle up the runway, `Space` to rotate and climb once you're fast, `A/D` to turn, `Shift` to dive. Bail out of either aircraft with `F` while airborne and a **parachute** opens — steer your descent with `WASD` and glide down.
+**Take to the sky:** a helicopter waits on the beach helipad (yellow **H**, south end of the sand). Climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. There's also an **airport** with a runway along the southern edge of the island (the ✈ on the map) — a light plane is parked on the apron: `W` to throttle up the runway, `Space` to rotate and climb once you're fast, `A/D` to turn, `Shift` to dive, `Q/E` to barrel-roll — pull hard enough on the elevator and you can fly a full loop. Bail out of either aircraft with `F` while airborne and a **parachute** opens — steer your descent with `WASD` and glide down.
 
 The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
 

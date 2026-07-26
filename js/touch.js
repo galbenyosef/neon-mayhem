@@ -87,7 +87,8 @@ GAME.touch = (function () {
     btns.enter = mkBtn('ENTER', 150, 34, 58, { flag: 'enter' });
     btns.wpn = mkBtn('WPN', 40, 176, 52, { press: function () { T.weaponCycle = true; } });
     btns.run = mkBtn('RUN', 210, 64, 52, { flag: 'run', toggle: true });
-    footBtns.push(btns.fire, btns.aim, btns.enter, btns.wpn, btns.run);
+    btns.jump = mkBtn('JUMP', 210, 132, 52, { flag: 'jump' });
+    footBtns.push(btns.fire, btns.aim, btns.enter, btns.wpn, btns.run, btns.jump);
     // in car
     btns.gas = mkBtn('GAS', 26, 62, 86, { flag: 'gas' });
     btns.brake = mkBtn('BRAKE', 40, 176, 62, { flag: 'brake' });
@@ -202,6 +203,7 @@ GAME.touch = (function () {
     if (!inCar) {
       show(btns.fire, true);
       show(btns.run, true);
+      show(btns.jump, true);
       // AIM only with a gun drawn (fists auto-target on the fire button)
       show(btns.aim, P.currentWeapon !== 'fist');
       // weapon switch only when more than one weapon is owned

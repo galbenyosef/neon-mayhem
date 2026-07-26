@@ -142,7 +142,8 @@ GAME.combat = (function () {
         } else if (res.hit.kind === 'car') {
           GAME.vehicles.damageCar(res.hit.obj, wd.damage * 0.8, 'gun');
           GAME.fx.spawn(hx, 0.8, hz, { count: 3, color: 0xffe0a0, spread: 2, life: 0.3 });
-          if (res.hit.obj.ai && res.hit.obj.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);
+          if (res.hit.obj.isPolice) GAME.police.reportCrime('hit_cop_car', P.pos);
+          else if (res.hit.obj.ai && res.hit.obj.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);
         } else {
           GAME.fx.spawn(hx, m.y, hz, { count: 3, color: 0xccccdd, spread: 1.5, life: 0.25 });
           if (Math.random() < 0.4) GAME.audio.ricochet();
@@ -157,6 +158,7 @@ GAME.combat = (function () {
 
   function punch() {
     var P = GAME.player;
+    P.punchT = 0.26; // drives the swing animation in player.js
     GAME.audio.punch();
     var fx = Math.sin(P.heading), fz = Math.cos(P.heading);
     var px = P.pos.x + fx * 1.2, pz = P.pos.z + fz * 1.2;
