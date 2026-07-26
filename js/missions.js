@@ -151,15 +151,21 @@ GAME.missions = (function () {
     return [Math.round(x), Math.round(z)];
   }
 
+  // how far out this level's calls are: ramps with the level and then plateaus.
+  // A cab works a wider band so fares aren't all short hops.
+  function targetBand() {
+    var kind = active.def.id, lv = active.level;
+    var minR = kind === 'ambulance' ? Math.min(55 + (lv - 1) * 22, 210) : Math.min(80 + (lv - 1) * 20, 230);
+    var maxR = kind === 'ambulance' ? Math.min(minR + 95, 330) : Math.min(minR + 170, 400);
+    return [minR, maxR];
+  }
+
   // one level of the shift: more people, spread further out, each level
   function startRound() {
     var kind = active.def.id;
     var lv = active.level;
     var count = kind === 'ambulance' ? Math.min(lv, 5) : 1;
-    // distance ramps with the level and then plateaus. A cab works a wider band
-    // so fares aren't all short hops.
-    var minR = kind === 'ambulance' ? Math.min(55 + (lv - 1) * 22, 210) : Math.min(80 + (lv - 1) * 20, 230);
-    var maxR = kind === 'ambulance' ? Math.min(minR + 95, 330) : Math.min(minR + 170, 400);
+    var band = targetBand(), minR = band[0], maxR = band[1];
     var P = GAME.player;
     var ox = P.car ? P.car.pos.x : P.pos.x, oz = P.car ? P.car.pos.z : P.pos.z;
     active.targets = [];
@@ -229,6 +235,31 @@ GAME.missions = (function () {
     disposeTree(t.arrow);
     t.arrow = null;
   }
+  // if a fare or patient is killed (run over, caught in a blast) the call is
+  // reassigned somewhere else — you're never left waiting at a marker for
+  // someone who can't come
+  function replaceLostTargets() {
+    var kind = active.def.id;
+    for (var i = 0; i < active.targets.length; i++) {
+      var t = active.targets[i];
+      var gone = !t.ped || t.ped.dead || GAME.world.peds.indexOf(t.ped) < 0;
+      if (!gone) continue;
+      dropArrow(t);
+      var f = GAME.focus();
+      var band = targetBand();
+      var pt = randomRoadPoint(f.x, f.z, band[0], band[1]);
+      var wp = kerbWaitSpot(pt[0], pt[1]);
+      t.x = pt[0]; t.z = pt[1];
+      t.ped = spawnWaitingPed(wp[0], wp[1]);
+      t.boarding = false;
+      active.routeCp = null;
+      updateCp();
+      GAME.hud.message(kind === 'ambulance'
+        ? 'You lost that patient — a new call is marked.'
+        : 'That fare is gone — a new pickup is marked.', 3);
+    }
+  }
+
   // bob and spin each arrow above its person
   function updateArrows(dt) {
     if (!active || !active.targets) return;
@@ -821,6 +852,7 @@ GAME.missions = (function () {
       if (active.timeLeft <= 0) { endJob('out of time'); return; }
       var f = GAME.focus(), tgt = currentCp();
       if (active.phase === 'pickup') {
+        replaceLostTargets();
         // stop on the marker and whoever is waiting will come to you
         var near = nearestTarget();
         if (near && U.dist2(f.x, f.z, near.x, near.z) < 90 && Math.abs(P.car.speed) < 5 && !near.boarding) {

@@ -83,6 +83,9 @@ GAME.peds = (function () {
       isCop: !!opts.cop,
       armed: !!opts.cop,
       fleeT: 0, diveT: 0, deadT: 0,
+      // how alert this one is, and how long they take to react to a car
+      dodgeSkill: Math.random(),
+      reactDelay: U.randRange(Math.random, 0.15, 0.45), reactT: 0,
       wpX: x, wpZ: z, wpT: 0,
       shootT: U.randRange(Math.random, 0.5, 1.5)
     };
@@ -185,7 +188,7 @@ GAME.peds = (function () {
         for (var cc = 0; cc < world.cars.length; cc++) {
           var ccar = world.cars[cc];
           if (Math.abs(ccar.speed) < 4) continue;
-          if (U.dist2(ped.pos.x, ped.pos.z, ccar.pos.x, ccar.pos.z) < 2.6) {
+          if (U.dist2(ped.pos.x, ped.pos.z, ccar.pos.x, ccar.pos.z) < 5.2) {
             kill(ped, 'car', ccar === P.car && P.inCar);
             GAME.audio.crash(0.4);
             break;
@@ -194,27 +197,36 @@ GAME.peds = (function () {
         continue;
       }
 
-      // dive away from fast cars
+      // dive away from fast cars — but not every time. People need a moment to
+      // react, some are slower to notice than others, and once a bonnet is on
+      // top of them it's simply too late.
       if (ped.state !== 'dive') {
+        var threat = false;
         for (var c = 0; c < world.cars.length; c++) {
           var car = world.cars[c];
           var sp = Math.abs(car.speed);
           if (sp < 8) continue;
           var dx = ped.pos.x - car.pos.x, dz = ped.pos.z - car.pos.z;
           var d2 = dx * dx + dz * dz;
-          if (d2 > 140) continue;
+          if (d2 > 130) continue;
           var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
           var ahead = dx * fx + dz * fz;
-          if (ahead > 0 && ahead < 12 && Math.abs(dx * fz - dz * fx) < 3) {
-            ped.state = 'dive';
-            ped.diveT = ped.diveDur = 0.85;
-            var side = (dx * fz - dz * fx) > 0 ? 1 : -1;
-            ped.diveX = (fz * side) * 7.5; ped.diveZ = (-fx * side) * 7.5;
-            ped.speed = 0;
-            GAME.audio.yelp();
-            break;
-          }
+          if (ahead <= 0 || ahead > 10 || Math.abs(dx * fz - dz * fx) > 3) continue;
+          threat = true;
+          // reaction time: they have to have seen it coming for a beat
+          ped.reactT = (ped.reactT || 0) + dt;
+          if (ped.reactT < ped.reactDelay) break;
+          if (ahead < 5.5) break;             // too close — no time left
+          if (ped.dodgeSkill < 0.35) break;   // this one just freezes
+          ped.state = 'dive';
+          ped.diveT = ped.diveDur = 0.85;
+          var side = (dx * fz - dz * fx) > 0 ? 1 : -1;
+          ped.diveX = (fz * side) * 6.2; ped.diveZ = (-fx * side) * 6.2;
+          ped.speed = 0;
+          GAME.audio.yelp();
+          break;
         }
+        if (!threat) ped.reactT = 0;
       }
 
       if (ped.state === 'walk') {
@@ -274,7 +286,7 @@ GAME.peds = (function () {
         var car2 = world.cars[c2];
         var sp2 = Math.abs(car2.speed);
         if (sp2 < 4) continue;
-        if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 2.6) {
+        if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 5.2) {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
           // thrown along the bonnet rather than dropping on the spot
