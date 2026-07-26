@@ -159,12 +159,7 @@ function respawnAfterScreen() {
     P.weapons = { fist: { have: true, ammo: Infinity } };
     P.currentWeapon = 'fist';
     // every stunt jump found: the arsenal survives a hospital or cell visit
-    if (GAME.unlimitedAmmo) {
-      P.weapons.pistol = { have: true, ammo: 999 };
-      P.weapons.smg = { have: true, ammo: 999 };
-      P.weapons.shotgun = { have: true, ammo: 999 };
-      P.currentWeapon = 'pistol';
-    }
+    if (GAME.unlimitedAmmo) GAME.combat.giveAllWeapons();
     GAME.combat.refreshWeaponHud();
     GAME.police.clearWanted();
     P.state = 'alive';

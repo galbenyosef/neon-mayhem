@@ -445,6 +445,7 @@ GAME.hud = (function () {
       for (var i = 0; i < 5; i++) spans[i].className = i < n ? 'lit' : '';
     },
     setWeapon: function (name, ammo) {
+      if (!el['weapon-line']) return; // may fire before the HUD is wired up
       el['weapon-line'].textContent = name + (ammo === '' ? '' : '  ·  ' + ammo);
     },
     message: function (text, dur) {

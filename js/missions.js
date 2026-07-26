@@ -8,7 +8,11 @@ GAME.stunts = (function () {
   function load() {
     var s = (GAME.prefs && GAME.prefs.stunts) || null;
     if (s) { found = s.found || {}; rewarded = !!s.rewarded; }
-    if (rewarded) GAME.unlimitedAmmo = true;
+    if (rewarded) {
+      GAME.unlimitedAmmo = true;
+      GAME.combat.giveAllWeapons();
+      GAME.city.unlockMonsterTruck();   // the truck stays unlocked between sessions
+    }
   }
   function save() {
     if (!GAME.prefs) GAME.prefs = {};
@@ -35,9 +39,10 @@ GAME.stunts = (function () {
   function grantReward() {
     rewarded = true;
     GAME.unlimitedAmmo = true;
+    GAME.combat.giveAllWeapons();
     GAME.addCash(50000);
     GAME.city.unlockMonsterTruck();
-    GAME.hud.message('ALL ' + total + ' STUNT JUMPS!  +$50,000  ·  unlimited ammo  ·  MONSTER TRUCK unlocked at the airport', 8);
+    GAME.hud.message('ALL ' + total + ' STUNT JUMPS!  +$50,000  ·  every weapon with unlimited ammo  ·  MONSTER TRUCK unlocked at the airport', 8);
   }
 
   return {

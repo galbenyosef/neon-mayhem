@@ -291,6 +291,16 @@ GAME.combat = (function () {
     refreshWeaponHud();
   }
 
+  // the full arsenal — unlimited ammo is no use without something to fire it from
+  function giveAllWeapons() {
+    var P = GAME.player;
+    ['pistol', 'smg', 'shotgun'].forEach(function (w) {
+      P.weapons[w] = { have: true, ammo: Math.max(999, (P.weapons[w] && P.weapons[w].ammo) || 0) };
+    });
+    if (P.currentWeapon === 'fist') P.currentWeapon = 'pistol';
+    refreshWeaponHud();
+  }
+
   function refreshWeaponHud() {
     var P = GAME.player;
     var wd = WEAPONS[P.currentWeapon];
@@ -439,6 +449,7 @@ GAME.combat = (function () {
     checkPickups: checkPickups,
     initPickups: initPickups,
     giveWeapon: giveWeapon,
+    giveAllWeapons: giveAllWeapons,
     selectWeapon: selectWeapon,
     dropPickup: dropPickup,
     refreshWeaponHud: refreshWeaponHud,
