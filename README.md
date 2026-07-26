@@ -34,7 +34,7 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 - Flyable helicopter and airplane — loops and barrel rolls included — with a beach helipad and an airport, plus a parachute when you bail out mid-air
 - Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun
 - 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
-- Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi and paramedic shifts that level up: more people, further out, and an ambulance that fills up before it runs to the hospital
+- Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi and paramedic shifts that level up: more people (each marked by a floating arrow), further out, and an ambulance that fills up before it runs to the hospital
 - 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
 - Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
 

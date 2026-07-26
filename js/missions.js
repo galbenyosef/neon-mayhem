@@ -175,16 +175,31 @@ GAME.missions = (function () {
         if (ok) { pt = c; break; }
       }
       if (!pt) pt = randomRoadPoint(ox, oz, minR, maxR);
-      // the marker is where the vehicle pulls up; the person waits back from it
-      // on the pavement and walks over once you stop
-      var wx = pt[0] + U.randRange(Math.random, 4.5, 7) * (Math.random() < 0.5 ? 1 : -1);
-      var wz = pt[1] + U.randRange(Math.random, 4.5, 7) * (Math.random() < 0.5 ? 1 : -1);
-      var wp = GAME.resolveCircle(wx, wz, 0.5);
-      active.targets.push({ x: pt[0], z: pt[1], ped: spawnWaitingPed(wp.x, wp.z), boarding: false });
+      // the marker is where the vehicle pulls up; the person waits on the
+      // pavement beside it and walks over once you stop
+      var wp = kerbWaitSpot(pt[0], pt[1]);
+      active.targets.push({ x: pt[0], z: pt[1], ped: spawnWaitingPed(wp[0], wp[1]), boarding: false });
     }
     active.phase = 'pickup';
     active.aboard = 0;
     active.routeCp = null;
+  }
+
+  // a spot on the pavement beside the pickup marker, pushed clear of the
+  // carriageway on the same side of the road and jittered along the kerb
+  function kerbWaitSpot(x, z) {
+    var rp = GAME.city.nearestRoadPoint(x, z);
+    var out = 14, jitter = U.randRange(Math.random, -5, 5);
+    var wx, wz;
+    if (rp.axis === 'z') {          // road runs along z; step out in x
+      wx = rp.x + (x >= rp.x ? out : -out);
+      wz = z + jitter;
+    } else {                        // road runs along x; step out in z
+      wx = x + jitter;
+      wz = rp.z + (z >= rp.z ? out : -out);
+    }
+    var s = GAME.resolveCircle(wx, wz, 0.5);
+    return [s.x, s.z];
   }
 
   // someone standing at the kerb waiting — arm raised, and they stay put
@@ -198,6 +213,32 @@ GAME.missions = (function () {
     j.armR.rotation.x = -2.6;   // hailing / calling for help
     j.armR.rotation.z = 0.3;
     return ped;
+  }
+
+  // the floating marker that hovers over whoever is waiting for you
+  function makeArrow() {
+    var g = new THREE.ConeGeometry(0.45, 1.0, 4);
+    g.rotateX(Math.PI);           // point the tip down at their head
+    var m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xffe14f }));
+    GAME.scene.add(m);
+    return m;
+  }
+  function dropArrow(t) {
+    if (!t || !t.arrow) return;
+    GAME.scene.remove(t.arrow);
+    disposeTree(t.arrow);
+    t.arrow = null;
+  }
+  // bob and spin each arrow above its person
+  function updateArrows(dt) {
+    if (!active || !active.targets) return;
+    for (var i = 0; i < active.targets.length; i++) {
+      var t = active.targets[i];
+      if (!t.ped || t.ped.dead) { dropArrow(t); continue; }
+      if (!t.arrow) t.arrow = makeArrow();
+      t.arrow.position.set(t.ped.pos.x, t.ped.pos.y + 2.75 + Math.sin(GAME.time * 3 + i) * 0.18, t.ped.pos.z);
+      t.arrow.rotation.y += dt * 2.2;
+    }
   }
 
   // walk anyone who's been hailed over to the vehicle and load them in
@@ -254,6 +295,7 @@ GAME.missions = (function () {
   function collectTarget(tgt) {
     var i = active.targets.indexOf(tgt);
     if (i >= 0) active.targets.splice(i, 1);
+    dropArrow(tgt);
     if (tgt.ped && !tgt.ped.dead) GAME.peds.removePed(tgt.ped);
     active.aboard++;
     GAME.audio.pickup();
@@ -321,6 +363,7 @@ GAME.missions = (function () {
     var unit = active.def.id === 'ambulance' ? 'patient' : 'fare';
     // send any waiting people home with the shift
     for (var i = 0; i < active.targets.length; i++) {
+      dropArrow(active.targets[i]);
       if (active.targets[i].ped && !active.targets[i].ped.dead) GAME.peds.removePed(active.targets[i].ped);
     }
     active.targets = [];
@@ -506,6 +549,7 @@ GAME.missions = (function () {
       if (active.targets) {
         for (var ti = 0; ti < active.targets.length; ti++) {
           var tp = active.targets[ti].ped;
+          dropArrow(active.targets[ti]);
           if (tp && !tp.dead) GAME.peds.removePed(tp);
         }
       }
@@ -784,9 +828,10 @@ GAME.missions = (function () {
           GAME.hud.message(d2.type === 'ambulance' ? 'Patient is coming — hold still.' : 'Your fare is coming over.', 2);
         }
         stepBoarding(dt, f, P);
-      } else {
-        if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) { completeFare(d2.type, f, tgt); }
+      } else if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) {
+        completeFare(d2.type, f, tgt);
       }
+      updateArrows(dt);
       active.routeT = (active.routeT || 0) - dt;
       if (active.routeT <= 0 || active.routeCp !== active.phase) {
         active.routeT = 1.0; active.routeCp = active.phase;

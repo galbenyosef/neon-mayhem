@@ -534,7 +534,10 @@ GAME.vehicles = (function () {
     // area damage
     var p = GAME.player;
     if (!p.inCar || p.car !== car) {
-      if (U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z) < 64) GAME.playerDamage(55, 'explosion');
+      // altitude counts: a wreck going up underneath you shouldn't catch you
+      // while you're hanging off a parachute or standing on a roof
+      var dy = Math.abs(p.pos.y - car.pos.y);
+      if (U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z) < 64 && dy < 7) GAME.playerDamage(55, 'explosion');
     }
     if (p.car === car) GAME.playerDamage(200, 'explosion');
     world.peds.forEach(function (ped) {
