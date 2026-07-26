@@ -410,17 +410,13 @@ function updateOnFoot(dt) {
   }
   P.mesh.rotation.y = P.heading;
 
-  // walk / run anim: a run is faster, longer-limbed and leans into the stride
+  // walk anim — a run is the same gait, just cycled 1.25x faster
   var running = P.moveSpeed > 3.6;
-  P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * (running ? 3.0 : 2.2);
+  P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * 2.2 * (running ? 1.25 : 1);
   var j = P.mesh.userData.joints;
-  var swing = running ? 1.15 : 0.7;
-  var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * swing;
+  var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * 0.7;
   j.legL.rotation.x = s; j.legR.rotation.x = -s;
-  // lean forward when sprinting (no positional bob — P.pos IS the mesh position,
-  // so nudging it here would fight the ground/jump physics)
-  var lean = running ? U.clamp((P.moveSpeed - 3.6) / 2.4, 0, 1) * 0.3 : 0;
-  j.torso.rotation.x = U.lerp(j.torso.rotation.x, lean, Math.min(1, dt * 8));
+  j.torso.rotation.x = 0;
   if (P.airborne) {
     // airborne: tuck the legs and throw the arms up
     j.legL.rotation.x = -0.75; j.legR.rotation.x = -0.35;
@@ -440,8 +436,8 @@ function updateOnFoot(dt) {
     j.armL.rotation.x = -s * 0.4;
   } else {
     j.torso.rotation.y = 0;
-    j.armL.rotation.x = -s * (running ? 1.15 : 0.8);
-    j.armR.rotation.x = s * (running ? 1.15 : 0.8);
+    j.armL.rotation.x = -s * 0.8;
+    j.armR.rotation.x = s * 0.8;
   }
 
   if (wantsEnter()) {

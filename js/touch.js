@@ -79,24 +79,27 @@ GAME.touch = (function () {
     var T = GAME.input.touch;
     T.active = true;
 
-    // ---- right-thumb action cluster: a big primary button with smaller
-    // satellites; buttons show/hide by context in update() ----
+    // ---- right-thumb action cluster, laid out like the classic console port:
+    // the primary action sits in the very corner under the thumb, its partner
+    // (brake / jump) directly beside it on the same bottom row, and the
+    // secondary controls step up and inboard from there. Buttons show/hide by
+    // context in update(). ----
     // on foot
-    btns.fire = mkBtn('FIRE', 26, 62, 86, { flag: 'fire', press: function () { T.firePressed = true; } });
-    btns.aim = mkBtn('AIM', 128, 118, 62, { flag: 'aim', toggle: true });
-    btns.enter = mkBtn('ENTER', 150, 34, 58, { flag: 'enter' });
-    btns.wpn = mkBtn('WPN', 40, 176, 52, { press: function () { T.weaponCycle = true; } });
-    btns.run = mkBtn('RUN', 210, 64, 52, { flag: 'run', toggle: true });
-    btns.jump = mkBtn('JUMP', 210, 132, 52, { flag: 'jump' });
-    footBtns.push(btns.fire, btns.aim, btns.enter, btns.wpn, btns.run, btns.jump);
-    // in car
-    btns.gas = mkBtn('GAS', 26, 62, 86, { flag: 'gas' });
-    btns.brake = mkBtn('BRAKE', 40, 176, 62, { flag: 'brake' });
-    btns.handbrake = mkBtn('⇋', 150, 34, 58, { flag: 'handbrake' });
-    btns.driveby = mkBtn('FIRE', 128, 118, 56, { flag: 'driveByAuto' });
-    btns.exit = mkBtn('EXIT', 210, 64, 52, { flag: 'enter' });
-    btns.radio = mkBtn('♪', 128, 196, 46, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } });
-    btns.job = mkBtn('JOB', 210, 132, 50, { press: function () { T.job = true; } });
+    btns.fire = mkBtn('FIRE', 24, 24, 96, { flag: 'fire', press: function () { T.firePressed = true; } });
+    btns.jump = mkBtn('JUMP', 134, 24, 82, { flag: 'jump' });
+    btns.aim = mkBtn('AIM', 34, 132, 68, { flag: 'aim', toggle: true });
+    btns.enter = mkBtn('ENTER', 122, 122, 62, { flag: 'enter' });
+    btns.run = mkBtn('RUN', 228, 30, 62, { flag: 'run', toggle: true });
+    btns.wpn = mkBtn('WPN', 116, 200, 54, { press: function () { T.weaponCycle = true; } });
+    footBtns.push(btns.fire, btns.jump, btns.aim, btns.enter, btns.run, btns.wpn);
+    // in car: GAS in the corner, BRAKE right next to it (never stacked above)
+    btns.gas = mkBtn('GAS', 24, 24, 96, { flag: 'gas' });
+    btns.brake = mkBtn('BRAKE', 134, 24, 86, { flag: 'brake' });
+    btns.handbrake = mkBtn('⇋', 34, 132, 68, { flag: 'handbrake' });
+    btns.exit = mkBtn('EXIT', 122, 124, 62, { flag: 'enter' });
+    btns.driveby = mkBtn('FIRE', 232, 30, 68, { flag: 'driveByAuto' });
+    btns.job = mkBtn('JOB', 116, 200, 54, { press: function () { T.job = true; } });
+    btns.radio = mkBtn('♪', 200, 200, 50, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } });
     carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job);
 
     // the radar moves to the top-left on touch: the bottom-left corner is the

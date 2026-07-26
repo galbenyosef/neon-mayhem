@@ -160,6 +160,21 @@ GAME.peds = (function () {
       var d2p = U.dist2(ped.pos.x, ped.pos.z, fc.x, fc.z);
       if (ped.dead) {
         ped.deadT += dt;
+        // carry through a knock-back from a vehicle: tumble, then settle
+        if (ped.knockY !== undefined) {
+          var gy0 = GAME.city.groundY(ped.pos.x, ped.pos.z);
+          ped.knockY -= 18 * dt;
+          ped.pos.x += ped.knockX * dt;
+          ped.pos.z += ped.knockZ * dt;
+          ped.pos.y += ped.knockY * dt;
+          ped.mesh.rotation.z += ped.knockSpin * dt;
+          ped.knockX *= Math.exp(-2.2 * dt);
+          ped.knockZ *= Math.exp(-2.2 * dt);
+          if (ped.pos.y <= gy0 + 0.35) {
+            ped.pos.y = gy0 + 0.35;
+            ped.knockY = undefined; // come to rest
+          }
+        }
         if (ped.deadT > 12 || d2p > 190 * 190) removePed(ped);
         continue;
       }
@@ -192,9 +207,10 @@ GAME.peds = (function () {
           var ahead = dx * fx + dz * fz;
           if (ahead > 0 && ahead < 12 && Math.abs(dx * fz - dz * fx) < 3) {
             ped.state = 'dive';
-            ped.diveT = 0.9;
+            ped.diveT = ped.diveDur = 0.85;
             var side = (dx * fz - dz * fx) > 0 ? 1 : -1;
-            ped.diveX = (fz * side) * 5; ped.diveZ = (-fx * side) * 5;
+            ped.diveX = (fz * side) * 7.5; ped.diveZ = (-fx * side) * 7.5;
+            ped.speed = 0;
             GAME.audio.yelp();
             break;
           }
@@ -215,11 +231,25 @@ GAME.peds = (function () {
         ped.speed = U.damp(ped.speed, 4.6, 4, dt);
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
       } else if (ped.state === 'dive') {
+        // a real dive: they leave their feet, arc through the air and land —
+        // rather than sliding sideways with the walk cycle still playing
         ped.diveT -= dt;
-        ped.pos.x += ped.diveX * dt; ped.pos.z += ped.diveZ * dt;
-        ped.mesh.rotation.x = U.lerp(ped.mesh.rotation.x, -1.2, dt * 8);
+        var dk = U.clamp(1 - ped.diveT / (ped.diveDur || 0.85), 0, 1);
+        var slow = 1 - dk * 0.7;                       // bleed off speed on the way down
+        ped.pos.x += ped.diveX * slow * dt;
+        ped.pos.z += ped.diveZ * slow * dt;
+        ped.diveY = Math.sin(dk * Math.PI) * 0.7;      // hop off the ground
+        // throw themselves in the direction they're going
+        ped.heading = U.angleLerp(ped.heading, Math.atan2(ped.diveX, ped.diveZ), Math.min(1, dt * 12));
+        ped.mesh.rotation.y = ped.heading;
+        ped.mesh.rotation.x = U.lerp(ped.mesh.rotation.x, -1.35, Math.min(1, dt * 12));
+        var dj = ped.mesh.userData.joints;
+        dj.armL.rotation.x = -2.45; dj.armR.rotation.x = -2.45;
+        dj.legL.rotation.x = 0.4; dj.legR.rotation.x = 0.18;
         if (ped.diveT <= 0) {
           ped.mesh.rotation.x = 0;
+          ped.diveY = 0;
+          dj.armL.rotation.x = dj.armR.rotation.x = 0;
           ped.state = 'flee';
           ped.fleeT = 5;
           ped.fleeX = ped.pos.x - Math.sin(ped.heading); ped.fleeZ = ped.pos.z - Math.cos(ped.heading);
@@ -235,8 +265,9 @@ GAME.peds = (function () {
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
       if (GAME.city.isInWater(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
       if (!ped.jobPed && GAME.city.inAirport(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
-      ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z);
-      animateWalk(ped, dt);
+      ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z) + (ped.diveY || 0);
+      // the dive drives its own pose; the walk cycle would just make it slide
+      if (ped.state !== 'dive') animateWalk(ped, dt);
 
       // run over check
       for (var c2 = 0; c2 < world.cars.length; c2++) {
@@ -246,6 +277,12 @@ GAME.peds = (function () {
         if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 2.6) {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
+          // thrown along the bonnet rather than dropping on the spot
+          var kf = Math.min(1, sp2 / 26);
+          ped.knockX = Math.sin(car2.heading) * (4 + sp2 * 0.35);
+          ped.knockZ = Math.cos(car2.heading) * (4 + sp2 * 0.35);
+          ped.knockY = 2.2 + kf * 3.2;
+          ped.knockSpin = (Math.random() < 0.5 ? -1 : 1) * (4 + kf * 7);
           if (byPlayer) GAME.police.reportCrime('hit_ped', ped.pos);
           GAME.audio.crash(0.4);
           break;
