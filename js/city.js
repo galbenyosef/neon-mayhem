@@ -81,6 +81,21 @@ GAME.city = (function () {
     }
     return 0;
   };
+  // the surface a ground vehicle rests on at (x,z), given it is currently at
+  // height y. A roof only counts once you're actually up at its level, so
+  // street traffic never snaps onto a building — but a car that clears a roof
+  // on a jump can land on it and drive around up there.
+  city.driveSurfaceY = function (x, z, y) {
+    var best = city.groundY(x, z);
+    var boxes = city.hash.query(x, z, 1);
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      if (b.tag !== 'building' || b.h === undefined) continue;
+      if (b.h <= best || b.h > y + 1.4) continue;
+      if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ) best = b.h;
+    }
+    return best;
+  };
   // top surface at a point: the tallest solid building roof containing it,
   // else the terrain height. Used so aircraft can set down on rooftops.
   city.surfaceY = function (x, z) {
@@ -894,17 +909,23 @@ GAME.city = (function () {
   // wedge-shaped jump ramps scattered around the city. They are drivable
   // surfaces (see rampAt / groundY), not solids, so you ride up and launch.
   function buildRamps(scene) {
-    // ramps sit in the carriageway, aligned with the road, mid-block between
-    // junctions — so you can line one up and hit it at speed
+    // Construction ramps sit on the verge beside a road, never across the
+    // carriageway — you swing off the street onto one. Each points at something
+    // worth clearing: a low warehouse roof, a block gap, the harbour water.
     var SPOTS = [
-      { x: 150, z: 0, rot: 0, w: 11, len: 20, h: 3.4 },          // x=150 road, facing +z
-      { x: -50, z: 200, rot: Math.PI, w: 11, len: 20, h: 3.4 },  // x=-50 road, facing -z
-      { x: 250, z: -100, rot: 0, w: 11, len: 22, h: 4.0 },
-      { x: -250, z: 100, rot: Math.PI, w: 11, len: 22, h: 4.0 },
-      { x: 0, z: 250, rot: Math.PI / 2, w: 11, len: 26, h: 5.0 },  // z=250 road, facing +x
-      { x: -200, z: -350, rot: -Math.PI / 2, w: 11, len: 24, h: 4.4 },
-      { x: 50, z: -200, rot: 0, w: 11, len: 20, h: 3.6 },
-      { x: 300, z: 350, rot: Math.PI / 2, w: 11, len: 28, h: 5.4 }
+      // harbour: heavy ramps aimed at the low warehouse roofs
+      { x: -194, z: 208, rot: Math.PI / 2, w: 12, len: 22, h: 6.6 },
+      { x: -294, z: 308, rot: Math.PI / 2, w: 12, len: 22, h: 6.6 },
+      // riverside verge, launching out over the water
+      { x: -430, z: -170, rot: Math.PI, w: 12, len: 24, h: 5.6 },
+      // boardwalk end of the strip, out along the sand
+      { x: 366, z: -230, rot: Math.PI, w: 12, len: 26, h: 5.0 },
+      // airport apron: long run-up, big air
+      { x: -330, z: 462, rot: Math.PI / 2, w: 13, len: 30, h: 6.4 },
+      // downtown verges, clearing the sidewalk and the block gap
+      { x: 68, z: -168, rot: 0, w: 11, len: 20, h: 4.2 },
+      { x: -168, z: -68, rot: Math.PI / 2, w: 11, len: 20, h: 4.2 },
+      { x: 232, z: 132, rot: Math.PI, w: 11, len: 22, h: 4.6 }
     ];
     var pos = [], col = [], nrm = [];
     function tri(ax, ay, az, bx, by, bz, cx2, cy, cz2, r, g, b) {
@@ -927,16 +948,21 @@ GAME.city = (function () {
       var a0 = P(-hw, -hl, 0), b0 = P(hw, -hl, 0);      // bottom lip
       var a1 = P(-hw, hl, s.h), b1 = P(hw, hl, s.h);    // top lip
       var a1g = P(-hw, hl, 0), b1g = P(hw, hl, 0);      // top lip at ground
-      var R1 = 0.85, G1 = 0.30, B1 = 0.55;              // deck
-      // deck (two tris)
-      tri(a0[0], a0[1], a0[2], b0[0], b0[1], b0[2], b1[0], b1[1], b1[2], R1, G1, B1);
-      tri(a0[0], a0[1], a0[2], b1[0], b1[1], b1[2], a1[0], a1[1], a1[2], R1, G1, B1);
+      // weathered concrete deck with a hazard-striped lip, like a construction
+      // ramp left on site — not a neon prop
+      var R1 = 0.44, G1 = 0.43, B1 = 0.47;
+      var lipT = P(-hw, hl - 2.2, s.h * (1 - 2.2 / s.len)), lipB = P(hw, hl - 2.2, s.h * (1 - 2.2 / s.len));
+      tri(a0[0], a0[1], a0[2], b0[0], b0[1], b0[2], lipB[0], lipB[1], lipB[2], R1, G1, B1);
+      tri(a0[0], a0[1], a0[2], lipB[0], lipB[1], lipB[2], lipT[0], lipT[1], lipT[2], R1, G1, B1);
+      // yellow warning band across the take-off edge
+      tri(lipT[0], lipT[1], lipT[2], lipB[0], lipB[1], lipB[2], b1[0], b1[1], b1[2], 0.85, 0.70, 0.18);
+      tri(lipT[0], lipT[1], lipT[2], b1[0], b1[1], b1[2], a1[0], a1[1], a1[2], 0.85, 0.70, 0.18);
       // back face
-      tri(a1[0], a1[1], a1[2], b1[0], b1[1], b1[2], b1g[0], b1g[1], b1g[2], 0.16, 0.14, 0.22);
-      tri(a1[0], a1[1], a1[2], b1g[0], b1g[1], b1g[2], a1g[0], a1g[1], a1g[2], 0.16, 0.14, 0.22);
+      tri(a1[0], a1[1], a1[2], b1[0], b1[1], b1[2], b1g[0], b1g[1], b1g[2], 0.20, 0.19, 0.23);
+      tri(a1[0], a1[1], a1[2], b1g[0], b1g[1], b1g[2], a1g[0], a1g[1], a1g[2], 0.20, 0.19, 0.23);
       // side walls
-      tri(a0[0], a0[1], a0[2], a1[0], a1[1], a1[2], a1g[0], a1g[1], a1g[2], 0.22, 0.18, 0.30);
-      tri(b0[0], b0[1], b0[2], b1g[0], b1g[1], b1g[2], b1[0], b1[1], b1[2], 0.22, 0.18, 0.30);
+      tri(a0[0], a0[1], a0[2], a1[0], a1[1], a1[2], a1g[0], a1g[1], a1g[2], 0.31, 0.30, 0.34);
+      tri(b0[0], b0[1], b0[2], b1g[0], b1g[1], b1g[2], b1[0], b1[1], b1[2], 0.31, 0.30, 0.34);
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({

@@ -362,8 +362,9 @@ GAME.vehicles = (function () {
     car.pos.x += vx * dt;
     car.pos.z += vz * dt;
 
-    // vertical: ride the ground (or a ramp deck), and go ballistic off a lip
-    var gy = GAME.city.groundY(car.pos.x, car.pos.z);
+    // vertical: ride the ground (or a ramp deck / a roof you've landed on), and
+    // go ballistic off a lip
+    var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
     var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
     if (car.pos.y > gy + 0.08) {
       if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; }
