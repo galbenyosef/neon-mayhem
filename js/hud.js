@@ -14,7 +14,7 @@ GAME.hud = (function () {
 
   function init() {
     ['minimap', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
-      'msg-line', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
+      'msg-line', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
       'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
       .forEach(function (id) { el[id] = $(id); });
@@ -472,10 +472,19 @@ GAME.hud = (function () {
       el['mission-timer'].style.color = countdown && s < 12 ? '#ff5d7a' : '#8dffd8';
     },
     missionEnd: function () { el['mission-hud'].style.display = 'none'; },
+    // names the POI you're near ('' hides it)
+    setPoiHint: function (text) {
+      var e = el['poi-hint'];
+      if (!e) return;
+      if (text) { if (e.textContent !== text) e.textContent = text; e.style.opacity = 1; }
+      else e.style.opacity = 0;
+    },
     showBig: function (kind, sub) {
       var scr = el[kind + '-screen'];
       scr.style.display = 'flex';
       scr.querySelector('.big-sub').textContent = sub || '';
+      var hint = scr.querySelector('.big-hint');
+      if (hint) hint.textContent = GAME.isTouch ? 'TAP TO CONTINUE' : 'PRESS R TO CONTINUE';
     },
     hideBig: function () {
       el['wasted-screen'].style.display = 'none';

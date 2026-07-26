@@ -51,6 +51,11 @@
   #zone-popup { left:50%; top:12px; transform:translateX(-50%); text-align:center; font-size:22px; font-weight:800; font-style:italic; color:#ffd9f2;
     text-shadow:0 0 12px rgba(255,100,200,.9), 2px 2px 0 #3a0f33; opacity:0; transition:opacity .6s; }
 
+  /* names the marker/garage you're standing next to, and what it needs */
+  #poi-hint { left:50%; bottom:31%; transform:translateX(-50%); text-align:center; font-size:16px; font-weight:800;
+    letter-spacing:1px; color:#ffe08a; text-shadow:0 0 12px rgba(255,190,60,.85), 0 2px 5px rgba(0,0,0,.9);
+    opacity:0; transition:opacity .25s; white-space:nowrap; }
+
   #msg-line { left:50%; bottom:24%; transform:translateX(-50%); font-size:19px; font-weight:700; color:#fff;
     text-shadow:0 0 10px rgba(255,120,220,.9); opacity:0; transition:opacity .3s; text-align:center; white-space:nowrap; }
   #mission-hud { left:50%; top:12px; transform:translateX(-50%); text-align:center; display:none; }
@@ -63,15 +68,28 @@
   #crosshair::before { left:50%; top:0; width:2px; height:100%; transform:translateX(-50%); }
   #crosshair::after { top:50%; left:0; height:2px; width:100%; transform:translateY(-50%); }
 
+  /* full-screen outcome cards. Solid text + glow (no background-clip:text —
+     it rasterizes to a solid block on some engines when filtered). */
   .big-screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column;
-    z-index:30; text-align:center; }
-  .big-word { font-size:min(15vw,110px); font-weight:900; font-style:italic; letter-spacing:4px;
-    background:linear-gradient(180deg,#fff 0%,#ffd0e8 35%,#ff4d9d 60%,#8a1049 100%);
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 0 18px rgba(255,60,150,.85)) drop-shadow(3px 5px 0 rgba(40,0,30,.9)); }
-  #busted-screen .big-word { background:linear-gradient(180deg,#fff 0%,#cfe8ff 35%,#3aa0ff 60%,#0b3a78 100%);
-    filter:drop-shadow(0 0 18px rgba(60,150,255,.85)) drop-shadow(3px 5px 0 rgba(0,10,40,.9)); }
-  .big-sub { color:#ffd9f2; font-size:17px; margin-top:10px; text-shadow:0 1px 4px #000; }
+    z-index:30; text-align:center; padding:24px;
+    background:radial-gradient(120% 90% at 50% 45%, rgba(120,10,50,.55) 0%, rgba(10,3,16,.88) 55%, rgba(6,2,12,.96) 100%);
+    animation:bigFade .45s ease-out; }
+  #busted-screen { background:radial-gradient(120% 90% at 50% 45%, rgba(10,50,120,.55) 0%, rgba(4,8,26,.88) 55%, rgba(3,5,16,.96) 100%); }
+  @keyframes bigFade { from { opacity:0 } to { opacity:1 } }
+  .big-rule { width:min(78vw,520px); height:2px; margin:14px 0 0;
+    background:linear-gradient(90deg,transparent,#ff4d9d,transparent); opacity:.85; }
+  #busted-screen .big-rule { background:linear-gradient(90deg,transparent,#4da3ff,transparent); }
+  .big-word { font-size:min(15vw,110px); font-weight:900; font-style:italic; letter-spacing:6px; line-height:1;
+    color:#fff;
+    text-shadow:0 0 26px rgba(255,70,160,.95), 0 0 70px rgba(255,50,140,.6), 4px 6px 0 rgba(45,0,32,.95); }
+  #busted-screen .big-word {
+    text-shadow:0 0 26px rgba(70,160,255,.95), 0 0 70px rgba(50,130,255,.6), 4px 6px 0 rgba(0,12,45,.95); }
+  .big-sub { color:#ffe3f4; font-size:clamp(14px,2.2vw,18px); margin-top:14px; max-width:min(86vw,560px);
+    line-height:1.45; text-shadow:0 2px 6px rgba(0,0,0,.95); }
+  #busted-screen .big-sub { color:#dcecff; }
+  .big-hint { margin-top:22px; font-size:14px; font-weight:800; letter-spacing:3px; color:#8dffd8;
+    text-shadow:0 0 12px rgba(60,255,190,.85); animation:blink 1.2s step-end infinite; }
+  @media (max-width:560px) { .big-word { letter-spacing:3px; } }
 
   /* translucent so the live attract-mode city shows through */
   #title-screen { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center; flex-direction:column;
@@ -172,6 +190,7 @@
   </div>
   <div class="panel" id="radio-popup"></div>
   <div class="panel" id="zone-popup"></div>
+  <div class="panel" id="poi-hint"></div>
   <div class="panel" id="msg-line"></div>
   <div class="panel" id="mission-hud">
     <div id="mission-title"></div>
@@ -181,8 +200,8 @@
   <div class="panel" id="crosshair"></div>
 </div>
 
-<div id="wasted-screen" class="big-screen"><div class="big-word">WASTED</div><div class="big-sub"></div></div>
-<div id="busted-screen" class="big-screen"><div class="big-word">BUSTED</div><div class="big-sub"></div></div>
+<div id="wasted-screen" class="big-screen"><div class="big-word">WASTED</div><div class="big-rule"></div><div class="big-sub"></div><div class="big-hint">PRESS R TO CONTINUE</div></div>
+<div id="busted-screen" class="big-screen"><div class="big-word">BUSTED</div><div class="big-rule"></div><div class="big-sub"></div><div class="big-hint">PRESS R TO CONTINUE</div></div>
 
 <div id="pause-screen">
   <h2>PAUSED</h2>

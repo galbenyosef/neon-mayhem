@@ -618,6 +618,7 @@ GAME.vehicles = (function () {
 
   function spawnParked() {
     var fc = GAME.focus();
+    var P = GAME.player;
     var spots = GAME.city.parkedSpots;
     var live = 0;
     for (var i = 0; i < spots.length; i++) if (spots[i].live) live++;
@@ -628,10 +629,13 @@ GAME.vehicles = (function () {
       // spot — no distance floor, larger spawn range, and exempt from the parked cap
       var special = sp.police || sp.vtype;
       if (!special && GAME.city.inAirport(sp.x, sp.z)) continue; // no random cars on the airfield
+      // don't park a twin of the special vehicle the player is currently driving
+      // (e.g. a second ambulance sitting in the bay you just took yours from)
+      if (sp.vtype && !sp.live && P.inCar && P.car && P.car.type === sp.vtype) continue;
       var minD = special ? 0 : 40 * 40;
       var range = special ? 210 : 140;
       var despawnR = special ? 260 : 190;
-      if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 > minD) {
+      if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
         for (var c = 0; c < world.cars.length; c++) {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60) { clear = false; break; }

@@ -35,6 +35,7 @@ GAME.missions = (function () {
   var resprayCooldown = 0;
 
   var MARKER_COLORS = { race: 0xff8a3d, courier: 0x38e8ff, rampage: 0xff4fa3 };
+  var TYPE_LABEL = { race: 'STREET RACE', courier: 'COURIER RUN', rampage: 'RAMPAGE' };
 
   function makeMarkerMesh(color, r) {
     var m = new THREE.Mesh(
@@ -97,62 +98,162 @@ GAME.missions = (function () {
       def: { type: kind, name: kind === 'ambulance' ? 'PARAMEDIC' : 'TAXI DRIVER', id: kind, job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'pickup', pickup: null, dropoff: null,
-      timeLeft: kind === 'ambulance' ? 95 : 90,
-      jobCount: 0, earned: 0, passenger: null, routeCp: null
+      // an ambulance fills up before running to the hospital; a cab takes one fare
+      capacity: kind === 'ambulance' ? 3 : 1,
+      level: 1, targets: [], aboard: 0,
+      timeLeft: kind === 'ambulance' ? 110 : 95,
+      jobCount: 0, earned: 0, routeCp: null
     };
-    nextPickup();
+    startRound();
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
     GAME.hud.message(kind === 'ambulance'
-      ? 'Reach the patient, then rush them to a hospital. It keeps going — leave the ambulance to clock off.'
-      : 'Pick up your fare, then drive them to the drop-off. It keeps going — leave the cab to clock off.', 4.5);
+      ? 'Level 1 — collect the patient and run them to a hospital. Each level adds more patients, further out. Leave the ambulance to clock off.'
+      : 'Level 1 — pick up your fare and drive them to the drop-off. Fares get further out each level. Leave the cab to clock off.', 5);
     GAME.audio.pickup();
   }
 
-  // spawn the next fare/patient waiting on a sidewalk and switch to pickup phase
-  function nextPickup() {
+  // one level of the shift: more people, spread further out, each level
+  function startRound() {
+    var kind = active.def.id;
+    var lv = active.level;
+    var count = kind === 'ambulance' ? Math.min(lv, 5) : 1;
+    // distance ramps with the level and then plateaus
+    var minR = Math.min(55 + (lv - 1) * 22, 210);
+    var maxR = Math.min(minR + 95, 330);
     var P = GAME.player;
     var ox = P.car ? P.car.pos.x : P.pos.x, oz = P.car ? P.car.pos.z : P.pos.z;
-    active.pickup = randomRoadPoint(ox, oz, 55, 175);
+    active.targets = [];
+    for (var i = 0; i < count; i++) {
+      var pt = null;
+      // keep the pickups spread apart so it's a real route, not one clump
+      for (var tries = 0; tries < 14; tries++) {
+        var c = randomRoadPoint(ox, oz, minR, maxR);
+        var ok = true;
+        for (var j = 0; j < active.targets.length; j++) {
+          if (U.dist2(c[0], c[1], active.targets[j].x, active.targets[j].z) < 60 * 60) { ok = false; break; }
+        }
+        if (ok) { pt = c; break; }
+      }
+      if (!pt) pt = randomRoadPoint(ox, oz, minR, maxR);
+      active.targets.push({ x: pt[0], z: pt[1], ped: spawnWaitingPed(pt[0], pt[1]) });
+    }
     active.phase = 'pickup';
-    var ped = GAME.peds.spawnPed(active.pickup[0], active.pickup[1]);
-    ped.state = 'walk'; ped.jobPed = true;
-    active.passenger = ped;
+    active.aboard = 0;
     active.routeCp = null;
   }
 
-  // fare/patient delivered: pay out, drop them off, and queue the next one
+  // someone standing at the kerb waiting — arm raised, and they stay put
+  // (state 'wait' is handled by no movement branch in peds.update)
+  function spawnWaitingPed(x, z) {
+    var ped = GAME.peds.spawnPed(x, z);
+    ped.jobPed = true;
+    ped.state = 'wait';
+    ped.speed = 0;
+    var j = ped.mesh.userData.joints;
+    j.armR.rotation.x = -2.6;   // hailing / calling for help
+    j.armR.rotation.z = 0.3;
+    return ped;
+  }
+
+  function nearestTarget() {
+    if (!active.targets.length) return null;
+    var f = GAME.focus(), best = active.targets[0], bd = 1e18;
+    for (var i = 0; i < active.targets.length; i++) {
+      var d = U.dist2(f.x, f.z, active.targets[i].x, active.targets[i].z);
+      if (d < bd) { bd = d; best = active.targets[i]; }
+    }
+    return best;
+  }
+
+  // hospital drop-off, nudged clear of the bay where ambulances park
+  function hospitalDropoff(f) {
+    var hs = GAME.city.pois.hospitals, best = hs[0], bd = 1e18;
+    for (var hi = 0; hi < hs.length; hi++) {
+      var dd = U.dist2(f.x, f.z, hs[hi].x, hs[hi].z);
+      if (dd < bd) { bd = dd; best = hs[hi]; }
+    }
+    return [best.x + 20, best.spawn.z + 16];
+  }
+
+  // collect whoever is at this stop
+  function collectTarget(tgt) {
+    var i = active.targets.indexOf(tgt);
+    if (i >= 0) active.targets.splice(i, 1);
+    if (tgt.ped && !tgt.ped.dead) GAME.peds.removePed(tgt.ped);
+    active.aboard++;
+    GAME.audio.pickup();
+    var kind = active.def.id;
+    var who = kind === 'ambulance' ? 'Patient' : 'Fare';
+    // head for the drop-off once we're full or there's nobody else left
+    if (active.aboard >= active.capacity || !active.targets.length) {
+      active.phase = 'dropoff';
+      active.dropoff = kind === 'ambulance' ? hospitalDropoff(GAME.focus())
+        : randomRoadPoint(GAME.focus().x, GAME.focus().z, 90, 210);
+      GAME.hud.message(who + ' aboard (' + active.aboard + '/' + active.capacity + ') — ' +
+        (kind === 'ambulance' ? 'get to the hospital!' : 'to the drop-off!'), 2.6);
+    } else {
+      GAME.hud.message(who + ' aboard (' + active.aboard + '/' + active.capacity + ') — ' +
+        active.targets.length + ' more waiting', 2.6);
+    }
+    active.routeCp = null;
+    updateCp();
+    GAME.hud.missionObjective(objectiveText());
+  }
+
+  // everyone aboard is delivered: pay out, then either go back for the rest of
+  // this level's people or move up a level
   function completeFare(kind, f, tgt) {
-    active.jobCount++;
-    var fare = (kind === 'ambulance' ? 180 : 130) + active.jobCount * 10;
+    var n = active.aboard;
+    active.jobCount += n;
+    var per = (kind === 'ambulance' ? 180 : 130) + active.level * 15;
+    var fare = per * n;
     GAME.addCash(fare); active.earned += fare;
     GAME.audio.sting('win');
-    // the passenger/patient climbs out and hurries off
-    var out = GAME.peds.spawnPed(tgt[0], tgt[1]);
-    out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z;
-    var word = kind === 'ambulance' ? 'Patient delivered' : 'Fare dropped';
-    var msg = word + '! +$' + fare + '  ·  ' + active.jobCount + ' done';
-    // streak bonus every 5 completed
-    if (active.jobCount % 5 === 0) {
-      var bonus = 250 * (active.jobCount / 5);
-      GAME.addCash(bonus); active.earned += bonus;
-      msg += '   —   STREAK x' + active.jobCount + ' BONUS +$' + bonus + '!';
+    for (var i = 0; i < n; i++) {
+      var out = GAME.peds.spawnPed(tgt[0] + (i - n / 2) * 1.4, tgt[1] + 1.5);
+      out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z;
     }
-    GAME.hud.message(msg, 3.2);
-    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 55 : 50), 130);
-    nextPickup();
+    active.aboard = 0;
+    var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
+    var msg = word + '! +$' + fare;
+    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 45 : 50) + n * 12, 190);
+
+    if (active.targets.length) {
+      // still people waiting on this level — go back out for them
+      active.phase = 'pickup';
+      GAME.hud.message(msg + '  ·  ' + active.targets.length + ' still waiting — go back', 3.4);
+    } else {
+      active.level++;
+      var bonus = 100 * (active.level - 1);
+      GAME.addCash(bonus); active.earned += bonus;
+      msg += '   —   LEVEL ' + active.level + '!  bonus +$' + bonus;
+      if (active.level % 5 === 0) {
+        var streak = 250 * (active.level / 5);
+        GAME.addCash(streak); active.earned += streak;
+        msg += '  ·  STREAK +$' + streak;
+      }
+      GAME.hud.message(msg, 4);
+      startRound();
+    }
+    active.routeCp = null;
     updateCp();
     GAME.hud.missionObjective(objectiveText());
   }
 
   // end an ongoing taxi/ambulance shift (clock off, totalled, or timed out)
   function endJob(reason) {
-    var count = active.jobCount, earned = active.earned;
-    var unit = active.def.id === 'ambulance' ? 'run' : 'fare';
+    var count = active.jobCount, earned = active.earned, lv = active.level;
+    var unit = active.def.id === 'ambulance' ? 'patient' : 'fare';
+    // send any waiting people home with the shift
+    for (var i = 0; i < active.targets.length; i++) {
+      if (active.targets[i].ped && !active.targets[i].ped.dead) GAME.peds.removePed(active.targets[i].ped);
+    }
+    active.targets = [];
     if (count > 0) {
       GAME.audio.sting('win');
-      GAME.hud.message('SHIFT OVER — ' + count + ' ' + unit + (count === 1 ? '' : 's') +
+      GAME.hud.message('SHIFT OVER — level ' + lv + ', ' + count + ' ' + unit + (count === 1 ? '' : 's') +
         ', $' + earned + ' earned' + (reason ? '  (' + reason + ')' : ''), 4.5);
     } else {
       GAME.hud.message('Shift over.' + (reason ? ' ' + reason + '.' : ''), 2.5);
@@ -195,6 +296,9 @@ GAME.missions = (function () {
         var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
         var car = GAME.vehicles.spawnCar('sports', rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
         car.cpIndex = 0;
+        // rivals shrug off scrapes — a race should be decided on the road, not by
+        // one of them cooking off against a lamp post
+        car.hp = car.spec.hp * 5;
         active.racers.push(car);
       }
       GAME.hud.message('3...', 1);
@@ -222,13 +326,44 @@ GAME.missions = (function () {
     updateCp();
   }
 
+  // race position: further along the checkpoint list wins, ties broken by who's
+  // closer to the next one. Returns 1-based place among player + rivals.
+  function racePosition() {
+    if (!active || active.def.type !== 'race') return 1;
+    var d = active.def, P = GAME.player;
+    var px = P.car ? P.car.pos.x : P.pos.x, pz = P.car ? P.car.pos.z : P.pos.z;
+    var pcp = d.cps[Math.min(active.cpIndex, d.cps.length - 1)];
+    var pd = U.dist2(px, pz, pcp[0], pcp[1]);
+    var place = 1;
+    for (var i = 0; i < active.racers.length; i++) {
+      var r = active.racers[i];
+      if (r.dead) continue;
+      var ri = r.cpIndex || 0;
+      if (ri > active.cpIndex) { place++; continue; }
+      if (ri < active.cpIndex) continue;
+      var rcp = d.cps[Math.min(ri, d.cps.length - 1)];
+      if (U.dist2(r.pos.x, r.pos.z, rcp[0], rcp[1]) < pd) place++;
+    }
+    return place;
+  }
+  function ordinal(n) { return n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'); }
+
   function objectiveText() {
     if (!active) return '';
     var d = active.def;
-    if (d.type === 'race') return 'Checkpoint ' + (active.cpIndex + 1) + ' / ' + d.cps.length;
+    if (d.type === 'race') {
+      var field = 1 + active.racers.filter(function (r) { return !r.dead; }).length;
+      return ordinal(racePosition()) + ' / ' + field + '   ·   Checkpoint ' + (active.cpIndex + 1) + ' / ' + d.cps.length;
+    }
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + d.stops.length;
-    if (d.type === 'taxifare') return (active.phase === 'pickup' ? 'Pick up the fare' : 'To the drop-off') + '  ·  ' + active.jobCount + ' done';
-    if (d.type === 'ambulance') return (active.phase === 'pickup' ? 'Reach the patient' : 'To the hospital') + '  ·  ' + active.jobCount + ' done';
+    if (d.type === 'taxifare' || d.type === 'ambulance') {
+      var amb = d.type === 'ambulance';
+      var head = active.phase === 'pickup'
+        ? (amb ? 'Collect patient' : 'Pick up the fare') + (active.targets.length > 1 ? ' (' + active.targets.length + ' waiting)' : '')
+        : (amb ? 'To the hospital' : 'To the drop-off');
+      var load = active.capacity > 1 ? '  ·  aboard ' + active.aboard + '/' + active.capacity : '';
+      return 'Lv ' + active.level + '  ·  ' + head + load + '  ·  ' + active.jobCount + ' done';
+    }
     return '$' + Math.floor(active.score) + ' / $' + d.target;
   }
 
@@ -236,7 +371,11 @@ GAME.missions = (function () {
     var d = active.def;
     if (d.type === 'race') return d.cps[active.cpIndex] || null;
     if (d.type === 'courier') return d.stops[active.cpIndex] || null;
-    if (d.type === 'taxifare' || d.type === 'ambulance') return active.phase === 'pickup' ? active.pickup : active.dropoff;
+    if (d.type === 'taxifare' || d.type === 'ambulance') {
+      if (active.phase !== 'pickup') return active.dropoff;
+      var t = nearestTarget();
+      return t ? [t.x, t.z] : null;
+    }
     return null;
   }
 
@@ -264,10 +403,21 @@ GAME.missions = (function () {
       if (isBest) bests[bestKey(d)] = value;
       GAME.addCash(reward);
       GAME.audio.sting('win');
-      GAME.hud.message((d.job ? 'JOB DONE! +$' : 'MISSION PASSED! +$') + reward + (isBest ? '  ·  NEW BEST!' : ''), 4);
+      var head = d.job ? 'JOB DONE! +$' : 'MISSION PASSED! +$';
+      // races report the finishing place and time alongside the payout
+      if (d.type === 'race') {
+        var field = 1 + active.racers.length;
+        head = 'RACE WON — 1st / ' + field + '  ·  ' + value.toFixed(1) + 's  ·  +$';
+      }
+      GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : ''), 4.5);
     } else {
       GAME.audio.sting('wasted');
-      GAME.hud.message('MISSION FAILED — ' + reason, 3.5);
+      var tail = '';
+      if (d.type === 'race') {
+        var f2 = 1 + active.racers.length;
+        tail = '  ·  finished ' + ordinal(racePosition()) + ' / ' + f2;
+      }
+      GAME.hud.message('MISSION FAILED — ' + reason + tail, 4);
     }
     cleanup();
   }
@@ -275,7 +425,12 @@ GAME.missions = (function () {
   function cleanup() {
     if (active) {
       for (var i = 0; i < active.racers.length; i++) GAME.vehicles.removeCar(active.racers[i]);
-      if (active.passenger && !active.passenger.dead) GAME.peds.removePed(active.passenger);
+      if (active.targets) {
+        for (var ti = 0; ti < active.targets.length; ti++) {
+          var tp = active.targets[ti].ped;
+          if (tp && !tp.dead) GAME.peds.removePed(tp);
+        }
+      }
       // reclaim the rampage loadout so the marker can't be farmed for ammo
       if (active.grantWeapon) {
         var inv = GAME.player.weapons[active.grantWeapon];
@@ -308,23 +463,76 @@ GAME.missions = (function () {
   function racerControls(car, dt) {
     var d = active.def;
     var cp = d.cps[Math.min(car.cpIndex, d.cps.length - 1)];
-    var dx = cp[0] - car.pos.x, dz = cp[1] - car.pos.z;
-    var dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < 12) {
+    if (U.dist2(car.pos.x, car.pos.z, cp[0], cp[1]) < 144) {
       car.cpIndex++;
       if (car.cpIndex >= d.cps.length) return null; // finished
       cp = d.cps[car.cpIndex];
-      dx = cp[0] - car.pos.x; dz = cp[1] - car.pos.z;
+      car.path = null;
     }
+    // rivals drive the streets to the next checkpoint. Beelining at a diagonal
+    // checkpoint just parks them against a building, which is what made the
+    // field look slow — they were stuck, not slow.
+    car.pathT = (car.pathT || 0) - dt;
+    if (!car.path || !car.path.length || car.pathT <= 0) {
+      car.pathT = 2.5;
+      var nodes = GAME.nav.roadPath(car.pos.x, car.pos.z, cp[0], cp[1]);
+      var pts = [];
+      for (var i = 0; i < nodes.length; i++) pts.push([nodes[i].x, nodes[i].z]);
+      pts.push(cp);
+      var toCp = U.dist2(car.pos.x, car.pos.z, cp[0], cp[1]);
+      // drop leading nodes we're already on top of, or that would send us
+      // backwards away from the checkpoint (the nearest node can be behind us)
+      while (pts.length > 1 && (U.dist2(car.pos.x, car.pos.z, pts[0][0], pts[0][1]) < 400 ||
+        U.dist2(pts[0][0], pts[0][1], cp[0], cp[1]) > toCp)) pts.shift();
+      car.path = pts;
+    }
+    var tgt = car.path[0];
+    if (car.path.length > 1 && U.dist2(car.pos.x, car.pos.z, tgt[0], tgt[1]) < 256) {
+      car.path.shift();
+      tgt = car.path[0];
+    }
+    var dx = tgt[0] - car.pos.x, dz = tgt[1] - car.pos.z;
+    var dist = Math.sqrt(dx * dx + dz * dz);
     var dh = U.wrapPI(Math.atan2(dx, dz) - car.heading);
-    var throttle = 0.92;
-    if (Math.abs(dh) > 1.1 && Math.abs(car.speed) > 12) throttle = -0.4;
-    else if (Math.abs(dh) > 0.5) throttle = 0.5;
-    if (car.cpIndex > active.cpIndex) throttle *= 0.8; // rubber band
+    // committed on the straights, but genuinely brake for corners — flat-out
+    // into a junction just puts them into a wall
+    var ad = Math.abs(dh);
+    var throttle = 1;
+    if (ad > 1.0 && Math.abs(car.speed) > 16) throttle = -0.5;
+    else if (ad > 0.55) throttle = 0.45;
+    else if (ad > 0.3) throttle = 0.78;
+    // ease off on the approach so they arrive at a sane speed
+    else if (dist < 26 && Math.abs(car.speed) > 30) throttle = 0.5;
+    // two-way rubber band: leaders ease a little, stragglers get a push, so the
+    // pack stays on your bumper instead of falling away
+    var lead = car.cpIndex - active.cpIndex;
+    if (lead > 0) throttle *= 0.94;
+    else if (lead < 0) throttle = Math.min(1, throttle * 1.16);
+    // the handbrake is for genuine hairpins only; using it mid-corner spins them
+    var handbrake = ad > 1.5 && Math.abs(car.speed) > 30;
+
+    // look ahead and lift for anything in the way — rivals shouldn't win by
+    // shunting the player off the start line
+    var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+    var look = 6 + Math.abs(car.speed) * 0.55;
+    var steerBias = 0;
+    var cars = GAME.world.cars;
+    for (var oi = 0; oi < cars.length; oi++) {
+      var o = cars[oi];
+      if (o === car || o.dead) continue;
+      var odx = o.pos.x - car.pos.x, odz = o.pos.z - car.pos.z;
+      var fd = odx * fx + odz * fz;
+      if (fd < 0.5 || fd > look) continue;
+      if (Math.abs(odx * fz - odz * fx) > 2.8) continue;
+      throttle = fd < look * 0.45 ? -0.6 : Math.min(throttle, 0);
+      // ease around rather than sitting on their bumper
+      steerBias = (odx * fz - odz * fx) > 0 ? -0.45 : 0.45;
+      break;
+    }
     if (Math.abs(car.speed) < 1) { car.unstickT = (car.unstickT || 0) + dt; } else car.unstickT = 0;
     if (car.unstickT > 1.5) car.reverseT = 0.9;
     if (car.reverseT > 0) { car.reverseT -= dt; return { throttle: -1, steer: dh > 0 ? -1 : 1, handbrake: false }; }
-    return { throttle: throttle, steer: U.clamp(dh * 2.4, -1, 1), handbrake: false };
+    return { throttle: throttle, steer: U.clamp(dh * 2.6 + steerBias, -1, 1), handbrake: handbrake };
   }
 
   function update(dt) {
@@ -356,22 +564,44 @@ GAME.missions = (function () {
         startJob(jobKind);
         return;
       }
+      var px = P.inCar ? P.car.pos.x : P.pos.x, pz = P.inCar ? P.car.pos.z : P.pos.z;
+      var hint = null;
       for (var m = 0; m < markers.length; m++) {
         var d = markers[m].def;
         // races and courier deliveries need a vehicle; rampages can start on foot
         var need = d.type === 'race' || d.type === 'courier';
+        var air = P.car && (P.car.spec.heli || P.car.spec.plane);
+        var dd = U.dist2(px, pz, d.start.x, d.start.z);
+        // name what the marker is (and what it wants) whenever you're standing near it
+        if (dd < 34 * 34) {
+          var label = TYPE_LABEL[d.type] + ' · ' + d.name;
+          if (need && !P.inCar) label += '   —   come back in a vehicle';
+          else if (d.type === 'race' && air) label += '   —   not in an aircraft';
+          else if (dd < (need ? 20 : 7)) label += '   —   starting…';
+          if (!hint || dd < hint.d) hint = { d: dd, text: label };
+        }
         if (need && !P.inCar) continue;
         // no cheesing a street race from a helicopter or plane
-        if (d.type === 'race' && P.car && (P.car.spec.heli || P.car.spec.plane)) continue;
-        var px = P.inCar ? P.car.pos.x : P.pos.x, pz = P.inCar ? P.car.pos.z : P.pos.z;
-        if (U.dist2(px, pz, d.start.x, d.start.z) < (need ? 20 : 7)) {
+        if (d.type === 'race' && air) continue;
+        if (dd < (need ? 20 : 7)) {
           start(d);
+          hint = null;
           break;
         }
       }
+      // respray garages announce themselves the same way
+      var doors = GAME.city.pois.resprays;
+      for (var rg = 0; rg < doors.length; rg++) {
+        var rd = U.dist2(px, pz, doors[rg].door.x, doors[rg].door.z);
+        if (rd < 34 * 34 && (!hint || rd < hint.d)) {
+          hint = { d: rd, text: 'RESPRAY · $100 — repairs your ride and clears the heat' + (P.inCar ? '' : '   —   drive in') };
+        }
+      }
+      GAME.hud.setPoiHint(hint ? hint.text : '');
       return;
     }
     GAME.jobAvailable = null;
+    GAME.hud.setPoiHint('');
 
     // active mission
     var d2 = active.def;
@@ -401,6 +631,8 @@ GAME.missions = (function () {
         GAME.hud.missionObjective(objectiveText());
         updateCp();
       }
+      // keep the live position readout current
+      if (GAME.frame % 12 === 0) GAME.hud.missionObjective(objectiveText());
       // draw the race line along the streets (checkpoints can be diagonal neighbors)
       active.routeT = (active.routeT || 0) - dt;
       if (active.routeT <= 0 || active.routeCp !== active.cpIndex) {
@@ -461,22 +693,8 @@ GAME.missions = (function () {
       if (active.timeLeft <= 0) { endJob('out of time'); return; }
       var f = GAME.focus(), tgt = currentCp();
       if (active.phase === 'pickup') {
-        if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 34 && Math.abs(P.car.speed) < 6) {
-          active.phase = 'dropoff';
-          if (active.passenger) { GAME.peds.removePed(active.passenger); active.passenger = null; }
-          if (d2.type === 'ambulance') {
-            var hs = GAME.city.pois.hospitals, best = hs[0], bd = 1e18;
-            for (var hi = 0; hi < hs.length; hi++) { var dd = U.dist2(f.x, f.z, hs[hi].x, hs[hi].z); if (dd < bd) { bd = dd; best = hs[hi]; } }
-            active.dropoff = [best.x + 20, best.spawn.z];
-          } else {
-            active.dropoff = randomRoadPoint(f.x, f.z, 90, 210);
-          }
-          active.routeCp = null;
-          updateCp();
-          GAME.hud.message(d2.type === 'ambulance' ? 'Patient aboard — get to the hospital!' : 'Fare aboard — to the drop-off!', 2.5);
-          GAME.hud.missionObjective(objectiveText());
-          GAME.audio.pickup();
-        }
+        var near = nearestTarget();
+        if (near && U.dist2(f.x, f.z, near.x, near.z) < 34 && Math.abs(P.car.speed) < 6) collectTarget(near);
       } else {
         if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) { completeFare(d2.type, f, tgt); }
       }
@@ -547,8 +765,14 @@ GAME.missions = (function () {
           var d = markers[i].def;
           out.push({ x: d.start.x, z: d.start.z, color: '#' + MARKER_COLORS[d.type].toString(16).padStart(6, '0'), size: 4 });
         }
-      } else if (cpMarker.visible) {
-        out.push({ x: cpMarker.position.x, z: cpMarker.position.z, color: '#ffe14f', size: 5 });
+      } else {
+        // every waiting fare/patient shows on the map, not just the nearest
+        if (active.targets) {
+          for (var t = 0; t < active.targets.length; t++) {
+            out.push({ x: active.targets[t].x, z: active.targets[t].z, color: '#ffe14f', size: 4 });
+          }
+        }
+        if (cpMarker.visible) out.push({ x: cpMarker.position.x, z: cpMarker.position.z, color: '#ffe14f', size: 5 });
       }
       return out;
     }

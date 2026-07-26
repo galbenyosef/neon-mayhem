@@ -76,11 +76,21 @@ GAME.playerDamage = function (amt, cause) {
   }
 };
 
+// silence every looping voice — the player update stops running once you're
+// down, so anything still held open would drone until respawn
+function killLoopingAudio() {
+  GAME.audio.engineState(false, 0);
+  GAME.audio.skid(0);
+  GAME.audio.siren(0);
+  GAME.audio.radio.setVolume(0);
+}
+
 GAME.playerWasted = function (cause) {
   var P = GAME.player;
   if (P.state !== 'alive') return;
   P.state = 'wasted'; P.stateT = 0;
   GAME.timeScale = 0.35;
+  killLoopingAudio();
   GAME.audio.sting('wasted');
   GAME.hud.showBig('wasted', 'You wake up at the hospital. Weapons gone, cash intact.');
   GAME.missions.failActive('You got wasted.');
@@ -91,6 +101,7 @@ GAME.playerBusted = function () {
   if (P.state !== 'alive') return;
   P.state = 'busted'; P.stateT = 0;
   GAME.timeScale = 0.4;
+  killLoopingAudio();
   GAME.audio.sting('busted');
   var fine = Math.min(P.cash, 200);
   P.pendingFine = fine;
@@ -217,7 +228,7 @@ function stepEnter(dt) {
     P.onBike = !!car.spec.bike;
     P.mesh.visible = P.onBike; // riders stay visible on a bike
     GAME.cam.freeT = 0;
-    GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.5);
+    GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
     GAME.hud.message(car.spec.label, 1.6);
     if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
     else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);

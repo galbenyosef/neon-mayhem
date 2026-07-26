@@ -164,7 +164,20 @@ GAME.peds = (function () {
         continue;
       }
       if (!ped.isCop && !ped.jobPed && d2p > 180 * 180) { removePed(ped); continue; }
-      if (ped.isCop) continue; // driven by police.js
+      if (ped.isCop) {
+        // movement is driven by police.js, but officers are still flesh and blood:
+        // a car at speed runs them down like anyone else
+        for (var cc = 0; cc < world.cars.length; cc++) {
+          var ccar = world.cars[cc];
+          if (Math.abs(ccar.speed) < 4) continue;
+          if (U.dist2(ped.pos.x, ped.pos.z, ccar.pos.x, ccar.pos.z) < 2.6) {
+            kill(ped, 'car', ccar === P.car && P.inCar);
+            GAME.audio.crash(0.4);
+            break;
+          }
+        }
+        continue;
+      }
 
       // dive away from fast cars
       if (ped.state !== 'dive') {

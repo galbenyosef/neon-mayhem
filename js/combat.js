@@ -306,12 +306,45 @@ GAME.combat = (function () {
     cash: { color: 0x8dffd8, label: 'CASH' }
   };
 
+  // each pickup reads as the thing it gives: a pistol/SMG/shotgun silhouette,
+  // a medical cross, a shield, or a cash bundle — instead of a generic cube
+  function pickupShape(type, color) {
+    var b = new GeoBatch();
+    if (type === 'pistol') {
+      b.addBox(0, 0.10, 0.06, 0.09, 0.13, 0.46, 0, color, 0);   // slide
+      b.addBox(0, -0.06, -0.10, 0.08, 0.24, 0.13, 0.35, color, 0); // grip
+      b.addBox(0, 0.02, 0.12, 0.05, 0.05, 0.10, 0, 0x2a2a34, 0);   // trigger guard
+    } else if (type === 'smg') {
+      b.addBox(0, 0.10, 0.00, 0.09, 0.14, 0.62, 0, color, 0);   // body
+      b.addBox(0, -0.08, -0.06, 0.07, 0.22, 0.12, 0, color, 0);    // grip
+      b.addBox(0, -0.02, 0.10, 0.06, 0.16, 0.10, 0, 0x2a2a34, 0);  // magazine
+      b.addBox(0, 0.10, -0.40, 0.06, 0.09, 0.22, 0, 0x2a2a34, 0);  // stock
+    } else if (type === 'shotgun') {
+      b.addBox(0, 0.10, 0.10, 0.10, 0.11, 0.78, 0, color, 0);   // barrel
+      b.addBox(0, 0.00, 0.10, 0.09, 0.09, 0.34, 0, 0x2a2a34, 0);   // pump
+      b.addBox(0, 0.01, -0.40, 0.08, 0.20, 0.26, 0, color, 0);     // stock
+    } else if (type === 'health') {
+      b.addBox(0, 0.10, 0, 0.62, 0.20, 0.16, 0, color, 0);      // cross bar
+      b.addBox(0, 0.10, 0, 0.20, 0.62, 0.16, 0, color, 0);      // cross post
+    } else if (type === 'armor') {
+      b.addBox(0, 0.16, 0, 0.46, 0.34, 0.14, 0, color, 0);      // shield body
+      b.addBox(0, -0.10, 0, 0.26, 0.26, 0.14, 0, color, 0);     // tapered point
+      b.addBox(0, 0.16, 0.08, 0.16, 0.16, 0.04, 0, 0xffffff, 0);   // emblem
+    } else { // cash bundle
+      b.addBox(0, 0.06, 0, 0.52, 0.10, 0.30, 0, color, 0);
+      b.addBox(0, 0.17, 0, 0.50, 0.09, 0.28, 0.16, color, 0);
+      b.addBox(0, 0.12, 0, 0.14, 0.24, 0.32, 0, 0x2a6a52, 0);      // paper band
+    }
+    return new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true, emissive: color, emissiveIntensity: 0.55 }));
+  }
+
   function pickupMesh(type) {
     var def = PICKUP_DEFS[type];
     var g = new THREE.Group();
-    var core = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), new THREE.MeshBasicMaterial({ color: def.color }));
-    core.rotation.x = Math.PI / 4; core.rotation.z = Math.PI / 4;
+    var core = pickupShape(type, def.color);
+    core.position.y = 0.1;
     g.add(core);
+    g.userData.core = core;
     var halo = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 16), new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
     halo.rotation.x = -Math.PI / 2;
     halo.position.y = -0.5;
@@ -354,7 +387,7 @@ GAME.combat = (function () {
       }
       if (U.dist2(p.pos.x, p.pos.z, GAME.player.pos.x, GAME.player.pos.z) < 90 * 90) {
         p.mesh.rotation.y += dt * 2.4;
-        p.mesh.children[0].position.y = 0.1 * Math.sin(GAME.time * 3 + i);
+        p.mesh.children[0].position.y = 0.1 + 0.1 * Math.sin(GAME.time * 3 + i);
       }
     }
   }

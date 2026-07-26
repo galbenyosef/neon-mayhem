@@ -26,7 +26,14 @@
     scene.add(moon);
     var warm = new THREE.AmbientLight(0x40203a, 0.7);
     scene.add(warm);
-    GAME.lights = { hemi: hemi, dir: moon, ambient: warm };
+    // headlights: one spot that follows whatever the player is driving, lit
+    // only after dark. A single light keeps this cheap on mobile.
+    var head = new THREE.SpotLight(0xfff0c8, 0, 95, 0.70, 0.42, 1.0);
+    head.position.set(0, 1.2, 0);
+    head.target.position.set(0, 0, 1);
+    scene.add(head);
+    scene.add(head.target);
+    GAME.lights = { hemi: hemi, dir: moon, ambient: warm, head: head };
 
     GAME.city.build(scene);
     GAME.fx.init(scene);
@@ -206,6 +213,24 @@
   window.addEventListener('blur', onHide);
   window.addEventListener('focus', onShow);
 
+  // park the headlight on the player's vehicle, aimed down the road ahead.
+  // Intensity follows the clock, so it only lights up as dusk falls.
+  function updateHeadlight() {
+    var L = GAME.lights, P = GAME.player;
+    if (!L || !L.head) return;
+    var h = L.head;
+    var car = P.inCar && P.car ? P.car : null;
+    var night = U.clamp(1 - GAME.timeOfDay * 1.6, 0, 1);
+    if (!car || !night) { h.intensity = 0; return; }
+    h.intensity = night * (car.spec.heli || car.spec.plane ? 2.4 : 3.6);
+    var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+    var nose = car.spec.l * 0.45;
+    h.position.set(car.pos.x + fx * nose, car.pos.y + 0.85, car.pos.z + fz * nose);
+    // aim slightly down so the cone lands on the road rather than the skyline
+    h.target.position.set(car.pos.x + fx * 30, car.pos.y - 1.6, car.pos.z + fz * 30);
+    h.target.updateMatrixWorld();
+  }
+
   GAME.tick = function (dt) {
     GAME.time += dt;
     GAME.frame++;
@@ -219,6 +244,7 @@
     GAME.police.update(dt);
     GAME.missions.update(dt);
     GAME.fx.update(dt);
+    updateHeadlight();
     GAME.touch.update();
     GAME.hud.update(dt);
   };
