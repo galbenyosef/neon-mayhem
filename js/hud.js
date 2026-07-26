@@ -52,7 +52,8 @@ GAME.hud = (function () {
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
     pauseBtn('pause-mute', function () { var m = GAME.audio.toggleMute(); $('pause-mute').textContent = m ? '🔇 MUTED' : '🔊 SOUND'; });
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
-    pauseBtn('pause-day', function () { var d = GAME.setDaytime(); $('pause-day').textContent = d ? '🌙 NIGHT' : '☀ DAY'; });
+    pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
+    api.refreshTimeBtn(GAME.timeMode);
     pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
     pauseBtn('pause-exit', function () { location.reload(); });
     // death screens: tap to skip the wait
@@ -66,6 +67,7 @@ GAME.hud = (function () {
     ['click', 'touchend'].forEach(function (ev) {
       fsb.addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); GAME.toggleFullscreen(); });
     });
+    api.refreshFsBtn();
 
     el['bigmap'].addEventListener('click', onMapClick);
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
@@ -385,7 +387,7 @@ GAME.hud = (function () {
     if (!mapBuffer) return;
     GAME.nav.update(dt);
     if (GAME.frame % 3 === 0) drawMinimap();
-    if (GAME.frame % 10 === 0) refreshControlsBar();
+    if (GAME.frame % 10 === 0) { refreshControlsBar(); api.refreshFsBtn(); }
     // cash tick-up
     if (shownCash !== targetCash) {
       var diff = targetCash - shownCash;
@@ -425,6 +427,7 @@ GAME.hud = (function () {
       // the sim loop halts while the map is open; silence the engine drone
       if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
       else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
+      api.refreshFsBtn();
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },
@@ -472,6 +475,21 @@ GAME.hud = (function () {
       el['mission-timer'].style.color = countdown && s < 12 ? '#ff5d7a' : '#8dffd8';
     },
     missionEnd: function () { el['mission-hud'].style.display = 'none'; },
+    // the corner fullscreen control. On desktop it's always there; on touch the
+    // in-game chrome stays minimal, so it shows on the title / pause / map menus
+    // (where the thumb buttons are hidden) rather than over the action cluster.
+    refreshFsBtn: function () {
+      var e = $('fs-btn');
+      if (!e) return;
+      var onMenu = !GAME.started || GAME.paused || GAME.mapOpen || GAME.player.state !== 'alive';
+      e.style.display = (!GAME.isTouch || onMenu) ? 'flex' : 'none';
+    },
+    // AUTO runs the day/night cycle; DAY / NIGHT pin it
+    refreshTimeBtn: function (mode) {
+      var e = $('pause-day');
+      if (!e) return;
+      e.textContent = mode === 'day' ? '☀ TIME: DAY' : mode === 'night' ? '🌙 TIME: NIGHT' : '🕓 TIME: AUTO';
+    },
     // names the POI you're near ('' hides it)
     setPoiHint: function (text) {
       var e = el['poi-hint'];
@@ -501,8 +519,9 @@ GAME.hud = (function () {
     hideTitle: function () {
       el['title-screen'].style.display = 'none';
       document.getElementById('hud').style.display = 'block';
+      api.refreshFsBtn();
     },
-    setPaused: function (p) { el['pause-screen'].style.display = p ? 'flex' : 'none'; },
+    setPaused: function (p) { el['pause-screen'].style.display = p ? 'flex' : 'none'; api.refreshFsBtn(); },
     toggleCRT: function () {
       var on = el['crt-layer'].style.display !== 'block';
       el['crt-layer'].style.display = on ? 'block' : 'none';

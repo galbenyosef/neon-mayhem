@@ -47,6 +47,7 @@ function loadSave() {
     if (typeof s.cash === 'number') GAME.player.cash = s.cash;
     GAME.bests = s.bests || {};
     GAME.prefs = s.prefs || {};
+    if (GAME.prefs.timeMode && GAME.setTimeMode) GAME.setTimeMode(GAME.prefs.timeMode);
   } catch (e) { GAME.bests = {}; GAME.prefs = {}; }
 }
 GAME.save = function () {
@@ -392,12 +393,13 @@ function updateOnFoot(dt) {
     GAME.audio.punch();
   }
   P.jumpLatch = wantJump;
-  if (P.pos.y > surf + 0.06) {
+  P.airborne = P.pos.y > surf + 0.06;
+  if (P.airborne) {
     P.velY = (P.velY || 0) - 22 * dt;
     P.pos.y += P.velY * dt;
     if (P.pos.y <= surf) {
       var impact = -(P.velY || 0);
-      P.pos.y = surf; P.velY = 0;
+      P.pos.y = surf; P.velY = 0; P.airborne = false;
       if (impact > 12) {
         GAME.playerDamage(Math.min(95, (impact - 12) * 6), 'fall');
         GAME.cameraShake = Math.min(1, impact / 18);
@@ -412,14 +414,14 @@ function updateOnFoot(dt) {
   var running = P.moveSpeed > 3.6;
   P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * (running ? 3.0 : 2.2);
   var j = P.mesh.userData.joints;
-  var swing = running ? 1.25 : 0.7;
+  var swing = running ? 1.15 : 0.7;
   var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * swing;
   j.legL.rotation.x = s; j.legR.rotation.x = -s;
-  // lean forward and bob with the stride when sprinting
-  var lean = running ? U.clamp((P.moveSpeed - 3.6) / 2.4, 0, 1) * 0.32 : 0;
+  // lean forward when sprinting (no positional bob — P.pos IS the mesh position,
+  // so nudging it here would fight the ground/jump physics)
+  var lean = running ? U.clamp((P.moveSpeed - 3.6) / 2.4, 0, 1) * 0.3 : 0;
   j.torso.rotation.x = U.lerp(j.torso.rotation.x, lean, Math.min(1, dt * 8));
-  P.mesh.position.y += running ? Math.abs(Math.sin(P.walkPhase)) * 0.07 : 0;
-  if (P.pos.y > surf + 0.12) {
+  if (P.airborne) {
     // airborne: tuck the legs and throw the arms up
     j.legL.rotation.x = -0.75; j.legR.rotation.x = -0.35;
     j.armL.rotation.x = -2.2; j.armR.rotation.x = -2.2;

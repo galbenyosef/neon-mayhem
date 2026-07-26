@@ -12,18 +12,10 @@ GAME.missions = (function () {
       id: 'race2', type: 'race', name: 'DOWNTOWN DASH', reward: 600, start: { x: 50, z: 250 },
       cps: [[50, 50], [150, -50], [50, -250], [-50, -350], [-150, -250], [-150, -50], [-50, 50]]
     },
-    {
-      id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 95, start: { x: 158.4, z: 41.6 },
-      stops: [[258, 158], [158, -158], [-42, -258], [-158, -42]]
-    },
-    {
-      id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 110, start: { x: -241.6, z: -41.6 },
-      stops: [[-358, 158], [-258, 258], [-42, 158], [42, -42]]
-    },
-    {
-      id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 100, start: { x: 364, z: 104 },
-      stops: [[380, 150], [358, -100], [258, -258], [358, 258]]
-    },
+    // courier drops are generated fresh each run (see rollCourierStops)
+    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 95, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 110, legMax: 240 },
+    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 110, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 120, legMax: 260 },
+    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 100, start: { x: 364, z: 104 }, drops: 4, legMin: 100, legMax: 220 },
     { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 60, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
     { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 60, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
     { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } }
@@ -98,6 +90,29 @@ GAME.missions = (function () {
     pts.push([rp.x, rp.z]);
     pts.push([toX, toZ]);
     return pts;
+  }
+
+  // lay out a fresh delivery round: each drop is a leg away from the last, kept
+  // apart from the others so the run covers ground instead of doubling back
+  function rollCourierStops(def) {
+    var stops = [];
+    var cx = def.start.x, cz = def.start.z;
+    for (var i = 0; i < (def.drops || 4); i++) {
+      var pt = null;
+      for (var t = 0; t < 16; t++) {
+        var c = randomRoadPoint(cx, cz, def.legMin || 110, def.legMax || 240);
+        var ok = true;
+        for (var j = 0; j < stops.length; j++) {
+          if (U.dist2(c[0], c[1], stops[j][0], stops[j][1]) < 70 * 70) { ok = false; break; }
+        }
+        if (U.dist2(c[0], c[1], def.start.x, def.start.z) < 60 * 60) ok = false;
+        if (ok) { pt = c; break; }
+      }
+      if (!pt) pt = randomRoadPoint(cx, cz, def.legMin || 110, def.legMax || 240);
+      stops.push(pt);
+      cx = pt[0]; cz = pt[1];
+    }
+    return stops;
   }
 
   function startJob(kind) {
@@ -345,7 +360,9 @@ GAME.missions = (function () {
     var P = GAME.player;
     active = {
       def: def, t: 0, cpIndex: 0, score: 0,
-      timeLeft: def.time || 0, racers: [], state: 'countdown', countdown: def.type === 'race' ? 3.2 : 0
+      timeLeft: def.time || 0, racers: [], state: 'countdown', countdown: def.type === 'race' ? 3.2 : 0,
+      // a fresh set of drops every time you take the run
+      stops: def.type === 'courier' ? rollCourierStops(def) : null
     };
     if (def.type === 'race') {
       for (var i = 0; i < 3; i++) {
@@ -413,7 +430,7 @@ GAME.missions = (function () {
       var field = 1 + active.racers.filter(function (r) { return !r.dead; }).length;
       return ordinal(racePosition()) + ' / ' + field + '   ·   Checkpoint ' + (active.cpIndex + 1) + ' / ' + d.cps.length;
     }
-    if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + d.stops.length;
+    if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
     if (d.type === 'taxifare' || d.type === 'ambulance') {
       var amb = d.type === 'ambulance';
       var head = active.phase === 'pickup'
@@ -428,7 +445,7 @@ GAME.missions = (function () {
   function currentCp() {
     var d = active.def;
     if (d.type === 'race') return d.cps[active.cpIndex] || null;
-    if (d.type === 'courier') return d.stops[active.cpIndex] || null;
+    if (d.type === 'courier') return active.stops[active.cpIndex] || null;
     if (d.type === 'taxifare' || d.type === 'ambulance') {
       if (active.phase !== 'pickup') return active.dropoff;
       var t = nearestTarget();
@@ -722,7 +739,7 @@ GAME.missions = (function () {
       if (stop && U.dist2(px2, pz2, stop[0], stop[1]) < 25) {
         active.cpIndex++;
         GAME.audio.pickup();
-        if (active.cpIndex >= d2.stops.length) { finish(true); return; }
+        if (active.cpIndex >= active.stops.length) { finish(true); return; }
         GAME.hud.message('Delivered! Next stop is marked.', 2);
         GAME.hud.missionObjective(objectiveText());
         active.routeCp = -1; // force route recompute for the new stop

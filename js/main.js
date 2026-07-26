@@ -121,14 +121,29 @@
   // phase 0.63 -> df~0.85 sunny afternoon; 0.75 -> sunset; 1.0 -> night.
   var CYCLE = 150, START_PHASE = 0.63;
   GAME.dayPhase = START_PHASE;
+  // 'auto' runs the cycle; 'day' / 'night' pin the clock where you want it
+  GAME.timeMode = 'auto';
+  var TIME_MODES = ['auto', 'day', 'night'];
+  GAME.setTimeMode = function (mode) {
+    if (TIME_MODES.indexOf(mode) < 0) mode = 'auto';
+    GAME.timeMode = mode;
+    if (mode === 'day') { GAME.dayPhase = 0.5; GAME.applyTimeOfDay(1); }
+    else if (mode === 'night') { GAME.dayPhase = 0.0; GAME.applyTimeOfDay(0); }
+    if (GAME.prefs) { GAME.prefs.timeMode = mode; GAME.save(); }
+    return mode;
+  };
+  GAME.cycleTimeMode = function () {
+    var i = TIME_MODES.indexOf(GAME.timeMode);
+    return GAME.setTimeMode(TIME_MODES[(i + 1) % TIME_MODES.length]);
+  };
+  // kept for the scripted test API
   GAME.setDaytime = function (force) {
-    // manual override (switch is hidden but kept): jump the cycle to day/night
     var day = force !== undefined ? !!force : GAME.timeOfDay < 0.5;
-    GAME.dayPhase = day ? 0.5 : 0.0;
-    GAME.applyTimeOfDay(day ? 1 : 0);
+    GAME.setTimeMode(day ? 'day' : 'night');
     return day;
   };
   GAME.advanceDayCycle = function (dt) {
+    if (GAME.timeMode !== 'auto') return; // clock is pinned
     GAME.dayPhase = (GAME.dayPhase + dt / CYCLE) % 1;
     GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
   };

@@ -99,20 +99,34 @@ GAME.touch = (function () {
     btns.job = mkBtn('JOB', 210, 132, 50, { press: function () { T.job = true; } });
     carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job);
 
-    // the only persistent utility on the HUD is PAUSE (top-left corner);
-    // sound / CRT / day-night / fullscreen all live in the pause menu
-    var pauseB = mkBtn('❚❚', 0, 0, 46, { press: function () { GAME.togglePause(); } });
-    pauseB.style.right = ''; pauseB.style.bottom = '';
-    pauseB.style.left = '10px'; pauseB.style.top = '8px';
-    pauseB.style.fontSize = '15px';
-    // desktop corner fullscreen button is redundant on touch
-    var fsb = document.getElementById('fs-btn');
-    if (fsb) fsb.style.display = 'none';
-    // tap the radar to open the full map
+    // the radar moves to the top-left on touch: the bottom-left corner is the
+    // virtual stick's zone, and the two were fighting for the same thumb
     var mm = document.getElementById('minimap-wrap');
     if (mm) {
+      mm.style.bottom = 'auto';
+      mm.style.left = '10px';
+      mm.style.top = '10px';
+      mm.style.width = '132px';
+      mm.style.height = '132px';
       mm.style.pointerEvents = 'auto';
+      // tap the radar to open the full map
       mm.addEventListener('touchend', function (e) { e.preventDefault(); e.stopPropagation(); GAME.hud.toggleMap(true); }, { passive: false });
+    }
+    // PAUSE sits just right of the radar; sound / CRT / time / fullscreen all
+    // live in the pause menu
+    var pauseB = mkBtn('❚❚', 0, 0, 46, { press: function () { GAME.togglePause(); } });
+    pauseB.style.right = ''; pauseB.style.bottom = '';
+    pauseB.style.left = '152px'; pauseB.style.top = '12px';
+    pauseB.style.fontSize = '15px';
+    // fullscreen keeps its own corner control, shown on the menus (see hud.refreshFsBtn)
+    var fsb = document.getElementById('fs-btn');
+    if (fsb) {
+      fsb.style.bottom = 'auto';
+      fsb.style.right = 'auto';
+      fsb.style.left = '206px';
+      fsb.style.top = '12px';
+      fsb.style.width = '46px';
+      fsb.style.height = '46px';
     }
 
     // virtual stick

@@ -70,6 +70,8 @@ GAME.police = (function () {
   function setWanted(n) {
     n = U.clamp(Math.floor(n), 0, 5);
     heat = n === 0 ? 0 : THRESH[n] + 25;
+    // treat it like a fresh offence so the level doesn't bleed away instantly
+    if (n > 0) lastCrime = GAME.time;
     GAME.hud.wantedChanged(n);
     if (n === 0) clearCops();
   }
