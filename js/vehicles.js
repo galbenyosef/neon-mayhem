@@ -359,6 +359,7 @@ GAME.vehicles = (function () {
     // booster strips slam the throttle open: 3x the cap and the acceleration
     // for a moment, so you leave the lip far faster than you arrived
     car.boostT = Math.max(0, (car.boostT || 0) - dt);
+    car.hitCd = Math.max(0, (car.hitCd || 0) - dt);
     var boost = car.boostT > 0 ? 3 : 1;
     var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
     var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1);
@@ -498,7 +499,11 @@ GAME.vehicles = (function () {
             car.speed = car.vx * fx + car.vz * fz;
             car.lat = car.vx * fz + car.vz * -fx;
           }
-          if (impact > 4) {
+          // one event per contact: a car grinding along a wall reports a hit
+          // every frame, which both shreds its health and machine-guns the
+          // crash sound until it works free
+          if (impact > 4 && (car.hitCd || 0) <= 0) {
+            car.hitCd = 0.25;
             damageCar(car, Math.min(32, impact * 1.5), 'wall');
             GAME.audio.crash(impact / 18);
             GAME.fx.spawn(px, 0.7, pz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
@@ -535,7 +540,8 @@ GAME.vehicles = (function () {
         b.pos.x += nx * overlap / 2; b.pos.z += nz * overlap / 2;
         var avx = a.vx || 0, avz = a.vz || 0, bvx = b.vx || 0, bvz = b.vz || 0;
         var rel = (avx - bvx) * nx + (avz - bvz) * nz;
-        if (rel > 3) {
+        if (rel > 3 && (a.hitCd || 0) <= 0 && (b.hitCd || 0) <= 0) {
+          a.hitCd = 0.25; b.hitCd = 0.25;
           var dmg = Math.min(26, rel * 1.3);
           damageCar(a, dmg * 0.6, b); damageCar(b, dmg * 0.6, a);
           GAME.audio.crash(rel / 20);

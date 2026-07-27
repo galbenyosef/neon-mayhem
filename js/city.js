@@ -350,6 +350,11 @@ GAME.city = (function () {
     buildLandmarks(scene);
     buildHelipad(scene);
     buildAirport(scene);
+    // last, so their clearance tests can see every structure in the city —
+    // the terminal, the hospitals, the station and the tower all register
+    // after the streets do, and a ramp placed before them can end up inside one
+    buildFlyover(scene);
+    buildRamps(scene);
     buildLaneGraph();
     buildSpots();
   };
@@ -578,9 +583,6 @@ GAME.city = (function () {
     streak.position.set(600, -0.1, -60);
     scene.add(streak);
     city.streak = streak;
-
-    buildFlyover(scene);
-    buildRamps(scene);
 
     // beach palms along the boardwalk
     for (var bz = -470; bz < 480; bz += 24) {
@@ -1024,12 +1026,52 @@ GAME.city = (function () {
       if (F && x > F.minX - 34 && x < F.maxX + 34 && Math.abs(z - F.z) < F.half + 34) return false;
       return true;
     }
+    // The ramp deck and the run-up leading to it have to be clear across the
+    // full width — testing only the centre point lets a wall sit square across
+    // the approach, and then the jump can never be lined up at all.
+    function approachClear(x, z, rot, w, len) {
+      var c = Math.cos(rot), s = Math.sin(rot);
+      for (var lz = -len / 2 - 34; lz <= len / 2; lz += 4) {
+        for (var lx = -w / 2; lx <= w / 2 + 0.01; lx += w / 2) {
+          var px = x + lx * c + lz * s, pz = z - lx * s + lz * c;
+          var boxes = city.hash.query(px, pz, 3);
+          for (var b = 0; b < boxes.length; b++) {
+            var q = boxes[b];
+            if (px > q.minX - 1.5 && px < q.maxX + 1.5 && pz > q.minZ - 1.5 && pz < q.maxZ + 1.5) return false;
+          }
+        }
+      }
+      return true;
+    }
+    // A jump you cannot land is not a jump. Range grows with the square of the
+    // exit speed, so a boosted ramp throws you the better part of a block —
+    // check where that puts you down before committing to the direction.
+    function landingOk(x, z, rot, h, len, boost) {
+      var v = boost ? 100 : 34;
+      var range = v * v * (h / len) / 12;
+      var ux = Math.sin(rot), uz = Math.cos(rot);
+      for (var t = 0.45; t <= 1.3; t += 0.085) {
+        var lx = x + ux * (len / 2 + range * t);
+        var lz = z + uz * (len / 2 + range * t);
+        if (lx < -466 || lx > 392 || Math.abs(lz) > 472) return false;
+        if (city.isInWater(lx, lz)) return false;
+      }
+      return true;
+    }
     for (var a = 0; a < anchors.length && out.length < TARGET; a++) {
       var an = anchors[a];
       // nudge an anchor off the carriageway if it landed on one
       for (var n = 0; n < 8 && !offRoad(an.x, an.z); n++) { an.x += 4; an.z += 4; }
       if (offRoad(an.x, an.z) && ok(an.x, an.z)) {
-        out.push({ x: an.x, z: an.z, rot: an.rot, w: 12, len: an.len, h: an.h, boost: an.boost !== undefined ? an.boost : (a % 3 === 1) });
+        var abst = an.boost !== undefined ? an.boost : (a % 3 === 1);
+        // keep the hand-placed direction if it lands, else fire it the other way
+        var arot = an.rot, aok = false;
+        for (var f = 0; f < 2; f++) {
+          if (landingOk(an.x, an.z, arot, an.h, an.len, abst) && approachClear(an.x, an.z, arot, 12, an.len)) { aok = true; break; }
+          arot += Math.PI;
+        }
+        if (!aok) continue;
+        out.push({ x: an.x, z: an.z, rot: arot, w: 12, len: an.len, h: an.h, boost: abst });
       }
     }
     // fill the rest along road verges, alternating orientation
@@ -1041,16 +1083,27 @@ GAME.city = (function () {
           // wider ramps sit further from the kerb so they never reach the lanes
           var shape = SHAPES[out.length % SHAPES.length];
           var vergeOut = 11 + shape.w / 2;
+          var bst = out.length % 3 === 2;
           // verge beside a north-south road, launching along it
           var vx = R[i2] + side * vergeOut, vz = d + jitter;
           if (offRoad(vx, vz) && ok(vx, vz)) {
-            out.push(varyRamp(vx, vz, side > 0 ? 0 : Math.PI, out.length));
-            continue;
+            var vrot = side > 0 ? 0 : Math.PI, vok = false;
+            for (var fv = 0; fv < 2; fv++) {
+              if (landingOk(vx, vz, vrot, shape.h, shape.len, bst) && approachClear(vx, vz, vrot, shape.w, shape.len)) { vok = true; break; }
+              vrot += Math.PI;
+            }
+            if (vok) { out.push(varyRamp(vx, vz, vrot, out.length)); continue; }
           }
           // verge beside an east-west road
           var hx = d + jitter, hz = R[i2] + side * vergeOut;
           if (hx < 340 && offRoad(hx, hz) && ok(hx, hz)) {
-            out.push(varyRamp(hx, hz, side > 0 ? Math.PI / 2 : -Math.PI / 2, out.length));
+            var hrot = side > 0 ? Math.PI / 2 : -Math.PI / 2, hok = false;
+            for (var fh = 0; fh < 2; fh++) {
+              if (landingOk(hx, hz, hrot, shape.h, shape.len, bst) && approachClear(hx, hz, hrot, shape.w, shape.len)) { hok = true; break; }
+              hrot += Math.PI;
+            }
+            if (!hok) continue;
+            out.push(varyRamp(hx, hz, hrot, out.length));
           }
         }
       }

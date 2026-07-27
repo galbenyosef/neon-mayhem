@@ -2,7 +2,8 @@ GAME.audio = (function () {
   var ctx = null, master, sfxBus, radioBus, engineBus, verb;
   var muted = false;
   var noiseBuf = null;
-  var engine = null, skidNode = null, sirenNode = null;
+  var engine = null, skidNode = null, sirenNode = null, rotorNode = null;
+  var lastCrashT = -9, lastCrashV = 0;
 
   function midi(n) { return 440 * Math.pow(2, (n - 69) / 12); }
 
@@ -50,6 +51,7 @@ GAME.audio = (function () {
     var verbGain = ctx.createGain(); verbGain.gain.value = 0.35;
     verb.connect(verbGain); verbGain.connect(radioBus);
     initEngine();
+    initRotor();
     initSkid();
     initSiren();
     radio.start();
@@ -65,6 +67,9 @@ GAME.audio = (function () {
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     src.connect(f); f.connect(g); g.connect(sfxBus);
     src.start(t); src.stop(t + dur + 0.05);
+    // drop the nodes out of the graph as soon as they've played; a busy scene
+    // makes a lot of these and a graph that only grows starts to crackle
+    src.onended = function () { try { src.disconnect(); f.disconnect(); g.disconnect(); } catch (e) { } };
   }
   function tone(freq, dur, gain, type, slideTo, when, bus) {
     if (!ctx) return;
@@ -77,6 +82,7 @@ GAME.audio = (function () {
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(bus || sfxBus);
     o.start(t); o.stop(t + dur + 0.05);
+    o.onended = function () { try { o.disconnect(); g.disconnect(); } catch (e) { } };
   }
 
   // continuous engine voice, pitch driven by speed
@@ -88,6 +94,26 @@ GAME.audio = (function () {
     o.connect(f); o2.connect(f); f.connect(g); g.connect(engineBus);
     o.start(); o2.start();
     engine = { o: o, o2: o2, f: f };
+  }
+  // Rotor voice for aircraft. A helicopter is blade slap — filtered noise
+  // chopped by a low oscillator — over a turbine whine, which is nothing like
+  // the piston drone a car runs on. A plane uses the same parts with the chop
+  // run up to propeller speed and the whine pushed higher.
+  function initRotor() {
+    var src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    var f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 260; f.Q.value = 0.9;
+    var chopG = ctx.createGain(); chopG.gain.value = 0.35;      // depth of the slap
+    var lfo = ctx.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 13;
+    var lfoG = ctx.createGain(); lfoG.gain.value = 0.5;
+    lfo.connect(lfoG); lfoG.connect(chopG.gain);
+    src.connect(f); f.connect(chopG);
+    var whine = ctx.createOscillator(); whine.type = 'triangle'; whine.frequency.value = 620;
+    var whineG = ctx.createGain(); whineG.gain.value = 0.035;
+    whine.connect(whineG);
+    var g = ctx.createGain(); g.gain.value = 0;
+    chopG.connect(g); whineG.connect(g); g.connect(master);
+    src.start(); lfo.start(); whine.start();
+    rotorNode = { g: g, f: f, lfo: lfo, whine: whine };
   }
   function initSkid() {
     var src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
@@ -224,18 +250,28 @@ GAME.audio = (function () {
       if (ctx) master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.05);
       return muted;
     },
-    engineState: function (on, speedNorm) {
+    // `kind` picks the voice: 'heli' and 'plane' run the rotor, anything else
+    // the piston engine. Only one is ever audible.
+    engineState: function (on, speedNorm, kind) {
       if (!ctx) return;
       var t = ctx.currentTime;
+      var sn = U.clamp(speedNorm || 0, 0, 1);
+      var air = on && (kind === 'heli' || kind === 'plane');
       // idle sits well back; it only leans in as you wind the revs out, so the
       // radio stays audible while cruising
-      var sn = U.clamp(speedNorm || 0, 0, 1);
-      engineBus.gain.setTargetAtTime(on ? 0.05 + sn * 0.045 : 0, t, 0.12);
-      if (on) {
+      engineBus.gain.setTargetAtTime(on && !air ? 0.05 + sn * 0.045 : 0, t, 0.12);
+      if (on && !air) {
         var f = 45 + sn * 160;
         engine.o.frequency.setTargetAtTime(f, t, 0.08);
         engine.o2.frequency.setTargetAtTime(f * 0.5, t, 0.08);
         engine.f.frequency.setTargetAtTime(300 + sn * 1100, t, 0.1);
+      }
+      rotorNode.g.gain.setTargetAtTime(air ? 0.10 + sn * 0.06 : 0, t, 0.15);
+      if (air) {
+        var plane = kind === 'plane';
+        rotorNode.lfo.frequency.setTargetAtTime((plane ? 34 : 11) + sn * (plane ? 20 : 7), t, 0.2);
+        rotorNode.f.frequency.setTargetAtTime((plane ? 420 : 210) + sn * 220, t, 0.2);
+        rotorNode.whine.frequency.setTargetAtTime((plane ? 300 : 560) + sn * 420, t, 0.2);
       }
     },
     skid: function (amount) {
@@ -264,6 +300,13 @@ GAME.audio = (function () {
     },
     crash: function (v) {
       if (!ctx) return;
+      // A pile-up reports contact from several pairs on every frame, and a car
+      // wedged against a wall reports one for as long as it stays there. Without
+      // a floor between voices those stack into a buzz that outlives the crash
+      // that started it, so only the hardest hit in each window is heard.
+      var now = ctx.currentTime;
+      if (now - lastCrashT < 0.07) { if (v > lastCrashV) lastCrashV = v; return; }
+      lastCrashT = now; lastCrashV = v;
       var a = U.clamp(v, 0.1, 1);
       noiseBurst(0.18 * a + 0.08, 1400, 0.5 * a);
       tone(140, 0.1, 0.3 * a, 'square', 50);

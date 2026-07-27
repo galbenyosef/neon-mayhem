@@ -46,7 +46,7 @@ GAME.aircraft = (function () {
       if (car.vy < 0) car.vy = 0;
     }
 
-    GAME.audio.engineState(true, 0.42 + Math.min(0.5, Math.abs(car.heliSpeed) / car.spec.maxSpeed * 0.4 + (up > 0 ? 0.15 : 0)));
+    GAME.audio.engineState(true, 0.42 + Math.min(0.5, Math.abs(car.heliSpeed) / car.spec.maxSpeed * 0.4 + (up > 0 ? 0.15 : 0)), 'heli');
     car.mesh.rotation.set(fwd * -0.16, car.heading, -yaw * 0.18);
   }
 
@@ -132,7 +132,7 @@ GAME.aircraft = (function () {
       car.roll = U.damp(car.roll, 0, 5, dt);
     }
 
-    GAME.audio.engineState(true, 0.35 + Math.min(0.6, car.speed / car.spec.maxSpeed * 0.6));
+    GAME.audio.engineState(true, 0.35 + Math.min(0.6, car.speed / car.spec.maxSpeed * 0.6), 'plane');
     // bank into turns on top of any barrel roll the pilot is holding
     car.mesh.rotation.set(-car.pitch, car.heading, car.roll - yawIn * 0.4);
   }
