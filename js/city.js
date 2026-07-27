@@ -925,6 +925,7 @@ GAME.city = (function () {
       { x: -430, z: -170, rot: Math.PI, h: 5.6, len: 24 },      // riverside
       { x: 366, z: -230, rot: Math.PI, h: 5.0, len: 26 },       // boardwalk
       { x: 366, z: 150, rot: 0, h: 5.0, len: 26 },              // beach, other way
+      { x: -78, z: A.cz, rot: Math.PI / 2, h: 7.2, len: 32, boost: true }, // runway end -> over the fence
       { x: A.cx + 30, z: 462, rot: Math.PI / 2, h: 6.4, len: 30 }, // airport apron
       { x: A.cx - 90, z: 462, rot: -Math.PI / 2, h: 6.4, len: 30 },
       { x: H[0].x + 34, z: H[0].z + 30, rot: 0, h: 4.6, len: 22 },  // hospital
@@ -938,10 +939,10 @@ GAME.city = (function () {
     // ramps come in four sizes so no two jumps feel the same; every third one
     // gets a booster strip that slams the throttle open as you ride up it
     var SHAPES = [
-      { w: 10, len: 16, h: 3.2 },   // kicker
-      { w: 11, len: 22, h: 4.4 },   // standard
-      { w: 12, len: 28, h: 5.8 },   // long
-      { w: 13, len: 34, h: 7.4 }    // mega
+      { w: 9, len: 16, h: 3.2 },    // kicker  — narrow, line it up
+      { w: 13, len: 22, h: 4.4 },   // standard
+      { w: 17, len: 28, h: 5.8 },   // long
+      { w: 22, len: 34, h: 7.4 }    // mega    — wide enough to hit at an angle
     ];
     function varyRamp(x, z, rot, n) {
       var sh = SHAPES[n % SHAPES.length];
@@ -967,7 +968,7 @@ GAME.city = (function () {
       // nudge an anchor off the carriageway if it landed on one
       for (var n = 0; n < 8 && !offRoad(an.x, an.z); n++) { an.x += 4; an.z += 4; }
       if (offRoad(an.x, an.z) && ok(an.x, an.z)) {
-        out.push({ x: an.x, z: an.z, rot: an.rot, w: 12, len: an.len, h: an.h, boost: a % 3 === 1 });
+        out.push({ x: an.x, z: an.z, rot: an.rot, w: 12, len: an.len, h: an.h, boost: an.boost !== undefined ? an.boost : (a % 3 === 1) });
       }
     }
     // fill the rest along road verges, alternating orientation
@@ -976,14 +977,17 @@ GAME.city = (function () {
         for (var d = -400; d <= 400 && out.length < TARGET; d += 100) {
           var side = (i2 + pass) % 2 ? 1 : -1;
           var jitter = ((i2 * 37 + d + pass * 13) % 60) - 30;
+          // wider ramps sit further from the kerb so they never reach the lanes
+          var shape = SHAPES[out.length % SHAPES.length];
+          var vergeOut = 11 + shape.w / 2;
           // verge beside a north-south road, launching along it
-          var vx = R[i2] + side * 15, vz = d + jitter;
+          var vx = R[i2] + side * vergeOut, vz = d + jitter;
           if (offRoad(vx, vz) && ok(vx, vz)) {
             out.push(varyRamp(vx, vz, side > 0 ? 0 : Math.PI, out.length));
             continue;
           }
           // verge beside an east-west road
-          var hx = d + jitter, hz = R[i2] + side * 15;
+          var hx = d + jitter, hz = R[i2] + side * vergeOut;
           if (hx < 340 && offRoad(hx, hz) && ok(hx, hz)) {
             out.push(varyRamp(hx, hz, side > 0 ? Math.PI / 2 : -Math.PI / 2, out.length));
           }
@@ -1029,6 +1033,20 @@ GAME.city = (function () {
       var lipR = s.boost ? 0.30 : 0.85, lipG = s.boost ? 1.0 : 0.70, lipB2 = s.boost ? 1.0 : 0.18;
       tri(lipT[0], lipT[1], lipT[2], lipB[0], lipB[1], lipB[2], b1[0], b1[1], b1[2], lipR, lipG, lipB2);
       tri(lipT[0], lipT[1], lipT[2], b1[0], b1[1], b1[2], a1[0], a1[1], a1[2], lipR, lipG, lipB2);
+      // booster decks wear chevrons up both edges so you can read the direction
+      if (s.boost) {
+        var deckY = function (lz) { return s.h * ((lz + hl) / s.len) + 0.07; };
+        for (var ci = 0; ci < 3; ci++) {
+          var cz2 = -hl + s.len * (0.28 + ci * 0.22);
+          for (var sgn = -1; sgn <= 1; sgn += 2) {
+            var ax2 = sgn * (s.w / 2 - 1.5);
+            var tip = P(ax2, cz2 + 1.5, deckY(cz2 + 1.5));
+            var bl = P(ax2 - 1.1, cz2 - 0.7, deckY(cz2 - 0.7));
+            var br = P(ax2 + 1.1, cz2 - 0.7, deckY(cz2 - 0.7));
+            tri(bl[0], bl[1], bl[2], br[0], br[1], br[2], tip[0], tip[1], tip[2], 0.60, 1.0, 1.0);
+          }
+        }
+      }
       // back face
       tri(a1[0], a1[1], a1[2], b1[0], b1[1], b1[2], b1g[0], b1g[1], b1g[2], 0.20, 0.19, 0.23);
       tri(a1[0], a1[1], a1[2], b1g[0], b1g[1], b1g[2], a1g[0], a1g[1], a1g[2], 0.20, 0.19, 0.23);

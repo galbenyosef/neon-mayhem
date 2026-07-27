@@ -422,8 +422,8 @@ GAME.vehicles = (function () {
     }
     car.mesh.rotation.y = car.heading;
     // pitch to the flight path while airborne, else roll with the slide
-    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? -Math.atan(ramp.slope) : 0);
-    car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 8));
+    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? Math.atan(ramp.slope) : 0);
+    car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 14));
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
     car.lastHeading = car.heading;
 
