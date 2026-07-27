@@ -385,7 +385,7 @@ function updateOnFoot(dt) {
   P.pos.x = nx; P.pos.z = nz;
   if (GAME.city.isInWater(P.pos.x, P.pos.z)) { GAME.playerDrown(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
-  var surf = GAME.city.walkSurfaceY(P.pos.x, P.pos.z, P.pos.y);
+  var surf = GAME.city.surfaceY(P.pos.x, P.pos.z);
   // Space jumps when you're on your feet (running gives you a longer hop)
   var grounded = P.pos.y <= surf + 0.06;
   var wantJump = GAME.key('Space') || T.jump;

@@ -395,7 +395,6 @@ GAME.vehicles = (function () {
     // go ballistic off a lip
     var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
     var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
-    var onFlyover = false, flySlope = 0;
     var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
     if (car.pos.y > gy + stickTol) {
       if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
@@ -412,10 +411,6 @@ GAME.vehicles = (function () {
       car.pos.y = gy;
       // on a ramp the deck itself drives the climb rate; carry that off the lip
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
-      // the flyover approaches grade the same way — the car noses up the climb
-      // and down the drop instead of staying level over a sloping road
-      onFlyover = !ramp && GAME.city.deckY(car.pos.x, car.pos.z, car.pos.y) !== null;
-      if (onFlyover) flySlope = GAME.city.flyoverSlope(car.pos.x, car.pos.z) * fx;
       car.onRampIdx = ramp ? ramp.idx : null;
       if (ramp && ramp.boost) {
         if (!car.boostT && car === GAME.player.car && GAME.player.inCar) {
@@ -429,8 +424,7 @@ GAME.vehicles = (function () {
     }
     car.mesh.rotation.y = car.heading;
     // pitch to the flight path while airborne, else roll with the slide
-    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5)
-      : ramp ? Math.atan(ramp.slope) : Math.atan(flySlope);
+    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? Math.atan(ramp.slope) : 0);
     car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 14));
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
     car.lastHeading = car.heading;
@@ -482,8 +476,6 @@ GAME.vehicles = (function () {
         var b = boxes[bi];
         // jumped clear of it — don't clip a car that's sailing over a fence
         if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
-        // passing underneath it — the flyover's parapets are not a tunnel wall
-        if (b.y0 !== undefined && b.y0 > car.pos.y + 1.4) continue;
         if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
           // push out along the smallest penetration axis
           var dxl = px - b.minX, dxr = b.maxX - px, dzl = pz - b.minZ, dzr = b.maxZ - pz;
@@ -527,8 +519,8 @@ GAME.vehicles = (function () {
       for (var j = i + 1; j < cars.length; j++) {
         var b = cars[j];
         if (b.spec.heli || b.spec.plane) continue;
-        // different decks: one is on the flyover, the other on the street under
-        // it — they pass, they don't crash
+        // one of them is up on a roof and the other at street level — they
+        // pass each other, they don't crash
         if (Math.abs(a.pos.y - b.pos.y) > 3) continue;
         var dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
         var rr = a.radius + b.radius;
@@ -670,7 +662,7 @@ GAME.vehicles = (function () {
     for (var i = 0; i < cars.length; i++) {
       var o = cars[i];
       if (o === car) continue;
-      if (Math.abs(o.pos.y - car.pos.y) > 3) continue;   // on another deck
+      if (Math.abs(o.pos.y - car.pos.y) > 3) continue;   // not on the same level
       var odx = o.pos.x - car.pos.x, odz = o.pos.z - car.pos.z;
       var fd = odx * fx + odz * fz;
       if (fd < 1 || fd > lookA + 3) continue;
@@ -687,7 +679,7 @@ GAME.vehicles = (function () {
     for (var pi = 0; pi < peds.length; pi++) {
       var pd = peds[pi];
       if (pd.dead) continue;
-      if (Math.abs(pd.pos.y - car.pos.y) > 3) continue;   // on another deck
+      if (Math.abs(pd.pos.y - car.pos.y) > 3) continue;   // not on the same level
       var qdx = pd.pos.x - car.pos.x, qdz = pd.pos.z - car.pos.z;
       var qfd = qdx * fx + qdz * fz;
       if (qfd > 0 && qfd < lookA && Math.abs(qdx * fz - qdz * fx) < 2.2) { blocked = true; if (qfd < 6) hard = true; }

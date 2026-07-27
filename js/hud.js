@@ -266,28 +266,6 @@ GAME.hud = (function () {
     }
     g.strokeStyle = '#5a5478';
     g.beginPath(); g.moveTo(mx(350), my(-480)); g.lineTo(mx(350), my(480)); g.stroke();
-    // the elevated flyover, drawn over the grid so the raised span is obvious
-    var F = GAME.city.flyover;
-    if (F) {
-      g.strokeStyle = '#2a2640'; g.lineWidth = (F.half * 2 + 3) * MAP_S;
-      g.beginPath(); g.moveTo(mx(F.minX), my(F.z)); g.lineTo(mx(F.maxX), my(F.z)); g.stroke();
-      g.strokeStyle = '#8f83c8'; g.lineWidth = F.half * 2 * MAP_S;
-      g.beginPath(); g.moveTo(mx(F.minX), my(F.z)); g.lineTo(mx(F.maxX), my(F.z)); g.stroke();
-      // the flat deck picked out brighter, the ramped approaches hatched
-      g.strokeStyle = '#d8c46a'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(mx(F.deckX0), my(F.z)); g.lineTo(mx(F.deckX1), my(F.z)); g.stroke();
-      g.strokeStyle = '#d8c46a'; g.lineWidth = 1.5;
-      for (var fk = 0; fk < 5; fk++) {
-        var t = fk / 4, ax = F.minX + (F.deckX0 - F.minX) * t, bx2 = F.maxX + (F.deckX1 - F.maxX) * t;
-        g.beginPath(); g.moveTo(mx(ax), my(F.z - F.half)); g.lineTo(mx(ax), my(F.z + F.half)); g.stroke();
-        g.beginPath(); g.moveTo(mx(bx2), my(F.z - F.half)); g.lineTo(mx(bx2), my(F.z + F.half)); g.stroke();
-      }
-      g.fillStyle = '#cfc4ff';
-      g.font = 'bold 10px monospace';
-      g.textAlign = 'center';
-      g.fillText('FLYOVER', mx((F.deckX0 + F.deckX1) / 2), my(F.z - F.half) - 5);
-      g.textAlign = 'left';
-    }
     // piers
     g.strokeStyle = '#6a5a48'; g.lineWidth = 4;
     g.beginPath(); g.moveTo(mx(360), my(150)); g.lineTo(mx(505), my(150)); g.stroke();

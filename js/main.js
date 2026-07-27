@@ -298,8 +298,8 @@
     teleport: function (x, z) {
       var P = GAME.player;
       if (P.inCar && P.car) {
-        // set down on whatever is at the destination, so a teleport off the
-        // flyover isn't mistaken for a fall (and scored as a jump)
+        // set down on whatever is at the destination, so a teleport off a
+        // height isn't mistaken for a fall (and scored as a jump)
         P.car.pos.set(x, GAME.city.groundY(x, z), z);
         P.car.speed = 0; P.car.lat = 0; P.car.vy = 0; P.car.air = 0; P.car.jumpRamp = null;
       } else {

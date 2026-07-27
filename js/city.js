@@ -67,42 +67,6 @@ GAME.city = (function () {
     return null;
   };
 
-  // An elevated section of the z=-250 boulevard: a long raised deck with a
-  // ramped approach at each end. This is the city's one piece of real
-  // elevation — drive up it, along it, and down the far side.
-  city.flyover = null;
-  // The approaches use a smoothstep rather than a straight wedge, so the grade
-  // eases to level at the street and again at the deck — no crease to bang the
-  // suspension over at either join.
-  function ease(t) { return t * t * (3 - 2 * t); }
-  function easeD(t) { return 6 * t * (1 - t); }
-  city.flyoverY = function (x, z) {
-    var F = city.flyover;
-    if (!F || Math.abs(z - F.z) > F.half) return null;
-    if (x < F.minX || x > F.maxX) return null;
-    if (x >= F.deckX0 && x <= F.deckX1) return F.h;
-    if (x < F.deckX0) return F.h * ease((x - F.minX) / (F.deckX0 - F.minX));
-    return F.h * ease((F.maxX - x) / (F.maxX - F.deckX1));
-  };
-  // dY/dx of that profile — what a vehicle pitches to as it climbs or drops
-  city.flyoverSlope = function (x, z) {
-    var F = city.flyover;
-    if (!F || Math.abs(z - F.z) > F.half) return 0;
-    if (x < F.minX || x > F.maxX) return 0;
-    if (x >= F.deckX0 && x <= F.deckX1) return 0;
-    var L;
-    if (x < F.deckX0) { L = F.deckX0 - F.minX; return F.h * easeD((x - F.minX) / L) / L; }
-    L = F.maxX - F.deckX1; return -F.h * easeD((F.maxX - x) / L) / L;
-  };
-  // The deck only counts as ground once you are already up at its level. Below
-  // that it is a bridge you drive underneath, so the surface road it spans
-  // stays open — the ramps are the only way on.
-  city.deckY = function (x, z, y) {
-    var fy = city.flyoverY(x, z);
-    if (fy === null) return null;
-    return fy <= y + 1.4 ? fy : null;
-  };
-
   city.groundY = function (x, z) {
     if (city.ramps.length) {
       var rp = city.rampAt(x, z);
@@ -123,8 +87,6 @@ GAME.city = (function () {
   // on a jump can land on it and drive around up there.
   city.driveSurfaceY = function (x, z, y) {
     var best = city.groundY(x, z);
-    var dk = city.deckY(x, z, y);
-    if (dk !== null && dk > best) best = dk;
     var boxes = city.hash.query(x, z, 1);
     for (var i = 0; i < boxes.length; i++) {
       var b = boxes[i];
@@ -137,18 +99,7 @@ GAME.city = (function () {
   // top surface at a point: the tallest solid building roof containing it,
   // else the terrain height. Used so aircraft can set down on rooftops.
   city.surfaceY = function (x, z) {
-    var y = roofY(x, z, city.groundY(x, z));
-    var fy = city.flyoverY(x, z);   // absolute: an aircraft must clear the deck
-    return fy !== null && fy > y ? fy : y;
-  };
-  // the same, but the flyover deck is level-gated — what someone on foot stands
-  // on, so walking the street below the span doesn't teleport them onto it
-  city.walkSurfaceY = function (x, z, y) {
-    var s = roofY(x, z, city.groundY(x, z));
-    var dk = city.deckY(x, z, y);
-    return dk !== null && dk > s ? dk : s;
-  };
-  function roofY(x, z, y) {
+    var y = city.groundY(x, z);
     var boxes = city.hash.query(x, z, 1);
     for (var i = 0; i < boxes.length; i++) {
       var b = boxes[i];
@@ -156,7 +107,7 @@ GAME.city = (function () {
       if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ && b.h > y) y = b.h;
     }
     return y;
-  }
+  };
 
   city.districtAt = function (x, z) {
     if (x >= 160) return 'strip';
@@ -199,12 +150,6 @@ GAME.city = (function () {
 
   function addSolid(cx, cz, sx, sz, h, tag, noLOS) {
     city.hash.insert({ minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS });
-  }
-  // a solid that starts partway up: everything below y0 passes straight through,
-  // which is what lets the flyover's parapets stop a car on the deck without
-  // walling off the street ten metres beneath them
-  function addRaisedSolid(cx, cz, sx, sz, y0, h, tag) {
-    city.hash.insert({ minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, y0: y0, h: h, tag: tag || 'building', noLOS: true });
   }
 
   // ---------- canvas textures ----------
@@ -272,7 +217,6 @@ GAME.city = (function () {
 
   // ---------- build ----------
   city.build = function (scene) {
-    city.flyover = { z: -250, half: 8, h: 10, minX: -260, deckX0: -150, deckX1: 150, maxX: 260 };
     city.scene = scene;
     var batches = {
       ground: new GeoBatch(),
@@ -350,10 +294,9 @@ GAME.city = (function () {
     buildLandmarks(scene);
     buildHelipad(scene);
     buildAirport(scene);
-    // last, so their clearance tests can see every structure in the city —
-    // the terminal, the hospitals, the station and the tower all register
-    // after the streets do, and a ramp placed before them can end up inside one
-    buildFlyover(scene);
+    // last, so its clearance tests can see every structure in the city — the
+    // terminal, the hospitals, the station and the tower all register after the
+    // streets do, and a ramp placed before them can end up inside one
     buildRamps(scene);
     buildLaneGraph();
     buildSpots();
@@ -383,8 +326,6 @@ GAME.city = (function () {
       if (minX < R[i] + m && maxX > R[i] - m) return true;
       if (minZ < R[i] + m && maxZ > R[i] - m) return true;
     }
-    var F = city.flyover;
-    if (F && maxX > F.minX - 6 && minX < F.maxX + 6 && maxZ > F.z - F.half - 6 && minZ < F.z + F.half + 6) return true;
     return false;
   }
 
@@ -1022,8 +963,6 @@ GAME.city = (function () {
     }
     function offRoad(x, z) {
       for (var i = 0; i < R.length; i++) if (Math.abs(x - R[i]) < 12 || Math.abs(z - R[i]) < 12) return false;
-      var F = city.flyover;
-      if (F && x > F.minX - 34 && x < F.maxX + 34 && Math.abs(z - F.z) < F.half + 34) return false;
       return true;
     }
     // The ramp deck and the run-up leading to it have to be clear across the
@@ -1109,106 +1048,6 @@ GAME.city = (function () {
       }
     }
     return out;
-  }
-
-  function buildFlyover(scene) {
-    var F = city.flyover;
-    var b = new GeoBatch();
-    var SEG = 4;
-    var zN = F.z - F.half, zS = F.z + F.half;
-    // Every strip is built from its two end heights rather than one flat tile,
-    // so the surfaces follow the grade continuously instead of stepping up it —
-    // a stepped deck is what makes a car look like it is bouncing up a staircase.
-    var UP = [0, 1, 0];
-    function strip(x0, x1, ya, yb, z0, z1, color) {
-      b.addQuad([x0, ya, z0], [x1, yb, z0], [x1, yb, z1], [x0, ya, z1], color, UP);
-    }
-    for (var x = F.minX; x < F.maxX; x += SEG) {
-      var x1 = Math.min(x + SEG, F.maxX);
-      var ya = city.flyoverY(x, F.z) || 0, yb = city.flyoverY(x1, F.z) || 0;
-      var ym = (ya + yb) / 2;
-      strip(x, x1, ya + 0.06, yb + 0.06, zN, zS, 0x100e16);                     // deck
-      if (((x - F.minX) / SEG) % 2 === 0) {                                     // dashed centre line
-        strip(x + 0.6, x1 - 0.6, ya + 0.08, yb + 0.08, F.z - 0.28, F.z + 0.28, 0xd8b84a);
-      }
-      // the deck sits on a box girder — this is what gives the span its bulk
-      // from below and from the streets that cross under it. Its walls are
-      // raked with the deck so the underside is a clean line, not a stair.
-      if (ym > 1.4) {
-        var gN = zN - 0.6, gS = zS + 0.6, D = 1.5;
-        b.addQuad([x, ya - D, gN], [x, ya, gN], [x1, yb, gN], [x1, yb - D, gN], 0x232038, [0, 0, -1]);
-        b.addQuad([x, ya - D, gS], [x1, yb - D, gS], [x1, yb, gS], [x, ya, gS], 0x232038, [0, 0, 1]);
-        b.addQuad([x, ya - D, gN], [x1, yb - D, gN], [x1, yb - D, gS], [x, ya - D, gS], 0x1a1830, [0, -1, 0]);
-      }
-      // parapets down both edges, sloped to match the deck they sit on
-      for (var e = 0; e < 2; e++) {
-        var ez = e ? zS : zN;
-        strip(x, x1, ya + 1.45, yb + 1.45, ez - 0.35, ez + 0.35, 0x46405e);     // top
-        b.addQuad([x, ya, ez - 0.35], [x1, yb, ez - 0.35], [x1, yb + 1.45, ez - 0.35], [x, ya + 1.45, ez - 0.35], 0x46405e, [0, 0, -1]);
-        b.addQuad([x1, yb, ez + 0.35], [x, ya, ez + 0.35], [x, ya + 1.45, ez + 0.35], [x1, yb + 1.45, ez + 0.35], 0x46405e, [0, 0, 1]);
-        // neon strip along the parapet top so it reads at night
-        strip(x, x1, ya + 1.53, yb + 1.53, ez - 0.15, ez + 0.15, e ? 0xff4fa3 : 0x38e8ff);
-        // solid to traffic — tagged so someone on foot can still climb the
-        // edge and jump off
-        addRaisedSolid((x + x1) / 2, ez, SEG, 0.7, ym, ym + 1.45, 'parapet');
-      }
-    }
-    // piers, planted clear of the surface road so traffic still runs underneath
-    for (var px = F.minX + 24; px < F.maxX - 12; px += 24) {
-      var py = city.flyoverY(px, F.z) || 0;
-      if (py < 2.4) continue;
-      var col = py - 1.5;
-      b.addBox(px, col / 2, F.z - 8.6, 3.2, col, 3.2, 0, 0x2e2b44, 0);
-      b.addBox(px, col / 2, F.z + 8.6, 3.2, col, 3.2, 0, 0x2e2b44, 0);
-      b.addBox(px, col - 0.4, F.z, 3.2, 0.8, 19, 0, 0x2a2740, 0);   // cap beam
-      addSolid(px, F.z - 8.6, 3.2, 3.2, col, 'prop', true);
-      addSolid(px, F.z + 8.6, 3.2, 3.2, col, 'prop', true);
-    }
-    // The surface road below only runs as far as there is headroom for it —
-    // past that the deck comes down to meet the street. Rather than let it feed
-    // you into the underside of the embankment, close it off a few metres short
-    // at each end, the way a road under a viaduct actually terminates.
-    var CLEAR = 3.0, SHORT = 6;
-    var xw = F.deckX0, xe = F.deckX1;
-    while (xw > F.minX && (city.flyoverY(xw, F.z) || 0) > CLEAR) xw -= 1;
-    while (xe < F.maxX && (city.flyoverY(xe, F.z) || 0) > CLEAR) xe += 1;
-    F.underX0 = xw + SHORT;
-    F.underX1 = xe - SHORT;
-    var ends = [F.underX0, F.underX1];
-    for (var ei = 0; ei < 2; ei++) {
-      // traffic meets each closure from inside the span, so the signed face
-      // points back along the open road, not out toward the embankment
-      var bx = ends[ei], out = ei ? -1 : 1;
-      b.addBox(bx, 0.55, F.z, 1.5, 1.1, 15, 0, 0x3a3550, 0);
-      b.addBox(bx, 1.16, F.z, 1.7, 0.16, 15, 0, 0xe8dcc0, 0);   // white capping
-      // hazard banding on the face traffic actually meets — it is dark under
-      // the span, so this is what the headlights have to pick out
-      for (var sx = -7; sx < 7; sx += 1.5) {
-        b.addBox(bx + out * 0.8, 0.62, F.z + sx + 0.75, 0.1, 0.86, 1.4, 0,
-          Math.round((sx + 7) / 1.5) % 2 ? 0x2a2438 : 0xf0c850, 0);
-      }
-      // marker lamps either side, the way a closed road is signed at night
-      b.addBox(bx + out * 0.8, 1.34, F.z - 6.6, 0.3, 0.3, 0.3, 0, 0xff5a6a, 0);
-      b.addBox(bx + out * 0.8, 1.34, F.z + 6.6, 0.3, 0.3, 0.3, 0, 0xff5a6a, 0);
-      // kerb returns, so the carriageway visibly ends rather than just stopping
-      b.addBox(bx + out * 3.4, 0.16, F.z - 7.2, 7, 0.32, 1.4, 0, 0x3a3550, 0);
-      b.addBox(bx + out * 3.4, 0.16, F.z + 7.2, 7, 0.32, 1.4, 0, 0x3a3550, 0);
-      addSolid(bx, F.z, 1.7, 15, 1.5, 'prop', true);
-    }
-    // sign gantries straddling the raised deck — tall enough to be picked out
-    // from the far side of the district, which is what makes the span findable
-    for (var gx = F.deckX0 + 20; gx <= F.deckX1 - 20; gx += 75) {
-      var gy = F.h;
-      b.addBox(gx, gy + 3.6, F.z - F.half - 0.9, 0.7, 7.2, 0.7, 0, 0x3a3552, 0);
-      b.addBox(gx, gy + 3.6, F.z + F.half + 0.9, 0.7, 7.2, 0.7, 0, 0x3a3552, 0);
-      b.addBox(gx, gy + 7.0, F.z, 0.8, 0.8, F.half * 2 + 2.6, 0, 0x3a3552, 0);
-      b.addBox(gx, gy + 7.5, F.z, 0.5, 0.35, F.half * 2 + 2.6, 0, 0x38e8ff, 0);
-      b.addBox(gx, gy + 5.6, F.z - 4.5, 0.35, 2.0, 5.0, 0, 0x1c1a2c, 0);   // sign panels
-      b.addBox(gx, gy + 5.6, F.z + 4.5, 0.35, 2.0, 5.0, 0, 0x1c1a2c, 0);
-    }
-    var mesh = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
-    mesh.matrixAutoUpdate = false;
-    scene.add(mesh);
   }
 
   function buildRamps(scene) {
