@@ -1119,8 +1119,9 @@ GAME.city = (function () {
     // Every strip is built from its two end heights rather than one flat tile,
     // so the surfaces follow the grade continuously instead of stepping up it —
     // a stepped deck is what makes a car look like it is bouncing up a staircase.
+    var UP = [0, 1, 0];
     function strip(x0, x1, ya, yb, z0, z1, color) {
-      b.addQuad([x0, ya, z0], [x1, yb, z0], [x1, yb, z1], [x0, ya, z1], color);
+      b.addQuad([x0, ya, z0], [x1, yb, z0], [x1, yb, z1], [x0, ya, z1], color, UP);
     }
     for (var x = F.minX; x < F.maxX; x += SEG) {
       var x1 = Math.min(x + SEG, F.maxX);
@@ -1135,16 +1136,16 @@ GAME.city = (function () {
       // raked with the deck so the underside is a clean line, not a stair.
       if (ym > 1.4) {
         var gN = zN - 0.6, gS = zS + 0.6, D = 1.5;
-        b.addQuad([x, ya - D, gN], [x, ya, gN], [x1, yb, gN], [x1, yb - D, gN], 0x232038);
-        b.addQuad([x, ya - D, gS], [x1, yb - D, gS], [x1, yb, gS], [x, ya, gS], 0x232038);
-        b.addQuad([x, ya - D, gN], [x1, yb - D, gN], [x1, yb - D, gS], [x, ya - D, gS], 0x1a1830);
+        b.addQuad([x, ya - D, gN], [x, ya, gN], [x1, yb, gN], [x1, yb - D, gN], 0x232038, [0, 0, -1]);
+        b.addQuad([x, ya - D, gS], [x1, yb - D, gS], [x1, yb, gS], [x, ya, gS], 0x232038, [0, 0, 1]);
+        b.addQuad([x, ya - D, gN], [x1, yb - D, gN], [x1, yb - D, gS], [x, ya - D, gS], 0x1a1830, [0, -1, 0]);
       }
       // parapets down both edges, sloped to match the deck they sit on
       for (var e = 0; e < 2; e++) {
         var ez = e ? zS : zN;
         strip(x, x1, ya + 1.45, yb + 1.45, ez - 0.35, ez + 0.35, 0x46405e);     // top
-        b.addQuad([x, ya, ez - 0.35], [x1, yb, ez - 0.35], [x1, yb + 1.45, ez - 0.35], [x, ya + 1.45, ez - 0.35], 0x46405e);
-        b.addQuad([x1, yb, ez + 0.35], [x, ya, ez + 0.35], [x, ya + 1.45, ez + 0.35], [x1, yb + 1.45, ez + 0.35], 0x46405e);
+        b.addQuad([x, ya, ez - 0.35], [x1, yb, ez - 0.35], [x1, yb + 1.45, ez - 0.35], [x, ya + 1.45, ez - 0.35], 0x46405e, [0, 0, -1]);
+        b.addQuad([x1, yb, ez + 0.35], [x, ya, ez + 0.35], [x, ya + 1.45, ez + 0.35], [x1, yb + 1.45, ez + 0.35], 0x46405e, [0, 0, 1]);
         // neon strip along the parapet top so it reads at night
         strip(x, x1, ya + 1.53, yb + 1.53, ez - 0.15, ez + 0.15, e ? 0xff4fa3 : 0x38e8ff);
         // solid to traffic — tagged so someone on foot can still climb the
@@ -1162,6 +1163,37 @@ GAME.city = (function () {
       b.addBox(px, col - 0.4, F.z, 3.2, 0.8, 19, 0, 0x2a2740, 0);   // cap beam
       addSolid(px, F.z - 8.6, 3.2, 3.2, col, 'prop', true);
       addSolid(px, F.z + 8.6, 3.2, 3.2, col, 'prop', true);
+    }
+    // The surface road below only runs as far as there is headroom for it —
+    // past that the deck comes down to meet the street. Rather than let it feed
+    // you into the underside of the embankment, close it off a few metres short
+    // at each end, the way a road under a viaduct actually terminates.
+    var CLEAR = 3.0, SHORT = 6;
+    var xw = F.deckX0, xe = F.deckX1;
+    while (xw > F.minX && (city.flyoverY(xw, F.z) || 0) > CLEAR) xw -= 1;
+    while (xe < F.maxX && (city.flyoverY(xe, F.z) || 0) > CLEAR) xe += 1;
+    F.underX0 = xw + SHORT;
+    F.underX1 = xe - SHORT;
+    var ends = [F.underX0, F.underX1];
+    for (var ei = 0; ei < 2; ei++) {
+      // traffic meets each closure from inside the span, so the signed face
+      // points back along the open road, not out toward the embankment
+      var bx = ends[ei], out = ei ? -1 : 1;
+      b.addBox(bx, 0.55, F.z, 1.5, 1.1, 15, 0, 0x3a3550, 0);
+      b.addBox(bx, 1.16, F.z, 1.7, 0.16, 15, 0, 0xe8dcc0, 0);   // white capping
+      // hazard banding on the face traffic actually meets — it is dark under
+      // the span, so this is what the headlights have to pick out
+      for (var sx = -7; sx < 7; sx += 1.5) {
+        b.addBox(bx + out * 0.8, 0.62, F.z + sx + 0.75, 0.1, 0.86, 1.4, 0,
+          Math.round((sx + 7) / 1.5) % 2 ? 0x2a2438 : 0xf0c850, 0);
+      }
+      // marker lamps either side, the way a closed road is signed at night
+      b.addBox(bx + out * 0.8, 1.34, F.z - 6.6, 0.3, 0.3, 0.3, 0, 0xff5a6a, 0);
+      b.addBox(bx + out * 0.8, 1.34, F.z + 6.6, 0.3, 0.3, 0.3, 0, 0xff5a6a, 0);
+      // kerb returns, so the carriageway visibly ends rather than just stopping
+      b.addBox(bx + out * 3.4, 0.16, F.z - 7.2, 7, 0.32, 1.4, 0, 0x3a3550, 0);
+      b.addBox(bx + out * 3.4, 0.16, F.z + 7.2, 7, 0.32, 1.4, 0, 0x3a3550, 0);
+      addSolid(bx, F.z, 1.7, 15, 1.5, 'prop', true);
     }
     // sign gantries straddling the raised deck — tall enough to be picked out
     // from the far side of the district, which is what makes the span findable

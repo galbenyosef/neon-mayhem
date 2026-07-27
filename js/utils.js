@@ -104,14 +104,20 @@ GeoBatch.prototype.addGroundQuad = function (cx, y, cz, sx, sz, rotY, color) {
   }
 };
 // Quad from four explicit corners, wound a-b-c-d. Lets a surface follow a
-// grade instead of being stepped out of flat tiles.
-GeoBatch.prototype.addQuad = function (a, b, c, d, color) {
+// grade instead of being stepped out of flat tiles. `face` is the direction the
+// quad should point: get it wrong and the winding culls the face away, so the
+// quad is reversed to match rather than trusting the caller's corner order.
+GeoBatch.prototype.addQuad = function (a, b, c, d, color, face) {
   var r = (color >> 16 & 255) / 255, g = (color >> 8 & 255) / 255, bl = (color & 255) / 255;
   var ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
   var vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
   var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
   var l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   nx /= l; ny /= l; nz /= l;
+  if (face && nx * face[0] + ny * face[1] + nz * face[2] < 0) {
+    var t = b; b = d; d = t;                       // reverse the winding...
+    nx = -nx; ny = -ny; nz = -nz;                  // ...and the normal with it
+  }
   var corners = [a, b, c, d];
   var uvq = [[0, 0], [1, 0], [1, 1], [0, 1]];
   var idx = [0, 1, 2, 0, 2, 3];
