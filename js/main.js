@@ -297,8 +297,15 @@
     start: function () { GAME.startGame(); },
     teleport: function (x, z) {
       var P = GAME.player;
-      if (P.inCar && P.car) { P.car.pos.x = x; P.car.pos.z = z; P.car.speed = 0; P.car.lat = 0; }
-      else { P.pos.set(x, GAME.city.groundY(x, z), z); }
+      if (P.inCar && P.car) {
+        // set down on whatever is at the destination, so a teleport off the
+        // flyover isn't mistaken for a fall (and scored as a jump)
+        P.car.pos.set(x, GAME.city.groundY(x, z), z);
+        P.car.speed = 0; P.car.lat = 0; P.car.vy = 0; P.car.air = 0; P.car.jumpRamp = null;
+      } else {
+        P.pos.set(x, GAME.city.groundY(x, z), z);
+        P.velY = 0; P.airborne = false;
+      }
       return GAME.test.getState();
     },
     giveWeapon: function (id, ammo) { GAME.combat.giveWeapon(id, ammo || 60); },

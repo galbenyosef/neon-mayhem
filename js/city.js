@@ -67,6 +67,19 @@ GAME.city = (function () {
     return null;
   };
 
+  // An elevated section of the z=-250 boulevard: a long raised deck with a
+  // ramped approach at each end. This is the city's one piece of real
+  // elevation — drive up it, along it, and down the far side.
+  city.flyover = null;
+  city.flyoverY = function (x, z) {
+    var F = city.flyover;
+    if (!F || Math.abs(z - F.z) > F.half) return null;
+    if (x < F.minX || x > F.maxX) return null;
+    if (x >= F.deckX0 && x <= F.deckX1) return F.h;
+    if (x < F.deckX0) return F.h * (x - F.minX) / (F.deckX0 - F.minX);
+    return F.h * (F.maxX - x) / (F.maxX - F.deckX1);
+  };
+
   city.groundY = function (x, z) {
     if (city.ramps.length) {
       var rp = city.rampAt(x, z);
@@ -221,7 +234,7 @@ GAME.city = (function () {
 
   // ---------- build ----------
   city.build = function (scene) {
-    defineCurvesAndFlyover();
+    city.flyover = { z: -250, half: 8, h: 10, minX: -260, deckX0: -150, deckX1: 150, maxX: 260 };
     city.scene = scene;
     var batches = {
       ground: new GeoBatch(),
@@ -327,13 +340,8 @@ GAME.city = (function () {
       if (minX < R[i] + m && maxX > R[i] - m) return true;
       if (minZ < R[i] + m && maxZ > R[i] - m) return true;
     }
-    // keep the curved boulevards and the flyover corridor clear too. The extra
-    // 5 covers the podium skirt downtown blocks add around their footprint.
-    if (city.boxOnCurve && city.boxOnCurve(minX, maxX, minZ, maxZ, 5)) return true;
-    var cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
-    var pad = Math.max(maxX - minX, maxZ - minZ) / 2 + 2;
     var F = city.flyover;
-    if (F && cx > F.minX - pad && cx < F.maxX + pad && Math.abs(cz - F.z) < F.half + pad) return true;
+    if (F && maxX > F.minX - 6 && minX < F.maxX + 6 && maxZ > F.z - F.half - 6 && minZ < F.z + F.half + 6) return true;
     return false;
   }
 
@@ -533,7 +541,7 @@ GAME.city = (function () {
     scene.add(streak);
     city.streak = streak;
 
-    buildCurvesAndFlyover(scene);
+    buildFlyover(scene);
     buildRamps(scene);
 
     // beach palms along the boardwalk
@@ -974,12 +982,8 @@ GAME.city = (function () {
     }
     function offRoad(x, z) {
       for (var i = 0; i < R.length; i++) if (Math.abs(x - R[i]) < 12 || Math.abs(z - R[i]) < 12) return false;
-      // and clear of the curved boulevards / the flyover corridor
-      // pad covers the whole ramp, not just its centre — the solid back face
-      // sits up to half a ramp-length away
-      if (city.onCurve(x, z, 32)) return false;
       var F = city.flyover;
-      if (F && x > F.minX - 16 && x < F.maxX + 16 && Math.abs(z - F.z) < F.half + 16) return false;
+      if (F && x > F.minX - 34 && x < F.maxX + 34 && Math.abs(z - F.z) < F.half + 34) return false;
       return true;
     }
     for (var a = 0; a < anchors.length && out.length < TARGET; a++) {
@@ -1016,124 +1020,47 @@ GAME.city = (function () {
     return out;
   }
 
-  // ---- curved boulevards + one elevated flyover -------------------------
-  // The traffic lane graph stays on the grid; these are drivable overlay roads
-  // that break up the rectangle when you look at the map from above.
-  city.curves = [];
-  city.flyover = null;
-
-  // sample a Catmull-Rom-ish path through control points
-  function samplePath(pts, step) {
-    var out = [];
-    for (var i = 0; i < pts.length - 1; i++) {
-      var p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
-      var segLen = U.dist(p1[0], p1[1], p2[0], p2[1]);
-      var n = Math.max(2, Math.round(segLen / step));
-      for (var k = 0; k < n; k++) {
-        var t = k / n, t2 = t * t, t3 = t2 * t;
-        out.push([
-          0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
-          0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
-        ]);
-      }
-    }
-    out.push(pts[pts.length - 1]);
-    return out;
-  }
-
-  // true when a footprint overlaps a boulevard's tarmac. Measures the real
-  // point-to-box distance, so a building can't straddle the road with its body
-  // just because its centre sits clear of it.
-  city.boxOnCurve = function (minX, maxX, minZ, maxZ, extra) {
-    var ex = extra || 0;
-    for (var c = 0; c < city.curves.length; c++) {
-      var cv = city.curves[c], hw = cv.half + ex;
-      if (maxX < cv.minX - hw || minX > cv.maxX + hw || maxZ < cv.minZ - hw || minZ > cv.maxZ + hw) continue;
-      var pts = cv.pts;
-      for (var i = 0; i < pts.length; i++) {
-        var qx = U.clamp(pts[i][0], minX, maxX), qz = U.clamp(pts[i][1], minZ, maxZ);
-        if (U.dist2(pts[i][0], pts[i][1], qx, qz) < hw * hw) return true;
-      }
-    }
-    return false;
-  };
-
-  // true when (x,z) is on the tarmac of a curved boulevard
-  city.onCurve = function (x, z, pad) {
-    pad = pad || 0;
-    for (var c = 0; c < city.curves.length; c++) {
-      var cv = city.curves[c], hw = cv.half + pad;
-      if (x < cv.minX - hw || x > cv.maxX + hw || z < cv.minZ - hw || z > cv.maxZ + hw) continue;
-      var pts = cv.pts;
-      for (var i = 0; i < pts.length; i++) {
-        if (U.dist2(x, z, pts[i][0], pts[i][1]) < hw * hw) return true;
-      }
-    }
-    return false;
-  };
-
-  // height of the flyover deck / its approach ramps at (x,z), or null
-  city.flyoverY = function (x, z) {
+  function buildFlyover(scene) {
     var F = city.flyover;
-    if (!F) return null;
-    if (x < F.minX || x > F.maxX || z < F.minZ || z > F.maxZ) return null;
-    if (Math.abs(z - F.z) > F.half) return null;
-    if (x >= F.deckX0 && x <= F.deckX1) return F.h;
-    if (x >= F.minX && x < F.deckX0) return F.h * (x - F.minX) / (F.deckX0 - F.minX);
-    if (x > F.deckX1 && x <= F.maxX) return F.h * (F.maxX - x) / (F.maxX - F.deckX1);
-    return null;
-  };
-
-  // paths only — must run before anything is placed, so buildings and ramps
-  // can be kept off the new roads
-  function defineCurvesAndFlyover() {
-    // Each of these threads block interiors (lanes sit every 100 from -450, so
-    // the buildable middle of a block is lane+50) and only meets the grid at a
-    // crossing, rather than lying on top of a lane the whole way.
-    var COAST = [[300, -460], [292, -300], [304, -150], [296, 10], [306, 170], [294, 330], [302, 460]];
-    var DIAG = [[-400, -420], [-300, -335], [-205, -255], [-95, -190], [15, -85], [125, 45], [225, 165], [300, 275]];
-    var LOOP = [[-400, 200], [-330, 292], [-200, 306], [-90, 294], [-4, 200]];
-    [[COAST, 9], [DIAG, 8], [LOOP, 8]].forEach(function (spec) {
-      var pts = samplePath(spec[0], 14);
-      var minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
-      pts.forEach(function (q) {
-        minX = Math.min(minX, q[0]); maxX = Math.max(maxX, q[0]);
-        minZ = Math.min(minZ, q[1]); maxZ = Math.max(maxZ, q[1]);
-      });
-      city.curves.push({ pts: pts, half: spec[1], minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ });
-    });
-    city.flyover = { z: -250, half: 8, h: 9.5, minX: -120, deckX0: -40, deckX1: 120, maxX: 200 };
-  }
-
-  function buildCurvesAndFlyover(scene) {
     var b = new GeoBatch();
-    function ribbon(pts, half, col, y, edgeCol) {
-      for (var i = 0; i < pts.length - 1; i++) {
-        var a = pts[i], c2 = pts[i + 1];
-        var dx = c2[0] - a[0], dz = c2[1] - a[1];
-        var L = Math.sqrt(dx * dx + dz * dz) || 1;
-        var mx2 = (a[0] + c2[0]) / 2, mz2 = (a[1] + c2[1]) / 2;
-        var rot = Math.atan2(dx, dz);
-        b.addGroundQuad(mx2, y, mz2, half * 2, L + 1.2, rot, col);
-        // centre line dashes
-        if (i % 3 === 0) b.addGroundQuad(mx2, y + 0.02, mz2, 0.5, L * 0.6, rot, edgeCol);
+    var SEG = 8;
+    for (var x = F.minX; x < F.maxX; x += SEG) {
+      var cx = x + SEG / 2;
+      var y0 = city.flyoverY(cx, F.z) || 0;
+      b.addGroundQuad(cx, y0 + 0.06, F.z, F.half * 2, SEG + 0.4, 0, 0x100e16);  // deck
+      b.addGroundQuad(cx, y0 + 0.08, F.z, 0.55, 4.2, 0, 0xd8b84a);              // centre line
+      // the deck sits on a box girder — this is what gives the span its bulk
+      // from below and from the streets that cross under it
+      if (y0 > 1.4) {
+        b.addBox(cx, y0 - 0.75, F.z, SEG + 0.4, 1.5, F.half * 2 + 1.2, 0, 0x232038, 0);
+        b.addBox(cx, y0 - 1.45, F.z, SEG + 0.4, 0.35, F.half * 2 - 2.4, 0, 0x1a1830, 0);
       }
+      // parapets down both edges
+      b.addBox(cx, y0 + 0.75, F.z - F.half, SEG + 0.2, 1.4, 0.7, 0, 0x46405e, 0);
+      b.addBox(cx, y0 + 0.75, F.z + F.half, SEG + 0.2, 1.4, 0.7, 0, 0x46405e, 0);
+      // neon strip along the parapet tops so it reads at night
+      b.addBox(cx, y0 + 1.46, F.z - F.half, SEG + 0.2, 0.16, 0.3, 0, 0x38e8ff, 0);
+      b.addBox(cx, y0 + 1.46, F.z + F.half, SEG + 0.2, 0.16, 0.3, 0, 0xff4fa3, 0);
     }
-
-    // a coastal sweep, a diagonal avenue and a harbour loop
-    city.curves.forEach(function (cv) { ribbon(cv.pts, cv.half, 0x141220, 0.022, 0xb8a24a); });
-
-    // the flyover: an elevated straight with a gentle ramp at each end
-    var F = city.flyover;
-    for (var x = F.minX; x < F.maxX; x += 8) {
-      var y0 = city.flyoverY(x + 4, F.z) || 0;
-      b.addGroundQuad(x + 4, y0 + 0.05, F.z, F.half * 2, 8.4, 0, 0x171528);
-      b.addGroundQuad(x + 4, y0 + 0.07, F.z, 0.5, 4, 0, 0xb8a24a);
-      // parapets
-      b.addBox(x + 4, y0 + 0.5, F.z - F.half, 8, 0.9, 0.5, 0, 0x3a3550, 0);
-      b.addBox(x + 4, y0 + 0.5, F.z + F.half, 8, 0.9, 0.5, 0, 0x3a3550, 0);
-      // piers under the raised deck
-      if (y0 > 3 && ((x / 8) | 0) % 3 === 0) b.addBox(x + 4, y0 / 2, F.z, 2.2, y0, 2.2, 0, 0x2a2740, 0);
+    // piers, planted clear of the surface road so traffic still runs underneath
+    for (var px = F.minX + 24; px < F.maxX - 12; px += 24) {
+      var py = city.flyoverY(px, F.z) || 0;
+      if (py < 2.4) continue;
+      var col = py - 1.5;
+      b.addBox(px, col / 2, F.z - 8.6, 3.2, col, 3.2, 0, 0x2e2b44, 0);
+      b.addBox(px, col / 2, F.z + 8.6, 3.2, col, 3.2, 0, 0x2e2b44, 0);
+      b.addBox(px, col - 0.4, F.z, 3.2, 0.8, 19, 0, 0x2a2740, 0);   // cap beam
+    }
+    // sign gantries straddling the raised deck — tall enough to be picked out
+    // from the far side of the district, which is what makes the span findable
+    for (var gx = F.deckX0 + 20; gx <= F.deckX1 - 20; gx += 75) {
+      var gy = F.h;
+      b.addBox(gx, gy + 3.6, F.z - F.half - 0.9, 0.7, 7.2, 0.7, 0, 0x3a3552, 0);
+      b.addBox(gx, gy + 3.6, F.z + F.half + 0.9, 0.7, 7.2, 0.7, 0, 0x3a3552, 0);
+      b.addBox(gx, gy + 7.0, F.z, 0.8, 0.8, F.half * 2 + 2.6, 0, 0x3a3552, 0);
+      b.addBox(gx, gy + 7.5, F.z, 0.5, 0.35, F.half * 2 + 2.6, 0, 0x38e8ff, 0);
+      b.addBox(gx, gy + 5.6, F.z - 4.5, 0.35, 2.0, 5.0, 0, 0x1c1a2c, 0);   // sign panels
+      b.addBox(gx, gy + 5.6, F.z + 4.5, 0.35, 2.0, 5.0, 0, 0x1c1a2c, 0);
     }
     var mesh = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     mesh.matrixAutoUpdate = false;
@@ -1141,8 +1068,8 @@ GAME.city = (function () {
   }
 
   function buildRamps(scene) {
-    // 25 unique stunt jumps scattered across the city, GTA-style: construction
-    // ramps parked on verges and aprons near landmarks, each one a find.
+    // 25 unique stunt jumps scattered across the city: construction ramps
+    // parked on verges and aprons near landmarks, each one a find.
     var SPOTS = rollStuntSpots();
     var pos = [], col = [], nrm = [];
     function tri(ax, ay, az, bx, by, bz, cx2, cy, cz2, r, g, b) {
