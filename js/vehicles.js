@@ -394,7 +394,8 @@ GAME.vehicles = (function () {
     // go ballistic off a lip
     var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
     var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
-    if (car.pos.y > gy + 0.08) {
+    var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
+    if (car.pos.y > gy + stickTol) {
       if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
       car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
       car.vy = (car.vy || 0) - 24 * dt;

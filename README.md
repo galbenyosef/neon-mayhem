@@ -28,6 +28,7 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 ## Features
 
 - ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
+- Three curved boulevards (a coastal sweep, a diagonal avenue and a harbour loop) cut across the grid, and an elevated flyover with ramped approaches rises over Centro Alto — drive up it, along it and off the far end
 - Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts on a bright late afternoon, slides into sunset and then night within the first minute, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
 - Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom)

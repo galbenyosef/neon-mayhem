@@ -72,6 +72,10 @@ GAME.city = (function () {
       var rp = city.rampAt(x, z);
       if (rp) return rp.y;
     }
+    if (city.flyover) {
+      var fy = city.flyoverY(x, z);
+      if (fy !== null) return fy;
+    }
     if (city.isOnPier(x, z) && x > BOARDWALK_X1) return 0.5;
     if (x > BOARDWALK_X0 && x <= BOARDWALK_X1) return 0.3;
     if (city.isOnSand(x, z)) {
@@ -217,6 +221,7 @@ GAME.city = (function () {
 
   // ---------- build ----------
   city.build = function (scene) {
+    defineCurvesAndFlyover();
     city.scene = scene;
     var batches = {
       ground: new GeoBatch(),
@@ -322,6 +327,12 @@ GAME.city = (function () {
       if (minX < R[i] + m && maxX > R[i] - m) return true;
       if (minZ < R[i] + m && maxZ > R[i] - m) return true;
     }
+    // keep the curved boulevards and the flyover corridor clear too
+    var cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    var pad = Math.max(maxX - minX, maxZ - minZ) / 2 + 2;
+    if (city.onCurve && city.onCurve(cx, cz, pad)) return true;
+    var F = city.flyover;
+    if (F && cx > F.minX - pad && cx < F.maxX + pad && Math.abs(cz - F.z) < F.half + pad) return true;
     return false;
   }
 
@@ -521,6 +532,7 @@ GAME.city = (function () {
     scene.add(streak);
     city.streak = streak;
 
+    buildCurvesAndFlyover(scene);
     buildRamps(scene);
 
     // beach palms along the boardwalk
@@ -961,6 +973,10 @@ GAME.city = (function () {
     }
     function offRoad(x, z) {
       for (var i = 0; i < R.length; i++) if (Math.abs(x - R[i]) < 12 || Math.abs(z - R[i]) < 12) return false;
+      // and clear of the curved boulevards / the flyover corridor
+      if (city.onCurve(x, z, 14)) return false;
+      var F = city.flyover;
+      if (F && x > F.minX - 16 && x < F.maxX + 16 && Math.abs(z - F.z) < F.half + 16) return false;
       return true;
     }
     for (var a = 0; a < anchors.length && out.length < TARGET; a++) {
@@ -995,6 +1011,110 @@ GAME.city = (function () {
       }
     }
     return out;
+  }
+
+  // ---- curved boulevards + one elevated flyover -------------------------
+  // The traffic lane graph stays on the grid; these are drivable overlay roads
+  // that break up the rectangle when you look at the map from above.
+  city.curves = [];
+  city.flyover = null;
+
+  // sample a Catmull-Rom-ish path through control points
+  function samplePath(pts, step) {
+    var out = [];
+    for (var i = 0; i < pts.length - 1; i++) {
+      var p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      var segLen = U.dist(p1[0], p1[1], p2[0], p2[1]);
+      var n = Math.max(2, Math.round(segLen / step));
+      for (var k = 0; k < n; k++) {
+        var t = k / n, t2 = t * t, t3 = t2 * t;
+        out.push([
+          0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+          0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
+        ]);
+      }
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+
+  // true when (x,z) is on the tarmac of a curved boulevard
+  city.onCurve = function (x, z, pad) {
+    pad = pad || 0;
+    for (var c = 0; c < city.curves.length; c++) {
+      var cv = city.curves[c], hw = cv.half + pad;
+      if (x < cv.minX - hw || x > cv.maxX + hw || z < cv.minZ - hw || z > cv.maxZ + hw) continue;
+      var pts = cv.pts;
+      for (var i = 0; i < pts.length; i++) {
+        if (U.dist2(x, z, pts[i][0], pts[i][1]) < hw * hw) return true;
+      }
+    }
+    return false;
+  };
+
+  // height of the flyover deck / its approach ramps at (x,z), or null
+  city.flyoverY = function (x, z) {
+    var F = city.flyover;
+    if (!F) return null;
+    if (x < F.minX || x > F.maxX || z < F.minZ || z > F.maxZ) return null;
+    if (Math.abs(z - F.z) > F.half) return null;
+    if (x >= F.deckX0 && x <= F.deckX1) return F.h;
+    if (x >= F.minX && x < F.deckX0) return F.h * (x - F.minX) / (F.deckX0 - F.minX);
+    if (x > F.deckX1 && x <= F.maxX) return F.h * (F.maxX - x) / (F.maxX - F.deckX1);
+    return null;
+  };
+
+  // paths only — must run before anything is placed, so buildings and ramps
+  // can be kept off the new roads
+  function defineCurvesAndFlyover() {
+    var COAST = [[338, -470], [346, -300], [352, -140], [346, 20], [338, 180], [344, 330], [338, 470]];
+    var DIAG = [[-430, -430], [-300, -320], [-170, -190], [-40, -60], [90, 70], [220, 200], [330, 320]];
+    var LOOP = [[-430, 250], [-330, 330], [-190, 360], [-60, 320], [20, 240]];
+    [[COAST, 9], [DIAG, 8], [LOOP, 8]].forEach(function (spec) {
+      var pts = samplePath(spec[0], 14);
+      var minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+      pts.forEach(function (q) {
+        minX = Math.min(minX, q[0]); maxX = Math.max(maxX, q[0]);
+        minZ = Math.min(minZ, q[1]); maxZ = Math.max(maxZ, q[1]);
+      });
+      city.curves.push({ pts: pts, half: spec[1], minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ });
+    });
+    city.flyover = { z: -250, half: 8, h: 9.5, minX: -120, deckX0: -40, deckX1: 120, maxX: 200 };
+  }
+
+  function buildCurvesAndFlyover(scene) {
+    var b = new GeoBatch();
+    function ribbon(pts, half, col, y, edgeCol) {
+      for (var i = 0; i < pts.length - 1; i++) {
+        var a = pts[i], c2 = pts[i + 1];
+        var dx = c2[0] - a[0], dz = c2[1] - a[1];
+        var L = Math.sqrt(dx * dx + dz * dz) || 1;
+        var mx2 = (a[0] + c2[0]) / 2, mz2 = (a[1] + c2[1]) / 2;
+        var rot = Math.atan2(dx, dz);
+        b.addGroundQuad(mx2, y, mz2, half * 2, L + 1.2, rot, col);
+        // centre line dashes
+        if (i % 3 === 0) b.addGroundQuad(mx2, y + 0.02, mz2, 0.5, L * 0.6, rot, edgeCol);
+      }
+    }
+
+    // a coastal sweep, a diagonal avenue and a harbour loop
+    city.curves.forEach(function (cv) { ribbon(cv.pts, cv.half, 0x141220, 0.05, 0xb8a24a); });
+
+    // the flyover: an elevated straight with a gentle ramp at each end
+    var F = city.flyover;
+    for (var x = F.minX; x < F.maxX; x += 8) {
+      var y0 = city.flyoverY(x + 4, F.z) || 0;
+      b.addGroundQuad(x + 4, y0 + 0.05, F.z, F.half * 2, 8.4, 0, 0x171528);
+      b.addGroundQuad(x + 4, y0 + 0.07, F.z, 0.5, 4, 0, 0xb8a24a);
+      // parapets
+      b.addBox(x + 4, y0 + 0.5, F.z - F.half, 8, 0.9, 0.5, 0, 0x3a3550, 0);
+      b.addBox(x + 4, y0 + 0.5, F.z + F.half, 8, 0.9, 0.5, 0, 0x3a3550, 0);
+      // piers under the raised deck
+      if (y0 > 3 && ((x / 8) | 0) % 3 === 0) b.addBox(x + 4, y0 / 2, F.z, 2.2, y0, 2.2, 0, 0x2a2740, 0);
+    }
+    var mesh = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    mesh.matrixAutoUpdate = false;
+    scene.add(mesh);
   }
 
   function buildRamps(scene) {

@@ -256,6 +256,21 @@ GAME.hud = (function () {
     g.lineTo(mx(368), my(500));
     g.closePath();
     g.fill();
+    // curved boulevards + the flyover, drawn under the grid
+    (GAME.city.curves || []).forEach(function (cv) {
+      g.strokeStyle = '#4a4462';
+      g.lineWidth = cv.half * 2 * MAP_S;
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath();
+      cv.pts.forEach(function (q, i) { i ? g.lineTo(mx(q[0]), my(q[1])) : g.moveTo(mx(q[0]), my(q[1])); });
+      g.stroke();
+    });
+    var F = GAME.city.flyover;
+    if (F) {
+      g.strokeStyle = '#6a5f92';
+      g.lineWidth = F.half * 2 * MAP_S;
+      g.beginPath(); g.moveTo(mx(F.minX), my(F.z)); g.lineTo(mx(F.maxX), my(F.z)); g.stroke();
+    }
     // roads
     g.strokeStyle = '#4a4462';
     g.lineWidth = 5 * MAP_S * 2.4;
