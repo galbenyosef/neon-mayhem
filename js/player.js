@@ -47,6 +47,7 @@ function loadSave() {
     if (typeof s.cash === 'number') GAME.player.cash = s.cash;
     GAME.bests = s.bests || {};
     GAME.prefs = s.prefs || {};
+    if (GAME.prefs.timeMode && GAME.setTimeMode) GAME.setTimeMode(GAME.prefs.timeMode);
   } catch (e) { GAME.bests = {}; GAME.prefs = {}; }
 }
 GAME.save = function () {
@@ -76,11 +77,21 @@ GAME.playerDamage = function (amt, cause) {
   }
 };
 
+// silence every looping voice — the player update stops running once you're
+// down, so anything still held open would drone until respawn
+function killLoopingAudio() {
+  GAME.audio.engineState(false, 0);
+  GAME.audio.skid(0);
+  GAME.audio.siren(0);
+  GAME.audio.radio.setVolume(0);
+}
+
 GAME.playerWasted = function (cause) {
   var P = GAME.player;
   if (P.state !== 'alive') return;
   P.state = 'wasted'; P.stateT = 0;
   GAME.timeScale = 0.35;
+  killLoopingAudio();
   GAME.audio.sting('wasted');
   GAME.hud.showBig('wasted', 'You wake up at the hospital. Weapons gone, cash intact.');
   GAME.missions.failActive('You got wasted.');
@@ -91,6 +102,7 @@ GAME.playerBusted = function () {
   if (P.state !== 'alive') return;
   P.state = 'busted'; P.stateT = 0;
   GAME.timeScale = 0.4;
+  killLoopingAudio();
   GAME.audio.sting('busted');
   var fine = Math.min(P.cash, 200);
   P.pendingFine = fine;
@@ -146,6 +158,8 @@ function respawnAfterScreen() {
     }
     P.weapons = { fist: { have: true, ammo: Infinity } };
     P.currentWeapon = 'fist';
+    // every stunt jump found: the arsenal survives a hospital or cell visit
+    if (GAME.unlimitedAmmo) GAME.combat.giveAllWeapons();
     GAME.combat.refreshWeaponHud();
     GAME.police.clearWanted();
     P.state = 'alive';
@@ -177,6 +191,10 @@ GAME.enterCar = function (car) {
     GAME.police.reportCrime('steal_police', car.pos);
   }
   if (car.isPolice && car.ai) car.ai = null;
+  // an AI bike's seated rider gives way to the player (driver flees separately)
+  if (car.riderMesh) { car.mesh.remove(car.riderMesh); disposeTree(car.riderMesh); car.riderMesh = null; }
+  // once you take it, it's no longer a parked-spot car (else its spot despawns it)
+  if (car.parkedSpot) { car.parkedSpot.live = null; car.parkedSpot = null; }
   car.occupied = 'player';
   if (car.ai) car.ai = null;
   car.controls = { throttle: 0, steer: 0, handbrake: true };
@@ -213,8 +231,10 @@ function stepEnter(dt) {
     P.onBike = !!car.spec.bike;
     P.mesh.visible = P.onBike; // riders stay visible on a bike
     GAME.cam.freeT = 0;
-    GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.5);
+    GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
     GAME.hud.message(car.spec.label, 1.6);
+    // the radio comes on tuned to whatever the last driver left it on
+    if (!car.spec.heli && !car.spec.plane) GAME.hud.radioPopup(GAME.audio.radio.randomStation());
     if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
     else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
     else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
@@ -230,8 +250,17 @@ function forceExitCar(silent) {
   car.occupied = null;
   var side = car.heading - Math.PI / 2;
   var ex = car.pos.x + Math.sin(side) * 2.2, ez = car.pos.z + Math.cos(side) * 2.2;
-  var rp = GAME.resolveCircle(ex, ez, 0.45);
-  P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
+  var roofY = GAME.city.surfaceY(car.pos.x, car.pos.z);
+  var onRoof = (car.spec.heli || car.spec.plane) && roofY > GAME.city.groundY(car.pos.x, car.pos.z) + 1;
+  if (onRoof) {
+    // step out onto the rooftop beside the aircraft (don't shove out of the footprint);
+    // if you then walk off the edge, on-foot gravity takes over
+    P.pos.set(ex, roofY, ez);
+  } else {
+    var rp = GAME.resolveCircle(ex, ez, 0.45);
+    P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
+  }
+  P.velY = 0;
   P.heading = car.heading;
   P.inCar = false;
   P.car = null;
@@ -246,8 +275,8 @@ GAME.exitCar = forceExitCar;
 
 function resetRiderPose() {
   var j = GAME.player.mesh.userData.joints;
-  j.legL.rotation.x = j.legR.rotation.x = 0;
-  j.armL.rotation.x = j.armR.rotation.x = 0;
+  j.legL.rotation.set(0, 0, 0); j.legR.rotation.set(0, 0, 0);
+  j.armL.rotation.set(0, 0, 0); j.armR.rotation.set(0, 0, 0);
   j.torso.rotation.x = 0;
   GAME.player.mesh.rotation.z = 0;
 }
@@ -313,7 +342,7 @@ function updateOnFoot(dt) {
   if (P.carHurtCd > 0) P.carHurtCd -= dt;
   // run: Shift on desktop, RUN toggle or full stick deflection on touch
   var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run || (T.active && mag > 0.85)) && !aiming;
-  var target = mag * (aiming ? 2.0 : run ? 6.0 : 2.8);
+  var target = mag * (aiming ? 2.0 : run ? 7.5 : 2.8);   // sprint is 1.25x the old 6.0
   P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
 
   if (mag > 0.05) {
@@ -330,7 +359,7 @@ function updateOnFoot(dt) {
   var h = (mag > 0.05) ? P.moveH : P.heading;
   var nx = P.pos.x + Math.sin(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
   var nz = P.pos.z + Math.cos(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
-  var rp = GAME.resolveCircle(nx, nz, 0.45);
+  var rp = GAME.resolveCircle(nx, nz, 0.45, P.pos.y);
   nx = rp.x; nz = rp.z;
   // solid cars
   var cars = GAME.world.cars;
@@ -355,18 +384,59 @@ function updateOnFoot(dt) {
   }
   P.pos.x = nx; P.pos.z = nz;
   if (GAME.city.isInWater(P.pos.x, P.pos.z)) { GAME.playerDrown(); return; }
-  P.pos.y = GAME.city.groundY(P.pos.x, P.pos.z);
+  // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
+  var surf = GAME.city.surfaceY(P.pos.x, P.pos.z);
+  // Space jumps when you're on your feet (running gives you a longer hop)
+  var grounded = P.pos.y <= surf + 0.06;
+  var wantJump = GAME.key('Space') || T.jump;
+  if (grounded && wantJump && !P.jumpLatch) {
+    P.velY = 7.2 + Math.min(P.moveSpeed, 6) * 0.22;
+    P.pos.y = surf + 0.07;
+    GAME.audio.punch();
+  }
+  P.jumpLatch = wantJump;
+  P.airborne = P.pos.y > surf + 0.06;
+  if (P.airborne) {
+    P.velY = (P.velY || 0) - 22 * dt;
+    P.pos.y += P.velY * dt;
+    if (P.pos.y <= surf) {
+      var impact = -(P.velY || 0);
+      P.pos.y = surf; P.velY = 0; P.airborne = false;
+      if (impact > 12) {
+        GAME.playerDamage(Math.min(95, (impact - 12) * 6), 'fall');
+        GAME.cameraShake = Math.min(1, impact / 18);
+      }
+    }
+  } else {
+    P.pos.y = surf; P.velY = 0;
+  }
   P.mesh.rotation.y = P.heading;
 
-  // walk anim
+  // walk anim — the same gait throughout; cadence follows moveSpeed
   P.walkPhase = (P.walkPhase || 0) + P.moveSpeed * dt * 2.2;
   var j = P.mesh.userData.joints;
   var s = Math.sin(P.walkPhase) * Math.min(1, P.moveSpeed / 2.5) * 0.7;
   j.legL.rotation.x = s; j.legR.rotation.x = -s;
-  if (aiming && P.currentWeapon !== 'fist') {
+  j.torso.rotation.x = 0;
+  if (P.airborne) {
+    // airborne: tuck the legs and throw the arms up
+    j.legL.rotation.x = -0.75; j.legR.rotation.x = -0.35;
+    j.armL.rotation.x = -2.2; j.armR.rotation.x = -2.2;
+    j.torso.rotation.x = 0.1;
+  } else if (P.punchT > 0) {
+    // throwing a punch: drive the lead arm out, overriding the walk swing
+    P.punchT -= dt;
+    var k = 1 - P.punchT / 0.26;
+    var ext = Math.sin(U.clamp(k, 0, 1) * Math.PI);
+    j.armR.rotation.x = -1.75 * ext;
+    j.armL.rotation.x = -s * 0.5;
+    j.torso.rotation.y = -0.35 * ext;
+  } else if (aiming && P.currentWeapon !== 'fist') {
+    j.torso.rotation.y = 0;
     j.armR.rotation.x = -Math.PI / 2 + GAME.cam.pitch * 0.5;
     j.armL.rotation.x = -s * 0.4;
   } else {
+    j.torso.rotation.y = 0;
     j.armL.rotation.x = -s * 0.8;
     j.armR.rotation.x = s * 0.8;
   }
@@ -388,8 +458,10 @@ function updateDriving(dt) {
   if (car.spec.heli || car.spec.plane) {
     if (wantsEnter()) {
       var gy = GAME.city.groundY(car.pos.x, car.pos.z);
-      if (car.pos.y > gy + 3.5) GAME.aircraft.startParachute(car.pos.x, car.pos.y, car.pos.z, car.heading);
-      else forceExitCar();
+      if (car.pos.y > gy + 3.5) {
+        car.occupied = null; // the abandoned airframe is now ownerless (it will fall)
+        GAME.aircraft.startParachute(car.pos.x, car.pos.y, car.pos.z, car.heading);
+      } else forceExitCar();
       return;
     }
     if (car.spec.plane) GAME.aircraft.updatePlane(dt);
@@ -416,7 +488,22 @@ function updateDriving(dt) {
     }
     c.throttle = U.clamp(th, -1, 1);
     c.steer = U.clamp(st, -1, 1);
-    c.handbrake = GAME.key('Space') || T.handbrake;
+    // the monster truck's party trick: Space launches it straight up
+    var wantHop = GAME.key('Space') || T.handbrake;
+    if (car.spec.monster) {
+      var mgy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
+      if (wantHop && !P.hopLatch && car.pos.y <= mgy + 0.1) {
+        car.vy = 13.5;
+        car.pos.y = mgy + 0.12;
+        GAME.audio.crash(0.35);
+        GAME.cameraShake = 0.4;
+      }
+      P.hopLatch = wantHop;
+      c.handbrake = false;
+    } else {
+      P.hopLatch = false;
+      c.handbrake = wantHop;
+    }
   }
 
   var sp = Math.abs(car.speed);
@@ -438,16 +525,17 @@ function updateBikeRider(dt) {
   // lean the bike into turns / slides
   var lean = U.clamp(-car.controls.steer * Math.min(1, Math.abs(car.speed) / 12) * 0.5 - car.lat * 0.03, -0.6, 0.6);
   car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, lean, Math.min(1, dt * 8));
-  // seat the rider on the bike, sharing its lean
+  // seat the rider low on the saddle, sharing the bike's lean, straddling it
   var m = P.mesh;
   m.visible = true;
-  m.position.set(car.pos.x, car.pos.y, car.pos.z);
+  m.position.set(car.pos.x, car.pos.y - 0.02, car.pos.z);
   m.rotation.set(0, car.heading, car.mesh.rotation.z);
-  m.translateY(0.55);
+  m.translateZ(-0.35); // sit back on the seat
   var j = m.userData.joints;
-  j.legL.rotation.x = 0.9; j.legR.rotation.x = 0.9;
-  j.armL.rotation.x = -0.6; j.armR.rotation.x = -0.6;
-  j.torso.rotation.x = 0.25;
+  j.torso.rotation.x = 0.34;                          // lean toward the bars
+  j.legL.rotation.x = -0.55; j.legR.rotation.x = -0.55;
+  j.legL.rotation.z = 0.2; j.legR.rotation.z = -0.2;  // knees out around the tank
+  j.armL.rotation.x = -1.05; j.armR.rotation.x = -1.05; // hands on the handlebars
 }
 
 var pressedCache = {};

@@ -36,6 +36,19 @@ GAME.combat = (function () {
       if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z)) continue;
       list.push({ t: t, score: ang * 30 + d });
     }
+    // vehicles are lockable too (pursuing cruisers etc.), weighted after people
+    var cars = GAME.world.cars;
+    for (var ci = 0; ci < cars.length; ci++) {
+      var car = cars[ci];
+      if (car.dead || car === P.car) continue;
+      var cdx = car.pos.x - P.pos.x, cdz = car.pos.z - P.pos.z;
+      var cd = Math.sqrt(cdx * cdx + cdz * cdz);
+      if (cd > 44 || cd < 0.5) continue;
+      var cang = Math.abs(U.wrapPI(Math.atan2(cdx, cdz) - cam.yaw));
+      if (cang > 0.7) continue;
+      if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, car.pos.x, car.pos.z)) continue;
+      list.push({ t: car, score: cang * 30 + cd + 14 });
+    }
     list.sort(function (a, b) { return a.score - b.score; });
     return list.map(function (e) { return e.t; });
   }
@@ -111,7 +124,7 @@ GAME.combat = (function () {
     var m = muzzlePos();
     var inv = P.weapons[w];
     if (!inv || inv.ammo <= 0) { GAME.audio.ricochet(); return; }
-    inv.ammo--;
+    if (!GAME.unlimitedAmmo) inv.ammo--;
     GAME.audio.gunshot(w);
     GAME.fx.flash(m.x + Math.sin(dirYaw) * 0.6, m.y, m.z + Math.cos(dirYaw) * 0.6, 0.8);
     var pellets = wd.pellets || 1;
@@ -129,7 +142,8 @@ GAME.combat = (function () {
         } else if (res.hit.kind === 'car') {
           GAME.vehicles.damageCar(res.hit.obj, wd.damage * 0.8, 'gun');
           GAME.fx.spawn(hx, 0.8, hz, { count: 3, color: 0xffe0a0, spread: 2, life: 0.3 });
-          if (res.hit.obj.ai && res.hit.obj.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);
+          if (res.hit.obj.isPolice) GAME.police.reportCrime('hit_cop_car', P.pos);
+          else if (res.hit.obj.ai && res.hit.obj.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);
         } else {
           GAME.fx.spawn(hx, m.y, hz, { count: 3, color: 0xccccdd, spread: 1.5, life: 0.25 });
           if (Math.random() < 0.4) GAME.audio.ricochet();
@@ -144,6 +158,7 @@ GAME.combat = (function () {
 
   function punch() {
     var P = GAME.player;
+    P.punchT = 0.26; // drives the swing animation in player.js
     GAME.audio.punch();
     var fx = Math.sin(P.heading), fz = Math.cos(P.heading);
     var px = P.pos.x + fx * 1.2, pz = P.pos.z + fz * 1.2;
@@ -214,12 +229,14 @@ GAME.combat = (function () {
     var w = P.currentWeapon, wd = WEAPONS[w];
     if (P.weaponMesh) P.weaponMesh.visible = (w !== 'fist' && !P.inCar);
 
-    // drive-by
+    // drive-by: Q/E pick a side; LMB (or FIRE) alone fires toward the side you're
+    // looking, matching the on-screen prompt "LMB — Fire (drive-by w/ SMG)"
     if (P.inCar) {
       var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       var left = GAME.key('KeyQ') || T.driveByL;
       var right = GAME.key('KeyE') || T.driveByR;
-      if (hasSMG && (left || right || ((inp.lmb || T.fire) && (inp.rmb || T.aim)))) {
+      var fireBtn = inp.lmb || T.fire;
+      if (hasSMG && (left || right || fireBtn)) {
         if (cooldown <= 0) {
           cooldown = WEAPONS.smg.rate;
           // left of travel = heading + pi/2 in this parametrization
@@ -274,6 +291,16 @@ GAME.combat = (function () {
     refreshWeaponHud();
   }
 
+  // the full arsenal — unlimited ammo is no use without something to fire it from
+  function giveAllWeapons() {
+    var P = GAME.player;
+    ['pistol', 'smg', 'shotgun'].forEach(function (w) {
+      P.weapons[w] = { have: true, ammo: Math.max(999, (P.weapons[w] && P.weapons[w].ammo) || 0) };
+    });
+    if (P.currentWeapon === 'fist') P.currentWeapon = 'pistol';
+    refreshWeaponHud();
+  }
+
   function refreshWeaponHud() {
     var P = GAME.player;
     var wd = WEAPONS[P.currentWeapon];
@@ -291,12 +318,45 @@ GAME.combat = (function () {
     cash: { color: 0x8dffd8, label: 'CASH' }
   };
 
+  // each pickup reads as the thing it gives: a pistol/SMG/shotgun silhouette,
+  // a medical cross, a shield, or a cash bundle — instead of a generic cube
+  function pickupShape(type, color) {
+    var b = new GeoBatch();
+    if (type === 'pistol') {
+      b.addBox(0, 0.10, 0.06, 0.09, 0.13, 0.46, 0, color, 0);   // slide
+      b.addBox(0, -0.06, -0.10, 0.08, 0.24, 0.13, 0.35, color, 0); // grip
+      b.addBox(0, 0.02, 0.12, 0.05, 0.05, 0.10, 0, 0x2a2a34, 0);   // trigger guard
+    } else if (type === 'smg') {
+      b.addBox(0, 0.10, 0.00, 0.09, 0.14, 0.62, 0, color, 0);   // body
+      b.addBox(0, -0.08, -0.06, 0.07, 0.22, 0.12, 0, color, 0);    // grip
+      b.addBox(0, -0.02, 0.10, 0.06, 0.16, 0.10, 0, 0x2a2a34, 0);  // magazine
+      b.addBox(0, 0.10, -0.40, 0.06, 0.09, 0.22, 0, 0x2a2a34, 0);  // stock
+    } else if (type === 'shotgun') {
+      b.addBox(0, 0.10, 0.10, 0.10, 0.11, 0.78, 0, color, 0);   // barrel
+      b.addBox(0, 0.00, 0.10, 0.09, 0.09, 0.34, 0, 0x2a2a34, 0);   // pump
+      b.addBox(0, 0.01, -0.40, 0.08, 0.20, 0.26, 0, color, 0);     // stock
+    } else if (type === 'health') {
+      b.addBox(0, 0.10, 0, 0.62, 0.20, 0.16, 0, color, 0);      // cross bar
+      b.addBox(0, 0.10, 0, 0.20, 0.62, 0.16, 0, color, 0);      // cross post
+    } else if (type === 'armor') {
+      b.addBox(0, 0.16, 0, 0.46, 0.34, 0.14, 0, color, 0);      // shield body
+      b.addBox(0, -0.10, 0, 0.26, 0.26, 0.14, 0, color, 0);     // tapered point
+      b.addBox(0, 0.16, 0.08, 0.16, 0.16, 0.04, 0, 0xffffff, 0);   // emblem
+    } else { // cash bundle
+      b.addBox(0, 0.06, 0, 0.52, 0.10, 0.30, 0, color, 0);
+      b.addBox(0, 0.17, 0, 0.50, 0.09, 0.28, 0.16, color, 0);
+      b.addBox(0, 0.12, 0, 0.14, 0.24, 0.32, 0, 0x2a6a52, 0);      // paper band
+    }
+    return new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true, emissive: color, emissiveIntensity: 0.55 }));
+  }
+
   function pickupMesh(type) {
     var def = PICKUP_DEFS[type];
     var g = new THREE.Group();
-    var core = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), new THREE.MeshBasicMaterial({ color: def.color }));
-    core.rotation.x = Math.PI / 4; core.rotation.z = Math.PI / 4;
+    var core = pickupShape(type, def.color);
+    core.position.y = 0.1;
     g.add(core);
+    g.userData.core = core;
     var halo = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 16), new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
     halo.rotation.x = -Math.PI / 2;
     halo.position.y = -0.5;
@@ -335,11 +395,11 @@ GAME.combat = (function () {
       }
       if (!p.fixed) {
         p.ttl -= dt;
-        if (p.ttl <= 0) { GAME.scene.remove(p.mesh); ps.splice(i, 1); continue; }
+        if (p.ttl <= 0) { GAME.scene.remove(p.mesh); disposeTree(p.mesh); ps.splice(i, 1); continue; }
       }
       if (U.dist2(p.pos.x, p.pos.z, GAME.player.pos.x, GAME.player.pos.z) < 90 * 90) {
         p.mesh.rotation.y += dt * 2.4;
-        p.mesh.children[0].position.y = 0.1 * Math.sin(GAME.time * 3 + i);
+        p.mesh.children[0].position.y = 0.1 + 0.1 * Math.sin(GAME.time * 3 + i);
       }
     }
   }
@@ -359,7 +419,7 @@ GAME.combat = (function () {
       GAME.audio.pickup();
       GAME.hud.message(label, 1.2);
       if (p.fixed) { p.taken = true; p.respawnT = 45; p.mesh.visible = false; }
-      else { GAME.scene.remove(p.mesh); ps.splice(i, 1); }
+      else { GAME.scene.remove(p.mesh); disposeTree(p.mesh); ps.splice(i, 1); }
     }
   }
 
@@ -389,6 +449,7 @@ GAME.combat = (function () {
     checkPickups: checkPickups,
     initPickups: initPickups,
     giveWeapon: giveWeapon,
+    giveAllWeapons: giveAllWeapons,
     selectWeapon: selectWeapon,
     dropPickup: dropPickup,
     refreshWeaponHud: refreshWeaponHud,

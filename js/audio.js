@@ -28,10 +28,23 @@ GAME.audio = (function () {
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ctx = new AC();
-    master = ctx.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(ctx.destination);
-    sfxBus = ctx.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
+    // master chain: buses -> limiter -> out. The limiter stops layered SFX
+    // (explosions over sirens over the radio) from clipping into a buzz.
+    var limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -10;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.004;
+    limiter.release.value = 0.18;
+    limiter.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(limiter);
+    sfxBus = ctx.createGain(); sfxBus.gain.value = 0.72; sfxBus.connect(master);
     radioBus = ctx.createGain(); radioBus.gain.value = 0; radioBus.connect(master);
-    engineBus = ctx.createGain(); engineBus.gain.value = 0; engineBus.connect(master);
+    // the engine sits under everything else and is gently rolled off up top so
+    // it doesn't mask the radio
+    engineBus = ctx.createGain(); engineBus.gain.value = 0;
+    var engTone = ctx.createBiquadFilter(); engTone.type = 'lowpass'; engTone.frequency.value = 900;
+    engineBus.connect(engTone); engTone.connect(master);
     noiseBuf = makeNoiseBuffer();
     verb = ctx.createConvolver(); verb.buffer = makeImpulse(1.8, 3.2);
     var verbGain = ctx.createGain(); verbGain.gain.value = 0.35;
@@ -89,8 +102,10 @@ GAME.audio = (function () {
     var lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.8;
     var lfoG = ctx.createGain(); lfoG.gain.value = 260;
     lfo.connect(lfoG); lfoG.connect(o.frequency);
+    // roll off the top so the wail reads as distant rather than piercing
+    var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
     var g = ctx.createGain(); g.gain.value = 0;
-    o.connect(g); g.connect(sfxBus);
+    o.connect(lp); lp.connect(g); g.connect(sfxBus);
     o.start(); lfo.start();
     sirenNode = { g: g, o: o };
   }
@@ -178,6 +193,13 @@ GAME.audio = (function () {
         if (ctx) nextTime = ctx.currentTime + 0.08;
         return stations[current].name;
       },
+      // tune to a random station — the dial isn't always left where you found it
+      randomStation: function () {
+        current = Math.floor(Math.random() * stations.length) % stations.length;
+        step = 0;
+        if (ctx) nextTime = ctx.currentTime + 0.08;
+        return stations[current].name;
+      },
       setVolume: function (v) {
         if (!ctx) return;
         radioBus.gain.setTargetAtTime(v, ctx.currentTime, 0.3);
@@ -205,21 +227,24 @@ GAME.audio = (function () {
     engineState: function (on, speedNorm) {
       if (!ctx) return;
       var t = ctx.currentTime;
-      engineBus.gain.setTargetAtTime(on ? 0.16 : 0, t, 0.1);
+      // idle sits well back; it only leans in as you wind the revs out, so the
+      // radio stays audible while cruising
+      var sn = U.clamp(speedNorm || 0, 0, 1);
+      engineBus.gain.setTargetAtTime(on ? 0.05 + sn * 0.045 : 0, t, 0.12);
       if (on) {
-        var f = 45 + speedNorm * 160;
+        var f = 45 + sn * 160;
         engine.o.frequency.setTargetAtTime(f, t, 0.08);
         engine.o2.frequency.setTargetAtTime(f * 0.5, t, 0.08);
-        engine.f.frequency.setTargetAtTime(300 + speedNorm * 1400, t, 0.1);
+        engine.f.frequency.setTargetAtTime(300 + sn * 1100, t, 0.1);
       }
     },
     skid: function (amount) {
       if (!ctx) return;
-      skidNode.g.gain.setTargetAtTime(U.clamp(amount, 0, 1) * 0.25, ctx.currentTime, 0.05);
+      skidNode.g.gain.setTargetAtTime(U.clamp(amount, 0, 1) * 0.16, ctx.currentTime, 0.05);
     },
     siren: function (vol, pitchShift) {
       if (!ctx) return;
-      sirenNode.g.gain.setTargetAtTime(U.clamp(vol, 0, 1) * 0.14, ctx.currentTime, 0.15);
+      sirenNode.g.gain.setTargetAtTime(U.clamp(vol, 0, 1) * 0.1, ctx.currentTime, 0.15);
       sirenNode.o.frequency.setTargetAtTime(700 * (pitchShift || 1), ctx.currentTime, 0.2);
     },
     gunshot: function (type) {
@@ -233,9 +258,9 @@ GAME.audio = (function () {
     punch: function () { if (ctx) { noiseBurst(0.06, 500, 0.4); tone(90, 0.07, 0.4, 'sine', 45); } },
     explosion: function () {
       if (!ctx) return;
-      noiseBurst(1.1, 900, 1.0);
-      tone(110, 0.9, 0.8, 'sine', 28);
-      noiseBurst(0.35, 4000, 0.3, 'highpass');
+      noiseBurst(1.1, 900, 0.7);
+      tone(110, 0.9, 0.55, 'sine', 28);
+      noiseBurst(0.35, 4000, 0.2, 'highpass');
     },
     crash: function (v) {
       if (!ctx) return;

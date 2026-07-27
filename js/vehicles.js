@@ -118,8 +118,9 @@ var VEHICLES = {
   van: { label: 'Cargo Van', maxSpeed: 23, accel: 7, grip: 6, turn: 1.7, hp: 260, l: 5.1, w: 2.1, cabinH: 1.0, bodyH: 0.9, colors: [0x9a8a78, 0x7888a0, 0xa87868] },
   police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 200, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] },
   ambulance: { label: 'Ambulance', maxSpeed: 27, accel: 8.5, grip: 5.6, turn: 1.8, hp: 240, l: 5.3, w: 2.15, cabinH: 1.15, bodyH: 1.0, colors: [0xf2f2f6] },
-  motorcycle: { label: 'Vice Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 75, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
+  motorcycle: { label: 'Neon Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 130, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
+  monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
   airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 }
 };
 
@@ -141,6 +142,19 @@ function buildBikeMesh(colorHex) {
   g.add(hl);
   g.userData.bodyMesh = body;
   return g;
+}
+
+// a seated rider posed to straddle a bike, added as a child of the bike group
+// so it moves and leans with it. Used for AI traffic bikes (and reusable).
+function buildBikeRider() {
+  var r = GAME.peds.buildPedMesh({});
+  var j = r.userData.joints;
+  j.torso.rotation.x = 0.34;                       // lean toward the bars
+  j.legL.rotation.x = -0.55; j.legR.rotation.x = -0.55;
+  j.legL.rotation.z = 0.2; j.legR.rotation.z = -0.2; // straddle the tank
+  j.armL.rotation.x = -1.05; j.armR.rotation.x = -1.05; // reach the handlebars
+  r.position.set(0, -0.02, -0.35);                 // hips on the seat
+  return r;
 }
 
 function buildHeliMesh(colorHex) {
@@ -209,8 +223,31 @@ function buildPlaneMesh(colors) {
   return g;
 }
 
+function buildMonsterMesh(colorHex) {
+  var g = new THREE.Group();
+  var b = new GeoBatch();
+  b.addBox(0, 1.85, 0, 2.3, 0.9, 4.6, 0, colorHex, 0);          // chassis
+  b.addBox(0, 2.65, -0.3, 1.9, 0.85, 2.2, 0, 0x141824, 0);      // cab
+  b.addBox(0, 1.25, 0, 0.5, 0.35, 4.0, 0, 0x22262e, 0);         // spine
+  b.addBox(0, 1.85, 2.35, 2.2, 0.5, 0.2, 0, 0x22262e, 0);       // bar
+  var wh = new GeoBatch();
+  [[1.25, 1.5], [-1.25, 1.5], [1.25, -1.5], [-1.25, -1.5]].forEach(function (w) {
+    wh.addBox(w[0], 1.15, w[1], 0.62, 2.3, 2.3, 0, 0x0c0c10, 0);
+  });
+  var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  g.add(body);
+  g.add(new THREE.Mesh(wh.build(), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  var glow = new GeoBatch();
+  glow.addBox(0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
+  glow.addBox(-0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
+  g.add(new THREE.Mesh(glow.build(), new THREE.MeshBasicMaterial({ vertexColors: true })));
+  g.userData.bodyMesh = body;
+  return g;
+}
+
 function buildCarMesh(type, colorHex) {
   var s = VEHICLES[type];
+  if (s.monster) return buildMonsterMesh(colorHex);
   if (s.plane) return buildPlaneMesh(s.colors);
   if (s.heli) return buildHeliMesh(colorHex);
   if (s.bike) return buildBikeMesh(colorHex);
@@ -290,6 +327,12 @@ GAME.vehicles = (function () {
       smokeT: 0, unstickT: 0, reverseT: 0,
       radius: spec.l * 0.42
     };
+    // AI-ridden bikes get a visible rider (empty motorbikes look abandoned)
+    if (spec.bike && car.occupied === 'ai') {
+      var rider = buildBikeRider();
+      mesh.add(rider);
+      car.riderMesh = rider;
+    }
     world.cars.push(car);
     return car;
   }
@@ -299,6 +342,7 @@ GAME.vehicles = (function () {
     if (i >= 0) world.cars.splice(i, 1);
     if (car.parkedSpot) car.parkedSpot.live = null;
     GAME.scene.remove(car.mesh);
+    disposeTree(car.mesh);
   }
 
   function fwdX(car) { return Math.sin(car.heading); }
@@ -341,14 +385,66 @@ GAME.vehicles = (function () {
     car.vx = vx; car.vz = vz;
     car.pos.x += vx * dt;
     car.pos.z += vz * dt;
-    var gy = GAME.city.groundY(car.pos.x, car.pos.z);
-    car.pos.y = U.lerp(car.pos.y, gy, Math.min(1, dt * 8));
+
+    // vertical: ride the ground (or a ramp deck / a roof you've landed on), and
+    // go ballistic off a lip
+    var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
+    var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
+    if (car.pos.y > gy + 0.08) {
+      if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
+      car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
+      car.vy = (car.vy || 0) - 24 * dt;
+      car.pos.y += car.vy * dt;
+      car.air = (car.air || 0) + dt;
+      if (car.pos.y <= gy) {
+        var impact = -(car.vy || 0);
+        car.pos.y = gy; car.vy = 0;
+        landStunt(car, impact);
+      }
+    } else {
+      car.pos.y = gy;
+      // on a ramp the deck itself drives the climb rate; carry that off the lip
+      car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
+      car.onRampIdx = ramp ? ramp.idx : null;
+      if (car.air) landStunt(car, 0);
+    }
     car.mesh.rotation.y = car.heading;
-    // body roll with slide
+    // pitch to the flight path while airborne, else roll with the slide
+    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? -Math.atan(ramp.slope) : 0);
+    car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 8));
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
+    car.lastHeading = car.heading;
 
     collideStatic(car, dt);
     if (GAME.city.isInWater(car.pos.x, car.pos.z)) sinkCar(car);
+  }
+
+  // a jump has ended: score it if the player pulled it off, and take the knock
+  function landStunt(car, impact) {
+    var airT = car.air || 0;
+    car.air = 0;
+    var isPlayer = car === GAME.player.car && GAME.player.inCar;
+    if (isPlayer && airT > 0.45) {
+      var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
+      var spins = Math.floor(Math.abs(car.jumpSpin || 0) / (Math.PI * 2));
+      var cash = Math.round(airT * 120 + dist * 6 + spins * 400);
+      var label = spins > 0 ? (spins > 1 ? spins + 'x SPIN!' : '360 SPIN!')
+        : airT > 1.6 ? 'INSANE JUMP!' : airT > 1.0 ? 'BIG AIR!' : 'NICE JUMP!';
+      GAME.addCash(cash);
+      GAME.audio.sting('win');
+      GAME.hud.message(label + '   ' + airT.toFixed(1) + 's · ' + Math.round(dist) + 'm · +$' + cash, 3);
+      GAME.missions.notifyChaos(60);
+      // a jump launched off one of the city's ramps also logs it as found
+      if (car.jumpRamp !== undefined && car.jumpRamp !== null) GAME.stunts.credit(car.jumpRamp, airT, dist);
+    }
+    car.jumpSpin = 0; car.jumpRamp = null;
+    // hard landings still hurt
+    if (impact > 16) {
+      damageCar(car, Math.min(40, (impact - 16) * 2.2), 'wall');
+      GAME.audio.crash(Math.min(1, impact / 30));
+      if (isPlayer) GAME.cameraShake = Math.min(1, impact / 26);
+      if (car.spec.bike && isPlayer && GAME.player.onBike && impact > 24) GAME.ejectBike(impact);
+    }
   }
 
   function collideStatic(car, dt) {
@@ -364,6 +460,8 @@ GAME.vehicles = (function () {
       var pz = car.pos.z + fz * lx + szv * lw;
       for (var bi = 0; bi < boxes.length; bi++) {
         var b = boxes[bi];
+        // jumped clear of it — don't clip a car that's sailing over a fence
+        if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
         if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
           // push out along the smallest penetration axis
           var dxl = px - b.minX, dxr = b.maxX - px, dzl = pz - b.minZ, dzr = b.maxZ - pz;
@@ -422,7 +520,8 @@ GAME.vehicles = (function () {
           var pc = GAME.player.car;
           if ((a === pc || b === pc) && rel > 6) {
             var other = a === pc ? b : a;
-            if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
+            if (other.isPolice) GAME.police.reportCrime('hit_cop_car', pc.pos);
+            else if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
           }
         }
         // transfer momentum crudely
@@ -433,39 +532,47 @@ GAME.vehicles = (function () {
     }
   }
 
-  function damageCar(car, amt, source) {
+  function damageCar(car, amt, source, byPlayer) {
     if (car.dead) return;
+    var pc = GAME.player.car;
+    // remember if the player is responsible, so a delayed burn-out still counts
+    if (byPlayer || source === 'gun' || source === 'fist' ||
+      (source === pc && pc && Math.abs(pc.speed) > 9)) car.byPlayer = true;
     car.hp -= amt;
     if (car.hp < car.spec.hp * 0.35 && car.stage < 1) car.stage = 1;
     if (car.hp < car.spec.hp * 0.14 && car.stage < 2) { car.stage = 2; car.fireFuse = 5.5; }
-    if (car.hp <= 0) explodeCar(car, source);
+    if (car.hp <= 0) explodeCar(car, source, car.byPlayer);
   }
 
-  function explodeCar(car, source) {
+  function explodeCar(car, source, byPlayerIn) {
     if (car.dead) return;
     car.dead = true; car.stage = 3;
+    // player-caused if this blast (or the damage that led to it) traces to the player
+    var byPlayer = !!(byPlayerIn || car.byPlayer);
     GAME.audio.explosion();
     GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 9);
     GAME.fx.spawn(car.pos.x, 1.2, car.pos.z, { count: 30, color: 0xff9030, spread: 7, vy: 5, life: 1.1, grav: -3 });
     GAME.fx.spawn(car.pos.x, 1.5, car.pos.z, { count: 20, color: 0x333333, spread: 4, vy: 4, life: 1.6, grav: -0.5 });
+    var oldMat = car.mesh.userData.bodyMesh.material;
     car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+    if (oldMat && oldMat.dispose) oldMat.dispose();
     if (car.mesh.userData.lightbar) car.mesh.userData.lightbar.forEach(function (m) { m.visible = false; });
     car.speed *= 0.2;
     // area damage
     var p = GAME.player;
     if (!p.inCar || p.car !== car) {
-      if (U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z) < 64) GAME.playerDamage(55, 'explosion');
+      // altitude counts: a wreck going up underneath you shouldn't catch you
+      // while you're hanging off a parachute or standing on a roof
+      var dy = Math.abs(p.pos.y - car.pos.y);
+      if (U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z) < 64 && dy < 7) GAME.playerDamage(55, 'explosion');
     }
     if (p.car === car) GAME.playerDamage(200, 'explosion');
     world.peds.forEach(function (ped) {
-      if (!ped.dead && U.dist2(ped.pos.x, ped.pos.z, car.pos.x, car.pos.z) < 55) GAME.peds.kill(ped, 'explosion');
+      if (!ped.dead && U.dist2(ped.pos.x, ped.pos.z, car.pos.x, car.pos.z) < 55) GAME.peds.kill(ped, 'explosion', byPlayer);
     });
     world.cars.forEach(function (c2) {
-      if (c2 !== car && !c2.dead && U.dist2(c2.pos.x, c2.pos.z, car.pos.x, car.pos.z) < 60) damageCar(c2, 40, 'explosion');
+      if (c2 !== car && !c2.dead && U.dist2(c2.pos.x, c2.pos.z, car.pos.x, car.pos.z) < 60) damageCar(c2, 40, 'explosion', byPlayer);
     });
-    var pc = GAME.player.car;
-    var byPlayer = source === 'gun' || source === 'fist' || source === 'explosion' ||
-      (source === pc && pc && Math.abs(pc.speed) > 9);
     if (car.isPolice && byPlayer) GAME.police.reportCrime('kill_cop', car.pos);
     if (car.occupied === 'ai') car.occupied = null;
     GAME.missions.notifyChaos(500);
@@ -582,7 +689,7 @@ GAME.vehicles = (function () {
         if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, rp.x, rp.z) < 100) { clear = false; break; }
       }
       if (!clear) continue;
-      var types = ['sedan', 'sedan', 'taxi', 'sports', 'van'];
+      var types = ['sedan', 'sedan', 'taxi', 'sports', 'van', 'motorcycle'];
       var type = types[Math.floor(Math.random() * types.length)];
       var heading = rp.axis === 'z' ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
       var car = spawnCar(type, rp.x, rp.z, heading, { occupied: 'ai', ai: { mode: 'traffic', desired: U.randRange(Math.random, 9, 13), laneX: 0, laneZ: 0 } });
@@ -593,6 +700,7 @@ GAME.vehicles = (function () {
 
   function spawnParked() {
     var fc = GAME.focus();
+    var P = GAME.player;
     var spots = GAME.city.parkedSpots;
     var live = 0;
     for (var i = 0; i < spots.length; i++) if (spots[i].live) live++;
@@ -603,10 +711,13 @@ GAME.vehicles = (function () {
       // spot — no distance floor, larger spawn range, and exempt from the parked cap
       var special = sp.police || sp.vtype;
       if (!special && GAME.city.inAirport(sp.x, sp.z)) continue; // no random cars on the airfield
+      // don't park a twin of the special vehicle the player is currently driving
+      // (e.g. a second ambulance sitting in the bay you just took yours from)
+      if (sp.vtype && !sp.live && P.inCar && P.car && P.car.type === sp.vtype) continue;
       var minD = special ? 0 : 40 * 40;
       var range = special ? 210 : 140;
       var despawnR = special ? 260 : 190;
-      if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 > minD) {
+      if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
         for (var c = 0; c < world.cars.length; c++) {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60) { clear = false; break; }
@@ -619,7 +730,7 @@ GAME.vehicles = (function () {
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
         sp.live = car;
         live++;
-      } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && sp.live.hp === sp.live.spec.hp) {
+      } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && !sp.live.dead) {
         removeCar(sp.live);
       }
     }

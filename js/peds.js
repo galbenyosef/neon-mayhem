@@ -1,7 +1,9 @@
-GAME.resolveCircle = function (x, z, r) {
+GAME.resolveCircle = function (x, z, r, feetY) {
   var boxes = GAME.city.hash.query(x, z, r + 1);
   for (var i = 0; i < boxes.length; i++) {
     var b = boxes[i];
+    // if the entity is standing on top of this box (a rooftop), don't shove it off
+    if (feetY !== undefined && b.h !== undefined && b.h <= feetY + 0.2) continue;
     var cx = U.clamp(x, b.minX, b.maxX), cz = U.clamp(z, b.minZ, b.maxZ);
     var dx = x - cx, dz = z - cz;
     var d2 = dx * dx + dz * dz;
@@ -81,6 +83,9 @@ GAME.peds = (function () {
       isCop: !!opts.cop,
       armed: !!opts.cop,
       fleeT: 0, diveT: 0, deadT: 0,
+      // how alert this one is, and how long they take to react to a car
+      dodgeSkill: Math.random(),
+      reactDelay: U.randRange(Math.random, 0.15, 0.45), reactT: 0,
       wpX: x, wpZ: z, wpT: 0,
       shootT: U.randRange(Math.random, 0.5, 1.5)
     };
@@ -92,6 +97,7 @@ GAME.peds = (function () {
     var i = world.peds.indexOf(ped);
     if (i >= 0) world.peds.splice(i, 1);
     GAME.scene.remove(ped.mesh);
+    disposeTree(ped.mesh);
   }
 
   function kill(ped, cause, byPlayer) {
@@ -157,32 +163,70 @@ GAME.peds = (function () {
       var d2p = U.dist2(ped.pos.x, ped.pos.z, fc.x, fc.z);
       if (ped.dead) {
         ped.deadT += dt;
+        // carry through a knock-back from a vehicle: tumble, then settle
+        if (ped.knockY !== undefined) {
+          var gy0 = GAME.city.groundY(ped.pos.x, ped.pos.z);
+          ped.knockY -= 18 * dt;
+          ped.pos.x += ped.knockX * dt;
+          ped.pos.z += ped.knockZ * dt;
+          ped.pos.y += ped.knockY * dt;
+          ped.mesh.rotation.z += ped.knockSpin * dt;
+          ped.knockX *= Math.exp(-2.2 * dt);
+          ped.knockZ *= Math.exp(-2.2 * dt);
+          if (ped.pos.y <= gy0 + 0.35) {
+            ped.pos.y = gy0 + 0.35;
+            ped.knockY = undefined; // come to rest
+          }
+        }
         if (ped.deadT > 12 || d2p > 190 * 190) removePed(ped);
         continue;
       }
       if (!ped.isCop && !ped.jobPed && d2p > 180 * 180) { removePed(ped); continue; }
-      if (ped.isCop) continue; // driven by police.js
+      if (ped.isCop) {
+        // movement is driven by police.js, but officers are still flesh and blood:
+        // a car at speed runs them down like anyone else
+        for (var cc = 0; cc < world.cars.length; cc++) {
+          var ccar = world.cars[cc];
+          if (Math.abs(ccar.speed) < 4) continue;
+          if (U.dist2(ped.pos.x, ped.pos.z, ccar.pos.x, ccar.pos.z) < 5.2) {
+            kill(ped, 'car', ccar === P.car && P.inCar);
+            GAME.audio.crash(0.4);
+            break;
+          }
+        }
+        continue;
+      }
 
-      // dive away from fast cars
+      // dive away from fast cars — but not every time. People need a moment to
+      // react, some are slower to notice than others, and once a bonnet is on
+      // top of them it's simply too late.
       if (ped.state !== 'dive') {
+        var threat = false;
         for (var c = 0; c < world.cars.length; c++) {
           var car = world.cars[c];
           var sp = Math.abs(car.speed);
           if (sp < 8) continue;
           var dx = ped.pos.x - car.pos.x, dz = ped.pos.z - car.pos.z;
           var d2 = dx * dx + dz * dz;
-          if (d2 > 140) continue;
+          if (d2 > 130) continue;
           var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
           var ahead = dx * fx + dz * fz;
-          if (ahead > 0 && ahead < 12 && Math.abs(dx * fz - dz * fx) < 3) {
-            ped.state = 'dive';
-            ped.diveT = 0.9;
-            var side = (dx * fz - dz * fx) > 0 ? 1 : -1;
-            ped.diveX = (fz * side) * 5; ped.diveZ = (-fx * side) * 5;
-            GAME.audio.yelp();
-            break;
-          }
+          if (ahead <= 0 || ahead > 10 || Math.abs(dx * fz - dz * fx) > 3) continue;
+          threat = true;
+          // reaction time: they have to have seen it coming for a beat
+          ped.reactT = (ped.reactT || 0) + dt;
+          if (ped.reactT < ped.reactDelay) break;
+          if (ahead < 5.5) break;             // too close — no time left
+          if (ped.dodgeSkill < 0.35) break;   // this one just freezes
+          ped.state = 'dive';
+          ped.diveT = ped.diveDur = 0.85;
+          var side = (dx * fz - dz * fx) > 0 ? 1 : -1;
+          ped.diveX = (fz * side) * 6.2; ped.diveZ = (-fx * side) * 6.2;
+          ped.speed = 0;
+          GAME.audio.yelp();
+          break;
         }
+        if (!threat) ped.reactT = 0;
       }
 
       if (ped.state === 'walk') {
@@ -199,11 +243,25 @@ GAME.peds = (function () {
         ped.speed = U.damp(ped.speed, 4.6, 4, dt);
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
       } else if (ped.state === 'dive') {
+        // a real dive: they leave their feet, arc through the air and land —
+        // rather than sliding sideways with the walk cycle still playing
         ped.diveT -= dt;
-        ped.pos.x += ped.diveX * dt; ped.pos.z += ped.diveZ * dt;
-        ped.mesh.rotation.x = U.lerp(ped.mesh.rotation.x, -1.2, dt * 8);
+        var dk = U.clamp(1 - ped.diveT / (ped.diveDur || 0.85), 0, 1);
+        var slow = 1 - dk * 0.7;                       // bleed off speed on the way down
+        ped.pos.x += ped.diveX * slow * dt;
+        ped.pos.z += ped.diveZ * slow * dt;
+        ped.diveY = Math.sin(dk * Math.PI) * 0.7;      // hop off the ground
+        // throw themselves in the direction they're going
+        ped.heading = U.angleLerp(ped.heading, Math.atan2(ped.diveX, ped.diveZ), Math.min(1, dt * 12));
+        ped.mesh.rotation.y = ped.heading;
+        ped.mesh.rotation.x = U.lerp(ped.mesh.rotation.x, -1.35, Math.min(1, dt * 12));
+        var dj = ped.mesh.userData.joints;
+        dj.armL.rotation.x = -2.45; dj.armR.rotation.x = -2.45;
+        dj.legL.rotation.x = 0.4; dj.legR.rotation.x = 0.18;
         if (ped.diveT <= 0) {
           ped.mesh.rotation.x = 0;
+          ped.diveY = 0;
+          dj.armL.rotation.x = dj.armR.rotation.x = 0;
           ped.state = 'flee';
           ped.fleeT = 5;
           ped.fleeX = ped.pos.x - Math.sin(ped.heading); ped.fleeZ = ped.pos.z - Math.cos(ped.heading);
@@ -219,17 +277,24 @@ GAME.peds = (function () {
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
       if (GAME.city.isInWater(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
       if (!ped.jobPed && GAME.city.inAirport(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
-      ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z);
-      animateWalk(ped, dt);
+      ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z) + (ped.diveY || 0);
+      // the dive drives its own pose; the walk cycle would just make it slide
+      if (ped.state !== 'dive') animateWalk(ped, dt);
 
       // run over check
       for (var c2 = 0; c2 < world.cars.length; c2++) {
         var car2 = world.cars[c2];
         var sp2 = Math.abs(car2.speed);
         if (sp2 < 4) continue;
-        if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 2.6) {
+        if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 5.2) {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
+          // thrown along the bonnet rather than dropping on the spot
+          var kf = Math.min(1, sp2 / 26);
+          ped.knockX = Math.sin(car2.heading) * (4 + sp2 * 0.35);
+          ped.knockZ = Math.cos(car2.heading) * (4 + sp2 * 0.35);
+          ped.knockY = 2.2 + kf * 3.2;
+          ped.knockSpin = (Math.random() < 0.5 ? -1 : 1) * (4 + kf * 7);
           if (byPlayer) GAME.police.reportCrime('hit_ped', ped.pos);
           GAME.audio.crash(0.4);
           break;

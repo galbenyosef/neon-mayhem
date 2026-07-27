@@ -1,8 +1,8 @@
 GAME.police = (function () {
-  var heat = 0, lastSeen = 0, pinTimer = 0, grabTimer = 0;
+  var heat = 0, lastSeen = 0, pinTimer = 0, grabTimer = 0, lastCrime = -99;
   var crimeCooldown = {};
   var roadblockT = 0, spikes = [];
-  var THRESH = [0, 60, 140, 240, 340, 440];
+  var THRESH = [0, 50, 120, 210, 320, 440];
   var CAR_CAP = [0, 1, 2, 3, 4, 6];
 
   function stars() {
@@ -11,9 +11,11 @@ GAME.police = (function () {
     return s;
   }
 
-  var CRIME_HEAT = { hit_ped: 16, kill_ped: 55, jack: 62, shoot_car: 14, hit_car: 3, kill_cop: 130, steal_police: 70 };
+  var CRIME_HEAT = { hit_ped: 20, kill_ped: 70, jack: 58, shoot_car: 18, hit_car: 5, kill_cop: 170, steal_police: 75, hit_cop_car: 26 };
   // crimes that always draw heat even unwitnessed (attacking the law, loud gunfire)
   var ALWAYS = { kill_cop: 1, steal_police: 1 };
+  // deaths count per victim — mowing down a crowd shouldn't dedupe to one crime
+  var PER_VICTIM = { kill_ped: 1, kill_cop: 1 };
 
   // a crime only raises the alarm if a cop (any range, LOS) or a civilian
   // (close, LOS) actually sees it — bumping a fender in an empty street is free
@@ -31,11 +33,14 @@ GAME.police = (function () {
 
   function reportCrime(type, pos) {
     var now = GAME.time;
-    if (crimeCooldown[type] && now - crimeCooldown[type] < 1.2) return;
+    if (!PER_VICTIM[type] && crimeCooldown[type] && now - crimeCooldown[type] < 1.2) return;
     if (!ALWAYS[type] && !witnessed(pos)) return; // nobody saw it
     crimeCooldown[type] = now;
+    lastCrime = now;
     var before = stars();
-    heat = Math.min(560, heat + (CRIME_HEAT[type] || 20));
+    // offending while already wanted escalates faster — the response ramps up
+    var gain = (CRIME_HEAT[type] || 20) * (1 + before * 0.22);
+    heat = Math.min(560, heat + gain);
     if (type === 'kill_cop') heat = Math.max(heat, THRESH[Math.min(5, before + 2)]);
     if (type === 'steal_police') heat = Math.max(heat, THRESH[1] + 5);
     lastSeen = 0;
@@ -54,8 +59,9 @@ GAME.police = (function () {
     }
     if (!heard) return;
     crimeCooldown.gunfire = now;
+    lastCrime = now;
     var before = stars();
-    heat = Math.max(heat + 10, THRESH[1] + 5);
+    heat = Math.max(heat + 14 * (1 + before * 0.22), THRESH[1] + 5);
     heat = Math.min(560, heat);
     lastSeen = 0;
     if (stars() > before) GAME.hud.wantedChanged(stars());
@@ -64,6 +70,8 @@ GAME.police = (function () {
   function setWanted(n) {
     n = U.clamp(Math.floor(n), 0, 5);
     heat = n === 0 ? 0 : THRESH[n] + 25;
+    // treat it like a fresh offence so the level doesn't bleed away instantly
+    if (n > 0) lastCrime = GAME.time;
     GAME.hud.wantedChanged(n);
     if (n === 0) clearCops();
   }
@@ -87,7 +95,7 @@ GAME.police = (function () {
   }
 
   function clearSpikes() {
-    for (var i = 0; i < spikes.length; i++) GAME.scene.remove(spikes[i].mesh);
+    for (var i = 0; i < spikes.length; i++) { GAME.scene.remove(spikes[i].mesh); disposeTree(spikes[i].mesh); }
     spikes = [];
   }
 
@@ -148,13 +156,17 @@ GAME.police = (function () {
 
   function chaseControls(car, dt, s) {
     var P = GAME.player;
-    var tx = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var tz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    if (P.inCar && P.car) {
-      tx += (P.car.vx || 0) * 0.45;
-      tz += (P.car.vz || 0) * 0.45;
-    }
-    var dx = tx - car.pos.x, dz = tz - car.pos.z;
+    var pxr = P.inCar && P.car ? P.car.pos.x : P.pos.x;
+    var pzr = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    // a modest lead on a moving target — enough to cut a corner, not clairvoyant
+    var aimX = pxr + (P.inCar && P.car ? (P.car.vx || 0) * 0.3 : 0);
+    var aimZ = pzr + (P.inCar && P.car ? (P.car.vz || 0) * 0.3 : 0);
+    // reaction lag: pursue a smoothed estimate of the target, so cruisers don't
+    // mirror sharp turns the instant you make them
+    if (car.aiTX === undefined) { car.aiTX = aimX; car.aiTZ = aimZ; }
+    car.aiTX = U.damp(car.aiTX, aimX, 4.5, dt);
+    car.aiTZ = U.damp(car.aiTZ, aimZ, 4.5, dt);
+    var dx = car.aiTX - car.pos.x, dz = car.aiTZ - car.pos.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
     var targetH = Math.atan2(dx, dz);
     var dh = U.wrapPI(targetH - car.heading);
@@ -167,18 +179,24 @@ GAME.police = (function () {
       return { throttle: -1, steer: dh > 0 ? -1 : 1, handbrake: false };
     }
 
-    var steer = U.clamp(dh * 2.4, -1, 1);
-    var throttle = 1;
+    // gentler steering, eased frame-to-frame (no instant snap to your heading)
+    var rawSteer = U.clamp(dh * 1.5, -1, 1);
+    car.aiSteer = U.lerp(car.aiSteer || 0, rawSteer, Math.min(1, dt * 5));
+    var steer = car.aiSteer;
+
     // pull up and stop near an on-foot target so officers can get out
     if (!P.inCar && dist < 22) return { throttle: car.speed > 2 ? -0.7 : 0, steer: steer, handbrake: dist < 12 };
-    if (s === 1) {
-      // tail from a distance
-      throttle = dist > 18 ? 0.8 : (dist > 10 ? 0.25 : -0.4);
-    } else {
-      if (dist < 7 && Math.abs(dh) > 1.6) throttle = -0.5;
-      else if (dist < 5) throttle = 0.4;
-    }
-    if (Math.abs(dh) > 2.2 && car.speed > 4) { throttle = -0.3; }
+
+    // keep a pursuit gap rather than gluing to the bumper
+    var gap = s === 1 ? 22 : 9;
+    var throttle;
+    if (dist > gap + 6) throttle = 1;
+    else if (dist > gap) throttle = 0.55;
+    else if (dist > gap - 4) throttle = 0.1;
+    else throttle = -0.35; // too close — ease back
+    // can't corner flat out: lift or brake for hard turns at speed
+    if (Math.abs(dh) > 0.7 && car.speed > 16) throttle = Math.min(throttle, -0.2);
+    else if (Math.abs(dh) > 0.4 && car.speed > 24) throttle = Math.min(throttle, 0.2);
     return { throttle: throttle, steer: steer, handbrake: false };
   }
 
@@ -196,7 +214,7 @@ GAME.police = (function () {
     car.controls = chaseControls(car, dt, s);
 
     // occupant fires from the car at 2 stars and up
-    if (s >= 2 && !P.godMode) {
+    if (s >= 2 && !GAME.godMode) {
       car.shootT -= dt;
       if (car.shootT <= 0) {
         var px2 = P.inCar && P.car ? P.car.pos.x : P.pos.x;
@@ -234,7 +252,10 @@ GAME.police = (function () {
     var f = GAME.focus();
     var dx = f.x - cop.pos.x, dz = f.z - cop.pos.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
-    if (s === 0 || dist > 120) {
+    // officers on foot give up on a target that's flown out of reach
+    var alt = (P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane))
+      ? P.car.pos.y - GAME.city.groundY(P.car.pos.x, P.car.pos.z) : 0;
+    if (s === 0 || dist > 120 || alt > 26) {
       GAME.peds.removePed(cop);
       return;
     }
@@ -331,17 +352,24 @@ GAME.police = (function () {
       return;
     }
 
+    // high in an aircraft you're out of reach: ground units stop being sent and
+    // stop counting as eyes on you, so the heat can cool
+    var flownOff = false;
+    if (P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane)) {
+      flownOff = P.car.pos.y > GAME.city.groundY(P.car.pos.x, P.car.pos.z) + 26;
+    }
+
     // pursuit cars
     var active = copCars();
     var chasing = active.filter(function (c) { return c.ai.mode === 'chase'; });
-    if (chasing.length < CAR_CAP[s] && GAME.frame % 45 === 0) spawnCruiser();
+    if (!flownOff && chasing.length < CAR_CAP[s] && GAME.frame % 45 === 0) spawnCruiser();
     var pf = GAME.focus();
     for (var a = 0; a < active.length; a++) {
       updateCopCar(active[a], dt, s);
       if (U.dist2(active[a].pos.x, active[a].pos.z, pf.x, pf.z) > 260 * 260) GAME.vehicles.removeCar(active[a]);
     }
 
-    maintainFootCops(s, dt);
+    if (!flownOff) maintainFootCops(s, dt);
 
     // foot cops
     var peds = GAME.world.peds.slice();
@@ -381,11 +409,12 @@ GAME.police = (function () {
     var seen = false;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    if (flownOff) active = []; // nothing on the ground can hold eyes on you up there
     for (var v = 0; v < active.length; v++) {
       if (U.dist2(active[v].pos.x, active[v].pos.z, px, pz) < 70 * 70 &&
         GAME.city.hash.segmentClear(active[v].pos.x, active[v].pos.z, px, pz)) { seen = true; break; }
     }
-    if (!seen) {
+    if (!seen && !flownOff) {
       for (var fc = 0; fc < peds.length; fc++) {
         var pd = peds[fc];
         if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60) { seen = true; break; }
@@ -394,12 +423,24 @@ GAME.police = (function () {
     if (seen) lastSeen = 0;
     else {
       lastSeen += dt;
-      if (lastSeen > 30) {
+      if (lastSeen > 16) {
         var cur = stars();
         heat = cur > 1 ? THRESH[cur - 1] + 20 : 0;
-        lastSeen = 18; // next star drops sooner once hidden
+        lastSeen = 8; // next star drops sooner once hidden
         GAME.hud.wantedChanged(stars());
         if (stars() === 0) clearCops();
+      }
+    }
+
+    // interest fades if you stop offending — otherwise a tail that keeps you in
+    // sight means the heat never cools and a 1-star pursuit runs forever
+    if (GAME.time - lastCrime > 8) {
+      var before2 = stars();
+      heat = Math.max(0, heat - dt * (seen ? 4.5 : 14));
+      var after2 = stars();
+      if (after2 < before2) {
+        GAME.hud.wantedChanged(after2);
+        if (after2 === 0) clearCops();
       }
     }
 

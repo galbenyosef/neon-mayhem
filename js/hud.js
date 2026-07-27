@@ -14,7 +14,7 @@ GAME.hud = (function () {
 
   function init() {
     ['minimap', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
-      'msg-line', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
+      'msg-line', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
       'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
       .forEach(function (id) { el[id] = $(id); });
@@ -52,7 +52,8 @@ GAME.hud = (function () {
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
     pauseBtn('pause-mute', function () { var m = GAME.audio.toggleMute(); $('pause-mute').textContent = m ? '🔇 MUTED' : '🔊 SOUND'; });
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
-    pauseBtn('pause-day', function () { var d = GAME.setDaytime(); $('pause-day').textContent = d ? '🌙 NIGHT' : '☀ DAY'; });
+    pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
+    api.refreshTimeBtn(GAME.timeMode);
     pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
     pauseBtn('pause-exit', function () { location.reload(); });
     // death screens: tap to skip the wait
@@ -66,6 +67,7 @@ GAME.hud = (function () {
     ['click', 'touchend'].forEach(function (ev) {
       fsb.addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); GAME.toggleFullscreen(); });
     });
+    api.refreshFsBtn();
 
     el['bigmap'].addEventListener('click', onMapClick);
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
@@ -211,9 +213,9 @@ GAME.hud = (function () {
     ctlMode = mode;
     var txt = {
       car: '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide',
-      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
+      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
       heli: '<b>Space</b> up · <b>Shift</b> down · <b>W/S</b> forward · <b>A/D</b> yaw · <b>F</b> exit / bail out · <b>P</b> map',
-      plane: '<b>W/S</b> throttle · <b>Space</b> climb · <b>Shift</b> dive · <b>A/D</b> turn · <b>F</b> exit / bail out',
+      plane: '<b>W/S</b> throttle · <b>Space</b> climb · <b>Shift</b> dive · <b>A/D</b> turn · <b>Q/E</b> barrel roll · <b>F</b> bail out',
       chute: '<b>WASD</b> steer your descent · glide down to land'
     };
     el['controls-bar'].innerHTML = txt[mode];
@@ -356,7 +358,9 @@ GAME.hud = (function () {
     landmark(GAME.city.helipad.x, GAME.city.helipad.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
-      if (cars[c].isPolice && !cars[c].dead && cars[c].ai) blip(cars[c].pos.x, cars[c].pos.z, '#5aa0ff', 3);
+      var pc = cars[c];
+      // only actively-pursuing cruisers show as blips (not idle/parked ones)
+      if (pc.isPolice && !pc.dead && pc.ai && (pc.ai.mode === 'chase' || pc.ai.mode === 'roadblock')) blip(pc.pos.x, pc.pos.z, '#5aa0ff', 3);
     }
     var peds = GAME.world.peds;
     for (var pd = 0; pd < peds.length; pd++) {
@@ -383,7 +387,7 @@ GAME.hud = (function () {
     if (!mapBuffer) return;
     GAME.nav.update(dt);
     if (GAME.frame % 3 === 0) drawMinimap();
-    if (GAME.frame % 10 === 0) refreshControlsBar();
+    if (GAME.frame % 10 === 0) { refreshControlsBar(); api.refreshFsBtn(); }
     // cash tick-up
     if (shownCash !== targetCash) {
       var diff = targetCash - shownCash;
@@ -401,7 +405,8 @@ GAME.hud = (function () {
     zoneT -= dt;
     if (zoneT <= 0) {
       zoneT = 2;
-      var zn = GAME.city.districtName(P.pos.x, P.pos.z);
+      var zf = GAME.focus();
+      var zn = GAME.city.districtName(zf.x, zf.z);
       if (zn !== lastZone) {
         lastZone = zn;
         el['zone-popup'].textContent = zn;
@@ -421,6 +426,8 @@ GAME.hud = (function () {
       el['map-screen'].style.display = open ? 'flex' : 'none';
       // the sim loop halts while the map is open; silence the engine drone
       if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
+      else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
+      api.refreshFsBtn();
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },
@@ -438,6 +445,7 @@ GAME.hud = (function () {
       for (var i = 0; i < 5; i++) spans[i].className = i < n ? 'lit' : '';
     },
     setWeapon: function (name, ammo) {
+      if (!el['weapon-line']) return; // may fire before the HUD is wired up
       el['weapon-line'].textContent = name + (ammo === '' ? '' : '  ·  ' + ammo);
     },
     message: function (text, dur) {
@@ -468,10 +476,34 @@ GAME.hud = (function () {
       el['mission-timer'].style.color = countdown && s < 12 ? '#ff5d7a' : '#8dffd8';
     },
     missionEnd: function () { el['mission-hud'].style.display = 'none'; },
+    // the corner fullscreen control. On desktop it's always there; on touch the
+    // in-game chrome stays minimal, so it shows on the title / pause / map menus
+    // (where the thumb buttons are hidden) rather than over the action cluster.
+    refreshFsBtn: function () {
+      var e = $('fs-btn');
+      if (!e) return;
+      var onMenu = !GAME.started || GAME.paused || GAME.mapOpen || GAME.player.state !== 'alive';
+      e.style.display = (!GAME.isTouch || onMenu) ? 'flex' : 'none';
+    },
+    // AUTO runs the day/night cycle; DAY / NIGHT pin it
+    refreshTimeBtn: function (mode) {
+      var e = $('pause-day');
+      if (!e) return;
+      e.textContent = mode === 'day' ? '☀ TIME: DAY' : mode === 'night' ? '🌙 TIME: NIGHT' : '🕓 TIME: AUTO';
+    },
+    // names the POI you're near ('' hides it)
+    setPoiHint: function (text) {
+      var e = el['poi-hint'];
+      if (!e) return;
+      if (text) { if (e.textContent !== text) e.textContent = text; e.style.opacity = 1; }
+      else e.style.opacity = 0;
+    },
     showBig: function (kind, sub) {
       var scr = el[kind + '-screen'];
       scr.style.display = 'flex';
       scr.querySelector('.big-sub').textContent = sub || '';
+      var hint = scr.querySelector('.big-hint');
+      if (hint) hint.textContent = GAME.isTouch ? 'TAP TO CONTINUE' : 'PRESS R TO CONTINUE';
     },
     hideBig: function () {
       el['wasted-screen'].style.display = 'none';
@@ -488,8 +520,17 @@ GAME.hud = (function () {
     hideTitle: function () {
       el['title-screen'].style.display = 'none';
       document.getElementById('hud').style.display = 'block';
+      api.refreshFsBtn();
     },
-    setPaused: function (p) { el['pause-screen'].style.display = p ? 'flex' : 'none'; },
+    setPaused: function (p) {
+      el['pause-screen'].style.display = p ? 'flex' : 'none';
+      var sj = $('pause-stunts');
+      if (sj && GAME.stunts) {
+        sj.textContent = 'STUNT JUMPS  ' + GAME.stunts.found + ' / ' + GAME.stunts.total +
+          (GAME.stunts.complete ? '   ·   ALL FOUND' : '');
+      }
+      api.refreshFsBtn();
+    },
     toggleCRT: function () {
       var on = el['crt-layer'].style.display !== 'block';
       el['crt-layer'].style.display = on ? 'block' : 'none';
@@ -531,7 +572,11 @@ GAME.nav = (function () {
     var P = GAME.player;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    path = roadPath(px, pz, dest.x, dest.z);
+    // route to the road nearest the destination, then a short hop off the road,
+    // so the drawn line stays on the streets instead of cutting through blocks
+    var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
+    path = roadPath(px, pz, rp.x, rp.z);
+    path.push({ x: rp.x, z: rp.z });
   }
 
   return {

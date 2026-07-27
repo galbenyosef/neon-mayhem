@@ -26,13 +26,21 @@
     scene.add(moon);
     var warm = new THREE.AmbientLight(0x40203a, 0.7);
     scene.add(warm);
-    GAME.lights = { hemi: hemi, dir: moon, ambient: warm };
+    // headlights: one spot that follows whatever the player is driving, lit
+    // only after dark. A single light keeps this cheap on mobile.
+    var head = new THREE.SpotLight(0xfff0c8, 0, 95, 0.70, 0.42, 1.0);
+    head.position.set(0, 1.2, 0);
+    head.target.position.set(0, 0, 1);
+    scene.add(head);
+    scene.add(head.target);
+    GAME.lights = { hemi: hemi, dir: moon, ambient: warm, head: head };
 
     GAME.city.build(scene);
     GAME.fx.init(scene);
     GAME.initPlayer();
     GAME.combat.initPickups();
     GAME.missions.init();
+    GAME.stunts.load();
     GAME.hud.init();
     GAME.initInput(canvas);
     GAME.combat.refreshWeaponHud();
@@ -62,7 +70,7 @@
       if (code === 'KeyN') GAME.setDaytime();
     };
 
-    // start at dusk so the title/attract screen glows like ~5PM
+    // start on a bright late afternoon (the cycle then rolls toward sunset/night)
     GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
 
     lastT = performance.now();
@@ -108,18 +116,35 @@
     renderer.setClearColor(lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT), 1);
   };
 
-  // auto day/night cycle. Start at dusk (~5PM), roll to night ~30s later, then
-  // the sun rises again and it loops. df = 0.5 - 0.5*cos(2*pi*phase).
-  var CYCLE = 140, START_PHASE = 0.78; // phase 0.78 -> df~0.40 dusk; phase 1.0 -> night
+  // auto day/night cycle. Start on a bright, low-sun late afternoon that visibly
+  // slides into sunset, then night, then the sun rises again and it loops.
+  // df = 0.5 - 0.5*cos(2*pi*phase).
+  // phase 0.63 -> df~0.85 sunny afternoon; 0.75 -> sunset; 1.0 -> night.
+  var CYCLE = 150, START_PHASE = 0.63;
   GAME.dayPhase = START_PHASE;
+  // 'auto' runs the cycle; 'day' / 'night' pin the clock where you want it
+  GAME.timeMode = 'auto';
+  var TIME_MODES = ['auto', 'day', 'night'];
+  GAME.setTimeMode = function (mode) {
+    if (TIME_MODES.indexOf(mode) < 0) mode = 'auto';
+    GAME.timeMode = mode;
+    if (mode === 'day') { GAME.dayPhase = 0.5; GAME.applyTimeOfDay(1); }
+    else if (mode === 'night') { GAME.dayPhase = 0.0; GAME.applyTimeOfDay(0); }
+    if (GAME.prefs) { GAME.prefs.timeMode = mode; GAME.save(); }
+    return mode;
+  };
+  GAME.cycleTimeMode = function () {
+    var i = TIME_MODES.indexOf(GAME.timeMode);
+    return GAME.setTimeMode(TIME_MODES[(i + 1) % TIME_MODES.length]);
+  };
+  // kept for the scripted test API
   GAME.setDaytime = function (force) {
-    // manual override (switch is hidden but kept): jump the cycle to day/night
     var day = force !== undefined ? !!force : GAME.timeOfDay < 0.5;
-    GAME.dayPhase = day ? 0.5 : 0.0;
-    GAME.applyTimeOfDay(day ? 1 : 0);
+    GAME.setTimeMode(day ? 'day' : 'night');
     return day;
   };
   GAME.advanceDayCycle = function (dt) {
+    if (GAME.timeMode !== 'auto') return; // clock is pinned
     GAME.dayPhase = (GAME.dayPhase + dt / CYCLE) % 1;
     GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
   };
@@ -136,7 +161,7 @@
     GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
     if (GAME.isTouch) GAME.enterFullscreen(); // same user gesture
-    GAME.dayPhase = 0.78; // reset the clock to dusk; night falls ~30s in
+    GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
   };
@@ -194,13 +219,33 @@
     else GAME.audio.suspend();
   }
   function onShow() {
-    if (!GAME.paused && !GAME.mapOpen) GAME.audio.resume();
+    // resume whenever we're not paused — the map being open must not strand the
+    // audio context suspended (closing the map doesn't itself resume it)
+    if (!GAME.paused) GAME.audio.resume();
   }
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) onHide(); else onShow();
   });
   window.addEventListener('blur', onHide);
   window.addEventListener('focus', onShow);
+
+  // park the headlight on the player's vehicle, aimed down the road ahead.
+  // Intensity follows the clock, so it only lights up as dusk falls.
+  function updateHeadlight() {
+    var L = GAME.lights, P = GAME.player;
+    if (!L || !L.head) return;
+    var h = L.head;
+    var car = P.inCar && P.car ? P.car : null;
+    var night = U.clamp(1 - GAME.timeOfDay * 1.6, 0, 1);
+    if (!car || !night) { h.intensity = 0; return; }
+    h.intensity = night * (car.spec.heli || car.spec.plane ? 2.4 : 3.6);
+    var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+    var nose = car.spec.l * 0.45;
+    h.position.set(car.pos.x + fx * nose, car.pos.y + 0.85, car.pos.z + fz * nose);
+    // aim slightly down so the cone lands on the road rather than the skyline
+    h.target.position.set(car.pos.x + fx * 30, car.pos.y - 1.6, car.pos.z + fz * 30);
+    h.target.updateMatrixWorld();
+  }
 
   GAME.tick = function (dt) {
     GAME.time += dt;
@@ -215,6 +260,7 @@
     GAME.police.update(dt);
     GAME.missions.update(dt);
     GAME.fx.update(dt);
+    updateHeadlight();
     GAME.touch.update();
     GAME.hud.update(dt);
   };

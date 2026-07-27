@@ -35,6 +35,19 @@ var U = {
   pick: function (rng, arr) { return arr[Math.floor(rng() * arr.length) % arr.length]; }
 };
 
+// free a mesh/group's GPU resources before dropping it from the scene, so the
+// spawn bubble doesn't leak geometries/materials for the whole session
+function disposeTree(root) {
+  if (!root) return;
+  root.traverse(function (o) {
+    if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+    if (o.material) {
+      if (Array.isArray(o.material)) o.material.forEach(function (m) { m && m.dispose && m.dispose(); });
+      else if (o.material.dispose) o.material.dispose();
+    }
+  });
+}
+
 // Batches transformed boxes/quads into one BufferGeometry (vertex colors + tiled uvs).
 function GeoBatch() {
   this.pos = []; this.nrm = []; this.col = []; this.uv = [];
@@ -53,7 +66,8 @@ GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvSca
     [[-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz], [0, 0, 1], sx, sy],
     [[hx, -hy, -hz], [-hx, -hy, -hz], [-hx, hy, -hz], [hx, hy, -hz], [0, 0, -1], sx, sy]
   ];
-  var uoff = Math.floor(Math.random() * 8);
+  // deterministic per-position UV offset so the city is identical every visit
+  var uoff = Math.floor(Math.abs(Math.sin(cx * 12.9898 + cy * 4.1414 + cz * 78.233) * 43758.5453) % 1 * 8);
   for (var f = 0; f < 6; f++) {
     var F = faces[f], n = F[4];
     var nx = n[0] * c + n[2] * s, nz = -n[0] * s + n[2] * c;
