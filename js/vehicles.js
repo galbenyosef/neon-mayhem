@@ -356,11 +356,13 @@ GAME.vehicles = (function () {
   function stepPhysics(car, dt) {
     var c = car.controls, spec = car.spec;
     var surf = surfaceGrip(car);
-    // booster strips slam the throttle open: 3x the cap and the acceleration
-    // for a moment, so you leave the lip far faster than you arrived
+    // booster strips slam the throttle open for a moment, so you leave the lip
+    // far faster than you arrived. A bike is already the quickest thing on the
+    // road and takes a smaller multiplier — giving it the same 3x a car gets
+    // would fire it off the ramp at half again everything else.
     car.boostT = Math.max(0, (car.boostT || 0) - dt);
     car.hitCd = Math.max(0, (car.hitCd || 0) - dt);
-    var boost = car.boostT > 0 ? 3 : 1;
+    var boost = car.boostT > 0 ? (spec.bike ? 2 : 3) : 1;
     var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
     var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1);
     if (car.stage >= 2) { maxSp *= 0.6; accel *= 0.5; }

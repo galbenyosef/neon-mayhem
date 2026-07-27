@@ -776,6 +776,11 @@ GAME.missions = (function () {
         return;
       }
       var px = P.inCar ? P.car.pos.x : P.pos.x, pz = P.inCar ? P.car.pos.z : P.pos.z;
+      var py = P.inCar ? P.car.pos.y : P.pos.y;
+      // Everything below is a street-level prompt and every test for it looks
+      // only at the ground plane, so flying over a marker reads as standing on
+      // it. Set down first — a landed aircraft is close enough to count.
+      if (py - GAME.city.groundY(px, pz) > 4) { GAME.hud.setPoiHint(''); return; }
       var hint = null;
       for (var m = 0; m < markers.length; m++) {
         var d = markers[m].def;
