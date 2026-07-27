@@ -327,10 +327,11 @@ GAME.city = (function () {
       if (minX < R[i] + m && maxX > R[i] - m) return true;
       if (minZ < R[i] + m && maxZ > R[i] - m) return true;
     }
-    // keep the curved boulevards and the flyover corridor clear too
+    // keep the curved boulevards and the flyover corridor clear too. The extra
+    // 5 covers the podium skirt downtown blocks add around their footprint.
+    if (city.boxOnCurve && city.boxOnCurve(minX, maxX, minZ, maxZ, 5)) return true;
     var cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
     var pad = Math.max(maxX - minX, maxZ - minZ) / 2 + 2;
-    if (city.onCurve && city.onCurve(cx, cz, pad)) return true;
     var F = city.flyover;
     if (F && cx > F.minX - pad && cx < F.maxX + pad && Math.abs(cz - F.z) < F.half + pad) return true;
     return false;
@@ -974,7 +975,9 @@ GAME.city = (function () {
     function offRoad(x, z) {
       for (var i = 0; i < R.length; i++) if (Math.abs(x - R[i]) < 12 || Math.abs(z - R[i]) < 12) return false;
       // and clear of the curved boulevards / the flyover corridor
-      if (city.onCurve(x, z, 14)) return false;
+      // pad covers the whole ramp, not just its centre — the solid back face
+      // sits up to half a ramp-length away
+      if (city.onCurve(x, z, 32)) return false;
       var F = city.flyover;
       if (F && x > F.minX - 16 && x < F.maxX + 16 && Math.abs(z - F.z) < F.half + 16) return false;
       return true;
@@ -1038,6 +1041,23 @@ GAME.city = (function () {
     return out;
   }
 
+  // true when a footprint overlaps a boulevard's tarmac. Measures the real
+  // point-to-box distance, so a building can't straddle the road with its body
+  // just because its centre sits clear of it.
+  city.boxOnCurve = function (minX, maxX, minZ, maxZ, extra) {
+    var ex = extra || 0;
+    for (var c = 0; c < city.curves.length; c++) {
+      var cv = city.curves[c], hw = cv.half + ex;
+      if (maxX < cv.minX - hw || minX > cv.maxX + hw || maxZ < cv.minZ - hw || minZ > cv.maxZ + hw) continue;
+      var pts = cv.pts;
+      for (var i = 0; i < pts.length; i++) {
+        var qx = U.clamp(pts[i][0], minX, maxX), qz = U.clamp(pts[i][1], minZ, maxZ);
+        if (U.dist2(pts[i][0], pts[i][1], qx, qz) < hw * hw) return true;
+      }
+    }
+    return false;
+  };
+
   // true when (x,z) is on the tarmac of a curved boulevard
   city.onCurve = function (x, z, pad) {
     pad = pad || 0;
@@ -1067,9 +1087,12 @@ GAME.city = (function () {
   // paths only — must run before anything is placed, so buildings and ramps
   // can be kept off the new roads
   function defineCurvesAndFlyover() {
-    var COAST = [[338, -470], [346, -300], [352, -140], [346, 20], [338, 180], [344, 330], [338, 470]];
-    var DIAG = [[-430, -430], [-300, -320], [-170, -190], [-40, -60], [90, 70], [220, 200], [330, 320]];
-    var LOOP = [[-430, 250], [-330, 330], [-190, 360], [-60, 320], [20, 240]];
+    // Each of these threads block interiors (lanes sit every 100 from -450, so
+    // the buildable middle of a block is lane+50) and only meets the grid at a
+    // crossing, rather than lying on top of a lane the whole way.
+    var COAST = [[300, -460], [292, -300], [304, -150], [296, 10], [306, 170], [294, 330], [302, 460]];
+    var DIAG = [[-400, -420], [-300, -335], [-205, -255], [-95, -190], [15, -85], [125, 45], [225, 165], [300, 275]];
+    var LOOP = [[-400, 200], [-330, 292], [-200, 306], [-90, 294], [-4, 200]];
     [[COAST, 9], [DIAG, 8], [LOOP, 8]].forEach(function (spec) {
       var pts = samplePath(spec[0], 14);
       var minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
@@ -1098,7 +1121,7 @@ GAME.city = (function () {
     }
 
     // a coastal sweep, a diagonal avenue and a harbour loop
-    city.curves.forEach(function (cv) { ribbon(cv.pts, cv.half, 0x141220, 0.05, 0xb8a24a); });
+    city.curves.forEach(function (cv) { ribbon(cv.pts, cv.half, 0x141220, 0.022, 0xb8a24a); });
 
     // the flyover: an elevated straight with a gentle ramp at each end
     var F = city.flyover;
