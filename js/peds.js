@@ -4,6 +4,10 @@ GAME.resolveCircle = function (x, z, r, feetY) {
     var b = boxes[i];
     // if the entity is standing on top of this box (a rooftop), don't shove it off
     if (feetY !== undefined && b.h !== undefined && b.h <= feetY + 0.2) continue;
+    // a parapet stops traffic, not people — you can step up and jump off it
+    if (b.tag === 'parapet') continue;
+    // walking underneath a raised solid, not into it
+    if (feetY !== undefined && b.y0 !== undefined && b.y0 > feetY + 1.9) continue;
     var cx = U.clamp(x, b.minX, b.maxX), cz = U.clamp(z, b.minZ, b.maxZ);
     var dx = x - cx, dz = z - cz;
     var d2 = dx * dx + dz * dz;
@@ -286,6 +290,7 @@ GAME.peds = (function () {
         var car2 = world.cars[c2];
         var sp2 = Math.abs(car2.speed);
         if (sp2 < 4) continue;
+        if (Math.abs(car2.pos.y - ped.pos.y) > 3) continue;   // it's up on the flyover
         if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 5.2) {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
