@@ -68,6 +68,9 @@ GAME.hud = (function () {
       fsb.addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); GAME.toggleFullscreen(); });
     });
     api.refreshFsBtn();
+    ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+      document.addEventListener(ev, function () { api.refreshFsBtn(); });
+    });
 
     el['bigmap'].addEventListener('click', onMapClick);
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
@@ -476,14 +479,13 @@ GAME.hud = (function () {
       el['mission-timer'].style.color = countdown && s < 12 ? '#ff5d7a' : '#8dffd8';
     },
     missionEnd: function () { el['mission-hud'].style.display = 'none'; },
-    // the corner fullscreen control. On desktop it's always there; on touch the
-    // in-game chrome stays minimal, so it shows on the title / pause / map menus
-    // (where the thumb buttons are hidden) rather than over the action cluster.
+    // the corner fullscreen control — available everywhere (menus, portrait
+    // overlay and in-game) and hidden only once you're actually fullscreen.
     refreshFsBtn: function () {
       var e = $('fs-btn');
       if (!e) return;
-      var onMenu = !GAME.started || GAME.paused || GAME.mapOpen || GAME.isPortrait || GAME.player.state !== 'alive';
-      e.style.display = (!GAME.isTouch || onMenu) ? 'flex' : 'none';
+      // always on hand until you're actually fullscreen, then it's redundant
+      e.style.display = document.fullscreenElement ? 'none' : 'flex';
     },
     // AUTO runs the day/night cycle; DAY / NIGHT pin it
     refreshTimeBtn: function (mode) {
