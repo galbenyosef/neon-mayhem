@@ -482,7 +482,7 @@ GAME.hud = (function () {
     refreshFsBtn: function () {
       var e = $('fs-btn');
       if (!e) return;
-      var onMenu = !GAME.started || GAME.paused || GAME.mapOpen || GAME.player.state !== 'alive';
+      var onMenu = !GAME.started || GAME.paused || GAME.mapOpen || GAME.isPortrait || GAME.player.state !== 'alive';
       e.style.display = (!GAME.isTouch || onMenu) ? 'flex' : 'none';
     },
     // AUTO runs the day/night cycle; DAY / NIGHT pin it

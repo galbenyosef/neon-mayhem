@@ -198,7 +198,10 @@ GAME.touch = (function () {
   function checkOrientation() {
     if (!GAME.isTouch) return;
     var portrait = window.innerHeight > window.innerWidth;
+    GAME.isPortrait = portrait;
     document.getElementById('rotate-hint').style.display = portrait ? 'flex' : 'none';
+    // the rotate overlay is a menu too — you should be able to go fullscreen from it
+    if (GAME.hud && GAME.hud.refreshFsBtn) GAME.hud.refreshFsBtn();
   }
 
   function show(btn, on) { if (btn) btn.style.display = on ? 'flex' : 'none'; }

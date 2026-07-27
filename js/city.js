@@ -62,7 +62,7 @@ GAME.city = (function () {
       var lz = dx * r.sin + dz * r.cos;      // up the ramp
       if (Math.abs(lx) > r.w / 2 || lz < -r.len / 2 || lz > r.len / 2) continue;
       var t = (lz + r.len / 2) / r.len;
-      return { idx: r.idx, y: r.h * t, slope: r.h / r.len, rot: r.rot };
+      return { idx: r.idx, y: r.h * t, slope: r.h / r.len, rot: r.rot, boost: r.boost };
     }
     return null;
   };
@@ -935,6 +935,18 @@ GAME.city = (function () {
       { x: -168, z: -68, rot: Math.PI / 2, h: 4.2, len: 20 }
     ];
     var out = [], TARGET = 25;
+    // ramps come in four sizes so no two jumps feel the same; every third one
+    // gets a booster strip that slams the throttle open as you ride up it
+    var SHAPES = [
+      { w: 10, len: 16, h: 3.2 },   // kicker
+      { w: 11, len: 22, h: 4.4 },   // standard
+      { w: 12, len: 28, h: 5.8 },   // long
+      { w: 13, len: 34, h: 7.4 }    // mega
+    ];
+    function varyRamp(x, z, rot, n) {
+      var sh = SHAPES[n % SHAPES.length];
+      return { x: x, z: z, rot: rot, w: sh.w, len: sh.len, h: sh.h, boost: n % 3 === 2 };
+    }
     function ok(x, z) {
       if (city.isInWater(x, z)) return false;
       if (x < -470 || x > 396 || Math.abs(z) > 476) return false;
@@ -954,7 +966,9 @@ GAME.city = (function () {
       var an = anchors[a];
       // nudge an anchor off the carriageway if it landed on one
       for (var n = 0; n < 8 && !offRoad(an.x, an.z); n++) { an.x += 4; an.z += 4; }
-      if (offRoad(an.x, an.z) && ok(an.x, an.z)) out.push({ x: an.x, z: an.z, rot: an.rot, w: 12, len: an.len, h: an.h });
+      if (offRoad(an.x, an.z) && ok(an.x, an.z)) {
+        out.push({ x: an.x, z: an.z, rot: an.rot, w: 12, len: an.len, h: an.h, boost: a % 3 === 1 });
+      }
     }
     // fill the rest along road verges, alternating orientation
     for (var pass = 0; pass < 4 && out.length < TARGET; pass++) {
@@ -965,13 +979,13 @@ GAME.city = (function () {
           // verge beside a north-south road, launching along it
           var vx = R[i2] + side * 15, vz = d + jitter;
           if (offRoad(vx, vz) && ok(vx, vz)) {
-            out.push({ x: vx, z: vz, rot: side > 0 ? 0 : Math.PI, w: 11, len: 20 + (pass % 3) * 3, h: 4.0 + (pass % 3) * 0.7 });
+            out.push(varyRamp(vx, vz, side > 0 ? 0 : Math.PI, out.length));
             continue;
           }
           // verge beside an east-west road
           var hx = d + jitter, hz = R[i2] + side * 15;
           if (hx < 340 && offRoad(hx, hz) && ok(hx, hz)) {
-            out.push({ x: hx, z: hz, rot: side > 0 ? Math.PI / 2 : -Math.PI / 2, w: 11, len: 20 + (pass % 3) * 3, h: 4.0 + (pass % 3) * 0.7 });
+            out.push(varyRamp(hx, hz, side > 0 ? Math.PI / 2 : -Math.PI / 2, out.length));
           }
         }
       }
@@ -1007,12 +1021,14 @@ GAME.city = (function () {
       // weathered concrete deck with a hazard-striped lip, like a construction
       // ramp left on site — not a neon prop
       var R1 = 0.44, G1 = 0.43, B1 = 0.47;
+      if (s.boost) { R1 = 0.16; G1 = 0.72; B1 = 0.80; }   // booster strip
       var lipT = P(-hw, hl - 2.2, s.h * (1 - 2.2 / s.len)), lipB = P(hw, hl - 2.2, s.h * (1 - 2.2 / s.len));
       tri(a0[0], a0[1], a0[2], b0[0], b0[1], b0[2], lipB[0], lipB[1], lipB[2], R1, G1, B1);
       tri(a0[0], a0[1], a0[2], lipB[0], lipB[1], lipB[2], lipT[0], lipT[1], lipT[2], R1, G1, B1);
       // yellow warning band across the take-off edge
-      tri(lipT[0], lipT[1], lipT[2], lipB[0], lipB[1], lipB[2], b1[0], b1[1], b1[2], 0.85, 0.70, 0.18);
-      tri(lipT[0], lipT[1], lipT[2], b1[0], b1[1], b1[2], a1[0], a1[1], a1[2], 0.85, 0.70, 0.18);
+      var lipR = s.boost ? 0.30 : 0.85, lipG = s.boost ? 1.0 : 0.70, lipB2 = s.boost ? 1.0 : 0.18;
+      tri(lipT[0], lipT[1], lipT[2], lipB[0], lipB[1], lipB[2], b1[0], b1[1], b1[2], lipR, lipG, lipB2);
+      tri(lipT[0], lipT[1], lipT[2], b1[0], b1[1], b1[2], a1[0], a1[1], a1[2], lipR, lipG, lipB2);
       // back face
       tri(a1[0], a1[1], a1[2], b1[0], b1[1], b1[2], b1g[0], b1g[1], b1g[2], 0.20, 0.19, 0.23);
       tri(a1[0], a1[1], a1[2], b1g[0], b1g[1], b1g[2], a1g[0], a1g[1], a1g[2], 0.20, 0.19, 0.23);
@@ -1022,7 +1038,7 @@ GAME.city = (function () {
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({
-        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h,
+        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h, boost: !!s.boost,
         cos: c, sin: sn,
         minX: s.x - rad, maxX: s.x + rad, minZ: s.z - rad, maxZ: s.z + rad
       });

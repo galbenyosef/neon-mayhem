@@ -30,7 +30,9 @@ GAME.stunts = (function () {
     var bonus = 250 + n * 50;
     GAME.addCash(bonus);
     GAME.audio.sting('win');
-    GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus, 4);
+    var left = total - n;
+    GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
+      (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
     if (n >= total && !rewarded) grantReward();
     save();
     return bonus;

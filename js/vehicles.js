@@ -356,8 +356,12 @@ GAME.vehicles = (function () {
   function stepPhysics(car, dt) {
     var c = car.controls, spec = car.spec;
     var surf = surfaceGrip(car);
-    var maxSp = spec.maxSpeed * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
-    var accel = spec.accel * (surf < 1 ? 0.6 : 1);
+    // booster strips slam the throttle open: 3x the cap and the acceleration
+    // for a moment, so you leave the lip far faster than you arrived
+    car.boostT = Math.max(0, (car.boostT || 0) - dt);
+    var boost = car.boostT > 0 ? 3 : 1;
+    var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
+    var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1);
     if (car.stage >= 2) { maxSp *= 0.6; accel *= 0.5; }
 
     if (c.throttle > 0) car.speed += accel * c.throttle * dt;
@@ -406,6 +410,14 @@ GAME.vehicles = (function () {
       // on a ramp the deck itself drives the climb rate; carry that off the lip
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
       car.onRampIdx = ramp ? ramp.idx : null;
+      if (ramp && ramp.boost) {
+        if (!car.boostT && car === GAME.player.car && GAME.player.inCar) {
+          GAME.audio.pickup();
+          GAME.cameraShake = 0.35;
+        }
+        car.boostT = 1.4;
+        car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
+      }
       if (car.air) landStunt(car, 0);
     }
     car.mesh.rotation.y = car.heading;
