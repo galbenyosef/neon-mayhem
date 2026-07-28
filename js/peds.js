@@ -314,13 +314,20 @@ GAME.peds = (function () {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 60, GAME.settings.bubbleRadius);
       var x = fc.x + Math.cos(a) * r, z = fc.z + Math.sin(a) * r;
-      if (x > 340) x = U.randRange(Math.random, 356, 372); // boardwalk strollers
+      var isla = GAME.isla && GAME.isla.contains(x, z);
+      // the mainland's east edge is the boardwalk; over on the island the
+      // pavement follows whatever curve the road takes
+      if (!isla && x > 340 && x < 700) x = U.randRange(Math.random, 356, 372);
       var rp = GAME.city.nearestRoadPoint(x, z);
       var off = 8.4 * (Math.random() < 0.5 ? 1 : -1);
-      var px = rp.axis === 'z' ? rp.x + off : rp.x;
-      var pz = rp.axis === 'z' ? rp.z : rp.z + off;
-      if (x > 340) { px = x; pz = z; }
-      if (px < -490 || px > 372 || Math.abs(pz) > 490) continue;
+      var px, pz;
+      if (rp.axis === 'net') {
+        px = rp.x + Math.cos(rp.heading) * off;
+        pz = rp.z - Math.sin(rp.heading) * off;
+      } else if (rp.axis === 'z') { px = rp.x + off; pz = rp.z; }
+      else { px = rp.x; pz = rp.z + off; }
+      if (!isla && x > 340 && x < 700) { px = x; pz = z; }
+      if (rp.axis !== 'net' && (px < -490 || px > 372 || Math.abs(pz) > 490)) continue;
       if (GAME.city.isInWater(px, pz)) continue;
       if (GAME.city.inAirport(px, pz)) continue; // no strollers on the runway
       var ped = spawnPed(px, pz);

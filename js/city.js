@@ -19,6 +19,8 @@ GAME.city = (function () {
         { x: -400, z: 18, spawn: { x: -400, z: 40 } }
       ],
       police: { x: -100, z: -122, spawn: { x: -100, z: -134 } },
+      // every landmass gets its own station; stations[] is what the game asks
+      stations: [],
       resprays: [
         { x: 180, z: -80, door: { x: 166, z: -80 } },
         { x: -428, z: -180, door: { x: -442, z: -180 } },
@@ -35,8 +37,14 @@ GAME.city = (function () {
   city.westShore = function (z) { return -512 + 7 * Math.sin(z * 0.009 + 1.5); };
   city.northShore = function (x) { return -512 + 7 * Math.sin(x * 0.011 + 4); };
   city.southShore = function (x) { return 512 + 7 * Math.sin(x * 0.013 + 2); };
+  // the east piers. The z=150 slot belongs to the south bridge now, so the
+  // pier that used to sit there stepped down a block.
+  var PIERS = [[250, 505], [-180, 470]];
   city.isOnPier = function (x, z) {
-    return x > 356 && x < 505 && (Math.abs(z - 150) < 8 || Math.abs(z + 180) < 8);
+    for (var i = 0; i < PIERS.length; i++) {
+      if (x > 356 && x < PIERS[i][1] && Math.abs(z - PIERS[i][0]) < 8) return true;
+    }
+    return false;
   };
 
   // The world is a set of landmasses rather than one. Costa Rosa is the first;
@@ -159,12 +167,28 @@ GAME.city = (function () {
     if (x >= -260 && x <= 60 && z >= -260 && z <= 60) return 'downtown';
     return 'residential';
   };
+  // the station or hospital you would actually be taken to from here
+  city.nearestStation = function (x, z) {
+    var list = city.pois.stations, best = list[0], bd = 1e18;
+    for (var i = 0; i < list.length; i++) {
+      var d = U.dist2(x, z, list[i].x, list[i].z);
+      if (d < bd) { bd = d; best = list[i]; }
+    }
+    return best || city.pois.police;
+  };
   city.districtName = function (x, z) {
+    if (GAME.isla && GAME.isla.contains(x, z)) return GAME.isla.districtName(x, z);
     if (x > 340) return 'Ocean Strip';
     var d = city.districtAt(x, z);
     return d === 'strip' ? 'Ocean Strip' : d === 'harbor' ? 'Puerto Viejo' : d === 'downtown' ? 'Centro Alto' : 'Las Colinas';
   };
   city.nearestRoadPoint = function (x, z) {
+    // each landmass answers for its own roads; asking the mainland grid where
+    // the nearest road is when you are stood on the island puts you in the sea
+    for (var ii = 1; ii < city.islands.length; ii++) {
+      var isl = city.islands[ii];
+      if (isl.nearestRoadPoint && isl.contains(x, z)) return isl.nearestRoadPoint(x, z);
+    }
     var bx = R[0], bz = R[0], dx = 1e9, dz = 1e9;
     for (var i = 0; i < R.length; i++) {
       if (Math.abs(R[i] - x) < dx) { dx = Math.abs(R[i] - x); bx = R[i]; }
@@ -193,10 +217,13 @@ GAME.city = (function () {
   }
 
   function addSolid(cx, cz, sx, sz, h, tag, noLOS) {
-    city.hash.insert({ minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS });
+    var box = { minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS };
+    city.hash.insert(box);
+    return box;
   }
 
-  city.addSolid = function (cx, cz, sx, sz, h, tag, noLOS) { addSolid(cx, cz, sx, sz, h, tag, noLOS); };
+  city.addSolid = function (cx, cz, sx, sz, h, tag, noLOS) { return addSolid(cx, cz, sx, sz, h, tag, noLOS); };
+  city.addSign = function (batch, slotIdx, x, y, z, rotY, w, h, tint) { addSign(batch, slotIdx, x, y, z, rotY, w, h, tint); };
 
   // ---------- canvas textures ----------
   function windowTexture(bg, litColors, cols, rows, litProb, bandColor) {
@@ -262,6 +289,8 @@ GAME.city = (function () {
   }
 
   // ---------- build ----------
+  city.pois.stations.push(city.pois.police);
+
   city.build = function (scene) {
     // second landmass registers first: the ocean mask, the drown test and every
     // spawner ask the water model, and it has to know the full world by then
@@ -321,6 +350,11 @@ GAME.city = (function () {
     function lam(tex) {
       return new THREE.MeshLambertMaterial({ map: tex, emissive: 0xbbbbcc, emissiveMap: tex, vertexColors: true });
     }
+    // the second landmass draws its own meshes but shares the city's window
+    // textures and sign atlas, so the two read as one world
+    city.tex = { downtown: texDowntown, strip: texStrip, generic: texGeneric, harbor: texHarbor };
+    city.signTex = atlas.tex;
+    city.lam = lam;
     function addMesh(batch, mat) {
       var m = new THREE.Mesh(batch.build(), mat);
       m.matrixAutoUpdate = false;
@@ -341,13 +375,13 @@ GAME.city = (function () {
 
     buildInstancedProps(scene);
     buildLandmarks(scene);
-    buildHelipad(scene);
     buildAirport(scene);
-    // last, so its clearance tests can see every structure in the city — the
-    // terminal, the hospitals, the station and the tower all register after the
-    // streets do, and a ramp placed before them can end up inside one
-    buildRamps(scene);
+    // last, so its clearance tests can see every structure in the world — the
+    // terminal, the hospitals, the station, the tower and the bridges all
+    // register after the streets do, and a ramp placed before them can end up
+    // inside one, or square across a bridge deck
     if (GAME.isla) GAME.isla.build(scene);
+    buildRamps(scene);
     buildLaneGraph();
     buildSpots();
   };
@@ -467,13 +501,14 @@ GAME.city = (function () {
 
   function buildPOIs(batches, atlas) {
     var P = city.pois;
-    // hospitals
+    // hospitals (the island builds its own; this is Costa Rosa's)
     P.hospitals.forEach(function (H) {
+      if (H.isla) return;
       batches.generic.addBox(H.x, 9, H.z - 12, 60, 18, 28, 0, 0xd8e8f0, 28);
       addSolid(H.x, H.z - 12, 60, 28, 18);
       addSign(batches.signs, 19, H.x, 14, H.z + 2.3, 0, 30, 5);
     });
-    // police station
+    // police station (Costa Rosa's; the island builds its own)
     batches.generic.addBox(P.police.x, 7, P.police.z + 10, 70, 14, 26, 0, 0x8a94c0, 28);
     addSolid(P.police.x, P.police.z + 10, 70, 26, 14);
     addSign(batches.signs, 20, P.police.x, 11, P.police.z - 3.3, Math.PI, 26, 4.5);
@@ -530,7 +565,7 @@ GAME.city = (function () {
 
     // piers
     var pier = new GeoBatch();
-    [[150, 505], [-180, 470]].forEach(function (p) {
+    PIERS.forEach(function (p) {
       var pz = p[0], endX = p[1];
       pier.addBox((362 + endX) / 2, 0.5, pz, endX - 362, 0.5, 14, 0, 0x7a5a40, 0);
       for (var px = 372; px < endX; px += 12) {
@@ -543,13 +578,15 @@ GAME.city = (function () {
     var pierMesh = new THREE.Mesh(pier.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     pierMesh.matrixAutoUpdate = false;
     scene.add(pierMesh);
-    addSign(batches.signs, 22, 380, 5.5, 143, -Math.PI / 2, 20, 4);
+    addSign(batches.signs, 22, 380, 5.5, 243, -Math.PI / 2, 20, 4);
     addSign(batches.signs, 23, 470, 7, -173, -Math.PI / 2, 14, 3.5);
 
     // ocean surrounds the island
-    var og = new THREE.PlaneGeometry(2600, 2600, 52, 52);
+    // wide enough to reach past the far island; the plane has to hold both
+    // landmasses and the horizon beyond them
+    var og = new THREE.PlaneGeometry(3600, 3000, 72, 60);
     og.rotateX(-Math.PI / 2);
-    og.translate(50, -0.35, 0);
+    og.translate(450, -0.35, 0);
     city.oceanGeo = og;
     city.oceanBase = og.attributes.position.array.slice();
     // the ocean plane spans the whole map, so its inland vertices sit just under
@@ -836,18 +873,20 @@ GAME.city = (function () {
     spin.add(cabs);
     city.wheelCabs = cabs;
     city.wheelSpin = spin;
-    // stand the wheel up facing the shore
+    // stand the wheel up facing the shore. It rides the pier, and the pier
+    // moved a block south when the bridge took the z=150 slot.
+    var WZ = PIERS[0][0];
     wheel.rotation.y = Math.PI / 2;
-    wheel.position.set(492, 17.5, 150);
+    wheel.position.set(492, 17.5, WZ);
     scene.add(wheel);
     city.wheel = wheel;
     var supB = new GeoBatch();
-    supB.addBox(492, 8.5, 144, 1.2, 17, 1.2, 0, 0x555a6a, 0);
-    supB.addBox(492, 8.5, 156, 1.2, 17, 1.2, 0, 0x555a6a, 0);
+    supB.addBox(492, 8.5, WZ - 6, 1.2, 17, 1.2, 0, 0x555a6a, 0);
+    supB.addBox(492, 8.5, WZ + 6, 1.2, 17, 1.2, 0, 0x555a6a, 0);
     var sup = new THREE.Mesh(supB.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     sup.matrixAutoUpdate = false;
     scene.add(sup);
-    addSolid(492, 150, 3, 14, 17, 'prop');
+    addSolid(492, WZ, 3, 14, 17, 'prop');
 
     // harbor cranes
     var craneB = new GeoBatch();
@@ -945,25 +984,10 @@ GAME.city = (function () {
     addSolid(A.fx1, (A.fz0 + A.fz1) / 2, 0.5, A.fz1 - A.fz0, 3, 'fence', true);
   }
 
+  // The only helipad in the world is on the Alta Verde lookout now — Isla Verde
+  // sets this when it registers. Until the bridges open there is no helicopter
+  // anywhere, which is the point.
   city.helipad = { x: 402, z: 300 };
-  function buildHelipad(scene) {
-    var H = city.helipad;
-    var y = city.groundY(H.x, H.z) + 0.08;
-    var b = new GeoBatch();
-    b.addGroundQuad(H.x, y, H.z, 16, 16, 0, 0x1a1a22);
-    // yellow H
-    b.addGroundQuad(H.x - 2.2, y + 0.02, H.z, 1, 7, 0, 0xf0d020);
-    b.addGroundQuad(H.x + 2.2, y + 0.02, H.z, 1, 7, 0, 0xf0d020);
-    b.addGroundQuad(H.x, y + 0.02, H.z, 3.6, 1, 0, 0xf0d020);
-    var pad = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
-    pad.matrixAutoUpdate = false;
-    scene.add(pad);
-    var ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 24),
-      new THREE.MeshBasicMaterial({ color: 0xf0d020, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(H.x, y + 0.03, H.z);
-    scene.add(ring);
-  }
 
   // wedge-shaped jump ramps scattered around the city. They are drivable
   // surfaces (see rampAt / groundY), not solids, so you ride up and launch.
@@ -976,7 +1000,7 @@ GAME.city = (function () {
       { x: -294, z: 308, rot: Math.PI / 2, h: 6.6, len: 22 },
       { x: -430, z: -170, rot: Math.PI, h: 5.6, len: 24 },      // riverside
       { x: 366, z: -230, rot: Math.PI, h: 5.0, len: 26 },       // boardwalk
-      { x: 366, z: 150, rot: 0, h: 5.0, len: 26 },              // beach, other way
+      { x: 366, z: 330, rot: 0, h: 5.0, len: 26 },              // beach, other way
       { x: -78, z: A.cz, rot: Math.PI / 2, h: 7.2, len: 32, boost: true }, // runway end -> over the fence
       { x: A.cx + 30, z: 462, rot: Math.PI / 2, h: 6.4, len: 30 }, // airport apron
       { x: A.cx - 90, z: 462, rot: -Math.PI / 2, h: 6.4, len: 30 },
@@ -1179,24 +1203,42 @@ GAME.city = (function () {
     scene.add(mesh);
   }
 
+  // One graph for the whole world. The mainland's is a grid and the island's
+  // follows its curves, but both are just nodes with a neighbour list — traffic
+  // and the map router never learn which landmass they are on.
   function buildLaneGraph() {
-    var nodes = [], edges = {};
-    for (var i = 0; i < R.length; i++) for (var j = 0; j < R.length; j++) {
-      nodes.push({ x: R[i], z: R[j], i: i, j: j });
+    var nodes = [], i, j;
+    var grid = [];
+    for (i = 0; i < R.length; i++) for (j = 0; j < R.length; j++) {
+      grid.push({ x: R[i], z: R[j], i: i, j: j, nb: [] });
     }
+    function gridAt(a, b) {
+      if (a < 0 || b < 0 || a >= R.length || b >= R.length) return null;
+      return grid[a * R.length + b];
+    }
+    grid.forEach(function (n) {
+      [gridAt(n.i - 1, n.j), gridAt(n.i + 1, n.j), gridAt(n.i, n.j - 1), gridAt(n.i, n.j + 1)]
+        .forEach(function (a) { if (a) n.nb.push(a); });
+    });
+    nodes = grid;
+    if (GAME.isla) {
+      var isl = GAME.isla.laneNodes(), spans = GAME.isla.spanNodes();
+      nodes = nodes.concat(isl, spans);
+      // stitch each bridge's end nodes into whichever graph is nearest
+      spans.forEach(function (s) {
+        var best = null, bd = 60 * 60;
+        for (var k = 0; k < nodes.length; k++) {
+          var n = nodes[k];
+          if (n.span) continue;
+          var d = U.dist2(s.x, s.z, n.x, n.z);
+          if (d < bd) { bd = d; best = n; }
+        }
+        if (best) { s.nb.push(best); best.nb.push(s); }
+      });
+    }
+    for (i = 0; i < nodes.length; i++) nodes[i].id = i;
     city.nodes = nodes;
-    city.nodeAt = function (i, j) {
-      if (i < 0 || j < 0 || i >= R.length || j >= R.length) return null;
-      return nodes[i * R.length + j];
-    };
-    city.neighbors = function (n) {
-      var out = [];
-      var a = city.nodeAt(n.i - 1, n.j); if (a) out.push(a);
-      a = city.nodeAt(n.i + 1, n.j); if (a) out.push(a);
-      a = city.nodeAt(n.i, n.j - 1); if (a) out.push(a);
-      a = city.nodeAt(n.i, n.j + 1); if (a) out.push(a);
-      return out;
-    };
+    city.neighbors = function (n) { return n.nb; };
     city.nearestNode = function (x, z) {
       var best = null, bd = 1e18;
       for (var k = 0; k < nodes.length; k++) {
@@ -1233,8 +1275,6 @@ GAME.city = (function () {
     city.pois.hospitals.forEach(function (H) {
       city.parkedSpots.push({ x: H.x + 22, z: H.spawn.z, heading: Math.PI / 2, vtype: 'ambulance' });
     });
-    // helicopter on its beach pad
-    city.parkedSpots.push({ x: city.helipad.x, z: city.helipad.z, heading: Math.PI, vtype: 'helicopter' });
     // airplane on the runway apron, lined up to taxi east
     city.parkedSpots.push({ x: city.airport.apron.x, z: city.airport.apron.z, heading: Math.PI / 2, vtype: 'airplane' });
     // motorcycles: a couple along the boardwalk and by the strip

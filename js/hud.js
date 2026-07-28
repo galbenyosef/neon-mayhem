@@ -3,7 +3,8 @@ GAME.hud = (function () {
   var shownCash = 0, targetCash = 0;
   var msgT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
-  var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 520;
+  var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 560;
+  var MAP_W = 1020, MAP_H = 560;   // world -520..1520 by -560..560, at 0.5 px/m
   var dmgFlash = null;
   var PICKUP_BLIP = {
     pistol: '#eef0ff', smg: '#ffe14f', shotgun: '#ff8a3d',
@@ -92,13 +93,13 @@ GAME.hud = (function () {
   var mapScale = 1, mapOffY = 0;
   function drawBigMap() {
     var cv = el.bigmap;
-    var size = Math.floor(Math.min(window.innerWidth * 0.86, window.innerHeight * 0.68, 560));
-    cv.width = size; cv.height = Math.floor(size * 520 / 700);
+    var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * 0.68 * MAP_W / MAP_H, 900));
+    cv.width = size; cv.height = Math.floor(size * MAP_H / MAP_W);
     var g = cv.getContext('2d');
-    mapScale = size / 700; mapOffY = 0;
+    mapScale = size / MAP_W; mapOffY = 0;
     g.fillStyle = '#141020';
     g.fillRect(0, 0, cv.width, cv.height);
-    g.drawImage(mapBuffer, 0, 0, 700 * mapScale, 520 * mapScale);
+    g.drawImage(mapBuffer, 0, 0, MAP_W * mapScale, MAP_H * mapScale);
     function w2mx(x) { return (x + MAP_OX) * MAP_S * mapScale; }
     function w2my(z) { return mapOffY + (z + MAP_OY) * MAP_S * mapScale; }
     // route + destination
@@ -165,7 +166,7 @@ GAME.hud = (function () {
       g.fill();
     });
     GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
-    badge(GAME.city.pois.police.x, GAME.city.pois.police.z, '#5aa0ff', 'P');
+    GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
     // helipad: a ringed cyan disc with an H
@@ -196,8 +197,8 @@ GAME.hud = (function () {
     var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
     var wx = cx / mapScale / MAP_S - MAP_OX;
     var wz = (cy - mapOffY) / mapScale / MAP_S - MAP_OY;
-    wx = U.clamp(wx, -495, 500);
-    wz = U.clamp(wz, -495, 495);
+    wx = U.clamp(wx, -495, 1500);
+    wz = U.clamp(wz, -540, 540);
     GAME.nav.setDest(wx, wz);
     drawBigMap();
   }
@@ -227,20 +228,20 @@ GAME.hud = (function () {
 
   function buildMapBuffer() {
     mapBuffer = document.createElement('canvas');
-    mapBuffer.width = 700; mapBuffer.height = 520;
+    mapBuffer.width = MAP_W; mapBuffer.height = MAP_H;
     var g = mapBuffer.getContext('2d');
     function mx(x) { return (x + MAP_OX) * MAP_S; }
     function my(z) { return (z + MAP_OY) * MAP_S; }
     // island: water everywhere, then scan-fill the landmass with a sand rim
     var c = GAME.city;
     g.fillStyle = '#16305a';
-    g.fillRect(0, 0, 700, 520);
-    function isLand(x, z) {
-      return !(x > c.shoreline(z) || x < c.westShore(z) || z < c.northShore(x) || z > c.southShore(x));
-    }
+    g.fillRect(0, 0, MAP_W, MAP_H);
+    // every landmass draws the same way, so a second island needs no second
+    // branch here — it is land if some island contains it
+    function isLand(x, z) { return !!c.islandAt(x, z); }
     var CELL = 8;
-    for (var wx = -520; wx < 880; wx += CELL) {
-      for (var wz = -520; wz < 520; wz += CELL) {
+    for (var wx = -520; wx < 1520; wx += CELL) {
+      for (var wz = -560; wz < 560; wz += CELL) {
         var cxm = wx + CELL / 2, czm = wz + CELL / 2;
         if (!isLand(cxm, czm)) continue;
         var rim = !isLand(cxm + CELL, czm) || !isLand(cxm - CELL, czm) || !isLand(cxm, czm + CELL) || !isLand(cxm, czm - CELL);
@@ -266,9 +267,35 @@ GAME.hud = (function () {
     }
     g.strokeStyle = '#5a5478';
     g.beginPath(); g.moveTo(mx(350), my(-480)); g.lineTo(mx(350), my(480)); g.stroke();
+    // Isla Verde: its roads are polylines, so they draw as polylines
+    if (GAME.city.isla) {
+      var IS = GAME.city.isla;
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      g.strokeStyle = '#4a4462';
+      IS.net.forEach(function (seg) {
+        g.lineWidth = Math.max(2, seg.w * MAP_S * 2.0);
+        g.beginPath();
+        for (var k = 0; k < seg.pts.length; k++) {
+          var pt = seg.pts[k];
+          if (k) g.lineTo(mx(pt[0]), my(pt[1])); else g.moveTo(mx(pt[0]), my(pt[1]));
+        }
+        g.stroke();
+      });
+      // the bridges, in the same pink they are lit in
+      g.strokeStyle = '#b8548a'; g.lineWidth = 5;
+      IS.spans.forEach(function (sp) {
+        g.beginPath();
+        for (var k2 = 0; k2 < sp.pts.length; k2++) {
+          var q = sp.pts[k2];
+          if (k2) g.lineTo(mx(q[0]), my(q[1])); else g.moveTo(mx(q[0]), my(q[1]));
+        }
+        g.stroke();
+      });
+      g.lineCap = 'butt'; g.lineJoin = 'miter';
+    }
     // piers
     g.strokeStyle = '#6a5a48'; g.lineWidth = 4;
-    g.beginPath(); g.moveTo(mx(360), my(150)); g.lineTo(mx(505), my(150)); g.stroke();
+    g.beginPath(); g.moveTo(mx(360), my(250)); g.lineTo(mx(505), my(250)); g.stroke();
     g.beginPath(); g.moveTo(mx(360), my(-180)); g.lineTo(mx(470), my(-180)); g.stroke();
     // airport: fenced apron, a runway strip with a dashed centreline
     var A = GAME.city.airport;
@@ -288,8 +315,8 @@ GAME.hud = (function () {
     // POIs
     g.fillStyle = '#ff8aa8';
     GAME.city.pois.hospitals.forEach(function (H) { g.fillRect(mx(H.x) - 3, my(H.z) - 3, 6, 6); });
-    var PD = GAME.city.pois.police;
-    g.fillStyle = '#5aa0ff'; g.fillRect(mx(PD.x) - 3, my(PD.z) - 3, 6, 6);
+    g.fillStyle = '#5aa0ff';
+    GAME.city.pois.stations.forEach(function (st) { g.fillRect(mx(st.x) - 3, my(st.z) - 3, 6, 6); });
     g.fillStyle = '#c86bff';
     GAME.city.pois.resprays.forEach(function (r) { g.fillRect(mx(r.door.x) - 3, my(r.door.z) - 3, 6, 6); });
   }
@@ -546,7 +573,7 @@ GAME.hud = (function () {
 GAME.nav = (function () {
   var dest = null, path = [], recompT = 0;
 
-  function key(n) { return n.i + ',' + n.j; }
+  function key(n) { return n.id; }
 
   // BFS along the road-node graph; returns [{x,z}...] start->goal
   function roadPath(x0, z0, x1, z1) {

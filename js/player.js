@@ -144,8 +144,9 @@ function respawnAfterScreen() {
     if (kind === 'busted') {
       GAME.addCash(-(P.pendingFine || 0));
       P.pendingFine = 0;
-      var sp = GAME.city.pois.police.spawn;
-      P.pos.set(sp.x, 0, sp.z);
+      // released from whichever station covers where you were picked up
+      var sp = GAME.city.nearestStation(P.pos.x, P.pos.z).spawn;
+      P.pos.set(sp.x, GAME.city.groundY(sp.x, sp.z), sp.z);
     } else {
       P.armor = 0;
       // wake up at the nearest hospital
@@ -156,7 +157,7 @@ function respawnAfterScreen() {
         var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
         if (d < bd) { bd = d; sh = hs[hi].spawn; }
       }
-      P.pos.set(sh.x, 0, sh.z);
+      P.pos.set(sh.x, GAME.city.groundY(sh.x, sh.z), sh.z);
     }
     P.weapons = { fist: { have: true, ammo: Infinity } };
     P.currentWeapon = 'fist';
@@ -242,6 +243,7 @@ function stepEnter(dt) {
     else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
     else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
     else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
+    else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
   }
 }
 

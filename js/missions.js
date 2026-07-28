@@ -90,8 +90,57 @@ GAME.missions = (function () {
     { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 100, start: { x: 364, z: 104 }, drops: 4, legMin: 100, legMax: 220 },
     { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 60, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
     { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 60, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
-    { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } }
+    { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
+    // Isla Verde's own work, and it stays over here — every checkpoint, drop
+    // and target is on the island, so nothing ever asks you to cross mid-run.
+    // Coordinates come from the island itself once it has registered.
+    { id: 'race3', type: 'race', name: 'ALTA VERDE CLIMB', reward: 750, isla: 'climb', start: null, cps: null },
+    { id: 'race4', type: 'race', name: 'MIRADOR RUN', reward: 800, isla: 'mirador', start: null, cps: null },
+    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 115, isla: 'port', start: null, drops: 4, legMin: 110, legMax: 240 },
+    { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 60, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
   ];
+
+  // Island mission anchors, resolved after the island registers. A race's
+  // checkpoints are road points around a named loop, so the route follows the
+  // curves instead of cutting across a hillside.
+  function placeIslaDefs() {
+    if (!GAME.city.isla) return;
+    var I = GAME.city.isla, tx = I.tx, tz = I.tz;
+    function onRoad(x, z) {
+      var rp = GAME.city.nearestRoadPoint(x, z);
+      return [Math.round(rp.x), Math.round(rp.z)];
+    }
+    function ringLoop(f, a0, n) {
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        var q = I.ringPt(a0 + i / n * Math.PI * 2, f);
+        out.push(onRoad(q[0], q[1]));
+      }
+      return out;
+    }
+    DEFS.forEach(function (d) {
+      if (!d.isla) return;
+      if (d.isla === 'climb') {
+        // up the switchback and back down the ring
+        var cps = [];
+        [[880, -110], [860, -170], [900, -230], [938, -200], [938, -164]].forEach(function (p) {
+          cps.push(onRoad(tx(p[0]), tz(p[1])));
+        });
+        d.cps = cps;
+        d.start = { x: onRoad(tx(850), tz(-60))[0], z: onRoad(tx(850), tz(-60))[1] };
+      } else if (d.isla === 'mirador') {
+        d.cps = ringLoop(0.845, Math.PI * 0.1, 7);
+        d.start = { x: d.cps[0][0], z: d.cps[0][1] };
+        d.cps = d.cps.slice(1).concat([d.cps[0]]);
+      } else if (d.isla === 'port') {
+        var st = onRoad(tx(860), tz(100));
+        d.start = { x: st[0], z: st[1] };
+      } else {
+        var sd = onRoad(tx(800), tz(130));
+        d.start = { x: sd[0], z: sd[1] };
+      }
+    });
+  }
 
   var active = null;
   var markers = [];
@@ -110,8 +159,10 @@ GAME.missions = (function () {
   }
 
   function init() {
+    placeIslaDefs();
     for (var i = 0; i < DEFS.length; i++) {
       var d = DEFS[i];
+      if (d.isla && !d.start) continue;      // island never registered
       var mesh = makeMarkerMesh(MARKER_COLORS[d.type], 2.2);
       mesh.position.set(d.start.x, GAME.city.groundY(d.start.x, d.start.z) + 1.7, d.start.z);
       GAME.scene.add(mesh);
@@ -130,6 +181,9 @@ GAME.missions = (function () {
 
   function bestKey(d) { return d.id; }
 
+  // island work only shows up once the bridges are open
+  function defAvailable(d) { return !d.isla || (GAME.isla && GAME.isla.isOpen()); }
+
   // a kerbside spot between minR and maxR of the origin. Verifies the result is
   // actually that far away — snapping to the road grid can pull a point much
   // closer than the radius asked for, which made every fare a short hop.
@@ -138,10 +192,16 @@ GAME.missions = (function () {
     for (var t = 0; t < 60; t++) {
       var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, minR, maxR);
       var rp = GAME.city.nearestRoadPoint(fromX + Math.cos(a) * r, fromZ + Math.sin(a) * r);
-      if (rp.x < -470 || rp.x > 352 || Math.abs(rp.z) > 470) continue;
+      // the mainland grid has hard edges; the island answers for its own roads
+      if (rp.axis !== 'net' && (rp.x < -470 || rp.x > 352 || Math.abs(rp.z) > 470)) continue;
       if (GAME.city.isInWater(rp.x, rp.z)) continue;
+      // stay on the landmass you started on: a courier leg that crosses the
+      // channel is not a delivery run, it is a swim
+      if (GAME.city.islandIdAt(rp.x, rp.z) !== GAME.city.islandIdAt(fromX, fromZ)) continue;
       // nudge onto the sidewalk edge, clear of the driving lanes
-      var off = rp.axis === 'z' ? [9 * (Math.random() < 0.5 ? 1 : -1), 0] : [0, 9 * (Math.random() < 0.5 ? 1 : -1)];
+      var sgn = Math.random() < 0.5 ? 1 : -1;
+      var off = rp.axis === 'net' ? [Math.cos(rp.heading) * 9 * sgn, -Math.sin(rp.heading) * 9 * sgn]
+        : rp.axis === 'z' ? [9 * sgn, 0] : [0, 9 * sgn];
       var px = Math.round(rp.x + off[0]), pz = Math.round(rp.z + off[1]);
       var d = U.dist(px, pz, fromX, fromZ);
       if (d >= minR && d <= maxR) return [px, pz];
@@ -187,9 +247,112 @@ GAME.missions = (function () {
     return stops;
   }
 
+  // ---------- the ice cream round ----------
+  // Isla Verde's own shift. You drive, the chimes play, and people come out to
+  // the hatch when you stop. Each level wants more sales in the time you have.
+  function startIceCream() {
+    var P = GAME.player;
+    GAME.track('job-started-icecream');
+    active = {
+      def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
+      state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
+      phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
+      targets: [], timeLeft: 120, chimeT: 0, spawnT: 1.5, routeCp: null
+    };
+    setMarkersVisible(false);
+    updateCp();
+    GAME.hud.missionStart(active.def.name, objectiveText());
+    GAME.hud.message('Level 1 — sell 4 before the clock runs out. Stop near a customer and they will come to the hatch. Leave the truck to clock off.', 5.5);
+    GAME.audio.pickup();
+  }
+
+  function iceCreamSpawn() {
+    var f = GAME.focus();
+    var pt = randomRoadPoint(f.x, f.z, 45, 150);
+    if (!pt) return;
+    var wp = kerbWaitSpot(pt[0], pt[1]);
+    active.targets.push({ x: wp[0], z: wp[1], ped: spawnWaitingPed(wp[0], wp[1]), boarding: false });
+  }
+
+  function iceCreamSale(tgt) {
+    var i = active.targets.indexOf(tgt);
+    if (i >= 0) active.targets.splice(i, 1);
+    dropArrow(tgt);
+    if (tgt.ped && !tgt.ped.dead) GAME.peds.removePed(tgt.ped);
+    var pay = 30 + active.level * 12;
+    GAME.addCash(pay);
+    active.earned += pay;
+    active.sales++; active.jobCount++;
+    GAME.audio.pickup();
+    if (active.sales >= active.quota) {
+      active.level++;
+      active.sales = 0;
+      active.quota += 2;
+      active.timeLeft += 55;
+      GAME.hud.message('ROUND ' + active.level + ' — +55s, sell ' + active.quota + '  ·  +$' + pay, 3.4);
+      GAME.audio.sting('win');
+    } else {
+      GAME.hud.message('Sold — +$' + pay + '  ·  ' + active.sales + ' / ' + active.quota, 2);
+    }
+    active.routeCp = null;
+    updateCp();
+  }
+
+  function updateIceCream(dt, P) {
+    if (!P.inCar || !P.car || P.car.type !== 'icecream') { endJob('clocked off'); return; }
+    if (P.car.dead) { endJob('truck totalled'); return; }
+    active.timeLeft -= dt;
+    if (active.timeLeft <= 0) { endJob('out of time'); return; }
+    var f = GAME.focus();
+    // the chimes, on a loop, because that is the whole job
+    active.chimeT -= dt;
+    if (active.chimeT <= 0) { active.chimeT = 3.4; GAME.audio.chime(); }
+    // keep a couple of customers out there ahead of you
+    active.spawnT -= dt;
+    if (active.spawnT <= 0 && active.targets.length < 3) {
+      active.spawnT = U.randRange(Math.random, 3, 6);
+      iceCreamSpawn();
+    }
+    replaceLostTargets();
+    // anyone already on the pavement hears the chimes too: stop the truck and
+    // whoever is close enough wanders over. The marked customers give you
+    // somewhere to drive; these are the reason you stop.
+    active.walkUpT = (active.walkUpT || 0) - dt;
+    if (Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
+      var peds = GAME.world.peds;
+      for (var w = 0; w < peds.length; w++) {
+        var pd = peds[w];
+        if (pd.dead || pd.isCop || pd.jobPed) continue;
+        if (U.dist2(f.x, f.z, pd.pos.x, pd.pos.z) > 24 * 24) continue;
+        pd.jobPed = true;
+        pd.state = 'wait';
+        active.targets.push({ x: pd.pos.x, z: pd.pos.z, ped: pd, boarding: true, walkUp: true });
+        active.walkUpT = 2.2;
+        break;
+      }
+    }
+    // stop anywhere near a marked customer and they come over
+    for (var i = 0; i < active.targets.length; i++) {
+      var t = active.targets[i];
+      if (!t.boarding && U.dist2(f.x, f.z, t.x, t.z) < 26 * 26 && Math.abs(P.car.speed) < 3.5) {
+        t.boarding = true;
+      }
+    }
+    stepBoarding(dt, f, P);
+    updateArrows(dt);
+    active.routeT = (active.routeT || 0) - dt;
+    if (active.routeT <= 0) {
+      active.routeT = 1.0;
+      var jt = currentCp();
+      active.courierRoute = jt ? roadRoute(f.x, f.z, jt[0], jt[1]) : null;
+    }
+    GAME.hud.missionTimer(active.timeLeft, true);
+  }
+
   function startJob(kind) {
     var P = GAME.player;
     if (active || !P.inCar || !P.car) return;
+    if (kind === 'icecream') { startIceCream(); return; }
     GAME.track('job-started-' + kind);
     active = {
       def: { type: kind, name: kind === 'ambulance' ? 'PARAMEDIC' : 'TAXI DRIVER', id: kind, job: true },
@@ -214,7 +377,15 @@ GAME.missions = (function () {
   // push a point out of any road corridor onto the nearest kerb, so drop-offs
   // never land in a live traffic lane
   function clearOfRoad(x, z) {
-    var R = GAME.city.R || null;
+    // the island's roads are curves, so push out along the road's own normal
+    if (GAME.isla && GAME.isla.contains(x, z)) {
+      var ip = GAME.city.nearestRoadPoint(x, z);
+      var d = U.dist(x, z, ip.x, ip.z);
+      if (d > 11) return [Math.round(x), Math.round(z)];
+      var ux = d > 0.01 ? (x - ip.x) / d : Math.cos(ip.heading);
+      var uz = d > 0.01 ? (z - ip.z) / d : -Math.sin(ip.heading);
+      return [Math.round(ip.x + ux * 11), Math.round(ip.z + uz * 11)];
+    }
     var half = (GAME.city.ROAD_HALF || 6) + 3;
     var lanes = [-450, -350, -250, -150, -50, 50, 150, 250, 350];
     for (var i = 0; i < lanes.length; i++) {
@@ -270,7 +441,12 @@ GAME.missions = (function () {
     var rp = GAME.city.nearestRoadPoint(x, z);
     var out = 14, jitter = U.randRange(Math.random, -5, 5);
     var wx, wz;
-    if (rp.axis === 'z') {          // road runs along z; step out in x
+    if (rp.axis === 'net') {       // a curved road: step out along its normal
+      var sgn = U.dist2(x, z, rp.x + Math.cos(rp.heading), rp.z - Math.sin(rp.heading)) <
+        U.dist2(x, z, rp.x - Math.cos(rp.heading), rp.z + Math.sin(rp.heading)) ? 1 : -1;
+      wx = rp.x + Math.cos(rp.heading) * out * sgn + Math.sin(rp.heading) * jitter;
+      wz = rp.z - Math.sin(rp.heading) * out * sgn + Math.cos(rp.heading) * jitter;
+    } else if (rp.axis === 'z') {          // road runs along z; step out in x
       wx = rp.x + (x >= rp.x ? out : -out);
       wz = z + jitter;
     } else {                        // road runs along x; step out in z
@@ -318,6 +494,9 @@ GAME.missions = (function () {
       var gone = !t.ped || t.ped.dead || GAME.world.peds.indexOf(t.ped) < 0;
       if (!gone) continue;
       dropArrow(t);
+      // someone who wandered over on their own isn't replaced — they were
+      // never a call in the first place
+      if (t.walkUp) { active.targets.splice(i--, 1); continue; }
       var f = GAME.focus();
       var band = targetBand();
       var pt = randomRoadPoint(f.x, f.z, band[0], band[1]);
@@ -397,6 +576,7 @@ GAME.missions = (function () {
 
   // collect whoever is at this stop
   function collectTarget(tgt) {
+    if (active.def.id === 'icecream') { iceCreamSale(tgt); return; }
     var i = active.targets.indexOf(tgt);
     if (i >= 0) active.targets.splice(i, 1);
     dropArrow(tgt);
@@ -464,7 +644,7 @@ GAME.missions = (function () {
   // end an ongoing taxi/ambulance shift (clock off, totalled, or timed out)
   function endJob(reason) {
     var count = active.jobCount, earned = active.earned, lv = active.level;
-    var unit = active.def.id === 'ambulance' ? 'patient' : 'fare';
+    var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : 'fare';
     // send any waiting people home with the shift
     for (var i = 0; i < active.targets.length; i++) {
       dropArrow(active.targets[i]);
@@ -475,17 +655,19 @@ GAME.missions = (function () {
       GAME.audio.sting('win');
       GAME.hud.message('SHIFT OVER — level ' + lv + ', ' + count + ' ' + unit + (count === 1 ? '' : 's') +
         ', $' + earned + ' earned' + (reason ? '  (' + reason + ')' : ''), 4.5);
-      var amb = active.def.id === 'ambulance';
-      GAME.track('job-completed-' + active.def.id);
+      var id = active.def.id;
+      var CARD = {
+        ambulance: { slug: 'paramedic-shift', eyebrow: 'PARAMEDIC', sub: 'Costa Rosa General — patients delivered', accent: '#ff4d6a', unit: 'Patients' },
+        taxifare: { slug: 'taxi-shift', eyebrow: 'TAXI DRIVER', sub: 'Costa Rosa cabs — fares run', accent: '#f0c020', unit: 'Fares' },
+        icecream: { slug: 'icecream-round', eyebrow: 'ICE CREAM ROUND', sub: 'Isla Verde — the chimes did their work', accent: '#ffd7e4', unit: 'Sales' }
+      }[id] || { slug: id, eyebrow: 'SHIFT', sub: '', accent: '#38e8ff', unit: 'Jobs' };
+      GAME.track('job-completed-' + id);
       GAME.share.show({
-        slug: amb ? 'paramedic-shift' : 'taxi-shift',
-        eyebrow: amb ? 'PARAMEDIC' : 'TAXI DRIVER',
-        title: 'SHIFT OVER',
-        subtitle: amb ? 'Costa Rosa General — patients delivered' : 'Costa Rosa cabs — fares run',
-        accent: amb ? '#ff4d6a' : '#f0c020',
+        slug: CARD.slug, eyebrow: CARD.eyebrow, title: 'SHIFT OVER', subtitle: CARD.sub,
+        accent: CARD.accent,
         stats: [
           { label: 'Level', value: String(lv) },
-          { label: unit === 'patient' ? 'Patients' : 'Fares', value: String(count) },
+          { label: CARD.unit, value: String(count) },
           { label: 'Earned', value: '$' + earned }
         ]
       });
@@ -593,6 +775,10 @@ GAME.missions = (function () {
       return ordinal(racePosition()) + ' / ' + field + '   ·   Checkpoint ' + (active.cpIndex + 1) + ' / ' + d.cps.length;
     }
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
+    if (d.type === 'icecream') {
+      return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
+        '  ·  $' + active.earned + ' taken';
+    }
     if (d.type === 'taxifare' || d.type === 'ambulance') {
       var amb = d.type === 'ambulance';
       var head = active.phase === 'pickup'
@@ -612,6 +798,10 @@ GAME.missions = (function () {
       if (active.phase !== 'pickup') return active.dropoff;
       var t = nearestTarget();
       return t ? [t.x, t.z] : null;
+    }
+    if (d.type === 'icecream') {
+      var c = nearestTarget();
+      return c ? [c.x, c.z] : null;
     }
     return null;
   }
@@ -639,6 +829,8 @@ GAME.missions = (function () {
       var isBest = d.type === 'rampage' ? (!prev || value > prev) : (!prev || value < prev);
       if (isBest) bests[bestKey(d)] = value;
       GAME.addCash(reward);
+      // finishing enough work is what opens the channel
+      var opened = GAME.isla && GAME.isla.checkUnlock();
       GAME.audio.sting('win');
       var head = d.job ? 'JOB DONE! +$' : 'MISSION PASSED! +$';
       // races report the finishing place and time alongside the payout
@@ -659,6 +851,7 @@ GAME.missions = (function () {
         cardStats.push({ label: 'Time', value: value.toFixed(1) + 's' });
       }
       if (isBest) cardStats.push({ label: 'Result', value: 'NEW BEST' });
+      if (opened) return cleanup();     // the bridges card takes the screen
       GAME.share.show({
         slug: d.id,
         eyebrow: TYPE_LABEL[d.type] || 'COSTA ROSA · 1986',
@@ -818,6 +1011,7 @@ GAME.missions = (function () {
       if (P.inCar && P.car) {
         if (P.car.type === 'taxi') jobKind = 'taxifare';
         else if (P.car.type === 'ambulance') jobKind = 'ambulance';
+        else if (P.car.type === 'icecream') jobKind = 'icecream';
       }
       GAME.jobAvailable = jobKind;
       if (jobKind && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
@@ -834,6 +1028,8 @@ GAME.missions = (function () {
       var hint = null;
       for (var m = 0; m < markers.length; m++) {
         var d = markers[m].def;
+        if (!defAvailable(d)) { markers[m].mesh.visible = false; continue; }
+        markers[m].mesh.visible = true;
         // races and courier deliveries need a vehicle; rampages can start on foot
         var need = d.type === 'race' || d.type === 'courier';
         var air = P.car && (P.car.spec.heli || P.car.spec.plane);
@@ -957,6 +1153,8 @@ GAME.missions = (function () {
       }
       if (active.score >= d2.target) { finish(true); return; }
       if (active.timeLeft <= 0) { finish(false, 'Time up — $' + Math.floor(active.score) + ' of $' + d2.target); return; }
+    } else if (d2.type === 'icecream') {
+      updateIceCream(dt, P);
     } else if (d2.type === 'taxifare' || d2.type === 'ambulance') {
       // clock off simply by leaving the vehicle; the shift also ends if it's totalled
       if (!P.inCar || !P.car) { endJob('clocked off'); return; }
@@ -1043,6 +1241,7 @@ GAME.missions = (function () {
       if (!active) {
         for (var i = 0; i < markers.length; i++) {
           var d = markers[i].def;
+          if (!defAvailable(d)) continue;
           out.push({ x: d.start.x, z: d.start.z, color: '#' + MARKER_COLORS[d.type].toString(16).padStart(6, '0'), size: 4 });
         }
       } else {

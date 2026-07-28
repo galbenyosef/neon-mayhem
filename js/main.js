@@ -263,6 +263,7 @@
     GAME.combat.updatePickups(dt);
     GAME.police.update(dt);
     GAME.missions.update(dt);
+    if (GAME.isla) GAME.isla.tick(dt);
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();

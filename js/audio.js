@@ -313,6 +313,16 @@ GAME.audio = (function () {
     },
     yelp: function () { if (ctx) tone(500 + Math.random() * 300, 0.18, 0.14, 'triangle', 900); },
     pickup: function () { if (ctx) { tone(880, 0.09, 0.2, 'sine'); tone(1320, 0.14, 0.2, 'sine', 0, ctx.currentTime + 0.08); } },
+    // the ice cream chimes: a little run of bells, thin and carrying
+    chime: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var notes = [1046, 1318, 1568, 1318, 1046, 784];
+      for (var i = 0; i < notes.length; i++) {
+        tone(notes[i], 0.26, 0.075, 'triangle', 0, t + i * 0.19);
+        tone(notes[i] * 2, 0.13, 0.028, 'sine', 0, t + i * 0.19);
+      }
+    },
     cashTick: function () { if (ctx) tone(1560, 0.04, 0.08, 'square'); },
     splash: function () { if (ctx) noiseBurst(0.5, 700, 0.4); },
     sting: function (kind) {

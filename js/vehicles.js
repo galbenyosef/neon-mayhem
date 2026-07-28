@@ -121,7 +121,13 @@ var VEHICLES = {
   motorcycle: { label: 'Neon Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 130, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
-  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 }
+  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
+  // Isla Verde's own stock. The buggy is for the cove, the pickup for the
+  // villa lanes, the limo for the resort — and the truck sells ice cream.
+  buggy: { label: 'Dune Hopper', maxSpeed: 33, accel: 15, grip: 4.2, turn: 3.0, hp: 110, l: 3.4, w: 1.85, cabinH: 0.0, bodyH: 0.42, colors: [0xffb03a, 0x6ae8a0, 0xff6a8a, 0xf0f0f4], buggy: true },
+  pickup: { label: 'Sierra 4x4', maxSpeed: 30, accel: 10, grip: 6.0, turn: 2.0, hp: 240, l: 5.0, w: 2.05, cabinH: 0.78, bodyH: 0.78, colors: [0x7a8a68, 0xa8683a, 0x486888, 0xd0c0a0], pickup: true },
+  limo: { label: 'Vista Royale', maxSpeed: 31, accel: 8.5, grip: 5.4, turn: 1.5, hp: 210, l: 7.2, w: 2.0, cabinH: 0.62, bodyH: 0.55, colors: [0x14141a, 0xf0ece0] },
+  icecream: { label: 'Sunny Scoops', maxSpeed: 21, accel: 6.2, grip: 5.8, turn: 1.7, hp: 200, l: 5.0, w: 2.1, cabinH: 1.05, bodyH: 0.95, colors: [0xfff0e0], icecream: true }
 };
 
 function buildBikeMesh(colorHex) {
@@ -266,9 +272,29 @@ function buildCarMesh(type, colorHex) {
     b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.5, 0.16, 0, 0xd83040, 0);
     b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
   }
-  var cabL = s.l * (type === 'van' ? 0.85 : 0.5);
-  var cabZ = type === 'sports' ? -0.35 : type === 'van' ? -0.1 : -0.15;
-  b.addBox(0, 0.42 + s.bodyH / 2 + s.cabinH / 2 - 0.05, cabZ, s.w * 0.82, s.cabinH, cabL, 0, type === 'police' ? 0x20242e : 0x141824, 0);
+  if (type === 'icecream') {
+    // tall serving box with a hatch on the kerb side and a cone on the roof
+    b.addBox(0, 0.42 + s.bodyH / 2 + 0.55, -0.45, s.w, 1.1, s.l * 0.6, 0, colorHex, 0);
+    b.addBox(0, 1.32, -0.45, s.w + 0.06, 0.34, s.l * 0.6, 0, 0xff8ab4, 0);
+    b.addBox(hw + 0.02, 1.05, -0.45, 0.05, 0.62, 1.5, 0, 0x2a2230, 0);   // hatch
+    b.addBox(0, 1.62, -0.45, 0.5, 0.5, 0.5, 0, 0xe8c088, 0);             // cone base
+    b.addBox(0, 1.95, -0.45, 0.62, 0.44, 0.62, 0, 0xffd7e4, 0);          // scoop
+  }
+  if (type === 'pickup') {
+    b.addBox(0, 0.42 + s.bodyH / 2 + 0.22, -1.05, s.w, 0.45, s.l * 0.44, 0, 0x2a2a34, 0);   // bed walls
+  }
+  var cabL = s.l * (type === 'van' ? 0.85 : type === 'icecream' ? 0.34 : type === 'limo' ? 0.72 : 0.5);
+  var cabZ = type === 'sports' ? -0.35 : type === 'van' ? -0.1
+    : type === 'icecream' ? s.l * 0.28 : type === 'pickup' ? 0.35 : -0.15;
+  if (s.buggy) {
+    // no cabin at all: a roll hoop over an open tub
+    b.addBox(0, 1.05, -0.5, 0.12, 1.2, 0.12, 0, 0x2a2a34, 0);
+    b.addBox(0, 1.05, 0.5, 0.12, 1.2, 0.12, 0, 0x2a2a34, 0);
+    b.addBox(0, 1.6, 0, 0.12, 0.12, 1.1, 0, 0x2a2a34, 0);
+  }
+  if (s.cabinH > 0) {
+    b.addBox(0, 0.42 + s.bodyH / 2 + s.cabinH / 2 - 0.05, cabZ, s.w * 0.82, s.cabinH, cabL, 0, type === 'police' ? 0x20242e : 0x141824, 0);
+  }
   b.addBox(0, 0.28, hl * 0.72, s.w * 0.9, 0.32, 0.55, 0, 0x22262e, 0);
   b.addBox(0, 0.28, -hl * 0.72, s.w * 0.9, 0.32, 0.55, 0, 0x22262e, 0);
   var wy = 0.32, wx = hw - 0.12, wz = hl * 0.56;
@@ -733,7 +759,8 @@ GAME.vehicles = (function () {
       var r = U.randRange(Math.random, 80, GAME.settings.bubbleRadius);
       var x = fc.x + Math.cos(ang) * r, z = fc.z + Math.sin(ang) * r;
       var rp = city.nearestRoadPoint(x, z);
-      if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
+      var onIsla = rp.axis === 'net';
+      if (!onIsla && (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480)) continue;
       if (city.inAirport(rp.x, rp.z)) continue; // keep the airfield clear
       // avoid spawning on top of others
       var clear = true;
@@ -741,9 +768,14 @@ GAME.vehicles = (function () {
         if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, rp.x, rp.z) < 100) { clear = false; break; }
       }
       if (!clear) continue;
-      var types = ['sedan', 'sedan', 'taxi', 'sports', 'van', 'motorcycle'];
+      // the island runs a different mix, so crossing a bridge changes the
+      // traffic around you as well as the scenery
+      var types = onIsla
+        ? ['sedan', 'buggy', 'pickup', 'van', 'sports', 'limo', 'motorcycle']
+        : ['sedan', 'sedan', 'taxi', 'sports', 'van', 'motorcycle'];
       var type = types[Math.floor(Math.random() * types.length)];
-      var heading = rp.axis === 'z' ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+      var heading = onIsla ? rp.heading + (Math.random() < 0.5 ? 0 : Math.PI)
+        : rp.axis === 'z' ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
       var car = spawnCar(type, rp.x, rp.z, heading, { occupied: 'ai', ai: { mode: 'traffic', desired: U.randRange(Math.random, 9, 13), laneX: 0, laneZ: 0 } });
       car.speed = 6;
       live++;
@@ -775,7 +807,8 @@ GAME.vehicles = (function () {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60) { clear = false; break; }
         }
         if (!clear) continue;
-        var types = ['sedan', 'sports', 'taxi', 'van', 'sedan'];
+        var types = sp.isla ? ['sedan', 'buggy', 'pickup', 'van', 'limo', 'sports']
+          : ['sedan', 'sports', 'taxi', 'van', 'sedan'];
         var type = sp.police ? 'police' : (sp.vtype || types[Math.floor(Math.random() * types.length)]);
         // special vehicles keep their exact heading; ordinary parked cars flip randomly
         var head = special ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);

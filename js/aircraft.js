@@ -2,6 +2,20 @@ GAME.aircraft = (function () {
   var chute = null, rig = null;
   var CHUTE_LINES = 6;
 
+  // While the bridges are shut the channel is restricted airspace: you can fly
+  // out over the water and see the far shore, and that is as far as you get.
+  var CLOSED_X = 560, warnT = 0;
+  function airLimit() {
+    if (GAME.isla && GAME.isla.isOpen()) return { maxX: 1560, minZ: -600, maxZ: 600 };
+    return { maxX: CLOSED_X, minZ: -524, maxZ: 524 };
+  }
+  function warnAirspace(x, lim) {
+    if (x < lim.maxX - 1 || lim.maxX > CLOSED_X) return;
+    if (GAME.time - warnT < 4) return;
+    warnT = GAME.time;
+    GAME.hud.message('RESTRICTED AIRSPACE — turn back.', 2.5);
+  }
+
   // arcade helicopter: collective (up/down), cyclic (nose tilt = forward),
   // pedal (yaw). Called from player.js while the player flies a heli.
   function updateHeli(dt) {
@@ -35,8 +49,10 @@ GAME.aircraft = (function () {
       if (Math.abs(car.heliSpeed) > 9) { GAME.vehicles.damageCar(car, 7, 'wall'); GAME.cameraShake = 0.5; }
       car.heliSpeed *= 0.25;
     }
-    car.pos.x = U.clamp(nx, -524, 524);
-    car.pos.z = U.clamp(nz, -524, 524);
+    var lim = airLimit();
+    car.pos.x = U.clamp(nx, -524, lim.maxX);
+    car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
+    warnAirspace(car.pos.x, lim);
 
     // land on whatever surface is below (terrain or a rooftop)
     var minY = GAME.city.surfaceY(car.pos.x, car.pos.z) + 1.4;
@@ -113,8 +129,10 @@ GAME.aircraft = (function () {
       GAME.vehicles.damageCar(car, car.speed, 'wall');
       car.speed *= 0.3; nx = car.pos.x; nz = car.pos.z;
     }
-    car.pos.x = U.clamp(nx, -524, 524);
-    car.pos.z = U.clamp(nz, -524, 524);
+    var lim = airLimit();
+    car.pos.x = U.clamp(nx, -524, lim.maxX);
+    car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
+    warnAirspace(car.pos.x, lim);
 
     var surf = GAME.city.surfaceY(car.pos.x, car.pos.z);
     if (car.pos.y < surf + car.spec.wheelH) {
