@@ -4,7 +4,7 @@
 
 A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Auto: Vice City (2002). Everything in the project is original work — the sentence you just read is the only place the original game is named.
 
-Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on.
+Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on. Finish enough work and two bridges open onto **Isla Verde**, a hillier island across the channel with its own port, its own hill roads, and its own trouble.
 
 <p align="center">
   <img src="media/social-card.png" alt="Neon Mayhem — a night drive down a neon-lit boulevard in Costa Rosa, 1986" width="600">
@@ -28,14 +28,16 @@ No build step, no server code, no accounts, no ads. Progress (cash + best runs) 
 ## Features
 
 - ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
+- **A second island, locked at first.** Isla Verde sits 300 m east across the channel: close enough that fog leaves a silhouette from the beach, far enough that you cannot see what it holds. Two bridges and the airspace over the channel open together once you have four jobs behind you. Over there the land actually rises — two hills, a switchback climbing hairpin to hairpin to a lookout, a sweeping resort road, a coastal ring and a promenade, all curves rather than a grid. What is built on a plot follows the ground under it: bungalows and villas on the hills, walk-up apartments on the lower slopes, and the island's only skyline down on the flat by the port
+- Isla Verde landmarks worth finding: an ice cream factory with a truck parked out front and a round to drive, a container port and marina, a lighthouse, a hilltop observatory, a cove beach — and the world's only helipad, moved to the Alta Verde summit at the top of the switchback, so there is no helicopter anywhere until the bridges open
 - Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts on a bright late afternoon, slides into sunset and then night within the first minute, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
-- Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom)
+- Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom). Isla Verde runs its own stock — a dune buggy, a 4x4 pickup, a resort limo and the ice cream truck — so crossing a bridge changes the traffic around you as well as the scenery
 - **25 unique stunt jumps** hidden around the city on roadside construction ramps in four sizes, a third of them fitted with a booster strip that slams the throttle open on the way up — clear one to log it (air time, distance and spins all pay out, and you can land on a low roof or sail clean over it). Find every one for a $50,000 payout, the full arsenal with unlimited ammo (kept through the hospital and the cells), and a monster truck that jumps on command
-- Flyable helicopter and airplane — loops and barrel rolls included — with a beach helipad and an airport, plus a parachute when you bail out mid-air
+- Flyable helicopter and airplane — loops and barrel rolls included — with an airport on the mainland, the helipad on the far island, and a parachute when you bail out mid-air
 - Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun
 - 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
-- Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi and paramedic shifts that level up: more people (each marked by a floating arrow), further out, and an ambulance that fills up before it runs to the hospital
+- Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi, paramedic and ice cream shifts that level up: more people (each marked by a floating arrow), further out, an ambulance that fills up before it runs to the hospital, and a truck whose chimes bring people out to the hatch whenever you stop. Isla Verde carries four missions of its own, and they stay on the island — nothing ever asks you to cross mid-run
 - Finish something worth finishing — a race, a shift, all 25 jumps — and a shareable result card is drawn for it: save it, copy it, or send it straight to your phone's share sheet
 - 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
 - Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
@@ -69,13 +71,14 @@ The title screen is a live broadcast: the city simulates behind the menu with sp
 
 ## Tech
 
-Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, and a spawn/despawn bubble keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test` for headless verification.
+Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. The world is a list of landmasses rather than one: every water test, height lookup, spawner and route asks the list, so Costa Rosa's grid and Isla Verde's curves are the same thing to everything above them. Island roads are polylines with a grading solver — sample the terrain, relax along each road and across every junction, then cap the grade — so a road laid down later is drivable by construction rather than by hand-tuning. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, and a spawn/despawn bubble keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test` for headless verification.
 
 ## Analytics
 
 The published site counts visits and a handful of anonymous events — session
 started, a mission or shift finished, a stunt jump found, all 25 found, wanted
-level reached, aircraft flown, result card saved or shared — via
+level reached, aircraft flown, the bridges opened, Isla Verde first reached,
+result card saved or shared — via
 [GoatCounter](https://www.goatcounter.com/): cookieless, no identifier stored in
 the browser, and nothing about you kept. `js/analytics.js` is a thin wrapper
 that silently no-ops when the counter is blocked or unavailable, so the game

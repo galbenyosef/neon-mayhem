@@ -119,15 +119,13 @@ GAME.playerDrown = function () {
   GAME.audio.splash();
   GAME.hud.fade(function () {
     if (P.inCar) forceExitCar(true);
-    // wash up on whichever shore was crossed
+    // wash up on whichever shore was crossed, on whichever island that was
     var c = GAME.city;
-    var x = U.clamp(P.pos.x, -560, 560), z = U.clamp(P.pos.z, -560, 560);
-    if (x > c.shoreline(z)) x = c.shoreline(z) - 22;
-    if (x < c.westShore(z)) x = c.westShore(z) + 24;
-    if (z < c.northShore(x)) z = c.northShore(x) + 24;
-    if (z > c.southShore(x)) z = c.southShore(x) - 24;
-    P.pos.set(x, c.groundY(x, z), z);
-    P.heading = Math.atan2(-x, -z);
+    var sh = c.washAshore(P.pos.x, P.pos.z);
+    P.pos.set(sh.x, c.groundY(sh.x, sh.z), sh.z);
+    var isl = c.islandAt(sh.x, sh.z);
+    var ic = (isl && isl.centre) || { x: -70, z: 0 };
+    P.heading = Math.atan2(ic.x - sh.x, ic.z - sh.z);
     P.drowning = false;
     GAME.hud.message('You wash up on the beach, soaked.');
   });

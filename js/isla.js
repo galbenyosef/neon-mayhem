@@ -46,6 +46,14 @@ GAME.isla = (function () {
     var e = edge(a) * f;
     return [C.cx + Math.cos(a) * C.rx * e, C.cz + Math.sin(a) * C.rz * e];
   }
+  // dry land nearest a point out in the water, for washing someone ashore
+  function shorePoint(x, z) {
+    var a = Math.atan2(z - C.cz, x - C.cx);
+    var e = ringPt(a, 1);
+    var d = U.dist(e[0], e[1], C.cx, C.cz) || 1;
+    var q = ringPt(a, Math.max(0, 1 - 26 / d));
+    return { x: q[0], z: q[1] };
+  }
 
   // ---------- terrain ----------
   // Two big hills and a low shoulder between them, with a coast that always
@@ -590,7 +598,7 @@ GAME.isla = (function () {
 
     city.addIsland({
       id: 'isla', name: 'Isla Verde', contains: contains,
-      centre: { x: C.cx, z: C.cz }, groundY: groundY,
+      centre: { x: C.cx, z: C.cz }, groundY: groundY, shorePoint: shorePoint,
       onRoad: onRoad, nearestRoadPoint: nearestRoadPoint
     });
     SPANS.forEach(function (s) {
@@ -1095,14 +1103,19 @@ GAME.isla = (function () {
 
   // A word at the barrier, so a closed bridge explains itself instead of just
   // being a thing you bounce off.
-  var hintT = 0;
+  var hintT = 0, arrived = false;
   function tick(dt) {
-    hintT -= dt;
-    if (open || hintT > 0 || !gates.length) return;
     var P = GAME.player;
     if (!P || P.state !== 'alive') return;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    if (!arrived && contains(px, pz)) {
+      arrived = true;
+      GAME.hud.message('ISLA VERDE — hill roads, a working port, and a factory that makes ice cream.', 5);
+      GAME.track('isla-first-arrival');
+    }
+    hintT -= dt;
+    if (open || hintT > 0 || !gates.length) return;
     for (var i = 0; i < gates.length; i++) {
       var g = gates[i];
       var cx = (g.minX + g.maxX) / 2, cz = (g.minZ + g.maxZ) / 2;

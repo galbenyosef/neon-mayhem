@@ -81,7 +81,7 @@ GAME.hud = (function () {
       ['#ff8a3d', 'Race'], ['#38e8ff', 'Courier'], ['#ff4fa3', 'Rampage'],
       ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
       ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
-      ['#8de0ff', '✈ Airport · Ⓗ Helipad'],
+      ['#8de0ff', '✈ Airport · Ⓗ Helipad'], ['#ffd7e4', '☀ Ice cream depot'],
       ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
     ];
     $('map-legend').innerHTML = legend.map(function (e) {
@@ -169,6 +169,7 @@ GAME.hud = (function () {
     GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
+    if (GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
     // helipad: a ringed cyan disc with an H
     var hpb = GAME.city.helipad;
     g.fillStyle = '#8de0ff';
@@ -245,7 +246,11 @@ GAME.hud = (function () {
         var cxm = wx + CELL / 2, czm = wz + CELL / 2;
         if (!isLand(cxm, czm)) continue;
         var rim = !isLand(cxm + CELL, czm) || !isLand(cxm - CELL, czm) || !isLand(cxm, czm + CELL) || !isLand(cxm, czm - CELL);
-        g.fillStyle = rim ? '#8a7a58' : '#141020';
+        // relief shading, so the hills read on the map as well as underfoot
+        var gy = rim ? 0 : c.groundY(cxm, czm);
+        g.fillStyle = rim ? '#8a7a58' : gy > 2
+          ? 'rgb(' + Math.round(20 + gy * 1.5) + ',' + Math.round(16 + gy * 2.2) + ',' + Math.round(32 + gy * 0.8) + ')'
+          : '#141020';
         g.fillRect(mx(wx), my(wz), CELL * MAP_S + 0.5, CELL * MAP_S + 0.5);
       }
     }
@@ -386,6 +391,7 @@ GAME.hud = (function () {
     }
     landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
     landmark(GAME.city.helipad.x, GAME.city.helipad.z);
+    if (GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
       var pc = cars[c];

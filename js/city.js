@@ -53,7 +53,7 @@ GAME.city = (function () {
   // ocean mesh, the drown check and the spawners without any of them knowing
   // there is more than one.
   city.islands = [{
-    id: 'costa', name: 'Costa Rosa',
+    id: 'costa', name: 'Costa Rosa', centre: { x: -70, z: 0 },
     contains: function (x, z) {
       return x <= city.shoreline(z) + 2 && x >= city.westShore(z) &&
         z >= city.northShore(x) && z <= city.southShore(x);
@@ -176,6 +176,25 @@ GAME.city = (function () {
     }
     return best || city.pois.police;
   };
+  // The shore you would actually crawl out onto. Every landmass answers for
+  // its own coast; the mainland's is four curves, the island's is one.
+  city.washAshore = function (x, z) {
+    var best = null, bd = 1e18;
+    for (var i = 0; i < city.islands.length; i++) {
+      var isl = city.islands[i];
+      var c = isl.centre || { x: -70, z: 0 };
+      var d = U.dist2(x, z, c.x, c.z);
+      if (d < bd) { bd = d; best = isl; }
+    }
+    if (best && best.shorePoint) return best.shorePoint(x, z);
+    var px = U.clamp(x, -560, 560), pz = U.clamp(z, -560, 560);
+    if (px > city.shoreline(pz)) px = city.shoreline(pz) - 22;
+    if (px < city.westShore(pz)) px = city.westShore(pz) + 24;
+    if (pz < city.northShore(px)) pz = city.northShore(px) + 24;
+    if (pz > city.southShore(px)) pz = city.southShore(px) - 24;
+    return { x: px, z: pz };
+  };
+
   city.districtName = function (x, z) {
     if (GAME.isla && GAME.isla.contains(x, z)) return GAME.isla.districtName(x, z);
     if (x > 340) return 'Ocean Strip';
