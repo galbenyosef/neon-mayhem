@@ -210,6 +210,7 @@ GAME.share = (function () {
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
       note('Saved.');
+      GAME.track('result-card-saved');
     });
   }
   function copy() {
@@ -217,7 +218,7 @@ GAME.share = (function () {
       if (!b) return note('Could not build the image.');
       try {
         navigator.clipboard.write([new window.ClipboardItem({ 'image/png': b })])
-          .then(function () { note('Copied to the clipboard.'); })
+          .then(function () { note('Copied to the clipboard.'); GAME.track('result-card-copied'); })
           .catch(function () { note('Copy was blocked — save it instead.'); });
       } catch (e) { note('Copy was blocked — save it instead.'); }
     });
@@ -229,7 +230,7 @@ GAME.share = (function () {
       try { file = new File([b], fileName(), { type: 'image/png' }); } catch (e) { }
       var payload = { title: 'NEON MAYHEM', text: text, url: 'https://' + shareUrl() };
       if (file && navigator.canShare && navigator.canShare({ files: [file] })) payload.files = [file];
-      navigator.share(payload).then(function () { note(''); }).catch(function () { });
+      navigator.share(payload).then(function () { note(''); GAME.track('result-card-shared'); }).catch(function () { });
     });
   }
 
@@ -242,6 +243,7 @@ GAME.share = (function () {
     draw(o);
     el['share-screen'].style.display = 'flex';
     GAME.shareOpen = true;
+    GAME.track('result-card-shown');
   }
   function hide() {
     if (!el['share-screen']) return;

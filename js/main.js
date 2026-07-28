@@ -154,6 +154,8 @@
   GAME.startGame = function () {
     if (GAME.started) return;
     GAME.started = true;
+    GAME.analytics.start();
+    GAME.track(GAME.isTouch ? 'started-touch' : 'started-desktop');
     GAME.audio.init();
     // leave attract mode: place the player on the strip, camera snaps behind
     var P = GAME.player;

@@ -90,6 +90,7 @@ GAME.playerWasted = function (cause) {
   var P = GAME.player;
   if (P.state !== 'alive') return;
   P.state = 'wasted'; P.stateT = 0;
+  GAME.track('wasted');
   GAME.timeScale = 0.35;
   killLoopingAudio();
   GAME.audio.sting('wasted');
@@ -101,6 +102,7 @@ GAME.playerBusted = function () {
   var P = GAME.player;
   if (P.state !== 'alive') return;
   P.state = 'busted'; P.stateT = 0;
+  GAME.track('busted');
   GAME.timeScale = 0.4;
   killLoopingAudio();
   GAME.audio.sting('busted');
@@ -185,6 +187,7 @@ GAME.enterCar = function (car) {
     if (car.isPolice) driver.isCop = false; // he's fleeing his stolen cruiser, not chasing
     GAME.audio.yelp();
     GAME.police.reportCrime(car.isPolice ? 'steal_police' : 'jack', car.pos);
+    GAME.track('car-jacked');
     GAME.missions.notifyChaos(100);
   } else if (car.isPolice) {
     // stealing an empty/parked cruiser is still a crime
@@ -456,6 +459,7 @@ function updateDriving(dt) {
     return;
   }
   if (car.spec.heli || car.spec.plane) {
+    GAME.track(car.spec.plane ? 'flew-plane' : 'flew-helicopter');
     if (wantsEnter()) {
       var gy = GAME.city.groundY(car.pos.x, car.pos.z);
       if (car.pos.y > gy + 3.5) {

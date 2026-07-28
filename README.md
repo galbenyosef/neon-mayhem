@@ -23,7 +23,7 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-No build step, no server code, no external requests, no accounts, no ads. Progress (cash + best runs) is saved in `localStorage` only.
+No build step, no server code, no accounts, no ads. Progress (cash + best runs) is saved in `localStorage` only. The only network request the game ever makes is an anonymous visit count (see [Analytics](#analytics)), and it is skipped entirely when you run it locally or offline.
 
 ## Features
 
@@ -70,6 +70,22 @@ The title screen is a live broadcast: the city simulates behind the menu with sp
 ## Tech
 
 Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, and a spawn/despawn bubble keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test` for headless verification.
+
+## Analytics
+
+The published site counts visits and a handful of anonymous events — session
+started, a mission or shift finished, a stunt jump found, all 25 found, wanted
+level reached, aircraft flown, result card saved or shared — via
+[GoatCounter](https://www.goatcounter.com/): cookieless, no identifier stored in
+the browser, and nothing about you kept. `js/analytics.js` is a thin wrapper
+that silently no-ops when the counter is blocked or unavailable, so the game
+never depends on it, and each event counts at most once per page load — the
+interesting figures are per-visit ratios (started vs finished), not repeat
+presses.
+
+It is skipped entirely on `file://`, `localhost` and LAN addresses, so a local
+or offline copy makes no network request at all and local play stays out of the
+numbers. Nothing about this appears in the game itself.
 
 ## Disclaimer
 

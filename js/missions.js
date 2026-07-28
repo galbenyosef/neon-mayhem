@@ -33,6 +33,7 @@ GAME.stunts = (function () {
     var left = total - n;
     GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
       (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
+    GAME.track('stunt-jump-found');
     if (n >= total && !rewarded) grantReward();
     save();
     return bonus;
@@ -40,6 +41,7 @@ GAME.stunts = (function () {
 
   function grantReward() {
     rewarded = true;
+    GAME.track('all-stunt-jumps');
     GAME.unlimitedAmmo = true;
     GAME.combat.giveAllWeapons();
     GAME.addCash(50000);
@@ -188,6 +190,7 @@ GAME.missions = (function () {
   function startJob(kind) {
     var P = GAME.player;
     if (active || !P.inCar || !P.car) return;
+    GAME.track('job-started-' + kind);
     active = {
       def: { type: kind, name: kind === 'ambulance' ? 'PARAMEDIC' : 'TAXI DRIVER', id: kind, job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
@@ -473,6 +476,7 @@ GAME.missions = (function () {
       GAME.hud.message('SHIFT OVER — level ' + lv + ', ' + count + ' ' + unit + (count === 1 ? '' : 's') +
         ', $' + earned + ' earned' + (reason ? '  (' + reason + ')' : ''), 4.5);
       var amb = active.def.id === 'ambulance';
+      GAME.track('job-completed-' + active.def.id);
       GAME.share.show({
         slug: amb ? 'paramedic-shift' : 'taxi-shift',
         eyebrow: amb ? 'PARAMEDIC' : 'TAXI DRIVER',
@@ -515,6 +519,7 @@ GAME.missions = (function () {
 
   function start(def) {
     var P = GAME.player;
+    GAME.track('mission-started-' + def.type);
     active = {
       def: def, t: 0, cpIndex: 0, score: 0,
       timeLeft: def.time || 0, racers: [], state: 'countdown', countdown: def.type === 'race' ? 3.2 : 0,
@@ -642,6 +647,7 @@ GAME.missions = (function () {
         head = 'RACE WON — 1st / ' + field + '  ·  ' + value.toFixed(1) + 's  ·  +$';
       }
       GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : ''), 4.5);
+      GAME.track('mission-completed-' + d.type);
       // a finished run is worth showing off — the card carries the numbers
       var cardStats = [{ label: 'Reward', value: '$' + reward }];
       if (d.type === 'race') {
@@ -1006,6 +1012,7 @@ GAME.missions = (function () {
     GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 4);
     GAME.audio.pickup();
     GAME.hud.message('Resprayed & fully repaired — the heat is off.', 3);
+    GAME.track('respray-used');
     resprayCooldown = 8;
   }
 

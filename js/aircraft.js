@@ -138,6 +138,7 @@ GAME.aircraft = (function () {
   }
 
   function startParachute(x, y, z, heading) {
+    GAME.track('parachute-opened');
     var P = GAME.player;
     P.parachuting = true;
     P.inCar = false; P.car = null; P.onBike = false;
