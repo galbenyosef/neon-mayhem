@@ -45,7 +45,7 @@ GAME.police = (function () {
     if (type === 'steal_police') heat = Math.max(heat, THRESH[1] + 5);
     lastSeen = 0;
     var after = stars();
-    if (after > before) GAME.hud.wantedChanged(after);
+    if (after > before) { GAME.hud.wantedChanged(after); if (after >= 3) GAME.track('wanted-' + after); }
   }
 
   function noteGunfire(pos) {
