@@ -38,13 +38,48 @@ GAME.city = (function () {
   city.isOnPier = function (x, z) {
     return x > 356 && x < 505 && (Math.abs(z - 150) < 8 || Math.abs(z + 180) < 8);
   };
+
+  // The world is a set of landmasses rather than one. Costa Rosa is the first;
+  // anything else registers itself here before the city is built, and every
+  // water test goes through the same list — so a new island is dry land to the
+  // ocean mesh, the drown check and the spawners without any of them knowing
+  // there is more than one.
+  city.islands = [{
+    id: 'costa', name: 'Costa Rosa',
+    contains: function (x, z) {
+      return x <= city.shoreline(z) + 2 && x >= city.westShore(z) &&
+        z >= city.northShore(x) && z <= city.southShore(x);
+    }
+  }];
+  city.addIsland = function (isl) { city.islands.push(isl); return isl; };
+  city.islandAt = function (x, z) {
+    for (var i = 0; i < city.islands.length; i++) {
+      if (city.islands[i].contains(x, z)) return city.islands[i];
+    }
+    return null;
+  };
+  // which landmass a point belongs to, by id — '' for open water
+  city.islandIdAt = function (x, z) {
+    var isl = city.islandAt(x, z);
+    return isl ? isl.id : '';
+  };
+
+  // spans of road carried over water, registered the same way. A crossing is
+  // dry land for the water tests and drivable ground for the height lookup.
+  city.crossings = [];
+  city.addCrossing = function (c) { city.crossings.push(c); return c; };
+  city.crossingY = function (x, z) {
+    for (var i = 0; i < city.crossings.length; i++) {
+      var y = city.crossings[i].deckY(x, z);
+      if (y !== null) return y;
+    }
+    return null;
+  };
+
   city.isInWater = function (x, z) {
     if (city.isOnPier(x, z)) return false;
-    if (x > city.shoreline(z) + 2) return true;
-    if (x < city.westShore(z)) return true;
-    if (z < city.northShore(x)) return true;
-    if (z > city.southShore(x)) return true;
-    return false;
+    if (city.crossings.length && city.crossingY(x, z) !== null) return false;
+    return !city.islandAt(x, z);
   };
   city.isOnSand = function (x, z) {
     if (city.isOnPier(x, z)) return false;
@@ -71,6 +106,10 @@ GAME.city = (function () {
     if (city.ramps.length) {
       var rp = city.rampAt(x, z);
       if (rp) return rp.y;
+    }
+    if (city.crossings.length) {
+      var cy = city.crossingY(x, z);
+      if (cy !== null) return cy;
     }
     if (city.isOnPier(x, z) && x > BOARDWALK_X1) return 0.5;
     if (x > BOARDWALK_X0 && x <= BOARDWALK_X1) return 0.3;
@@ -152,6 +191,8 @@ GAME.city = (function () {
     city.hash.insert({ minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS });
   }
 
+  city.addSolid = function (cx, cz, sx, sz, h, tag, noLOS) { addSolid(cx, cz, sx, sz, h, tag, noLOS); };
+
   // ---------- canvas textures ----------
   function windowTexture(bg, litColors, cols, rows, litProb, bandColor) {
     var cv = document.createElement('canvas');
@@ -217,6 +258,9 @@ GAME.city = (function () {
 
   // ---------- build ----------
   city.build = function (scene) {
+    // second landmass registers first: the ocean mask, the drown test and every
+    // spawner ask the water model, and it has to know the full world by then
+    if (GAME.isla) GAME.isla.register(city);
     city.scene = scene;
     var batches = {
       ground: new GeoBatch(),
@@ -298,6 +342,7 @@ GAME.city = (function () {
     // terminal, the hospitals, the station and the tower all register after the
     // streets do, and a ramp placed before them can end up inside one
     buildRamps(scene);
+    if (GAME.isla) GAME.isla.build(scene);
     buildLaneGraph();
     buildSpots();
   };
