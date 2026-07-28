@@ -111,6 +111,11 @@ GAME.city = (function () {
       var cy = city.crossingY(x, z);
       if (cy !== null) return cy;
     }
+    // a landmass may carry its own relief; Costa Rosa is flat, others need not be
+    for (var ii = 1; ii < city.islands.length; ii++) {
+      var isl = city.islands[ii];
+      if (isl.groundY && isl.contains(x, z)) return isl.groundY(x, z);
+    }
     if (city.isOnPier(x, z) && x > BOARDWALK_X1) return 0.5;
     if (x > BOARDWALK_X0 && x <= BOARDWALK_X1) return 0.3;
     if (city.isOnSand(x, z)) {
