@@ -219,8 +219,11 @@ GAME.police = (function () {
       if (car.shootT <= 0) {
         var px2 = P.inCar && P.car ? P.car.pos.x : P.pos.x;
         var pz2 = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+        var py2 = P.inCar && P.car ? P.car.pos.y : P.pos.y;
         var d2 = U.dist2(car.pos.x, car.pos.z, px2, pz2);
-        if (d2 < 40 * 40 && GAME.city.hash.segmentClear(car.pos.x, car.pos.z, px2, pz2)) {
+        // no shooting at someone a storey above or below you
+        if (d2 < 40 * 40 && Math.abs(py2 - car.pos.y) < 3
+            && GAME.city.hash.segmentClear(car.pos.x, car.pos.z, px2, pz2)) {
           GAME.combat.npcShoot(car.pos.x, 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5);
         }
         car.shootT = U.randRange(Math.random, 1.1, 2.2) / Math.max(1, s * 0.5);
@@ -263,7 +266,8 @@ GAME.police = (function () {
     cop.heading = U.angleLerp(cop.heading, th, Math.min(1, dt * 6));
     // fire at the player on foot, or at a slow/stopped car
     var playerSlow = !P.inCar || (P.car && Math.abs(P.car.speed) < 9);
-    var los = GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, f.x, f.z);
+    var los = GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, f.x, f.z)
+      && Math.abs(f.y - cop.pos.y) < 3;   // not through a floor
     var wantShoot = s >= 2 && dist < 28 && playerSlow && los;
     var chaseSpeed = P.inCar ? 4.8 : 4.3;
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
@@ -289,7 +293,7 @@ GAME.police = (function () {
       j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
     }
     // a cop can only cuff you if you're on foot and not sprinting away
-    if (!P.inCar && dist < 1.7 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
+    if (!P.inCar && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
   }
 
   function placeRoadblock(s) {

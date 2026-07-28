@@ -356,8 +356,15 @@ GAME.vehicles = (function () {
   function stepPhysics(car, dt) {
     var c = car.controls, spec = car.spec;
     var surf = surfaceGrip(car);
-    var maxSp = spec.maxSpeed * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
-    var accel = spec.accel * (surf < 1 ? 0.6 : 1);
+    // booster strips slam the throttle open for a moment, so you leave the lip
+    // far faster than you arrived. A bike is already the quickest thing on the
+    // road and takes a smaller multiplier — giving it the same 3x a car gets
+    // would fire it off the ramp at half again everything else.
+    car.boostT = Math.max(0, (car.boostT || 0) - dt);
+    car.hitCd = Math.max(0, (car.hitCd || 0) - dt);
+    var boost = car.boostT > 0 ? (spec.bike ? 2 : 3) : 1;
+    var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
+    var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1);
     if (car.stage >= 2) { maxSp *= 0.6; accel *= 0.5; }
 
     if (c.throttle > 0) car.speed += accel * c.throttle * dt;
@@ -390,7 +397,8 @@ GAME.vehicles = (function () {
     // go ballistic off a lip
     var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
     var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
-    if (car.pos.y > gy + 0.08) {
+    var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
+    if (car.pos.y > gy + stickTol) {
       if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
       car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
       car.vy = (car.vy || 0) - 24 * dt;
@@ -406,12 +414,20 @@ GAME.vehicles = (function () {
       // on a ramp the deck itself drives the climb rate; carry that off the lip
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
       car.onRampIdx = ramp ? ramp.idx : null;
+      if (ramp && ramp.boost) {
+        if (!car.boostT && car === GAME.player.car && GAME.player.inCar) {
+          GAME.audio.pickup();
+          GAME.cameraShake = 0.35;
+        }
+        car.boostT = 1.4;
+        car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
+      }
       if (car.air) landStunt(car, 0);
     }
     car.mesh.rotation.y = car.heading;
     // pitch to the flight path while airborne, else roll with the slide
-    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? -Math.atan(ramp.slope) : 0);
-    car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 8));
+    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? Math.atan(ramp.slope) : 0);
+    car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 14));
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
     car.lastHeading = car.heading;
 
@@ -477,7 +493,11 @@ GAME.vehicles = (function () {
             car.speed = car.vx * fx + car.vz * fz;
             car.lat = car.vx * fz + car.vz * -fx;
           }
-          if (impact > 4) {
+          // one event per contact: a car grinding along a wall reports a hit
+          // every frame, which both shreds its health and machine-guns the
+          // crash sound until it works free
+          if (impact > 4 && (car.hitCd || 0) <= 0) {
+            car.hitCd = 0.25;
             damageCar(car, Math.min(32, impact * 1.5), 'wall');
             GAME.audio.crash(impact / 18);
             GAME.fx.spawn(px, 0.7, pz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
@@ -501,6 +521,9 @@ GAME.vehicles = (function () {
       for (var j = i + 1; j < cars.length; j++) {
         var b = cars[j];
         if (b.spec.heli || b.spec.plane) continue;
+        // one of them is up on a roof and the other at street level — they
+        // pass each other, they don't crash
+        if (Math.abs(a.pos.y - b.pos.y) > 3) continue;
         var dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
         var rr = a.radius + b.radius;
         var d2 = dx * dx + dz * dz;
@@ -511,7 +534,8 @@ GAME.vehicles = (function () {
         b.pos.x += nx * overlap / 2; b.pos.z += nz * overlap / 2;
         var avx = a.vx || 0, avz = a.vz || 0, bvx = b.vx || 0, bvz = b.vz || 0;
         var rel = (avx - bvx) * nx + (avz - bvz) * nz;
-        if (rel > 3) {
+        if (rel > 3 && (a.hitCd || 0) <= 0 && (b.hitCd || 0) <= 0) {
+          a.hitCd = 0.25; b.hitCd = 0.25;
           var dmg = Math.min(26, rel * 1.3);
           damageCar(a, dmg * 0.6, b); damageCar(b, dmg * 0.6, a);
           GAME.audio.crash(rel / 20);
@@ -640,6 +664,7 @@ GAME.vehicles = (function () {
     for (var i = 0; i < cars.length; i++) {
       var o = cars[i];
       if (o === car) continue;
+      if (Math.abs(o.pos.y - car.pos.y) > 3) continue;   // not on the same level
       var odx = o.pos.x - car.pos.x, odz = o.pos.z - car.pos.z;
       var fd = odx * fx + odz * fz;
       if (fd < 1 || fd > lookA + 3) continue;
@@ -647,7 +672,7 @@ GAME.vehicles = (function () {
       if (side < 2.6) { blocked = true; if (fd < 7) hard = true; }
     }
     var P = GAME.player;
-    if (!P.inCar) {
+    if (!P.inCar && Math.abs(P.pos.y - car.pos.y) < 3) {
       var pdx = P.pos.x - car.pos.x, pdz = P.pos.z - car.pos.z;
       var pfd = pdx * fx + pdz * fz;
       if (pfd > 0 && pfd < lookA + 2 && Math.abs(pdx * fz - pdz * fx) < 2.4) { blocked = true; if (pfd < 6) hard = true; }
@@ -656,6 +681,7 @@ GAME.vehicles = (function () {
     for (var pi = 0; pi < peds.length; pi++) {
       var pd = peds[pi];
       if (pd.dead) continue;
+      if (Math.abs(pd.pos.y - car.pos.y) > 3) continue;   // not on the same level
       var qdx = pd.pos.x - car.pos.x, qdz = pd.pos.z - car.pos.z;
       var qfd = qdx * fx + qdz * fz;
       if (qfd > 0 && qfd < lookA && Math.abs(qdx * fz - qdz * fx) < 2.2) { blocked = true; if (qfd < 6) hard = true; }

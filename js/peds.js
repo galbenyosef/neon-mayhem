@@ -286,6 +286,7 @@ GAME.peds = (function () {
         var car2 = world.cars[c2];
         var sp2 = Math.abs(car2.speed);
         if (sp2 < 4) continue;
+        if (Math.abs(car2.pos.y - ped.pos.y) > 3) continue;   // it's up on a roof
         if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 5.2) {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
