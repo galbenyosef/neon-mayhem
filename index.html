@@ -76,6 +76,21 @@
     animation:bigFade .45s ease-out; }
   #busted-screen { background:radial-gradient(120% 90% at 50% 45%, rgba(10,50,120,.55) 0%, rgba(4,8,26,.88) 55%, rgba(3,5,16,.96) 100%); }
   @keyframes bigFade { from { opacity:0 } to { opacity:1 } }
+  #share-screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column;
+    z-index:34; padding:18px; gap:14px; background:rgba(5,2,12,.9); animation:bigFade .3s ease-out;
+    font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+  /* both caps, so a short landscape phone shrinks the card instead of pushing
+     the buttons off the bottom; the intrinsic ratio is kept either way */
+  #share-canvas { width:auto; height:auto; max-width:min(92vw,860px); max-height:62vh; border-radius:14px;
+    box-shadow:0 0 0 2px rgba(255,77,157,.55), 0 18px 60px rgba(0,0,0,.7); }
+  #share-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  #share-note { color:#9fd8ff; font-size:13px; min-height:16px; letter-spacing:1px; }
+  @media (max-height:460px) {
+    #share-screen { padding:8px; gap:8px; }
+    #share-canvas { max-height:58vh; }
+    #share-screen .mbtn { padding:6px 12px; font-size:12px; }
+    #share-note { font-size:11px; min-height:12px; }
+  }
   .big-rule { width:min(78vw,520px); height:2px; margin:14px 0 0;
     background:linear-gradient(90deg,transparent,#ff4d9d,transparent); opacity:.85; }
   #busted-screen .big-rule { background:linear-gradient(90deg,transparent,#4da3ff,transparent); }
@@ -203,6 +218,17 @@
 <div id="wasted-screen" class="big-screen"><div class="big-word">WASTED</div><div class="big-rule"></div><div class="big-sub"></div><div class="big-hint">PRESS R TO CONTINUE</div></div>
 <div id="busted-screen" class="big-screen"><div class="big-word">BUSTED</div><div class="big-rule"></div><div class="big-sub"></div><div class="big-hint">PRESS R TO CONTINUE</div></div>
 
+<div id="share-screen">
+  <canvas id="share-canvas" width="1000" height="560"></canvas>
+  <div id="share-actions">
+    <span class="mbtn" id="share-send">SHARE</span>
+    <span class="mbtn" id="share-save">SAVE IMAGE</span>
+    <span class="mbtn" id="share-copy">COPY</span>
+    <span class="mbtn" id="share-close">CLOSE</span>
+  </div>
+  <div id="share-note"></div>
+</div>
+
 <div id="pause-screen">
   <h2>PAUSED</h2>
   <div id="pause-controls" style="color:#cfe6ff;font-size:13px;line-height:1.8;text-align:center;"></div>
@@ -288,6 +314,7 @@ window.addEventListener('load', function () {
 <script src="js/police.js"></script>
 <script src="js/missions.js"></script>
 <script src="js/hud.js"></script>
+<script src="js/share.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/main.js"></script>
 </body>

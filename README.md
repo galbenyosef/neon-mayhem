@@ -31,11 +31,12 @@ No build step, no server code, no external requests, no accounts, no ads. Progre
 - Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts on a bright late afternoon, slides into sunset and then night within the first minute, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
 - Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom)
-- **25 unique stunt jumps** hidden around the city on roadside construction ramps in four sizes, a third of them fitted with a booster strip that triples your speed on the way up — clear one to log it (air time, distance and spins all pay out, and you can land on a low roof or sail clean over it). Find every one for a $50,000 payout, the full arsenal with unlimited ammo (kept through the hospital and the cells), and a monster truck that jumps on command
+- **25 unique stunt jumps** hidden around the city on roadside construction ramps in four sizes, a third of them fitted with a booster strip that slams the throttle open on the way up — clear one to log it (air time, distance and spins all pay out, and you can land on a low roof or sail clean over it). Find every one for a $50,000 payout, the full arsenal with unlimited ammo (kept through the hospital and the cells), and a monster truck that jumps on command
 - Flyable helicopter and airplane — loops and barrel rolls included — with a beach helipad and an airport, plus a parachute when you bail out mid-air
 - Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun
 - 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
 - Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi and paramedic shifts that level up: more people (each marked by a floating arrow), further out, and an ambulance that fills up before it runs to the hospital
+- Finish something worth finishing — a race, a shift, all 25 jumps — and a shareable result card is drawn for it: save it, copy it, or send it straight to your phone's share sheet
 - 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
 - Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
 

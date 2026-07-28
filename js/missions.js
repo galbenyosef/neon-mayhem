@@ -45,6 +45,18 @@ GAME.stunts = (function () {
     GAME.addCash(50000);
     GAME.city.unlockMonsterTruck();
     GAME.hud.message('ALL ' + total + ' STUNT JUMPS!  +$50,000  ·  every weapon with unlimited ammo  ·  MONSTER TRUCK unlocked at the airport', 8);
+    GAME.share.show({
+      slug: 'all-stunt-jumps',
+      eyebrow: 'Costa Rosa · 1986',
+      title: 'ALL ' + total + ' STUNT JUMPS',
+      subtitle: 'Every ramp in the city, found and cleared',
+      accent: '#ffb03a',
+      stats: [
+        { label: 'Jumps', value: total + ' / ' + total },
+        { label: 'Payout', value: '$50,000' },
+        { label: 'Unlocked', value: 'MONSTER TRUCK' }
+      ]
+    });
   }
 
   return {
@@ -460,6 +472,19 @@ GAME.missions = (function () {
       GAME.audio.sting('win');
       GAME.hud.message('SHIFT OVER — level ' + lv + ', ' + count + ' ' + unit + (count === 1 ? '' : 's') +
         ', $' + earned + ' earned' + (reason ? '  (' + reason + ')' : ''), 4.5);
+      var amb = active.def.id === 'ambulance';
+      GAME.share.show({
+        slug: amb ? 'paramedic-shift' : 'taxi-shift',
+        eyebrow: amb ? 'PARAMEDIC' : 'TAXI DRIVER',
+        title: 'SHIFT OVER',
+        subtitle: amb ? 'Costa Rosa General — patients delivered' : 'Costa Rosa cabs — fares run',
+        accent: amb ? '#ff4d6a' : '#f0c020',
+        stats: [
+          { label: 'Level', value: String(lv) },
+          { label: unit === 'patient' ? 'Patients' : 'Fares', value: String(count) },
+          { label: 'Earned', value: '$' + earned }
+        ]
+      });
     } else {
       GAME.hud.message('Shift over.' + (reason ? ' ' + reason + '.' : ''), 2.5);
     }
@@ -617,6 +642,25 @@ GAME.missions = (function () {
         head = 'RACE WON — 1st / ' + field + '  ·  ' + value.toFixed(1) + 's  ·  +$';
       }
       GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : ''), 4.5);
+      // a finished run is worth showing off — the card carries the numbers
+      var cardStats = [{ label: 'Reward', value: '$' + reward }];
+      if (d.type === 'race') {
+        cardStats.unshift({ label: 'Place', value: '1st / ' + (1 + active.racers.length) });
+        cardStats.push({ label: 'Time', value: value.toFixed(1) + 's' });
+      } else if (d.type === 'rampage') {
+        cardStats.push({ label: 'Mayhem', value: '$' + value });
+      } else {
+        cardStats.push({ label: 'Time', value: value.toFixed(1) + 's' });
+      }
+      if (isBest) cardStats.push({ label: 'Result', value: 'NEW BEST' });
+      GAME.share.show({
+        slug: d.id,
+        eyebrow: TYPE_LABEL[d.type] || 'COSTA ROSA · 1986',
+        title: d.type === 'race' ? 'RACE WON' : 'MISSION PASSED',
+        subtitle: d.name,
+        accent: d.type === 'race' ? '#ff8a3d' : d.type === 'rampage' ? '#ff4fa3' : '#38e8ff',
+        stats: cardStats
+      });
     } else {
       GAME.audio.sting('wasted');
       var tail = '';

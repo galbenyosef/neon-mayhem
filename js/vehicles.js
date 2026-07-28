@@ -231,8 +231,11 @@ function buildMonsterMesh(colorHex) {
   b.addBox(0, 1.25, 0, 0.5, 0.35, 4.0, 0, 0x22262e, 0);         // spine
   b.addBox(0, 1.85, 2.35, 2.2, 0.5, 0.2, 0, 0x22262e, 0);       // bar
   var wh = new GeoBatch();
+  // the tyre tops used to land on exactly the chassis top (both y=2.30) and the
+  // two coplanar faces fought for depth wherever they overlapped — tucked under
+  // it now, still sitting on the ground at y=0
   [[1.25, 1.5], [-1.25, 1.5], [1.25, -1.5], [-1.25, -1.5]].forEach(function (w) {
-    wh.addBox(w[0], 1.15, w[1], 0.62, 2.3, 2.3, 0, 0x0c0c10, 0);
+    wh.addBox(w[0], 1.06, w[1], 0.62, 2.12, 2.12, 0, 0x0c0c10, 0);
   });
   var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
   g.add(body);
@@ -308,6 +311,11 @@ GAME.vehicles = (function () {
     var spec = VEHICLES[type] || VEHICLES.sedan;
     var color = opts.color !== undefined ? opts.color : U.pick(carRng, spec.colors);
     var mesh = buildCarMesh(type, color);
+    // Yaw first, then pitch and roll about the body's own axes. On the default
+    // XYZ order the pitch is applied about the world X axis after the heading,
+    // so a vehicle driving east or west got no pitch at all and sat flat while
+    // the ramp climbed out from under its nose.
+    if (!spec.heli && !spec.plane) mesh.rotation.order = 'YXZ';
     mesh.position.set(x, GAME.city.groundY(x, z), z);
     mesh.rotation.y = heading || 0;
     GAME.scene.add(mesh);
@@ -397,6 +405,7 @@ GAME.vehicles = (function () {
     // go ballistic off a lip
     var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
     var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
+    var wasAirborne = (car.air || 0) > 0.05;
     var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
     if (car.pos.y > gy + stickTol) {
       if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
@@ -425,9 +434,26 @@ GAME.vehicles = (function () {
       if (car.air) landStunt(car, 0);
     }
     car.mesh.rotation.y = car.heading;
-    // pitch to the flight path while airborne, else roll with the slide
-    var pitch = car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5) : (ramp ? Math.atan(ramp.slope) : 0);
-    car.mesh.rotation.x = U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 14));
+    // Pitch to the ground under the axles rather than to one point beneath the
+    // middle. A centre-only slope reads flat until the middle crosses the lip
+    // and then jumps to the full grade, and while the body eases into that the
+    // nose is buried in the ramp — worst on the long vehicles. Sampling front
+    // and rear means the body tips as it rides on, and once it is fully on the
+    // ramp the chord is the ramp's own slope anyway.
+    var wb = spec.l * 0.36;
+    var fyF = GAME.city.driveSurfaceY(car.pos.x + fx * wb, car.pos.z + fz * wb, car.pos.y);
+    var fyR = GAME.city.driveSurfaceY(car.pos.x - fx * wb, car.pos.z - fz * wb, car.pos.y);
+    var chord = Math.atan2(fyF - fyR, wb * 2);
+    // over the lip the front sample has already dropped past the ramp — hold
+    // the nose up on the ramp's own grade until the wheels actually leave
+    // negative pitches the nose up about the body's lateral axis
+    var pitch = -(car.air > 0.05 ? U.clamp((car.vy || 0) * 0.035, -0.5, 0.5)
+      : ramp ? Math.max(chord, Math.atan(ramp.slope)) : chord);
+    // touching back down puts the wheels on the surface at once, so the body
+    // takes the new grade immediately instead of easing out of its flight pose
+    // and burying the nose in the ramp it just landed on
+    var justLanded = wasAirborne && !((car.air || 0) > 0.05);
+    car.mesh.rotation.x = justLanded ? pitch : U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 22));
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
     car.lastHeading = car.heading;
 

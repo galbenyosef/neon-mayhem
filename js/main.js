@@ -42,6 +42,7 @@
     GAME.missions.init();
     GAME.stunts.load();
     GAME.hud.init();
+    GAME.share.init();
     GAME.initInput(canvas);
     GAME.combat.refreshWeaponHud();
     GAME.hud.wantedChanged(0);
@@ -56,7 +57,8 @@
       if (code === 'Enter' && !GAME.started) { GAME.startGame(); return; }
       if (!GAME.started) return;
       if (code === 'Escape') {
-        if (GAME.mapOpen) GAME.hud.toggleMap(false);
+        if (GAME.shareOpen) GAME.share.hide();
+        else if (GAME.mapOpen) GAME.hud.toggleMap(false);
         else GAME.togglePause();
       }
       if (code === 'KeyP') GAME.hud.toggleMap();
@@ -215,7 +217,7 @@
 
   // auto-pause when the tab/app is backgrounded or loses focus, and freeze audio
   function onHide() {
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && GAME.player.state === 'alive') GAME.togglePause();
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && GAME.player.state === 'alive') GAME.togglePause();
     else GAME.audio.suspend();
   }
   function onShow() {
@@ -279,7 +281,7 @@
         g0++;
       }
       if (g0 === 5) accumulator = 0;
-    } else if (!GAME.paused && !GAME.mapOpen) {
+    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen) {
       accumulator += real * GAME.timeScale;
       var guard = 0;
       while (accumulator >= STEP && guard < 5) {
