@@ -475,7 +475,8 @@ GAME.isla = (function () {
     }
     var p = segPointAt(best.s, best.t);
     var q = segPointAt(best.s, U.clamp(best.t + 0.004, 0, 1));
-    return { x: p[0], z: p[1], axis: 'net', heading: Math.atan2(q[0] - p[0], q[1] - p[1]) };
+    return { x: p[0], z: p[1], axis: 'net', kind: best.s.kind,
+      heading: Math.atan2(q[0] - p[0], q[1] - p[1]) };
   }
 
   // ---------- the bridges ----------

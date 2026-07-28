@@ -762,6 +762,7 @@ GAME.vehicles = (function () {
       var onIsla = rp.axis === 'net';
       if (!onIsla && (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480)) continue;
       if (city.inAirport(rp.x, rp.z)) continue; // keep the airfield clear
+      if (rp.kind === 'local') continue;        // no through traffic down a cul-de-sac
       // avoid spawning on top of others
       var clear = true;
       for (var c = 0; c < world.cars.length; c++) {
