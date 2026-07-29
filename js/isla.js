@@ -1248,7 +1248,7 @@ GAME.isla = (function () {
         // coming at it — one at each end of each bridge, four in all
         // hung 1.2 m off the gantry line: the pillars are 1.6 m deep, so a
         // board at 0.8 m sits exactly in their faces and shimmers against them
-        var slot = endI === 0 ? 32 : 33;              // ISLA VERDE / COSTA ROSA
+        var slot = endI === 0 ? 32 : 33;              // ISLA VERDE / ISLA ROSA
         var facing = endI === 0 ? ang + Math.PI : ang;
         var back = endI === 0 ? -1 : 1;
         city.addSign(sg, slot, g[0] + Math.sin(ang) * back * 1.2, gy + 12.2,

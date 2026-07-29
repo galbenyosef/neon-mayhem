@@ -4,7 +4,7 @@
 
 A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Auto: Vice City (2002). Everything in the project is original work — the sentence you just read is the only place the original game is named.
 
-Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on. Finish enough work and two bridges open onto **Isla Verde**, a hillier island across the channel with its own port, its own hill roads, and its own trouble.
+Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on. Costa Rosa is two islands: **Isla Rosa**, the neon mainland where you start, and — once you've finished enough work to open the two bridges — **Isla Verde**, a hillier island across the channel with its own port, its own hill roads, and its own trouble.
 
 <p align="center">
   <img src="media/social-card.png" alt="Neon Mayhem — a night drive down a neon-lit boulevard in Costa Rosa, 1986" width="600">

@@ -349,7 +349,7 @@ GAME.hud = (function () {
     g.font = 'italic 700 17px "Segoe UI", Arial, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = 'rgba(150,200,240,0.85)';
-    g.fillText('COSTA ROSA', mx(-70), my(542));
+    g.fillText('ISLA ROSA', mx(-70), my(542));
     if (GAME.city.isla) {
       // just under the island's own southernmost point, wherever that is
       var southZ = -1e9, cxIsla = 0, n = 0;

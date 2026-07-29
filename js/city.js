@@ -53,7 +53,7 @@ GAME.city = (function () {
   // ocean mesh, the drown check and the spawners without any of them knowing
   // there is more than one.
   city.islands = [{
-    id: 'costa', name: 'Costa Rosa', centre: { x: -70, z: 0 },
+    id: 'costa', name: 'Isla Rosa', centre: { x: -70, z: 0 },
     contains: function (x, z) {
       return x <= city.shoreline(z) + 2 && x >= city.westShore(z) &&
         z >= city.northShore(x) && z <= city.southShore(x);
@@ -339,8 +339,10 @@ GAME.city = (function () {
     // Isla Verde keeps its own names; appended, so every index above still holds
     'SUNNY SCOOPS', 'EL FARO', 'PUERTO DORADO', 'MARINA VERDE', 'MIRADOR',
     'CASA DEL SOL', 'BAHIA CLUB', 'VERDE MOTORS',
-    // the two ends of the world, for the signs over the bridges
-    'ISLA VERDE', 'COSTA ROSA'];
+    // The two ends of the world, for the signs over the bridges. Costa Rosa
+    // is the CITY — the whole map, both islands. The mainland is Isla Rosa,
+    // the neon island; Isla Verde is the green one across the channel.
+    'ISLA VERDE', 'ISLA ROSA'];
   var SIGN_COLORS = ['#ff4fa3', '#38e8ff', '#ffe14f', '#7dff6a', '#ff8a3d', '#c86bff', '#ff5d5d', '#59ffc8'];
   function signAtlas() {
     var cv = document.createElement('canvas');
