@@ -29,15 +29,16 @@ No build step, no server code, no accounts, no ads. Progress (cash + best runs) 
 
 - ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
 - **A second island, locked at first.** Isla Verde sits 300 m east across the channel: close enough that fog leaves a silhouette from the beach, far enough that you cannot see what it holds. Two bridges and the airspace over the channel open together once you have four jobs behind you. Over there the land actually rises — two hills, a switchback climbing hairpin to hairpin to a lookout, a sweeping resort road, a coastal ring and a promenade, all curves rather than a grid. What is built on a plot follows the ground under it: bungalows and villas on the hills, walk-up apartments on the lower slopes, and the island's only skyline down on the flat by the port
-- Isla Verde landmarks worth finding: an ice cream factory with a truck parked out front and a round to drive, a container port and marina, a lighthouse, a hilltop observatory, a cove beach — and the world's only helipad, moved to the Alta Verde summit at the top of the switchback, so there is no helicopter anywhere until the bridges open
+- Isla Verde landmarks worth finding: an ice cream factory with a truck parked out front and a round to drive, a container port and marina, a lighthouse, a cove beach — and the world's only helipad, moved to the Alta Verde summit at the top of the switchback, so there is no helicopter anywhere until the bridges open
+- **The Mirador observatory**, on the far hill: a terraced building with a flight of steps you can walk up. The first floor is open — the terrace, its parapet, and the rotunda standing in the middle of it — and at the far end of it, the only scoped rifle in the world
 - Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts on a bright late afternoon, slides into sunset and then night within the first minute, then the sun rises again and it loops)
 - Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
 - Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom). Isla Verde runs its own stock — a dune buggy, a 4x4 pickup, a resort limo and the ice cream truck — so crossing a bridge changes the traffic around you as well as the scenery
 - **25 unique stunt jumps** hidden around the city on roadside construction ramps in four sizes, a third of them fitted with a booster strip that slams the throttle open on the way up — clear one to log it (air time, distance and spins all pay out, and you can land on a low roof or sail clean over it). Find every one for a $50,000 payout, the full arsenal with unlimited ammo (kept through the hospital and the cells), and a monster truck that jumps on command
 - Flyable helicopter and airplane — loops and barrel rolls included — with an airport on the mainland, the helipad on the far island, and a parachute when you bail out mid-air
-- Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun
+- Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun — and a scoped rifle that exists in exactly one place in the world
 - 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
-- Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi, paramedic and ice cream shifts that level up: more people (each marked by a floating arrow), further out, an ambulance that fills up before it runs to the hospital, and a truck whose chimes bring people out to the hatch whenever you stop. Isla Verde carries four missions of its own, and they stay on the island — nothing ever asks you to cross mid-run
+- Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi, paramedic and ice cream shifts that level up: more people (each marked by a floating arrow), further out, and fares whose destinations open out as the shift goes on rather than repeating the same short hop. The ice cream round works the other way — nobody is waiting for you, the chimes do it: pull up where there are people on the pavement and they come to the hatch. Isla Verde carries four missions of its own, and they stay on the island — nothing ever asks you to cross mid-run
 - Finish something worth finishing — a race, a shift, all 25 jumps — and a shareable result card is drawn for it: save it, copy it, or send it straight to your phone's share sheet
 - 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
 - Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
@@ -53,7 +54,7 @@ No build step, no server code, no accounts, no ads. Progress (cash + best runs) 
 | Q / E | Cycle lock target | Drive-by left/right (barrel roll in a plane) |
 | Space | Jump | Handbrake |
 | F | Enter / jack car | Exit car |
-| 1–4 | Weapon select | — |
+| 1–5 | Weapon select | — |
 | , / . | — | Radio station |
 | Shift | Sprint | — |
 

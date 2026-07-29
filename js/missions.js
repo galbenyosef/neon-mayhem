@@ -229,10 +229,16 @@ GAME.missions = (function () {
   function rollCourierStops(def) {
     var stops = [];
     var cx = def.start.x, cz = def.start.z;
+    // Each leg draws its own length inside the run's band rather than every
+    // leg using the same one, so the same delivery is a different shape each
+    // time you take it instead of the same lap with the pins moved.
+    var lo0 = def.legMin || 110, hi0 = def.legMax || 240;
     for (var i = 0; i < (def.drops || 4); i++) {
+      var lo = U.randRange(Math.random, lo0 * 0.7, lo0 * 1.25);
+      var hi = U.randRange(Math.random, Math.max(lo + 70, hi0 * 0.75), hi0 * 1.45);
       var pt = null;
       for (var t = 0; t < 16; t++) {
-        var c = randomRoadPoint(cx, cz, def.legMin || 110, def.legMax || 240);
+        var c = randomRoadPoint(cx, cz, lo, hi);
         var ok = true;
         for (var j = 0; j < stops.length; j++) {
           if (U.dist2(c[0], c[1], stops[j][0], stops[j][1]) < 70 * 70) { ok = false; break; }
@@ -240,7 +246,7 @@ GAME.missions = (function () {
         if (U.dist2(c[0], c[1], def.start.x, def.start.z) < 60 * 60) ok = false;
         if (ok) { pt = c; break; }
       }
-      if (!pt) pt = randomRoadPoint(cx, cz, def.legMin || 110, def.legMax || 240);
+      if (!pt) pt = randomRoadPoint(cx, cz, lo, hi);
       stops.push(pt);
       cx = pt[0]; cz = pt[1];
     }
@@ -257,28 +263,44 @@ GAME.missions = (function () {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
-      targets: [], timeLeft: 120, chimeT: 0, spawnT: 1.5, routeCp: null
+      targets: [], timeLeft: 120, chimeT: 0, pitch: null, pitchT: 0, routeCp: null
     };
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
-    GAME.hud.message('Level 1 — sell 4 before the clock runs out. Stop near a customer and they will come to the hatch. Leave the truck to clock off.', 5.5);
+    GAME.hud.message('Round 1 — sell 4 before the clock runs out. The chimes do the work: pull up where there are people on the pavement and they will come to the hatch. Leave the truck to clock off.', 6);
     GAME.audio.pickup();
   }
 
-  function iceCreamSpawn() {
-    var f = GAME.focus();
-    var pt = randomRoadPoint(f.x, f.z, 45, 150);
-    if (!pt) return;
-    var wp = kerbWaitSpot(pt[0], pt[1]);
-    active.targets.push({ x: wp[0], z: wp[1], ped: spawnWaitingPed(wp[0], wp[1]), boarding: false });
+  // Where the trade is: the middle of whichever knot of people on the pavement
+  // is worth driving to. Nobody is summoned and nobody is marked as waiting —
+  // that is a taxi fare, and this is a van with chimes on it.
+  function iceCreamPitch() {
+    var f = GAME.focus(), peds = GAME.world.peds;
+    var best = null, bestScore = 0;
+    for (var i = 0; i < peds.length; i++) {
+      var a = peds[i];
+      if (a.dead || a.isCop || a.jobPed) continue;
+      var d = U.dist(f.x, f.z, a.pos.x, a.pos.z);
+      if (d < 30 || d > 400) continue;
+      var n = 0;
+      for (var j = 0; j < peds.length; j++) {
+        var b = peds[j];
+        if (b.dead || b.isCop || b.jobPed) continue;
+        if (U.dist2(a.pos.x, a.pos.z, b.pos.x, b.pos.z) < 30 * 30) n++;
+      }
+      var score = n / (1 + d / 220);
+      if (score > bestScore) { bestScore = score; best = [Math.round(a.pos.x), Math.round(a.pos.z)]; }
+    }
+    return best;
   }
 
   function iceCreamSale(tgt) {
     var i = active.targets.indexOf(tgt);
     if (i >= 0) active.targets.splice(i, 1);
     dropArrow(tgt);
-    if (tgt.ped && !tgt.ped.dead) GAME.peds.removePed(tgt.ped);
+    // served, not spirited away: they walk off with it
+    if (tgt.ped && !tgt.ped.dead) { tgt.ped.jobPed = false; tgt.ped.state = 'walk'; }
     var pay = 30 + active.level * 12;
     GAME.addCash(pay);
     active.earned += pay;
@@ -307,16 +329,18 @@ GAME.missions = (function () {
     // the chimes, on a loop, because that is the whole job
     active.chimeT -= dt;
     if (active.chimeT <= 0) { active.chimeT = 3.4; GAME.audio.chime(); }
-    // keep a couple of customers out there ahead of you
-    active.spawnT -= dt;
-    if (active.spawnT <= 0 && active.targets.length < 3) {
-      active.spawnT = U.randRange(Math.random, 3, 6);
-      iceCreamSpawn();
+    // point at the busiest pavement within reach, and keep re-pointing as the
+    // crowd moves and as you work through it
+    active.pitchT = (active.pitchT || 0) - dt;
+    if (active.pitchT <= 0 || !active.pitch) {
+      active.pitchT = 4;
+      var np = iceCreamPitch();
+      if (np) active.pitch = np;
     }
+    // Anyone on the pavement hears the chimes: stop the truck and whoever is
+    // close enough wanders over to the hatch. That is the entire job — nobody
+    // is spawned waiting for you and nobody is flagging you down.
     replaceLostTargets();
-    // anyone already on the pavement hears the chimes too: stop the truck and
-    // whoever is close enough wanders over. The marked customers give you
-    // somewhere to drive; these are the reason you stop.
     active.walkUpT = (active.walkUpT || 0) - dt;
     if (Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
       var peds = GAME.world.peds;
@@ -331,20 +355,12 @@ GAME.missions = (function () {
         break;
       }
     }
-    // stop anywhere near a marked customer and they come over
-    for (var i = 0; i < active.targets.length; i++) {
-      var t = active.targets[i];
-      if (!t.boarding && U.dist2(f.x, f.z, t.x, t.z) < 26 * 26 && Math.abs(P.car.speed) < 3.5) {
-        t.boarding = true;
-      }
-    }
     stepBoarding(dt, f, P);
     updateArrows(dt);
     active.routeT = (active.routeT || 0) - dt;
     if (active.routeT <= 0) {
       active.routeT = 1.0;
-      var jt = currentCp();
-      active.courierRoute = jt ? roadRoute(f.x, f.z, jt[0], jt[1]) : null;
+      active.courierRoute = active.pitch ? roadRoute(f.x, f.z, active.pitch[0], active.pitch[1]) : null;
     }
     GAME.hud.missionTimer(active.timeLeft, true);
   }
@@ -402,6 +418,19 @@ GAME.missions = (function () {
     var minR = kind === 'ambulance' ? Math.min(55 + (lv - 1) * 22, 210) : Math.min(80 + (lv - 1) * 20, 230);
     var maxR = kind === 'ambulance' ? Math.min(minR + 95, 330) : Math.min(minR + 170, 400);
     return [minR, maxR];
+  }
+
+  // Where a fare wants to go. It was a fixed 90–210 m band, so every ride was
+  // the same two blocks whatever else changed — the band opens up with the
+  // level, and each individual fare draws its own leg inside it, so a shift is
+  // a mix of short hops and long runs rather than one distance repeated.
+  function dropBand() {
+    var lv = active.level;
+    var minR = Math.min(70 + (lv - 1) * 45, 320);
+    var maxR = Math.min(minR + 180 + (lv - 1) * 60, 900);
+    // each fare picks its own slice of that band
+    var lo = U.randRange(Math.random, minR, minR + (maxR - minR) * 0.62);
+    return [lo, U.randRange(Math.random, lo + 45, maxR)];
   }
 
   // one level of the shift: more people, spread further out, each level
@@ -489,14 +518,22 @@ GAME.missions = (function () {
   // someone who can't come
   function replaceLostTargets() {
     var kind = active.def.id;
+    if (kind === 'icecream') {
+      // nobody on this job was called out, so nobody is owed a replacement
+      for (var w = 0; w < active.targets.length; w++) {
+        var wt = active.targets[w];
+        if (!wt.ped || wt.ped.dead || GAME.world.peds.indexOf(wt.ped) < 0) {
+          dropArrow(wt); active.targets.splice(w--, 1);
+        }
+      }
+      return;
+    }
     for (var i = 0; i < active.targets.length; i++) {
       var t = active.targets[i];
       var gone = !t.ped || t.ped.dead || GAME.world.peds.indexOf(t.ped) < 0;
       if (!gone) continue;
       dropArrow(t);
-      // someone who wandered over on their own isn't replaced — they were
-      // never a call in the first place
-      if (t.walkUp) { active.targets.splice(i--, 1); continue; }
+
       var f = GAME.focus();
       var band = targetBand();
       var pt = randomRoadPoint(f.x, f.z, band[0], band[1]);
@@ -588,8 +625,9 @@ GAME.missions = (function () {
     // head for the drop-off once we're full or there's nobody else left
     if (active.aboard >= active.capacity || !active.targets.length) {
       active.phase = 'dropoff';
+      var db = dropBand();
       active.dropoff = kind === 'ambulance' ? hospitalDropoff(GAME.focus())
-        : randomRoadPoint(GAME.focus().x, GAME.focus().z, 90, 210);
+        : randomRoadPoint(GAME.focus().x, GAME.focus().z, db[0], db[1]);
       GAME.hud.message(who + ' aboard (' + active.aboard + '/' + active.capacity + ') — ' +
         (kind === 'ambulance' ? 'get to the hospital!' : 'to the drop-off!'), 2.6);
     } else {
@@ -645,10 +683,15 @@ GAME.missions = (function () {
   function endJob(reason) {
     var count = active.jobCount, earned = active.earned, lv = active.level;
     var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : 'fare';
-    // send any waiting people home with the shift
+    // send any waiting people home with the shift. Someone who only wandered
+    // over for an ice cream was an ordinary passer-by a minute ago, so they get
+    // to carry on being one rather than vanishing off the pavement.
     for (var i = 0; i < active.targets.length; i++) {
       dropArrow(active.targets[i]);
-      if (active.targets[i].ped && !active.targets[i].ped.dead) GAME.peds.removePed(active.targets[i].ped);
+      var tp2 = active.targets[i].ped;
+      if (!tp2 || tp2.dead) continue;
+      if (active.targets[i].walkUp) { tp2.jobPed = false; tp2.state = 'walk'; }
+      else GAME.peds.removePed(tp2);
     }
     active.targets = [];
     if (count > 0) {
@@ -777,6 +820,7 @@ GAME.missions = (function () {
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
     if (d.type === 'icecream') {
       return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
+        (active.pitch ? '  ·  crowd marked' : '  ·  find a crowd') +
         '  ·  $' + active.earned + ' taken';
     }
     if (d.type === 'taxifare' || d.type === 'ambulance') {
@@ -799,10 +843,7 @@ GAME.missions = (function () {
       var t = nearestTarget();
       return t ? [t.x, t.z] : null;
     }
-    if (d.type === 'icecream') {
-      var c = nearestTarget();
-      return c ? [c.x, c.z] : null;
-    }
+    if (d.type === 'icecream') return active.pitch || null;
     return null;
   }
 
@@ -882,7 +923,9 @@ GAME.missions = (function () {
         for (var ti = 0; ti < active.targets.length; ti++) {
           var tp = active.targets[ti].ped;
           dropArrow(active.targets[ti]);
-          if (tp && !tp.dead) GAME.peds.removePed(tp);
+          if (!tp || tp.dead) continue;
+          if (active.targets[ti].walkUp) { tp.jobPed = false; tp.state = 'walk'; }
+          else GAME.peds.removePed(tp);
         }
       }
       // reclaim the rampage loadout so the marker can't be farmed for ammo
@@ -1217,6 +1260,11 @@ GAME.missions = (function () {
   return {
     DEFS: DEFS,
     get active() { return active; },
+    // headless hooks, so the generators can be sampled without playing a shift
+    testDropBand: function (lv) { var a = active; active = { level: lv, def: { id: 'taxifare' } }; var r = dropBand(); active = a; return r; },
+    testRollCourier: rollCourierStops,
+    testCollect: collectTarget,
+    testStartRound: startRound,
     init: init,
     update: update,
     failActive: failActive,

@@ -135,7 +135,9 @@ GAME.isla = (function () {
 
     // Puerto Dorado — the island's only grid, because a port earns one
     [-40, 30, 100, 170].forEach(function (gz) { iroad([[768, gz], [930, gz]], 13, 'port'); });
-    [790, 860, 930].forEach(function (gx) { iroad([[gx, -40], [gx, 170]], 13, 'port'); });
+    // two north-south streets, not three: the westmost one ran alongside the
+    // coast road for its whole length and served the same buildings
+    [865, 930].forEach(function (gx) { iroad([[gx, -40], [gx, 170]], 13, 'port'); });
 
     // Alta Verde — a switchback, hairpin to hairpin, up to the summit. Each leg
     // is its own road rather than one long polyline: a polyline that doubles
@@ -153,9 +155,10 @@ GAME.isla = (function () {
     iroad(spiral(1150, 120, 150, 92, TAU * 0.52, TAU * 0.96), 11, 'hill');
     iroad(spiral(1150, 120, 92, 44, TAU * 0.96, TAU * 0.44), 11, 'hill');
     iroad(spiral(1150, 120, 44, 8, TAU * 0.44, TAU * 0.86), 11, 'hill');
-    // a full circle, so it always crosses the climb somewhere and the two are
-    // one network rather than two
-    road(arcp(1150, 120, 120, 0, TAU, 48).map(T), 11, 'hill').closed = true;
+    // The plan drew a resort ring road round this hill. It is gone: a ring at a
+    // fixed radius sits at the same elevation the climb sweeps through, so the
+    // two ran alongside each other for a quarter of a kilometre and neither
+    // took you anywhere the other did not. The climb passes the resort anyway.
 
     // Costa Sur promenade, just inside the ring along the south shore
     var prom = [];
@@ -163,11 +166,9 @@ GAME.isla = (function () {
     road(prom, 12, 'prom');
 
     // connectors that tie it all together
-    iroad(roundCorners([[930, 100], [1000, 60], [1060, 20]], 30), 12, 'port');
+    iroad(roundCorners([[930, 100], [988, 68], [1016, 52]], 26), 12, 'port');
     iroad([[930, -40], [900, -100]], 11, 'hill');
     iroad(arcp(1030, -20, 118, TAU * 0.80, TAU * 0.98), 11, 'hill');
-    iroad(roundCorners([[1060, 20], [1120, 30], [1150, -30]], 30), 11, 'hill');
-    iroad([[1150, 240], [1090, 300]], 12, 'prom');
 
     // Cul-de-sacs through the villa belts. Each one starts on the road it
     // branches off — a lane that begins forty metres from anything is a lane
@@ -180,7 +181,24 @@ GAME.isla = (function () {
       var o = T([L[0], L[1]]);
       var j = scanNearest(o[0], o[1]);
       if (!j || j.d > 120) return;
-      road(contourWalk(j.x, j.z, L[3] + j.d * 0.5, L[2]), 8, 'local');
+      // On a steep flank the only level line is the contour, which is the line
+      // the road already takes — so a lane there is a second road running
+      // beside the first. Lanes go where the ground is gentle enough to lay
+      // one out in any direction.
+      var gx2 = terrainY(j.x + 3, j.z) - terrainY(j.x - 3, j.z);
+      var gz2 = terrainY(j.x, j.z + 3) - terrainY(j.x, j.z - 3);
+      if (Math.hypot(gx2, gz2) / 6 > 0.075) return;
+      var lane = contourWalk(j.x, j.z, L[3] + j.d * 0.5, L[2]);
+      // near the coast the contour is the coast, so a lane that follows it just
+      // runs alongside the ring road for its whole length
+      var shadow = 0;
+      for (var k = 1; k < lane.length; k++) {
+        var a = Math.atan2(lane[k][1] - C.cz, lane[k][0] - C.cx);
+        var rp = ringPt(a, 0.845);
+        if (U.dist(lane[k][0], lane[k][1], rp[0], rp[1]) < 26) shadow++;
+      }
+      if (lane.length < 3 || shadow > (lane.length - 1) * 0.3) return;
+      road(lane, 8, 'local');
     });
   }
 
@@ -479,6 +497,40 @@ GAME.isla = (function () {
       heading: Math.atan2(q[0] - p[0], q[1] - p[1]) };
   }
 
+  // Nudge a hand-placed structure out of every carriageway. A landmark sited
+  // from a drawing lands wherever the roads happen to run, and a warehouse
+  // across a road is a road you cannot use. Pushing away from the nearest
+  // offending centreline converges in a few passes because every push strictly
+  // increases the clearance that was worst.
+  function clearOfRoads(x, z, half, gap) {
+    var px = x, pz = z;
+    gap = gap === undefined ? 5 : gap;
+    for (var pass = 0; pass < 40; pass++) {
+      var worst = null, worstPush = 0;
+      for (var i = 0; i < NET.length; i++) {
+        var sg = NET[i], c = segClosest(sg, px, pz);
+        var need = sg.w / 2 + half + gap;
+        if (c.d >= need) continue;
+        if (need - c.d > worstPush) {
+          worstPush = need - c.d;
+          worst = segPointAt(sg, c.t);
+        }
+      }
+      if (!worst) break;
+      var dx = px - worst[0], dz = pz - worst[1], l = Math.hypot(dx, dz);
+      if (l < 0.01) { dx = 1; dz = 0; l = 1; }
+      px += dx / l * (worstPush + 0.6);
+      pz += dz / l * (worstPush + 0.6);
+      // never push it into the sea
+      if (inland(px, pz) < 0.05) {
+        var a = Math.atan2(pz - C.cz, px - C.cx);
+        var q = ringPt(a, 0.90);
+        px = q[0]; pz = q[1];
+      }
+    }
+    return { x: px, z: pz };
+  }
+
   // ---------- the bridges ----------
   // A crossing is a polyline deck with a half-width: it rises off the mainland,
   // runs level, and comes back down to meet whatever the island road is doing
@@ -491,14 +543,26 @@ GAME.isla = (function () {
     prep(s);
     s.half = opts.half; s.h = opts.h;
     s.rampIn = opts.rampIn; s.rampOut = opts.rampOut;
+    // the access road: the first stretch is ordinary tarmac at street level, so
+    // the bridge starts a little way off the junction rather than out of it
+    s.flatIn = opts.flatIn || 0;
     s.startY = 0; s.endY = 0;
     s.deckY = function (x, z) {
       var c = segClosest(s, x, z);
       if (c.d > s.half) return null;
       var d = c.t * s.len;
-      if (d < s.rampIn) return U.lerp(s.startY, s.h, ease(d / s.rampIn));
+      if (d <= s.flatIn) return s.startY;
+      if (d < s.flatIn + s.rampIn) return U.lerp(s.startY, s.h, ease((d - s.flatIn) / s.rampIn));
       if (d > s.len - s.rampOut) return U.lerp(s.endY, s.h, ease((s.len - d) / s.rampOut));
       return s.h;
+    };
+    // how high the deck stands over whatever is under it, which is what decides
+    // where a parapet belongs and where the deck is just a road
+    s.liftAt = function (x, z) {
+      var y = s.deckY(x, z);
+      if (y === null) return 0;
+      var g = contains(x, z) ? groundY(x, z) : 0;
+      return y - g;
     };
     // where the deck runs, and how wide, for the geometry and the barriers
     s.pointAt = function (t) { return segPointAt(s, t); };
@@ -564,31 +628,34 @@ GAME.isla = (function () {
     city = c;
     defineNetwork();
 
-    // the bridges, and the slip roads that receive them on the island side
-    var nB = coastHit(400, -400, tx(1000), tz(-240));
-    var sB = coastHit(city.shoreline(150) + 8, 150, C.cx, 150);
+    // Each bridge carries on over the shore and sets down on the coastal ring
+    // itself. Landing at the waterline instead needed a slip road to climb to
+    // the ring, and to keep that inside a drivable grade it had to run a
+    // hundred metres along the coast — shadowing the ring the whole way for no
+    // gain. A viaduct over the last stretch of land does the same job.
+    function landing(fx, fz, tx2, tz2) {
+      var c = coastHit(fx, fz, tx2, tz2);
+      var a = Math.atan2(c[1] - C.cz, c[0] - C.cx);
+      return ringPt(a, 0.845);
+    }
+    // Aimed so the descent does not graze the outer switchback leg: land a
+    // bridge across a road at two metres of clearance and the road under it
+    // stops being a road.
+    var nB = landing(400, -400, tx(1012), tz(-200));
+    var sB = landing(city.shoreline(150) + 8, 150, C.cx, 150);
+    // Both approaches leave along a street rather than out of the middle of a
+    // junction: the deck runs level with the road for its first stretch and
+    // only then starts to climb.
     var north = makeSpan({
-      pts: roundCorners([[350, -350], [404, -404], [nB[0], nB[1]]], 30),
-      half: 7, h: 9, rampIn: 74, rampOut: 96
+      pts: roundCorners([[352, -350], [416, -350], [nB[0], nB[1]]], 42),
+      half: 7, h: 9, flatIn: 46, rampIn: 78, rampOut: 130
     });
     var south = makeSpan({
-      pts: [[356, 150], [sB[0], sB[1]]],
-      half: 7, h: 9, rampIn: 74, rampOut: 96
+      pts: [[352, 150], [sB[0], sB[1]]],
+      half: 7, h: 9, flatIn: 40, rampIn: 78, rampOut: 130
     });
     north.id = 'north'; north.name = 'North Bridge';
     south.id = 'south'; south.name = 'South Bridge';
-
-    // Slip roads from each abutment in to the coastal ring. They come in long
-    // and curving rather than straight: the ring sits a good few metres up
-    // where it crosses a hill flank, and a short straight ramp would have to
-    // climb that in sixty metres — which is either a cliff or a road that
-    // ends below the one it is joining.
-    [nB, sB].forEach(function (B) {
-      var a = Math.atan2(B[1] - C.cz, B[0] - C.cx);
-      var da = B[1] < C.cz ? 0.30 : -0.30;
-      road(roundCorners([[B[0], B[1]], ringPt(a, 0.94), ringPt(a + da * 0.45, 0.90),
-        ringPt(a + da * 0.8, 0.87), ringPt(a + da, 0.845)], 26), 13, 'port');
-    });
 
     for (var i = 0; i < NET.length; i++) prep(NET[i]);
     buildIndex();
@@ -614,15 +681,17 @@ GAME.isla = (function () {
   // ---------- landmarks ----------
   var POI = {};
   function definePois() {
-    POI.police = { x: tx(880), z: tz(65) };
-    POI.hospital = { x: tx(830), z: tz(-60) };
-    POI.helipad = { x: tx(938), z: tz(-164) };     // the Alta Verde summit
-    POI.factory = { x: tx(1075), z: tz(330) };
-    POI.lighthouse = { x: tx(845), z: tz(300) };
-    POI.marina = { x: tx(792), z: tz(205) };
-    POI.container = { x: tx(800), z: tz(20) };
-    POI.observatory = { x: HILLS[1].x, z: HILLS[1].z };
-    POI.cove = { x: tx(1245), z: tz(20) };
+    // half-extents, so each one is pushed out by as much as it actually covers
+    function site(x, z, half) { var p = clearOfRoads(x, z, half); p.half = half; return p; }
+    POI.police = site(tx(880), tz(65), 30);
+    POI.hospital = site(tx(830), tz(-60), 30);
+    POI.helipad = { x: tx(938), z: tz(-164), half: 9 };   // the Alta Verde summit
+    POI.factory = site(tx(1075), tz(330), 26);
+    POI.lighthouse = site(tx(845), tz(300), 8);
+    POI.marina = site(tx(792), tz(205), 26);
+    POI.container = site(tx(800), tz(20), 40);
+    POI.observatory = site(HILLS[1].x, HILLS[1].z, 34);
+    POI.cove = { x: tx(1245), z: tz(20), half: 30 };
     city.islaPois = POI;
     // the world's one helipad moved over here with the helicopter
     city.helipad = { x: POI.helipad.x, z: POI.helipad.z };
@@ -681,12 +750,18 @@ GAME.isla = (function () {
   // bungalows and villas, the lower slopes carry walk-up apartments, and the
   // only skyline on the island stands on the flat by the port. Putting the
   // tall stuff "further inland" is what buried the hills under towers.
+  // Isla Verde is a hill island, not a second downtown: it wants space between
+  // things. The gaps are what you actually see — a plot every twenty metres
+  // reads as a wall of massing whatever is standing on it.
   var BANDS = {
-    villa: { sx: [11, 16], sz: [9, 13], h: [4.5, 7.5], gap: 30, cols: [0xd8cfae, 0xe6dcc0, 0xcfc4a2, 0xdcd0b4], tex: null },
-    apart: { sx: [16, 24], sz: [14, 20], h: [11, 22], gap: 18, cols: [0x7a6f92, 0x6b6386, 0x8a7ea6, 0x6f688e], tex: 'generic' },
-    tower: { sx: [20, 30], sz: [20, 30], h: [30, 68], gap: 14, cols: [0x8a94b8, 0x6a7aa0, 0x9aa8c8, 0x7a88b0], tex: 'downtown' },
-    shop: { sx: [18, 30], sz: [12, 18], h: [7, 14], gap: 15, cols: [0xd9a0b6, 0xa8d8c8, 0xe0c898, 0xa8c0e0, 0xd8b0e0], tex: 'strip' }
+    villa: { sx: [11, 16], sz: [9, 13], h: [4.5, 7.5], gap: 52, cols: [0xd8cfae, 0xe6dcc0, 0xcfc4a2, 0xdcd0b4], tex: null },
+    apart: { sx: [16, 24], sz: [14, 20], h: [11, 22], gap: 40, cols: [0x7a6f92, 0x6b6386, 0x8a7ea6, 0x6f688e], tex: 'generic' },
+    tower: { sx: [20, 30], sz: [20, 30], h: [30, 68], gap: 30, cols: [0x8a94b8, 0x6a7aa0, 0x9aa8c8, 0x7a88b0], tex: 'downtown' },
+    shop: { sx: [18, 30], sz: [12, 18], h: [7, 14], gap: 34, cols: [0xd9a0b6, 0xa8d8c8, 0xe0c898, 0xa8c0e0, 0xd8b0e0], tex: 'strip' }
   };
+  // names for the ones that face a street, the way the mainland signs its own
+  var ISLA_SIGNS = [24, 25, 26, 27, 28, 29, 30, 31];
+  var TOWN_SIGNS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
   function bandAt(x, z) {
     var y = groundY(x, z);
@@ -699,7 +774,7 @@ GAME.isla = (function () {
 
   var placed = [];
   function buildBlocks(batches, rng) {
-    for (var n = 0; n < 9000 && placed.length < 300; n++) {
+    for (var n = 0; n < 12000 && placed.length < 150; n++) {
       var a = rng() * TAU, rr = Math.sqrt(rng());
       var q = ringPt(a, rr * 0.94);
       var ox = q[0], oz = q[1];
@@ -723,6 +798,15 @@ GAME.isla = (function () {
       if (!band.tex) batches.plain.addBox(ox, gy + h + 0.5, oz, w + 1.6, 1, d + 1.6, rot, 0x8f5a48, 0);
       city.addSolid(ox, oz, w * 1.02, d * 1.02, gy + h);
       placed.push([ox, oz]);
+      // a name on the street face, for the ones with a street to face
+      if (band.tex && rng() < 0.55) {
+        var pool = rng() < 0.5 ? ISLA_SIGNS : TOWN_SIGNS;
+        var slot = pool[U.randInt(rng, 0, pool.length - 1)];
+        var out = d / 2 + 0.35;
+        city.addSign(batches.signs, slot, ox + Math.sin(rot) * out,
+          gy + Math.min(h - 2.6, h * 0.66), oz + Math.cos(rot) * out, rot,
+          Math.min(w * 0.92, 20), 3.8);
+      }
     }
   }
 
@@ -766,6 +850,7 @@ GAME.isla = (function () {
       new THREE.MeshLambertMaterial({ color: 0xffd7e4, emissive: 0x442230 }));
     scoop.position.set(POI.factory.x + 12, y + 27, POI.factory.z);
     scene.add(scoop);
+    city.addSign(sg, 24, POI.factory.x, y + 11, POI.factory.z + 15.3, 0, 30, 5);
 
     // lighthouse on the south-west point
     y = groundY(POI.lighthouse.x, POI.lighthouse.z);
@@ -778,8 +863,11 @@ GAME.isla = (function () {
     lamp.position.set(POI.lighthouse.x, y + 27, POI.lighthouse.z);
     scene.add(lamp);
     city.addSolid(POI.lighthouse.x, POI.lighthouse.z, 9, 9, y + 26);
+    city.addSign(sg, 25, POI.lighthouse.x, y + 6.5, POI.lighthouse.z + 5, 0, 16, 3);
 
     // marina: finger jetties and a line of moored hulls
+    city.addSign(sg, 27, POI.marina.x + 6, groundY(POI.marina.x + 6, POI.marina.z - 34) + 7,
+      POI.marina.z - 34, 0, 24, 4);
     y = 0.5;
     for (var j = 0; j < 4; j++) {
       var jz = POI.marina.z - 24 + j * 16;
@@ -790,41 +878,36 @@ GAME.isla = (function () {
       }
     }
 
-    // container port: stacks and two gantry cranes
-    y = groundY(POI.container.x, POI.container.z);
+    // Container port: stacks and two gantry cranes, and every last one of them
+    // checked against the road network before it goes down. A yard laid out on
+    // a fixed grid put boxes across three carriageways.
     var ccol = [0xc85040, 0x4078a8, 0x50a068, 0xb89040, 0x9060a0];
     for (var r2 = 0; r2 < 5; r2++) {
       for (var c2 = 0; c2 < 6; c2++) {
-        var bx2 = POI.container.x - 30 + c2 * 13, bz2 = POI.container.z - 26 + r2 * 12;
-        var stack = 1 + Math.floor(Math.random() * 3);
+        var bx2 = POI.container.x - 33 + c2 * 14, bz2 = POI.container.z - 26 + r2 * 12;
+        if (onRoad(bx2, bz2, 12) || inland(bx2, bz2) < 0.05) continue;
+        var cy = groundY(bx2, bz2);
+        var stack = 1 + ((r2 * 3 + c2 * 5) % 3);
         for (var st = 0; st < stack; st++) {
-          b.addBox(bx2, y + 1.4 + st * 2.7, bz2, 12, 2.6, 5, 0, ccol[(r2 + c2 + st) % 5], 0);
+          b.addBox(bx2, cy + 1.4 + st * 2.7, bz2, 12, 2.6, 5, 0, ccol[(r2 + c2 + st) % 5], 0);
         }
-        city.addSolid(bx2, bz2, 12, 5, y + stack * 2.7);
+        city.addSolid(bx2, bz2, 12, 5, cy + stack * 2.7);
       }
     }
     for (var cr = 0; cr < 2; cr++) {
       var crx = POI.container.x - 26, crz = POI.container.z - 44 + cr * 88;
-      b.addBox(crx, y + 14, crz, 2.4, 28, 2.4, 0, 0xd8a030, 0);
-      b.addBox(crx + 24, y + 14, crz, 2.4, 28, 2.4, 0, 0xd8a030, 0);
-      b.addBox(crx + 12, y + 28, crz, 60, 2.4, 3, 0, 0xd8a030, 0);
-      city.addSolid(crx, crz, 3, 3, y + 28);
-      city.addSolid(crx + 24, crz, 3, 3, y + 28);
+      if (onRoad(crx + 12, crz, 34) || inland(crx, crz) < 0.06) continue;
+      var gy2 = groundY(crx, crz);
+      b.addBox(crx, gy2 + 14, crz, 2.4, 28, 2.4, 0, 0xd8a030, 0);
+      b.addBox(crx + 24, gy2 + 14, crz, 2.4, 28, 2.4, 0, 0xd8a030, 0);
+      b.addBox(crx + 12, gy2 + 28, crz, 60, 2.4, 3, 0, 0xd8a030, 0);
+      city.addSolid(crx, crz, 3, 3, gy2 + 28);
+      city.addSolid(crx + 24, crz, 3, 3, gy2 + 28);
     }
+    city.addSign(sg, 26, POI.container.x, groundY(POI.container.x, POI.container.z) + 12,
+      POI.container.z - 34, 0, 30, 5);
 
-    // observatory + beacon on the Mirador summit
-    y = groundY(POI.observatory.x, POI.observatory.z);
-    b.addBox(POI.observatory.x, y + 5, POI.observatory.z, 24, 10, 24, 0, 0xd0d4dc, 0);
-    city.addSolid(POI.observatory.x, POI.observatory.z, 24, 24, y + 10);
-    var dome = new THREE.Mesh(new THREE.SphereGeometry(9, 18, 10, 0, TAU, 0, Math.PI / 2),
-      new THREE.MeshLambertMaterial({ color: 0xe4e8f0 }));
-    dome.position.set(POI.observatory.x, y + 10, POI.observatory.z);
-    scene.add(dome);
-    var beacon = new THREE.Mesh(new THREE.SphereGeometry(1.6, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff6a9a }));
-    beacon.position.set(POI.observatory.x, y + 21, POI.observatory.z);
-    scene.add(beacon);
-    city.islaBeacon = beacon;
+    buildObservatory(b, sg, scene);
 
     // helipad on the Alta Verde lookout, at the top of the switchback
     y = groundY(POI.helipad.x, POI.helipad.z) + 0.09;
@@ -849,6 +932,98 @@ GAME.isla = (function () {
       POI.container, POI.observatory, POI.helipad, POI.cove].forEach(function (P) {
       reserve(P.x, P.z, 42);
     });
+  }
+
+  // The Mirador observatory: a terraced building you can walk up into rather
+  // than a block sitting on the hill. A flight of steps on the south face
+  // climbs to an open first floor — no interior, just the roof terrace, its
+  // parapet, and the rotunda rising out of the middle of it. The far end of
+  // the terrace is the only place in the world the rifle exists.
+  var OBS = { W: 46, D: 34, H: 7.2, STAIR_W: 9, STAIR_L: 22, PAR: 1.1 };
+  function buildObservatory(b, sg, scene) {
+    var O = POI.observatory;
+    var y = groundY(O.x, O.z);
+    var hw = OBS.W / 2, hd = OBS.D / 2, top = y + OBS.H;
+
+    // plinth and main block
+    b.addBox(O.x, y + 0.6, O.z, OBS.W + 6, 1.2, OBS.D + 6, 0, 0xb8b4ac, 0);
+    b.addBox(O.x, y + OBS.H / 2, O.z, OBS.W, OBS.H, OBS.D, 0, 0xdcdcd4, 0);
+    city.addSolid(O.x, O.z, OBS.W, OBS.D, top);
+    // pilasters down the long faces, so it reads as a building and not a slab
+    for (var i = -3; i <= 3; i++) {
+      var px = O.x + i * (OBS.W / 7.4);
+      b.addBox(px, y + OBS.H / 2, O.z + hd + 0.35, 1.6, OBS.H, 0.7, 0, 0xf0efe6, 0);
+      b.addBox(px, y + OBS.H / 2, O.z - hd - 0.35, 1.6, OBS.H, 0.7, 0, 0xf0efe6, 0);
+    }
+    // cornice
+    b.addBox(O.x, top + 0.3, O.z, OBS.W + 2.4, 0.6, OBS.D + 2.4, 0, 0xf0efe6, 0);
+
+    // The steps. A sloped deck, not a stack of boxes: the walk code will only
+    // step you up 20 cm at a time, which would take thirty-six of them.
+    // The flight has to arrive at the terrace already at terrace height: stop it
+    // short and you are blocked at the wall you are trying to climb onto, and
+    // leave a gap instead and there is a strip belonging to neither, which you
+    // fall through. So the steps reach `top` exactly at the wall, and a flat
+    // landing spans the seam.
+    var sx = O.x, foot = O.z + hd + OBS.STAIR_L, sz = O.z + hd + OBS.STAIR_L / 2;
+    var footY = groundY(sx, foot);
+    city.addDeck({ x: sx, z: sz, w: OBS.STAIR_W, len: OBS.STAIR_L, rot: Math.PI, y0: footY, y1: top });
+    city.addDeck({ x: sx, z: O.z + hd - 1.5, w: OBS.STAIR_W, len: 7, rot: 0, y0: top, y1: top });
+    var STEPS = 18;
+    for (var k = 0; k < STEPS; k++) {
+      var t0 = (k + 0.5) / STEPS;
+      var zz = foot - OBS.STAIR_L * t0;
+      b.addBox(sx, footY + (top - footY) * t0 - 0.06, zz,
+        OBS.STAIR_W, 0.18, OBS.STAIR_L / STEPS + 0.06, 0, k % 2 ? 0xd0cfc6 : 0xdcdbd2, 0);
+    }
+    // cheek walls either side of the flight, so you cannot walk off it
+    for (var e2 = 0; e2 < 2; e2++) {
+      var ex = sx + (e2 ? 1 : -1) * (OBS.STAIR_W / 2 + 0.5);
+      b.addBox(ex, y + OBS.H / 2 + 0.4, sz, 1, OBS.H + 0.8, OBS.STAIR_L, 0, 0xcfcec4, 0);
+      city.addSolid(ex, sz, 1, OBS.STAIR_L, top + 0.9);
+    }
+
+    // the terrace parapet, open only where the steps arrive
+    function parapet(cx, cz, w, d) {
+      b.addBox(cx, top + OBS.PAR / 2 + 0.6, cz, w, OBS.PAR, d, 0, 0xf0efe6, 0);
+      city.addSolid(cx, cz, w, d, top + OBS.PAR + 0.6);
+    }
+    parapet(O.x, O.z - hd + 0.5, OBS.W, 1);                       // north
+    parapet(O.x - hw + 0.5, O.z, 1, OBS.D);                       // west
+    parapet(O.x + hw - 0.5, O.z, 1, OBS.D);                       // east
+    var gapHalf = OBS.STAIR_W / 2 + 0.6;                          // south, split
+    var run = (OBS.W - gapHalf * 2) / 2;
+    parapet(O.x - gapHalf - run / 2, O.z + hd - 0.5, run, 1);
+    parapet(O.x + gapHalf + run / 2, O.z + hd - 0.5, run, 1);
+
+    // the rotunda and its dome, standing in the middle of the terrace so the
+    // north end of it stays open — that far strip is where the reward sits
+    b.addBox(O.x, top + 4.2, O.z, 16, 8, 16, 0, 0xe8e7de, 0);
+    city.addSolid(O.x, O.z, 16, 16, top + 8.2);
+    var dome = new THREE.Mesh(new THREE.SphereGeometry(8.4, 20, 12, 0, TAU, 0, Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: 0xe4e8f0 }));
+    dome.position.set(O.x, top + 8.2, O.z);
+    scene.add(dome);
+    // two smaller domes on the wings, the way an observatory carries them
+    [-1, 1].forEach(function (sgn) {
+      var wx = O.x + sgn * (hw - 4.5);
+      b.addBox(wx, top + 2.2, O.z + 10, 9, 4, 9, 0, 0xe8e7de, 0);
+      city.addSolid(wx, O.z + 10, 9, 9, top + 4.2);
+      var d2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 14, 9, 0, TAU, 0, Math.PI / 2),
+        new THREE.MeshLambertMaterial({ color: 0xdfe4ee }));
+      d2.position.set(wx, top + 4.2, O.z + 10);
+      scene.add(d2);
+    });
+    var beacon = new THREE.Mesh(new THREE.SphereGeometry(1.6, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff6a9a }));
+    beacon.position.set(O.x, top + 18.6, O.z);
+    scene.add(beacon);
+    city.islaBeacon = beacon;
+    city.addSign(sg, 28, O.x, y + 4.6, O.z + hd + 0.9, 0, 26, 4.4);
+
+    // the reward, on the far strip of the terrace from the steps
+    city.pickupSpots.push({ x: O.x, z: O.z - hd + 4.5, y: top + 1.1, type: 'rifle' });
+    city.islaRifle = { x: O.x, z: O.z - hd + 4.5, y: top + 1.1 };
   }
 
   // ---------- planting and lighting ----------
@@ -902,6 +1077,8 @@ GAME.isla = (function () {
         var side = ((d / spacing) | 0) % 2 ? 1 : -1;
         var ox = p[0] + Math.cos(ang) * (s.w / 2 + 1.4) * side;
         var oz = p[1] - Math.sin(ang) * (s.w / 2 + 1.4) * side;
+        // a lamp set off one road can land in the middle of the next one
+        if (onRoad(ox, oz, 1)) continue;
         var y = groundY(ox, oz);
         b.addBox(ox, y + 3, oz, 0.28, 6, 0.28, 0, 0x3a3a46, 0);
         b.addBox(ox - Math.cos(ang) * 1.1 * side, y + 6.1, oz + Math.sin(ang) * 1.1 * side,
@@ -942,7 +1119,12 @@ GAME.isla = (function () {
           [p1[0] + nx, y1, p1[1] + nz], [p0[0] + nx, y0, p0[1] + nz], 0x232038, null);
         b.addQuad([p0[0] - nx, y0 - D, p0[1] - nz], [p1[0] - nx, y1 - D, p1[1] - nz],
           [p1[0] + nx, y1 - D, p1[1] + nz], [p0[0] + nx, y0 - D, p0[1] + nz], 0x1a1830, [0, -1, 0]);
-        // parapets, high enough to bounce off and low enough to jump from
+        // Parapets only where the deck is actually a bridge. Over the access
+        // road at either end it is a street, and a street with a wall down both
+        // sides is not an approach, it is a chute.
+        var lift = Math.min(s.liftAt(p0[0], p0[1]), s.liftAt(p1[0], p1[1]));
+        var fromEnd = Math.min(t0 * s.len, (1 - t1) * s.len);
+        if (lift < 2.6 || fromEnd < 16) continue;
         for (var e = 0; e < 2; e++) {
           var sgn = e ? 1 : -1;
           var ex0 = p0[0] + nx * sgn, ez0 = p0[1] + nz * sgn;
@@ -952,17 +1134,21 @@ GAME.isla = (function () {
             [ex1 + nx * sgn * 0.06, y1 + 1.42, ez1 + nz * sgn * 0.06],
             [ex0 + nx * sgn * 0.06, y0 + 1.42, ez0 + nz * sgn * 0.06], e ? 0xff4fa3 : 0x38e8ff, [0, 1, 0]);
           city.addSolid((ex0 + ex1) / 2, (ez0 + ez1) / 2, Math.abs(ex1 - ex0) + 0.7,
-            Math.abs(ez1 - ez0) + 0.7, (y0 + y1) / 2 + 1.4, 'parapet', true);
+            Math.abs(ez1 - ez0) + 0.7, (y0 + y1) / 2 + 1.4, 'parapet', true,
+            Math.min(y0, y1) - 0.6);
         }
       }
-      // piers down to the water
-      for (var t = 0.08; t < 0.93; t += 0.11) {
+      // piers down to whatever is below — water in the channel, land at the
+      // island end where the deck runs on over the shore
+      for (var t = 0.06; t < 0.95; t += 0.085) {
         var pp = segPointAt(s, t), py = s.deckY(pp[0], pp[1]);
-        if (py === null || py < 3) continue;
-        b.addBox(pp[0], py / 2 - 1.6, pp[1], 4, py + 3.2, 4, 0, 0x2e2b44, 0);
+        if (py === null || s.liftAt(pp[0], pp[1]) < 4) continue;
+        var base = contains(pp[0], pp[1]) ? groundY(pp[0], pp[1]) : -1.6;
+        b.addBox(pp[0], (py + base) / 2, pp[1], 4, py - base, 4, 0, 0x2e2b44, 0);
       }
-      // gantries at both ends
-      [0.015, 0.985].forEach(function (t2) {
+      // gantries where the climb starts and where it sets down, not out in the
+      // junction the approach leaves from
+      [(s.flatIn + 6) / s.len, 1 - (s.rampOut * 0.55) / s.len].forEach(function (t2) {
         var g = segPointAt(s, t2), gy = s.deckY(g[0], g[1]);
         if (gy === null) return;
         var nxt = segPointAt(s, U.clamp(t2 + 0.01, 0, 1));
@@ -976,8 +1162,8 @@ GAME.isla = (function () {
       // the barrier: a police line across the mainland end, gone once the
       // bridges open. It is a solid whose height drops out of the world rather
       // than a box that gets deleted, so nothing else has to know about it.
-      var gp = segPointAt(s, Math.min(0.06, 30 / s.len));
-      var gnx = segPointAt(s, Math.min(0.08, 40 / s.len));
+      var gp = segPointAt(s, (s.flatIn * 0.55) / s.len);
+      var gnx = segPointAt(s, (s.flatIn * 0.55 + 10) / s.len);
       var ga = Math.atan2(gnx[0] - gp[0], gnx[1] - gp[1]);
       var gy2 = s.deckY(gp[0], gp[1]) || 0;
       gateBatch.addBox(gp[0], gy2 + 1.1, gp[1], s.half * 2 + 1, 2.2, 1.4, ga, 0xd8d0c0, 0);

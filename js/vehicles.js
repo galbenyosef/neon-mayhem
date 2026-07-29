@@ -127,7 +127,7 @@ var VEHICLES = {
   buggy: { label: 'Dune Hopper', maxSpeed: 33, accel: 15, grip: 4.2, turn: 3.0, hp: 110, l: 3.4, w: 1.85, cabinH: 0.0, bodyH: 0.42, colors: [0xffb03a, 0x6ae8a0, 0xff6a8a, 0xf0f0f4], buggy: true },
   pickup: { label: 'Sierra 4x4', maxSpeed: 30, accel: 10, grip: 6.0, turn: 2.0, hp: 240, l: 5.0, w: 2.05, cabinH: 0.78, bodyH: 0.78, colors: [0x7a8a68, 0xa8683a, 0x486888, 0xd0c0a0], pickup: true },
   limo: { label: 'Vista Royale', maxSpeed: 31, accel: 8.5, grip: 5.4, turn: 1.5, hp: 210, l: 7.2, w: 2.0, cabinH: 0.62, bodyH: 0.55, colors: [0x14141a, 0xf0ece0] },
-  icecream: { label: 'Sunny Scoops', maxSpeed: 21, accel: 6.2, grip: 5.8, turn: 1.7, hp: 200, l: 5.0, w: 2.1, cabinH: 1.05, bodyH: 0.95, colors: [0xfff0e0], icecream: true }
+  icecream: { label: 'Sunny Scoops', maxSpeed: 21, accel: 6.2, grip: 5.8, turn: 1.7, hp: 200, l: 5.2, w: 2.2, cabinH: 0, bodyH: 0.55, colors: [0xfdf6ec], icecream: true }
 };
 
 function buildBikeMesh(colorHex) {
@@ -273,12 +273,29 @@ function buildCarMesh(type, colorHex) {
     b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
   }
   if (type === 'icecream') {
-    // tall serving box with a hatch on the kerb side and a cone on the roof
-    b.addBox(0, 0.42 + s.bodyH / 2 + 0.55, -0.45, s.w, 1.1, s.l * 0.6, 0, colorHex, 0);
-    b.addBox(0, 1.32, -0.45, s.w + 0.06, 0.34, s.l * 0.6, 0, 0xff8ab4, 0);
-    b.addBox(hw + 0.02, 1.05, -0.45, 0.05, 0.62, 1.5, 0, 0x2a2230, 0);   // hatch
-    b.addBox(0, 1.62, -0.45, 0.5, 0.5, 0.5, 0, 0xe8c088, 0);             // cone base
-    b.addBox(0, 1.95, -0.45, 0.62, 0.44, 0.62, 0, 0xffd7e4, 0);          // scoop
+    // A tall, square, upright van: one slab of a body from the windscreen to
+    // the back doors, a stripe round it, a serving hatch with an awning on the
+    // kerb side, and a cone on the roof you can see three streets away.
+    var boxTop = 2.55;
+    b.addBox(0, 1.5, -0.25, s.w, 2.1, s.l * 0.78, 0, colorHex, 0);         // body
+    b.addBox(0, 1.02, hl - 0.42, s.w * 0.98, 0.92, 0.9, 0, colorHex, 0);   // stubby bonnet
+    b.addBox(0, 1.9, hl - 0.5, s.w * 0.84, 0.86, 0.14, 0, 0x141824, 0);    // windscreen
+    b.addBox(hw - 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);    // cab windows
+    b.addBox(-hw + 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);
+    // the livery: a pink band and a blue pinstripe the length of the van
+    b.addBox(0, 1.28, -0.25, s.w + 0.06, 0.34, s.l * 0.78, 0, 0xff7fb2, 0);
+    b.addBox(0, 1.02, -0.25, s.w + 0.06, 0.1, s.l * 0.78, 0, 0x53c8ea, 0);
+    // serving hatch, awning and counter on the kerb side
+    b.addBox(hw + 0.03, 1.82, -0.5, 0.08, 0.9, 1.9, 0, 0x2a2230, 0);
+    b.addBox(hw + 0.34, 2.36, -0.5, 0.72, 0.08, 2.1, 0, 0xff7fb2, 0);
+    b.addBox(hw + 0.16, 1.3, -0.5, 0.34, 0.1, 2.0, 0, 0xf0e6d2, 0);
+    // roof cone: a stack that reads as a cone under a swirl of soft serve
+    b.addBox(0, boxTop + 0.05, -0.3, 0.5, 0.5, 0.5, 0.7, 0xe0a860, 0);
+    b.addBox(0, boxTop + 0.42, -0.3, 0.66, 0.34, 0.66, 0.35, 0xffd7e4, 0);
+    b.addBox(0, boxTop + 0.72, -0.3, 0.5, 0.3, 0.5, 0.9, 0xfff0f4, 0);
+    b.addBox(0, boxTop + 0.94, -0.3, 0.28, 0.24, 0.28, 0, 0xffd7e4, 0);
+    // a chime horn on the roof, because the chimes have to come from somewhere
+    b.addBox(-0.62, boxTop + 0.2, 0.9, 0.3, 0.3, 0.44, 0, 0xd8c47a, 0);
   }
   if (type === 'pickup') {
     b.addBox(0, 0.42 + s.bodyH / 2 + 0.22, -1.05, s.w, 0.45, s.l * 0.44, 0, 0x2a2a34, 0);   // bed walls
@@ -530,6 +547,9 @@ GAME.vehicles = (function () {
         var b = boxes[bi];
         // jumped clear of it — don't clip a car that's sailing over a fence
         if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
+        // and don't clip a car driving under one: a bridge parapet belongs to
+        // the deck it stands on, not to the road it crosses over
+        if (b.minY !== undefined && car.pos.y < b.minY - 1) continue;
         if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
           // push out along the smallest penetration axis
           var dxl = px - b.minX, dxr = b.maxX - px, dzl = pz - b.minZ, dzr = b.maxZ - pz;

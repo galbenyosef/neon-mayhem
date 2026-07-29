@@ -84,6 +84,32 @@ GAME.city = (function () {
     return null;
   };
 
+  // Walkable surfaces that are not terrain: a flight of steps, a terrace.
+  // A deck is a rectangle that may slope along its local +z, so one entry
+  // describes a staircase and another the landing at the top of it.
+  city.decks = [];
+  city.addDeck = function (d) {
+    d.cos = Math.cos(d.rot || 0); d.sin = Math.sin(d.rot || 0);
+    var r = Math.max(d.w, d.len) / 2 + 1;
+    d.minX = d.x - r; d.maxX = d.x + r; d.minZ = d.z - r; d.maxZ = d.z + r;
+    city.decks.push(d);
+    return d;
+  };
+  city.deckAt = function (x, z) {
+    var best = null;
+    for (var i = 0; i < city.decks.length; i++) {
+      var d = city.decks[i];
+      if (x < d.minX || x > d.maxX || z < d.minZ || z > d.maxZ) continue;
+      var dx = x - d.x, dz = z - d.z;
+      var lx = dx * d.cos - dz * d.sin, lz = dx * d.sin + dz * d.cos;
+      if (Math.abs(lx) > d.w / 2 || Math.abs(lz) > d.len / 2) continue;
+      var t = (lz + d.len / 2) / d.len;
+      var y = d.y0 + (d.y1 - d.y0) * t;
+      if (best === null || y > best) best = y;
+    }
+    return best;
+  };
+
   city.isInWater = function (x, z) {
     if (city.isOnPier(x, z)) return false;
     if (city.crossings.length && city.crossingY(x, z) !== null) return false;
@@ -118,6 +144,10 @@ GAME.city = (function () {
     if (city.crossings.length) {
       var cy = city.crossingY(x, z);
       if (cy !== null) return cy;
+    }
+    if (city.decks.length) {
+      var dy = city.deckAt(x, z);
+      if (dy !== null) return dy;
     }
     // a landmass may carry its own relief; Costa Rosa is flat, others need not be
     for (var ii = 1; ii < city.islands.length; ii++) {
@@ -235,13 +265,16 @@ GAME.city = (function () {
     return false;
   }
 
-  function addSolid(cx, cz, sx, sz, h, tag, noLOS) {
+  // `minY`, when given, is the level the solid starts at — anything well below
+  // it passes underneath instead of hitting it
+  function addSolid(cx, cz, sx, sz, h, tag, noLOS, minY) {
     var box = { minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS };
+    if (minY !== undefined) box.minY = minY;
     city.hash.insert(box);
     return box;
   }
 
-  city.addSolid = function (cx, cz, sx, sz, h, tag, noLOS) { return addSolid(cx, cz, sx, sz, h, tag, noLOS); };
+  city.addSolid = function (cx, cz, sx, sz, h, tag, noLOS, minY) { return addSolid(cx, cz, sx, sz, h, tag, noLOS, minY); };
   city.addSign = function (batch, slotIdx, x, y, z, rotY, w, h, tint) { addSign(batch, slotIdx, x, y, z, rotY, w, h, tint); };
 
   // ---------- canvas textures ----------
@@ -271,7 +304,10 @@ GAME.city = (function () {
   var SIGN_TEXTS = ['CLUB FLAMINGO', 'HOTEL MIRAJE', "ROXY'S", 'EL DORADO', 'NEON PALMS', 'TIKI LOUNGE',
     'LA SIRENA', 'STARDUST', 'CASA AZUL', 'VOLTAGE', 'PINK IGUANA', 'INFERNO ROOM',
     'COCKTAILS', 'ARCADE', 'HOTEL RIVIERA', 'PALM COURT', 'DISCO 2000', 'MOTEL LUNA',
-    'RESPRAY', 'HOSPITAL', 'POLICE', 'AXIS TOWER', 'COSTA ROSA PIER', 'FUN FAIR'];
+    'RESPRAY', 'HOSPITAL', 'POLICE', 'AXIS TOWER', 'COSTA ROSA PIER', 'FUN FAIR',
+    // Isla Verde keeps its own names; appended, so every index above still holds
+    'SUNNY SCOOPS', 'EL FARO', 'PUERTO DORADO', 'MARINA VERDE', 'MIRADOR',
+    'CASA DEL SOL', 'BAHIA CLUB', 'VERDE MOTORS'];
   var SIGN_COLORS = ['#ff4fa3', '#38e8ff', '#ffe14f', '#7dff6a', '#ff8a3d', '#c86bff', '#ff5d5d', '#59ffc8'];
   function signAtlas() {
     var cv = document.createElement('canvas');
@@ -279,21 +315,23 @@ GAME.city = (function () {
     var g = cv.getContext('2d');
     g.fillStyle = '#07040c'; g.fillRect(0, 0, 1024, 1024);
     var slots = [];
+    // rows are sized from the list, so adding a name never overruns the canvas
+    var ROW = Math.floor(1024 / Math.ceil(SIGN_TEXTS.length / 2));
     for (var i = 0; i < SIGN_TEXTS.length; i++) {
       var col = i % 2, row = Math.floor(i / 2);
-      var x = col * 512, y = row * 85;
+      var x = col * 512, y = row * ROW;
       var color = SIGN_TEXTS[i] === 'HOSPITAL' ? '#ff6a6a' : SIGN_TEXTS[i] === 'POLICE' ? '#5aa0ff' : SIGN_COLORS[i % SIGN_COLORS.length];
       g.save();
-      g.font = 'italic 900 52px "Segoe UI", Arial, sans-serif';
+      g.font = 'italic 900 ' + Math.min(52, ROW - 12) + 'px "Segoe UI", Arial, sans-serif';
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.shadowColor = color; g.shadowBlur = 22;
       g.strokeStyle = color; g.lineWidth = 2;
       g.fillStyle = '#ffffff';
-      g.strokeText(SIGN_TEXTS[i], x + 256, y + 44, 490);
+      g.strokeText(SIGN_TEXTS[i], x + 256, y + ROW / 2, 490);
       g.shadowBlur = 10;
-      g.fillText(SIGN_TEXTS[i], x + 256, y + 44, 490);
+      g.fillText(SIGN_TEXTS[i], x + 256, y + ROW / 2, 490);
       g.restore();
-      slots.push({ u0: x / 1024, v0: 1 - (y + 85) / 1024, u1: (x + 512) / 1024, v1: 1 - y / 1024 });
+      slots.push({ u0: x / 1024, v0: 1 - (y + ROW) / 1024, u1: (x + 512) / 1024, v1: 1 - y / 1024 });
     }
     return { tex: new THREE.CanvasTexture(cv), slots: slots };
   }
