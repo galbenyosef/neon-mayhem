@@ -1,6 +1,7 @@
 GAME.audio = (function () {
   var ctx = null, master, sfxBus, radioBus, engineBus, verb;
-  var muted = false;
+  var sfxSwitch = null, musicSwitch = null;
+  var muted = false, musicOn = true, sfxOn = true;
   var noiseBuf = null;
   var engine = null, skidNode = null, sirenNode = null, rotorNode = null;
   var lastCrashT = -9, lastCrashV = 0;
@@ -39,13 +40,17 @@ GAME.audio = (function () {
     limiter.release.value = 0.18;
     limiter.connect(ctx.destination);
     master = ctx.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(limiter);
-    sfxBus = ctx.createGain(); sfxBus.gain.value = 0.72; sfxBus.connect(master);
-    radioBus = ctx.createGain(); radioBus.gain.value = 0; radioBus.connect(master);
+    // two switches under the master, so the music and everything else can be
+    // turned off on their own: the radio is one side, every effect the other
+    musicSwitch = ctx.createGain(); musicSwitch.gain.value = musicOn ? 1 : 0; musicSwitch.connect(master);
+    sfxSwitch = ctx.createGain(); sfxSwitch.gain.value = sfxOn ? 1 : 0; sfxSwitch.connect(master);
+    sfxBus = ctx.createGain(); sfxBus.gain.value = 0.72; sfxBus.connect(sfxSwitch);
+    radioBus = ctx.createGain(); radioBus.gain.value = 0; radioBus.connect(musicSwitch);
     // the engine sits under everything else and is gently rolled off up top so
     // it doesn't mask the radio
     engineBus = ctx.createGain(); engineBus.gain.value = 0;
     var engTone = ctx.createBiquadFilter(); engTone.type = 'lowpass'; engTone.frequency.value = 900;
-    engineBus.connect(engTone); engTone.connect(master);
+    engineBus.connect(engTone); engTone.connect(sfxSwitch);
     noiseBuf = makeNoiseBuffer();
     verb = ctx.createConvolver(); verb.buffer = makeImpulse(1.8, 3.2);
     var verbGain = ctx.createGain(); verbGain.gain.value = 0.35;
@@ -111,7 +116,7 @@ GAME.audio = (function () {
     var whineG = ctx.createGain(); whineG.gain.value = 0.035;
     whine.connect(whineG);
     var g = ctx.createGain(); g.gain.value = 0;
-    chopG.connect(g); whineG.connect(g); g.connect(master);
+    chopG.connect(g); whineG.connect(g); g.connect(sfxSwitch);
     src.start(); lfo.start(); whine.start();
     rotorNode = { g: g, f: f, lfo: lfo, whine: whine };
   }
@@ -250,6 +255,19 @@ GAME.audio = (function () {
       if (ctx) master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.05);
       return muted;
     },
+    // music and effects each have their own tap, independent of the master
+    get musicOn() { return musicOn; },
+    get sfxOn() { return sfxOn; },
+    setMusicOn: function (v) {
+      musicOn = !!v;
+      if (ctx && musicSwitch) musicSwitch.gain.setTargetAtTime(musicOn ? 1 : 0, ctx.currentTime, 0.05);
+      return musicOn;
+    },
+    setSfxOn: function (v) {
+      sfxOn = !!v;
+      if (ctx && sfxSwitch) sfxSwitch.gain.setTargetAtTime(sfxOn ? 1 : 0, ctx.currentTime, 0.05);
+      return sfxOn;
+    },
     // `kind` picks the voice: 'heli' and 'plane' run the rotor, anything else
     // the piston engine. Only one is ever audible.
     engineState: function (on, speedNorm, kind) {
@@ -259,7 +277,7 @@ GAME.audio = (function () {
       var air = on && (kind === 'heli' || kind === 'plane');
       // idle sits well back; it only leans in as you wind the revs out, so the
       // radio stays audible while cruising
-      engineBus.gain.setTargetAtTime(on && !air ? 0.05 + sn * 0.045 : 0, t, 0.12);
+      engineBus.gain.setTargetAtTime(on && !air ? 0.024 + sn * 0.022 : 0, t, 0.12);
       if (on && !air) {
         var f = 45 + sn * 160;
         engine.o.frequency.setTargetAtTime(f, t, 0.08);

@@ -52,6 +52,27 @@ GAME.hud = (function () {
     pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
     pauseBtn('pause-mute', function () { var m = GAME.audio.toggleMute(); $('pause-mute').textContent = m ? '🔇 MUTED' : '🔊 SOUND'; });
+    // music and effects are separate taps: kill the radio and keep the crashes,
+    // or the other way round. The choice is remembered.
+    function paintAudioBtns() {
+      $('pause-music').textContent = GAME.audio.musicOn ? '🎵 MUSIC: ON' : '🎵 MUSIC: OFF';
+      $('pause-sfx').textContent = GAME.audio.sfxOn ? '💥 SFX: ON' : '💥 SFX: OFF';
+    }
+    pauseBtn('pause-music', function () {
+      GAME.audio.setMusicOn(!GAME.audio.musicOn);
+      if (GAME.prefs) { GAME.prefs.musicOff = !GAME.audio.musicOn; GAME.save(); }
+      paintAudioBtns();
+    });
+    pauseBtn('pause-sfx', function () {
+      GAME.audio.setSfxOn(!GAME.audio.sfxOn);
+      if (GAME.prefs) { GAME.prefs.sfxOff = !GAME.audio.sfxOn; GAME.save(); }
+      paintAudioBtns();
+    });
+    if (GAME.prefs) {
+      if (GAME.prefs.musicOff) GAME.audio.setMusicOn(false);
+      if (GAME.prefs.sfxOff) GAME.audio.setSfxOn(false);
+    }
+    paintAudioBtns();
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
@@ -610,6 +631,7 @@ GAME.nav = (function () {
     // route to the road nearest the destination, then a short hop off the road,
     // so the drawn line stays on the streets instead of cutting through blocks
     var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
+    dest.rx = rp.x; dest.rz = rp.z;
     path = roadPath(px, pz, rp.x, rp.z);
     path.push({ x: rp.x, z: rp.z });
   }
@@ -631,7 +653,13 @@ GAME.nav = (function () {
       var P = GAME.player;
       var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
       var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-      if (U.dist2(px, pz, dest.x, dest.z) < 240) {
+      // Arrived means near, not on top of. A map click often lands mid-block,
+      // somewhere no road passes — so pulling up on the kerb beside it counts,
+      // and a car counts from further out than a person walking the last bit.
+      var R2 = P.inCar ? 26 * 26 : 12 * 12;
+      var dNow = U.dist2(px, pz, dest.x, dest.z);
+      var dRoad = dest.rx !== undefined ? U.dist2(px, pz, dest.rx, dest.rz) : 1e18;
+      if (dNow < R2 || (dRoad < R2 && dNow < 55 * 55)) {
         dest = null; path = [];
         GAME.hud.message('You have arrived.', 2.5);
         GAME.audio.pickup();

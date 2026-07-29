@@ -169,12 +169,18 @@ function respawnAfterScreen() {
 
 function nearestEnterableCar() {
   var P = GAME.player;
-  return GAME.vehicles.findNearestCar(P.pos.x + Math.sin(P.heading) * 1.2, P.pos.z + Math.cos(P.heading) * 1.2, 4.6, null);
+  var car = GAME.vehicles.findNearestCar(P.pos.x + Math.sin(P.heading) * 1.2, P.pos.z + Math.cos(P.heading) * 1.2, 4.6, null);
+  // same level only: a helicopter on a roof cannot be boarded from the street
+  if (car && Math.abs(car.pos.y - P.pos.y) > 3) return null;
+  return car;
 }
 
 GAME.enterCar = function (car) {
   var P = GAME.player;
   if (!car || car.dead || P.inCar || P.entering) return false;
+  // boarding is a same-level act everywhere it can be asked for — a rooftop
+  // helicopter is not takeable from the pavement under it
+  if (Math.abs(car.pos.y - P.pos.y) > 3) return false;
   if (car.occupied === 'ai') {
     // jack: driver bails and flees
     var side = car.heading + Math.PI / 2;
@@ -217,7 +223,7 @@ function stepEnter(dt) {
   P.heading = U.angleLerp(P.heading, Math.atan2(doorX - P.pos.x, doorZ - P.pos.z), Math.min(1, dt * 10));
   P.pos.x = U.damp(P.pos.x, doorX, 9, dt);
   P.pos.z = U.damp(P.pos.z, doorZ, 9, dt);
-  P.pos.y = GAME.city.groundY(P.pos.x, P.pos.z);
+  P.pos.y = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
   P.mesh.rotation.y = P.heading;
   P.walkPhase = (P.walkPhase || 0) + dt * 11;
   var j = P.mesh.userData.joints;

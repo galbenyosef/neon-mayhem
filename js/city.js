@@ -341,20 +341,24 @@ GAME.city = (function () {
     var g = cv.getContext('2d');
     g.fillStyle = '#07040c'; g.fillRect(0, 0, 1024, 1024);
     var slots = [];
-    // rows are sized from the list, so adding a name never overruns the canvas
+    // Rows are sized from the list, so adding a name never overruns the canvas
+    // — and the glyphs and their glow are sized to the row, because a 52 px
+    // face with a 22 px halo in a 60 px row bleeds into the slots above and
+    // below it, and every quad using those slots shows the neighbour's smear.
     var ROW = Math.floor(1024 / Math.ceil(SIGN_TEXTS.length / 2));
+    var FONT = Math.min(52, ROW - 20), HALO = Math.min(22, Math.floor(ROW * 0.17));
     for (var i = 0; i < SIGN_TEXTS.length; i++) {
       var col = i % 2, row = Math.floor(i / 2);
       var x = col * 512, y = row * ROW;
       var color = SIGN_TEXTS[i] === 'HOSPITAL' ? '#ff6a6a' : SIGN_TEXTS[i] === 'POLICE' ? '#5aa0ff' : SIGN_COLORS[i % SIGN_COLORS.length];
       g.save();
-      g.font = 'italic 900 ' + Math.min(52, ROW - 12) + 'px "Segoe UI", Arial, sans-serif';
+      g.font = 'italic 900 ' + FONT + 'px "Segoe UI", Arial, sans-serif';
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.shadowColor = color; g.shadowBlur = 22;
+      g.shadowColor = color; g.shadowBlur = HALO;
       g.strokeStyle = color; g.lineWidth = 2;
       g.fillStyle = '#ffffff';
       g.strokeText(SIGN_TEXTS[i], x + 256, y + ROW / 2, 490);
-      g.shadowBlur = 10;
+      g.shadowBlur = Math.min(10, HALO);
       g.fillText(SIGN_TEXTS[i], x + 256, y + ROW / 2, 490);
       g.restore();
       slots.push({ u0: x / 1024, v0: 1 - (y + ROW) / 1024, u1: (x + 512) / 1024, v1: 1 - y / 1024 });
@@ -591,6 +595,23 @@ GAME.city = (function () {
       addSolid(H.x, H.z - 12, 60, 28, 18);
       addSign(batches.signs, 19, H.x, 14, H.z + 2.3, 0, 30, 5);
     });
+    // The find: a helipad on the main hospital's roof, with a helicopter on
+    // it. It shows on no map — the way onto it is out of the sky, a parachute
+    // off the plane or a long jump, and the reward for arriving is a way off
+    // again. This is the mainland's only helicopter.
+    var RH = P.hospitals[0];
+    var roofY = 18.06, padX = RH.x + 12, padZ = RH.z - 12;
+    batches.ground.addGroundQuad(padX, roofY, padZ, 16, 16, 0, 0x1a1a22);
+    batches.marks.addGroundQuad(padX - 2.2, roofY + 0.03, padZ, 1, 7, 0, 0xf0d020);
+    batches.marks.addGroundQuad(padX + 2.2, roofY + 0.03, padZ, 1, 7, 0, 0xf0d020);
+    batches.marks.addGroundQuad(padX, roofY + 0.03, padZ, 3.6, 1, 0, 0xf0d020);
+    // corner ring segments, drawn as four bars so it reads from the air
+    [[-6.6, 0, 1.2, 13.6], [6.6, 0, 1.2, 13.6], [0, -6.6, 13.6, 1.2], [0, 6.6, 13.6, 1.2]].forEach(function (q) {
+      batches.marks.addGroundQuad(padX + q[0], roofY + 0.02, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
+    });
+    city.roofHelipad = { x: padX, z: padZ, y: roofY };
+    city.parkedSpots.push({ x: padX, z: padZ, y: roofY, heading: Math.PI / 2, vtype: 'helicopter' });
+
     // police station (Costa Rosa's; the island builds its own)
     batches.generic.addBox(P.police.x, 7, P.police.z + 10, 70, 14, 26, 0, 0x8a94c0, 28);
     addSolid(P.police.x, P.police.z + 10, 70, 26, 14);

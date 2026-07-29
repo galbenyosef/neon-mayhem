@@ -14,7 +14,7 @@ Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the p
   <b><a href="https://pranshuparmar.github.io/neon-mayhem/">▶ PLAY NOW — free, in your browser</a></b>
 </p>
 
-📱 On phones and tablets, touch controls appear automatically: a floating virtual stick on the left, a context-sensitive action cluster on the right, and a radar + PAUSE button along the top-left. Tap the radar to open the full map. Sound, CRT filter, time of day and fullscreen live in the pause menu. Starting the game enters fullscreen and asks you to rotate to landscape.
+📱 On phones and tablets, touch controls appear automatically: a floating virtual stick on the left, a context-sensitive action cluster on the right, and a radar + PAUSE button along the top-left. Tap the radar to open the full map. Sound (with separate music and SFX switches), CRT filter, time of day and fullscreen live in the pause menu. Starting the game enters fullscreen and asks you to rotate to landscape.
 
 **Play it locally:** serve this folder from any static host (GitHub Pages works as-is) or a local static server:
 
@@ -60,7 +60,7 @@ No build step, no server code, no accounts, no ads. Progress (cash + best runs) 
 
 `P` map & destination routing · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` fullscreen
 
-The pause menu also holds a **TIME** toggle — `AUTO` (default) runs the day/night cycle, or pin it to `DAY` / `NIGHT`.
+The pause menu also holds separate **MUSIC** and **SFX** switches (remembered between sessions) and a **TIME** toggle — `AUTO` (default) runs the day/night cycle, or pin it to `DAY` / `NIGHT`.
 
 The minimap is a heading-up radar that rotates with you — tap it to open the full map. The full map (`P`) shows a labelled legend, POI badges (H hospital, P police, S respray), weapon/health/armour pickups, and mission routes drawn along the streets — click anywhere to set a destination.
 

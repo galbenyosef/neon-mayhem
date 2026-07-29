@@ -275,27 +275,34 @@ function buildCarMesh(type, colorHex) {
   if (type === 'icecream') {
     // A tall, square, upright van: one slab of a body from the windscreen to
     // the back doors, a stripe round it, a serving hatch with an awning on the
-    // kerb side, and a cone on the roof you can see three streets away.
-    var boxTop = 2.55;
-    b.addBox(0, 1.5, -0.25, s.w, 2.1, s.l * 0.78, 0, colorHex, 0);         // body
+    // kerb side, and a pair of cones on the roof you can see three streets
+    // away. The tall body stands 2 cm proud of the chassis slab underneath it:
+    // give them the same width and the two coplanar side faces fight for
+    // depth — that was the truck's flicker.
+    var boxTop = 2.55, bw = s.w + 0.04, bhw = bw / 2;
+    b.addBox(0, 1.5, -0.25, bw, 2.1, s.l * 0.78, 0, colorHex, 0);          // body
     b.addBox(0, 1.02, hl - 0.42, s.w * 0.98, 0.92, 0.9, 0, colorHex, 0);   // stubby bonnet
     b.addBox(0, 1.9, hl - 0.5, s.w * 0.84, 0.86, 0.14, 0, 0x141824, 0);    // windscreen
-    b.addBox(hw - 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);    // cab windows
-    b.addBox(-hw + 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);
+    b.addBox(bhw - 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);   // cab windows
+    b.addBox(-bhw + 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);
     // the livery: a pink band and a blue pinstripe the length of the van
-    b.addBox(0, 1.28, -0.25, s.w + 0.06, 0.34, s.l * 0.78, 0, 0xff7fb2, 0);
-    b.addBox(0, 1.02, -0.25, s.w + 0.06, 0.1, s.l * 0.78, 0, 0x53c8ea, 0);
-    // serving hatch, awning and counter on the kerb side
-    b.addBox(hw + 0.03, 1.82, -0.5, 0.08, 0.9, 1.9, 0, 0x2a2230, 0);
-    b.addBox(hw + 0.34, 2.36, -0.5, 0.72, 0.08, 2.1, 0, 0xff7fb2, 0);
-    b.addBox(hw + 0.16, 1.3, -0.5, 0.34, 0.1, 2.0, 0, 0xf0e6d2, 0);
-    // roof cone: a stack that reads as a cone under a swirl of soft serve
-    b.addBox(0, boxTop + 0.05, -0.3, 0.5, 0.5, 0.5, 0.7, 0xe0a860, 0);
-    b.addBox(0, boxTop + 0.42, -0.3, 0.66, 0.34, 0.66, 0.35, 0xffd7e4, 0);
-    b.addBox(0, boxTop + 0.72, -0.3, 0.5, 0.3, 0.5, 0.9, 0xfff0f4, 0);
-    b.addBox(0, boxTop + 0.94, -0.3, 0.28, 0.24, 0.28, 0, 0xffd7e4, 0);
+    b.addBox(0, 1.28, -0.25, bw + 0.08, 0.34, s.l * 0.78, 0, 0xff7fb2, 0);
+    b.addBox(0, 1.02, -0.25, bw + 0.08, 0.1, s.l * 0.78, 0, 0x53c8ea, 0);
+    // serving hatch, awning and counter on the kerb side — the hatch sits
+    // clear of the stripe band's face rather than in the same plane as it
+    b.addBox(bhw + 0.07, 1.82, -0.5, 0.08, 0.9, 1.9, 0, 0x2a2230, 0);
+    b.addBox(bhw + 0.38, 2.36, -0.5, 0.72, 0.08, 2.1, 0, 0xff7fb2, 0);
+    b.addBox(bhw + 0.2, 1.3, -0.5, 0.34, 0.1, 2.0, 0, 0xf0e6d2, 0);
+    // roof cones, two abreast: both show from the front, and from the side
+    // they sit in the same slice so they read as one
+    [-0.5, 0.5].forEach(function (cx2) {
+      b.addBox(cx2, boxTop + 0.05, -0.3, 0.5, 0.5, 0.5, 0.7, 0xe0a860, 0);
+      b.addBox(cx2, boxTop + 0.42, -0.3, 0.66, 0.34, 0.66, 0.35, 0xffd7e4, 0);
+      b.addBox(cx2, boxTop + 0.72, -0.3, 0.5, 0.3, 0.5, 0.9, 0xfff0f4, 0);
+      b.addBox(cx2, boxTop + 0.94, -0.3, 0.28, 0.24, 0.28, 0, 0xffd7e4, 0);
+    });
     // a chime horn on the roof, because the chimes have to come from somewhere
-    b.addBox(-0.62, boxTop + 0.2, 0.9, 0.3, 0.3, 0.44, 0, 0xd8c47a, 0);
+    b.addBox(-0.62, boxTop + 0.15, 0.9, 0.3, 0.3, 0.44, 0, 0xd8c47a, 0);
   }
   if (type === 'pickup') {
     b.addBox(0, 0.42 + s.bodyH / 2 + 0.22, -1.05, s.w, 0.45, s.l * 0.44, 0, 0x2a2a34, 0);   // bed walls
@@ -834,6 +841,7 @@ GAME.vehicles = (function () {
         // special vehicles keep their exact heading; ordinary parked cars flip randomly
         var head = special ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
+        if (sp.y !== undefined) car.pos.y = sp.y;   // a spot up on a roof
         sp.live = car;
         live++;
       } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && !sp.live.dead) {
@@ -876,7 +884,9 @@ GAME.vehicles = (function () {
         var powered = (car === P.car && P.inCar);
         var restY = car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4;
         if (!powered) {
-          var hgy = GAME.city.groundY(car.pos.x, car.pos.z);
+          // the surface, not the street: an abandoned or parked aircraft over
+          // a rooftop settles on the roof instead of falling through it
+          var hgy = GAME.city.surfaceY(car.pos.x, car.pos.z, car.pos.y);
           if (car.pos.y > hgy + restY + 0.05) {
             car.vy = (car.vy || 0) - 12 * dt;
             car.pos.y += car.vy * dt;

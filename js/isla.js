@@ -1239,11 +1239,13 @@ GAME.isla = (function () {
         b.addBox(g[0], gy + 17.4, g[1], Math.abs(px) * 2 + 2, 1.6, Math.abs(pz) * 2 + 2, 0, 0x3a3552, 0);
         // the destination board, hung under the beam and facing the driver
         // coming at it — one at each end of each bridge, four in all
+        // hung 1.2 m off the gantry line: the pillars are 1.6 m deep, so a
+        // board at 0.8 m sits exactly in their faces and shimmers against them
         var slot = endI === 0 ? 32 : 33;              // ISLA VERDE / COSTA ROSA
         var facing = endI === 0 ? ang + Math.PI : ang;
         var back = endI === 0 ? -1 : 1;
-        city.addSign(sg, slot, g[0] + Math.sin(ang) * back * 0.8, gy + 12.2,
-          g[1] + Math.cos(ang) * back * 0.8, facing, s.half * 2 - 1, 3.6);
+        city.addSign(sg, slot, g[0] + Math.sin(ang) * back * 1.2, gy + 12.2,
+          g[1] + Math.cos(ang) * back * 1.2, facing, s.half * 2 - 1, 3.6);
       });
 
       // The barrier: a police line across the mainland end, gone once the

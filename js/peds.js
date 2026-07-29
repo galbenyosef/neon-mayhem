@@ -141,11 +141,25 @@ GAME.peds = (function () {
     var x = ped.pos.x + Math.cos(a) * U.randRange(Math.random, 25, 60);
     var z = ped.pos.z + Math.sin(a) * U.randRange(Math.random, 25, 60);
     var rp = GAME.city.nearestRoadPoint(x, z);
+    // the probe can land in the channel, and then the other landmass answers
+    // for it — the waypoint stays on the one the stroller is standing on
+    if (GAME.city.islandIdAt(rp.x, rp.z) !== GAME.city.islandIdAt(ped.pos.x, ped.pos.z)) {
+      rp = GAME.city.nearestRoadPoint(ped.pos.x, ped.pos.z);
+    }
     var off = 8.4 * (Math.random() < 0.5 ? 1 : -1);
-    if (rp.axis === 'z') { ped.wpX = rp.x + off; ped.wpZ = rp.z; }
+    if (rp.axis === 'net') {
+      // a curved road: the pavement is along its normal, not along an axis
+      ped.wpX = rp.x + Math.cos(rp.heading) * off;
+      ped.wpZ = rp.z - Math.sin(rp.heading) * off;
+    } else if (rp.axis === 'z') { ped.wpX = rp.x + off; ped.wpZ = rp.z; }
     else { ped.wpX = rp.x; ped.wpZ = rp.z + off; }
-    ped.wpX = U.clamp(ped.wpX, -490, 368);
-    ped.wpZ = U.clamp(ped.wpZ, -490, 490);
+    // The clamp box is the MAINLAND. Clamping an island stroller's waypoint to
+    // it aimed every one of them at x=368 — the far side of the channel — and
+    // they all set off west through the grass and downhill into the sea.
+    if (rp.axis !== 'net') {
+      ped.wpX = U.clamp(ped.wpX, -490, 368);
+      ped.wpZ = U.clamp(ped.wpZ, -490, 490);
+    }
     ped.wpT = U.randRange(Math.random, 10, 20);
   }
 
@@ -277,6 +291,29 @@ GAME.peds = (function () {
       }
       var rp2 = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
+      // A stopped vehicle is solid: nobody walks through a parked truck. Fast
+      // cars are left alone — the run-over check below is what handles those,
+      // and pushing people clear of them would make everyone unhittable.
+      for (var cv = 0; cv < world.cars.length; cv++) {
+        var pcv = world.cars[cv];
+        if (pcv.dead || Math.abs(pcv.speed) >= 4) continue;
+        if (Math.abs(pcv.pos.y - ped.pos.y) > 3) continue;
+        var vdx = ped.pos.x - pcv.pos.x, vdz = ped.pos.z - pcv.pos.z;
+        var vhl = pcv.spec.l / 2 + 0.4, vhw = pcv.spec.w / 2 + 0.4;
+        if (vdx * vdx + vdz * vdz > (vhl + 1) * (vhl + 1)) continue;
+        var vfx = Math.sin(pcv.heading), vfz = Math.cos(pcv.heading);
+        var lng = vdx * vfx + vdz * vfz;          // along the body
+        var lat2 = vdx * vfz - vdz * vfx;         // across it
+        if (Math.abs(lng) >= vhl || Math.abs(lat2) >= vhw) continue;
+        var penL = vhl - Math.abs(lng), penW = vhw - Math.abs(lat2);
+        if (penW <= penL) {
+          var ws = lat2 >= 0 ? 1 : -1;
+          ped.pos.x += vfz * ws * penW; ped.pos.z += -vfx * ws * penW;
+        } else {
+          var ls = lng >= 0 ? 1 : -1;
+          ped.pos.x += vfx * ls * penL; ped.pos.z += vfz * ls * penL;
+        }
+      }
       if (GAME.city.isInWater(ped.pos.x, ped.pos.z, ped.pos.y)) { removePed(ped); continue; }
       if (!ped.jobPed && GAME.city.inAirport(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
       ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z) + (ped.diveY || 0);

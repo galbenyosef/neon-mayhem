@@ -164,7 +164,7 @@
     P.mesh.visible = true;
     GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
-    if (GAME.isTouch) GAME.enterFullscreen(); // same user gesture
+    GAME.enterFullscreen(); // same user gesture — desktop and touch alike
     GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
@@ -201,6 +201,16 @@
     GAME.fx.update(dt);
     tickAttractCam(dt);
   };
+
+  // On desktop the mouse is pointer-locked while playing, and the browser
+  // swallows the Esc keydown that releases the lock — so the first Esc did
+  // nothing you could see and only the second reached the game. The lock
+  // going away IS the Esc press: treat it as one.
+  document.addEventListener('pointerlockchange', function () {
+    if (document.pointerLockElement) return;
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen &&
+      GAME.player.state === 'alive') GAME.togglePause();
+  });
 
   GAME.togglePause = function () {
     if (!GAME.started) return;
