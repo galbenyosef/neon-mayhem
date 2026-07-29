@@ -293,8 +293,11 @@ GAME.peds = (function () {
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
       // A stopped vehicle is solid: nobody walks through a parked truck. Fast
       // cars are left alone — the run-over check below is what handles those,
-      // and pushing people clear of them would make everyone unhittable.
-      for (var cv = 0; cv < world.cars.length; cv++) {
+      // and pushing people clear of them would make everyone unhittable. Job
+      // peds are exempt too: a fare climbing into the cab and a customer at
+      // the ice cream hatch have to reach INSIDE the body's rectangle, and
+      // the push held them at arm's length forever.
+      if (!ped.jobPed) for (var cv = 0; cv < world.cars.length; cv++) {
         var pcv = world.cars[cv];
         if (pcv.dead || Math.abs(pcv.speed) >= 4) continue;
         if (Math.abs(pcv.pos.y - ped.pos.y) > 3) continue;

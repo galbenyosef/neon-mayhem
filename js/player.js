@@ -147,11 +147,15 @@ function respawnAfterScreen() {
       P.pos.set(sp.x, GAME.city.groundY(sp.x, sp.z), sp.z);
     } else {
       P.armor = 0;
-      // wake up at the nearest hospital
+      // Wake up at the nearest hospital YOU CAN BE IN. Crash at the channel's
+      // edge and the island hospital is the closest one by distance — but a
+      // hospital behind a locked bridge cannot be where you wake up.
+      var unlocked = !GAME.isla || GAME.isla.isOpen();
       var hs = GAME.city.pois.hospitals;
       var sh = hs[0].spawn;
       var bd = 1e18;
       for (var hi = 0; hi < hs.length; hi++) {
+        if (hs[hi].isla && !unlocked) continue;
         var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
         if (d < bd) { bd = d; sh = hs[hi].spawn; }
       }

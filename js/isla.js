@@ -1104,9 +1104,9 @@ GAME.isla = (function () {
         var y = groundY(ox, oz);
         b.addBox(ox, y + 3, oz, 0.28, 6, 0.28, 0, 0x3a3a46, 0);
         b.addBox(ox - Math.cos(ang) * 1.1 * side, y + 6.1, oz + Math.sin(ang) * 1.1 * side,
-          2.4, 0.22, 0.22, -ang, 0x3a3a46, 0);
+          2.4, 0.22, 0.22, ang, 0x3a3a46, 0);
         glow.addBox(ox - Math.cos(ang) * 2.1 * side, y + 5.9, oz + Math.sin(ang) * 2.1 * side,
-          0.7, 0.2, 0.4, -ang, 0xffc88a, 0);
+          0.7, 0.2, 0.4, ang, 0xffc88a, 0);
         city.addSolid(ox, oz, 0.5, 0.5, y + 6, 'prop', true);
       }
     }
@@ -1218,12 +1218,19 @@ GAME.isla = (function () {
         if (s.liftAt(lp[0], lp[1]) < 3) continue;
         var ln = segPointAt(s, Math.min(1, lt + 0.01));
         var la = Math.atan2(ln[0] - lp[0], ln[1] - lp[1]);
-        var lsx = Math.cos(la) * (s.half - 0.5), lsz = -Math.sin(la) * (s.half - 0.5);
+        // The arm and its head lean IN over the carriageway, whichever side the
+        // post stands on. The old offset ignored which side that was, so every
+        // other lamp hung its head outward over the sea — and the arm's spin
+        // used the mirrored angle, which turned it off-axis on the diagonal
+        // span. In this addBox convention a box long in x with rotY=a points
+        // along (cos a, -sin a), the across-deck normal, so rotY is +la.
+        var lnx = Math.cos(la), lnz = -Math.sin(la);
         var lside = ((lt * 100) | 0) % 2 ? 1 : -1;
-        var lx = lp[0] + lsx * lside, lz = lp[1] + lsz * lside;
+        var lx = lp[0] + lnx * (s.half - 0.5) * lside;
+        var lz = lp[1] + lnz * (s.half - 0.5) * lside;
         b.addBox(lx, ly + 3.4, lz, 0.26, 6, 0.26, 0, 0x3a3a46, 0);
-        b.addBox(lx - lsx * 0.28, ly + 6.5, lz - lsz * 0.28, 2.2, 0.2, 0.2, -la, 0x3a3a46, 0);
-        batches.glow.addBox(lx - lsx * 0.5, ly + 6.3, lz - lsz * 0.5, 0.66, 0.2, 0.4, -la, 0xffc88a, 0);
+        b.addBox(lx - lnx * lside * 1.1, ly + 6.5, lz - lnz * lside * 1.1, 2.2, 0.2, 0.2, la, 0x3a3a46, 0);
+        batches.glow.addBox(lx - lnx * lside * 2.0, ly + 6.3, lz - lnz * lside * 2.0, 0.66, 0.2, 0.4, la, 0xffc88a, 0);
       }
       // gantries where the climb starts and where it sets down, not out in the
       // junction the approach leaves from. Each carries the name of where the

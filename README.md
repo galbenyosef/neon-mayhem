@@ -40,7 +40,7 @@ No build step, no server code, no accounts, no ads. Progress (cash + best runs) 
 - 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
 - Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi, paramedic and ice cream shifts that level up: more people (each marked by a floating arrow), further out, and fares whose destinations open out as the shift goes on rather than repeating the same short hop. The ice cream round works the other way — nobody is waiting for you, the chimes do it: pull up where there are people on the pavement and they come to the hatch. Isla Verde carries four missions of its own, and they stay on the island — nothing ever asks you to cross mid-run
 - Finish something worth finishing — a race, a shift, all 25 jumps — and a shareable result card is drawn for it: save it, copy it, or send it straight to your phone's share sheet
-- 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API
+- 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API — and slow synth pads over the title screen once you've touched a key
 - Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
 
 ## Controls

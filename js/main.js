@@ -75,6 +75,17 @@
     // start on a bright late afternoon (the cycle then rolls toward sunset/night)
     GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
 
+    // The title's soothing pads can only begin on a user gesture — the
+    // browser's rule, not ours. The first press or tap on the title starts
+    // them; if that same gesture starts the game, they bow out to the radio.
+    function titleGesture() {
+      if (GAME.started) return;
+      GAME.audio.init();
+      GAME.audio.titleMusic(true);
+    }
+    window.addEventListener('pointerdown', titleGesture);
+    window.addEventListener('keydown', titleGesture);
+
     lastT = performance.now();
     requestAnimationFrame(loop);
   }
@@ -157,6 +168,7 @@
     GAME.analytics.start();
     GAME.track(GAME.isTouch ? 'started-touch' : 'started-desktop');
     GAME.audio.init();
+    GAME.audio.titleMusic(false);
     // leave attract mode: place the player on the strip, camera snaps behind
     var P = GAME.player;
     P.pos.set(356, 0.18, 40);

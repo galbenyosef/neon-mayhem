@@ -345,6 +345,20 @@ GAME.hud = (function () {
     GAME.city.pois.stations.forEach(function (st) { g.fillRect(mx(st.x) - 3, my(st.z) - 3, 6, 6); });
     g.fillStyle = '#c86bff';
     GAME.city.pois.resprays.forEach(function (r) { g.fillRect(mx(r.door.x) - 3, my(r.door.z) - 3, 6, 6); });
+    // the landmasses name themselves, written on the sea below each one
+    g.font = 'italic 700 17px "Segoe UI", Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = 'rgba(150,200,240,0.85)';
+    g.fillText('COSTA ROSA', mx(-70), my(542));
+    if (GAME.city.isla) {
+      // just under the island's own southernmost point, wherever that is
+      var southZ = -1e9, cxIsla = 0, n = 0;
+      for (var la = 0; la < Math.PI * 2; la += 0.05) {
+        var q = GAME.city.isla.ringPt(la, 1);
+        southZ = Math.max(southZ, q[1]); cxIsla += q[0]; n++;
+      }
+      g.fillText('ISLA VERDE', mx(cxIsla / n), my(Math.min(southZ + 26, 545)));
+    }
   }
 
   function drawMinimap() {

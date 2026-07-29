@@ -223,8 +223,11 @@ GAME.city = (function () {
   };
   // the station or hospital you would actually be taken to from here
   city.nearestStation = function (x, z) {
-    var list = city.pois.stations, best = list[0], bd = 1e18;
+    var list = city.pois.stations, best = null, bd = 1e18;
+    var unlocked = !GAME.isla || GAME.isla.isOpen();
     for (var i = 0; i < list.length; i++) {
+      // a station behind a locked bridge cannot be where you're released
+      if (list[i].isla && !unlocked) continue;
       var d = U.dist2(x, z, list[i].x, list[i].z);
       if (d < bd) { bd = d; best = list[i]; }
     }
@@ -234,8 +237,12 @@ GAME.city = (function () {
   // its own coast; the mainland's is four curves, the island's is one.
   city.washAshore = function (x, z) {
     var best = null, bd = 1e18;
+    var unlocked = !GAME.isla || GAME.isla.isOpen();
     for (var i = 0; i < city.islands.length; i++) {
       var isl = city.islands[i];
+      // you do not wash up on a shore the game has not opened yet — drowning
+      // in the channel is not a ferry to the locked island
+      if (isl.id !== 'costa' && !unlocked) continue;
       var c = isl.centre || { x: -70, z: 0 };
       var d = U.dist2(x, z, c.x, c.z);
       if (d < bd) { bd = d; best = isl; }

@@ -238,10 +238,61 @@ GAME.audio = (function () {
     };
   })();
 
+  // ---------- title pads ----------
+  // Slow, warm chords under the attract mode: two detuned sines per note with
+  // a long swell in and out, nothing percussive. It runs through the music
+  // switch, and the moment the game starts it fades away under the radio.
+  var title = (function () {
+    var gain = null, timer = null, step = 0, nextT = 0;
+    var CHORDS = [[57, 60, 64, 71], [53, 57, 60, 69], [48, 55, 60, 67], [55, 59, 62, 67]];
+    function pad(freq, dur, amp, when) {
+      [0, 1.7].forEach(function (detune) {
+        var o = ctx.createOscillator(); o.type = 'sine';
+        o.frequency.value = freq + detune;
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, when);
+        g.gain.linearRampToValueAtTime(amp, when + dur * 0.35);
+        g.gain.setValueAtTime(amp, when + dur * 0.6);
+        g.gain.linearRampToValueAtTime(0.0001, when + dur);
+        o.connect(g); g.connect(gain);
+        o.start(when); o.stop(when + dur + 0.1);
+        o.onended = function () { try { o.disconnect(); g.disconnect(); } catch (e) { } };
+      });
+    }
+    function schedule() {
+      while (nextT < ctx.currentTime + 1.2) {
+        var chord = CHORDS[step % CHORDS.length];
+        for (var i = 0; i < chord.length; i++) {
+          pad(midi(chord[i]), 6.4, 0.028 - i * 0.004, nextT + i * 0.12);
+        }
+        // a high, quiet answer note halfway through every other bar
+        if (step % 2 === 1) pad(midi(chord[1] + 24), 3.2, 0.008, nextT + 2.6);
+        nextT += 5.2;
+        step++;
+      }
+    }
+    return {
+      start: function () {
+        if (!ctx || timer) return;
+        if (!gain) { gain = ctx.createGain(); gain.connect(musicSwitch); }
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 2.0);
+        nextT = ctx.currentTime + 0.1; step = 0;
+        schedule();
+        timer = setInterval(schedule, 400);
+      },
+      stop: function () {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (ctx && gain) gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.25);
+      }
+    };
+  })();
+
   return {
     get ctx() { return ctx; },
     init: init,
     radio: radio,
+    titleMusic: function (on) { if (on) title.start(); else title.stop(); },
     // freeze all audio (pause / tab backgrounded); resume brings it back
     suspend: function () {
       if (ctx && ctx.state === 'running') { engineBus.gain.value = 0; try { ctx.suspend(); } catch (e) { } }

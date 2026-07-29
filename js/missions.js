@@ -316,6 +316,7 @@ GAME.missions = (function () {
     } else {
       GAME.hud.message('Sold — +$' + pay + '  ·  ' + active.sales + ' / ' + active.quota, 2);
     }
+    GAME.hud.missionObjective(objectiveText());
     active.routeCp = null;
     updateCp();
   }
@@ -362,6 +363,9 @@ GAME.missions = (function () {
       active.routeT = 1.0;
       active.courierRoute = active.pitch ? roadRoute(f.x, f.z, active.pitch[0], active.pitch[1]) : null;
     }
+    // the sold/quota line was set once at the start of the round and never
+    // again — it read as a frozen shift readout however much you sold
+    if (GAME.frame % 12 === 0) GAME.hud.missionObjective(objectiveText());
     GAME.hud.missionTimer(active.timeLeft, true);
   }
 
@@ -603,11 +607,15 @@ GAME.missions = (function () {
   // hospital drop-off: the ambulance bay apron, clear of both the parking spot
   // and any traffic lane (patients were being unloaded in the middle of a road)
   function hospitalDropoff(f) {
-    var hs = GAME.city.pois.hospitals, best = hs[0], bd = 1e18;
+    var hs = GAME.city.pois.hospitals, best = null, bd = 1e18;
+    var here = GAME.city.islandIdAt(f.x, f.z);
     for (var hi = 0; hi < hs.length; hi++) {
+      // the run stays on this landmass — a shift never sends you over a bridge
+      if (GAME.city.islandIdAt(hs[hi].x, hs[hi].z) !== here) continue;
       var dd = U.dist2(f.x, f.z, hs[hi].x, hs[hi].z);
       if (dd < bd) { bd = dd; best = hs[hi]; }
     }
+    best = best || hs[0];
     return clearOfRoad(best.x + 30, best.spawn.z);
   }
 
