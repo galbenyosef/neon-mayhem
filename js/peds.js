@@ -277,7 +277,7 @@ GAME.peds = (function () {
       }
       var rp2 = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
-      if (GAME.city.isInWater(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
+      if (GAME.city.isInWater(ped.pos.x, ped.pos.z, ped.pos.y)) { removePed(ped); continue; }
       if (!ped.jobPed && GAME.city.inAirport(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
       ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z) + (ped.diveY || 0);
       // the dive drives its own pose; the walk cycle would just make it slide

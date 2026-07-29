@@ -222,7 +222,7 @@ GAME.aircraft = (function () {
       rig.geometry.attributes.position.needsUpdate = true;
     }
 
-    if (GAME.city.isInWater(P.pos.x, P.pos.z)) { land(); GAME.playerDrown(); return; }
+    if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { land(); GAME.playerDrown(); return; }
     if (P.pos.y <= gy + 0.05) {
       land();
       P.pos.y = gy; P.velY = 0;

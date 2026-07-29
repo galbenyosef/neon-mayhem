@@ -497,6 +497,18 @@ GAME.isla = (function () {
       heading: Math.atan2(q[0] - p[0], q[1] - p[1]) };
   }
 
+  // Is this too close to a bridge deck to put something at? The spans were not
+  // in the road network, so nothing checked against them — and a bridge ended
+  // inside a building because of it.
+  function nearSpan(x, z, pad) {
+    for (var i = 0; i < SPANS.length; i++) {
+      var sp = SPANS[i];
+      if (!sp.cum) continue;
+      if (segClosest(sp, x, z).d < sp.half + (pad || 0)) return true;
+    }
+    return false;
+  }
+
   // Nudge a hand-placed structure out of every carriageway. A landmark sited
   // from a drawing lands wherever the roads happen to run, and a warehouse
   // across a road is a road you cannot use. Pushing away from the nearest
@@ -506,15 +518,20 @@ GAME.isla = (function () {
     var px = x, pz = z;
     gap = gap === undefined ? 5 : gap;
     for (var pass = 0; pass < 40; pass++) {
-      var worst = null, worstPush = 0;
-      for (var i = 0; i < NET.length; i++) {
-        var sg = NET[i], c = segClosest(sg, px, pz);
-        var need = sg.w / 2 + half + gap;
+      var worst = null, worstPush = 0, i, sg, c, need;
+      for (i = 0; i < NET.length; i++) {
+        sg = NET[i]; c = segClosest(sg, px, pz);
+        need = sg.w / 2 + half + gap;
         if (c.d >= need) continue;
-        if (need - c.d > worstPush) {
-          worstPush = need - c.d;
-          worst = segPointAt(sg, c.t);
-        }
+        if (need - c.d > worstPush) { worstPush = need - c.d; worst = segPointAt(sg, c.t); }
+      }
+      for (i = 0; i < SPANS.length; i++) {
+        sg = SPANS[i];
+        if (!sg.cum) continue;
+        c = segClosest(sg, px, pz);
+        need = sg.half + half + gap + 6;
+        if (c.d >= need) continue;
+        if (need - c.d > worstPush) { worstPush = need - c.d; worst = segPointAt(sg, c.t); }
       }
       if (!worst) break;
       var dx = px - worst[0], dz = pz - worst[1], l = Math.hypot(dx, dz);
@@ -670,7 +687,8 @@ GAME.isla = (function () {
       onRoad: onRoad, nearestRoadPoint: nearestRoadPoint
     });
     SPANS.forEach(function (s) {
-      city.addCrossing({ id: s.id, name: s.name, deckY: s.deckY, span: s });
+      city.addCrossing({ id: s.id, name: s.name, deckY: s.deckY, span: s,
+        nearBy: function (x, z, pad) { return segClosest(s, x, z).d < s.half + (pad || 0); } });
     });
     city.isla = { bounds: C, contains: contains, net: NET, hills: HILLS, spans: SPANS,
       terrainY: terrainY, groundY: groundY, onRoad: onRoad, inland: inland,
@@ -783,6 +801,7 @@ GAME.isla = (function () {
       var w = U.randRange(rng, band.sx[0], band.sx[1]);
       var d = U.randRange(rng, band.sz[0], band.sz[1]);
       if (onRoad(ox, oz, 6 + Math.max(w, d) / 2)) continue;
+      if (nearSpan(ox, oz, 12 + Math.max(w, d) / 2)) continue;
       var clear = true;
       for (var p = 0; p < placed.length; p++) {
         if (U.dist2(ox, oz, placed[p][0], placed[p][1]) < band.gap * band.gap) { clear = false; break; }
@@ -885,7 +904,7 @@ GAME.isla = (function () {
     for (var r2 = 0; r2 < 5; r2++) {
       for (var c2 = 0; c2 < 6; c2++) {
         var bx2 = POI.container.x - 33 + c2 * 14, bz2 = POI.container.z - 26 + r2 * 12;
-        if (onRoad(bx2, bz2, 12) || inland(bx2, bz2) < 0.05) continue;
+        if (onRoad(bx2, bz2, 12) || nearSpan(bx2, bz2, 14) || inland(bx2, bz2) < 0.05) continue;
         var cy = groundY(bx2, bz2);
         var stack = 1 + ((r2 * 3 + c2 * 5) % 3);
         for (var st = 0; st < stack; st++) {
@@ -896,7 +915,7 @@ GAME.isla = (function () {
     }
     for (var cr = 0; cr < 2; cr++) {
       var crx = POI.container.x - 26, crz = POI.container.z - 44 + cr * 88;
-      if (onRoad(crx + 12, crz, 34) || inland(crx, crz) < 0.06) continue;
+      if (onRoad(crx + 12, crz, 34) || nearSpan(crx + 12, crz, 40) || inland(crx, crz) < 0.06) continue;
       var gy2 = groundY(crx, crz);
       b.addBox(crx, gy2 + 14, crz, 2.4, 28, 2.4, 0, 0xd8a030, 0);
       b.addBox(crx + 24, gy2 + 14, crz, 2.4, 28, 2.4, 0, 0xd8a030, 0);
@@ -1038,6 +1057,7 @@ GAME.isla = (function () {
       var x = q[0], z = q[1];
       if (!contains(x, z) || inland(x, z) < 0.012) continue;
       if (onRoad(x, z, 4)) continue;
+      if (nearSpan(x, z, 14)) continue;
       if (nearReserved(x, z, 16)) continue;
       var y = groundY(x, z), hit = false;
       for (var p = 0; p < placed.length; p++) {
@@ -1045,6 +1065,7 @@ GAME.isla = (function () {
       }
       if (hit) continue;
       n++;
+      city.addSolid(x, z, 0.9, 0.9, y + 5, 'prop', true);
       if (y < 5) {
         // palm: a leaning trunk and four fronds
         var s = U.randRange(rng, 0.85, 1.3), th = 6.2 * s;
@@ -1079,6 +1100,7 @@ GAME.isla = (function () {
         var oz = p[1] - Math.sin(ang) * (s.w / 2 + 1.4) * side;
         // a lamp set off one road can land in the middle of the next one
         if (onRoad(ox, oz, 1)) continue;
+        if (nearSpan(ox, oz, 7)) continue;
         var y = groundY(ox, oz);
         b.addBox(ox, y + 3, oz, 0.28, 6, 0.28, 0, 0x3a3a46, 0);
         b.addBox(ox - Math.cos(ang) * 1.1 * side, y + 6.1, oz + Math.sin(ang) * 1.1 * side,
@@ -1091,8 +1113,11 @@ GAME.isla = (function () {
   }
 
   // ---------- bridge geometry ----------
+  // the land under a point, whichever landmass it belongs to
+  function groundYAt(x, z) { return contains(x, z) ? groundY(x, z) : 0; }
+
   function buildSpans(batches, scene) {
-    var b = batches.plain, gateBatch = new GeoBatch();
+    var b = batches.plain, sg = batches.signs, gateBatch = new GeoBatch();
     SPANS.forEach(function (s) {
       var STEPS = Math.max(40, Math.round(s.len / 6));
       for (var k = 0; k < STEPS; k++) {
@@ -1124,15 +1149,53 @@ GAME.isla = (function () {
         // sides is not an approach, it is a chute.
         var lift = Math.min(s.liftAt(p0[0], p0[1]), s.liftAt(p1[0], p1[1]));
         var fromEnd = Math.min(t0 * s.len, (1 - t1) * s.len);
+        var ux = dx / l, uz = dz / l;
+        // The abutment wall goes in as soon as the deck is off the ground —
+        // not only where the railings are. Anywhere it stands clear of the land
+        // beside it without a wall is somewhere you can drive up alongside and
+        // pop out on top, because the deck's height applies to anything within
+        // half a carriageway of its centreline.
+        if (lift > 1.0) {
+          for (var aw = 0; aw < 2; aw++) {
+            var asg = aw ? 1 : -1;
+            var ax0 = p0[0] + nx * asg, az0 = p0[1] + nz * asg;
+            var ax1 = p1[0] + nx * asg, az1 = p1[1] + nz * asg;
+            var aoX = -uz * asg, aoZ = ux * asg;
+            // over open water there is nothing down there to drive on, and a
+            // wall to the waterline would make the span read as a causeway
+            if (city.isOpenWater(ax0, az0) && city.isOpenWater(ax1, az1)) continue;
+            var gb = Math.min(groundYAt(ax0, az0), groundYAt(ax1, az1)) - 0.4;
+            b.addQuad([ax0, gb, az0], [ax1, gb, az1], [ax1, y1, az1], [ax0, y0, az0],
+              0x2a2740, [aoX, 0, aoZ]);
+            city.addSolid((ax0 + ax1) / 2 + aoX * 0.4, (az0 + az1) / 2 + aoZ * 0.4,
+              Math.abs(ax1 - ax0) + 0.7, Math.abs(az1 - az0) + 0.7,
+              (y0 + y1) / 2, 'abutment', true);
+          }
+        }
         if (lift < 2.6 || fromEnd < 16) continue;
         for (var e = 0; e < 2; e++) {
           var sgn = e ? 1 : -1;
           var ex0 = p0[0] + nx * sgn, ez0 = p0[1] + nz * sgn;
           var ex1 = p1[0] + nx * sgn, ez1 = p1[1] + nz * sgn;
-          b.addQuad([ex0, y0, ez0], [ex1, y1, ez1], [ex1, y1 + 1.4, ez1], [ex0, y0 + 1.4, ez0], 0x46405e, null);
-          b.addQuad([ex0, y0 + 1.42, ez0], [ex1, y1 + 1.42, ez1],
-            [ex1 + nx * sgn * 0.06, y1 + 1.42, ez1 + nz * sgn * 0.06],
-            [ex0 + nx * sgn * 0.06, y0 + 1.42, ez0 + nz * sgn * 0.06], e ? 0xff4fa3 : 0x38e8ff, [0, 1, 0]);
+          // outward normal for this side, so the wall is drawn facing the way
+          // it actually points. Handing both sides the same winding leaves one
+          // of the two railings backface-culled — invisible from the deck.
+          var oX = -uz * sgn, oZ = ux * sgn;
+          var TH = 0.34;
+          var ix0 = ex0 - oX * TH, iz0 = ez0 - oZ * TH;
+          var ix1 = ex1 - oX * TH, iz1 = ez1 - oZ * TH;
+          // inner face, looking back across the carriageway
+          b.addQuad([ix0, y0, iz0], [ix1, y1, iz1], [ix1, y1 + 1.4, iz1], [ix0, y0 + 1.4, iz0],
+            0x46405e, [-oX, 0, -oZ]);
+          // outer face, looking out over the water
+          b.addQuad([ex0, y0, ez0], [ex1, y1, ez1], [ex1, y1 + 1.4, ez1], [ex0, y0 + 1.4, ez0],
+            0x3b3550, [oX, 0, oZ]);
+          // the cap, and the neon strip along the top of it
+          b.addQuad([ix0, y0 + 1.4, iz0], [ix1, y1 + 1.4, iz1], [ex1, y1 + 1.4, ez1], [ex0, y0 + 1.4, ez0],
+            0x4e4768, [0, 1, 0]);
+          b.addQuad([ix0, y0 + 1.44, iz0], [ix1, y1 + 1.44, iz1],
+            [ix1 + oX * 0.12, y1 + 1.44, iz1 + oZ * 0.12], [ix0 + oX * 0.12, y0 + 1.44, iz0 + oZ * 0.12],
+            e ? 0xff4fa3 : 0x38e8ff, [0, 1, 0]);
           city.addSolid((ex0 + ex1) / 2, (ez0 + ez1) / 2, Math.abs(ex1 - ex0) + 0.7,
             Math.abs(ez1 - ez0) + 0.7, (y0 + y1) / 2 + 1.4, 'parapet', true,
             Math.min(y0, y1) - 0.6);
@@ -1146,9 +1209,26 @@ GAME.isla = (function () {
         var base = contains(pp[0], pp[1]) ? groundY(pp[0], pp[1]) : -1.6;
         b.addBox(pp[0], (py + base) / 2, pp[1], 4, py - base, 4, 0, 0x2e2b44, 0);
       }
+      // Lamps down the middle of the span, but only over open water. Over land
+      // the deck runs low past whatever is beside it, and a lamp post there
+      // lands in a tree or on a roof.
+      for (var lt = 0.05; lt < 0.96; lt += 0.055) {
+        var lp = segPointAt(s, lt), ly = s.deckY(lp[0], lp[1]);
+        if (ly === null || city.islandAt(lp[0], lp[1])) continue;
+        if (s.liftAt(lp[0], lp[1]) < 3) continue;
+        var ln = segPointAt(s, Math.min(1, lt + 0.01));
+        var la = Math.atan2(ln[0] - lp[0], ln[1] - lp[1]);
+        var lsx = Math.cos(la) * (s.half - 0.5), lsz = -Math.sin(la) * (s.half - 0.5);
+        var lside = ((lt * 100) | 0) % 2 ? 1 : -1;
+        var lx = lp[0] + lsx * lside, lz = lp[1] + lsz * lside;
+        b.addBox(lx, ly + 3.4, lz, 0.26, 6, 0.26, 0, 0x3a3a46, 0);
+        b.addBox(lx - lsx * 0.28, ly + 6.5, lz - lsz * 0.28, 2.2, 0.2, 0.2, -la, 0x3a3a46, 0);
+        batches.glow.addBox(lx - lsx * 0.5, ly + 6.3, lz - lsz * 0.5, 0.66, 0.2, 0.4, -la, 0xffc88a, 0);
+      }
       // gantries where the climb starts and where it sets down, not out in the
-      // junction the approach leaves from
-      [(s.flatIn + 6) / s.len, 1 - (s.rampOut * 0.55) / s.len].forEach(function (t2) {
+      // junction the approach leaves from. Each carries the name of where the
+      // deck is taking you.
+      [(s.flatIn + 6) / s.len, 1 - (s.rampOut * 0.55) / s.len].forEach(function (t2, endI) {
         var g = segPointAt(s, t2), gy = s.deckY(g[0], g[1]);
         if (gy === null) return;
         var nxt = segPointAt(s, U.clamp(t2 + 0.01, 0, 1));
@@ -1157,19 +1237,35 @@ GAME.isla = (function () {
         b.addBox(g[0] + px, gy + 9, g[1] + pz, 1.6, 18, 1.6, 0, 0x3a3552, 0);
         b.addBox(g[0] - px, gy + 9, g[1] - pz, 1.6, 18, 1.6, 0, 0x3a3552, 0);
         b.addBox(g[0], gy + 17.4, g[1], Math.abs(px) * 2 + 2, 1.6, Math.abs(pz) * 2 + 2, 0, 0x3a3552, 0);
+        // the destination board, hung under the beam and facing the driver
+        // coming at it — one at each end of each bridge, four in all
+        var slot = endI === 0 ? 32 : 33;              // ISLA VERDE / COSTA ROSA
+        var facing = endI === 0 ? ang + Math.PI : ang;
+        var back = endI === 0 ? -1 : 1;
+        city.addSign(sg, slot, g[0] + Math.sin(ang) * back * 0.8, gy + 12.2,
+          g[1] + Math.cos(ang) * back * 0.8, facing, s.half * 2 - 1, 3.6);
       });
 
-      // the barrier: a police line across the mainland end, gone once the
-      // bridges open. It is a solid whose height drops out of the world rather
-      // than a box that gets deleted, so nothing else has to know about it.
-      var gp = segPointAt(s, (s.flatIn * 0.55) / s.len);
-      var gnx = segPointAt(s, (s.flatIn * 0.55 + 10) / s.len);
+      // The barrier: a police line across the mainland end, gone once the
+      // bridges open. It stands where the railings begin rather than out on the
+      // flat approach — down there the deck is at street level with open sand
+      // either side, so you could drive round the end of it and rejoin the
+      // bridge further along. Between the walls there is nowhere to go.
+      var gd = s.flatIn + 10;
+      while (gd < s.len * 0.5) {
+        var gq = segPointAt(s, gd / s.len);
+        if (s.liftAt(gq[0], gq[1]) >= 2.9) break;
+        gd += 2;
+      }
+      gd += 6;
+      var gp = segPointAt(s, gd / s.len);
+      var gnx = segPointAt(s, (gd + 10) / s.len);
       var ga = Math.atan2(gnx[0] - gp[0], gnx[1] - gp[1]);
       var gy2 = s.deckY(gp[0], gp[1]) || 0;
-      gateBatch.addBox(gp[0], gy2 + 1.1, gp[1], s.half * 2 + 1, 2.2, 1.4, ga, 0xd8d0c0, 0);
-      gateBatch.addBox(gp[0], gy2 + 2.4, gp[1], s.half * 2 + 1, 0.5, 1.6, ga, 0xff4f4f, 0);
-      var g1 = city.addSolid(gp[0], gp[1], Math.abs(Math.cos(ga)) * (s.half * 2 + 1) + 1.4,
-        Math.abs(Math.sin(ga)) * (s.half * 2 + 1) + 1.4, gy2 + 2.6, 'gate', true);
+      gateBatch.addBox(gp[0], gy2 + 1.3, gp[1], s.half * 2 + 2, 2.6, 1.4, ga, 0xd8d0c0, 0);
+      gateBatch.addBox(gp[0], gy2 + 2.8, gp[1], s.half * 2 + 2, 0.5, 1.6, ga, 0xff4f4f, 0);
+      var g1 = city.addSolid(gp[0], gp[1], Math.abs(Math.cos(ga)) * (s.half * 2 + 2) + 1.6,
+        Math.abs(Math.sin(ga)) * (s.half * 2 + 2) + 1.6, gy2 + 3.0, 'gate', true);
       g1.gateH = gy2 + 2.6;
       gates.push(g1);
     });
@@ -1192,6 +1288,7 @@ GAME.isla = (function () {
         var side = rng() < 0.5 ? 1 : -1;
         var ox = p[0] + Math.cos(ang) * (s.w / 2 - 0.8) * side;
         var oz = p[1] - Math.sin(ang) * (s.w / 2 - 0.8) * side;
+        if (nearSpan(ox, oz, 8)) continue;
         city.parkedSpots.push({ x: ox, z: oz, heading: ang, isla: true });
       }
     }

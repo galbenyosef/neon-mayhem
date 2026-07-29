@@ -76,10 +76,16 @@ GAME.city = (function () {
   // dry land for the water tests and drivable ground for the height lookup.
   city.crossings = [];
   city.addCrossing = function (c) { city.crossings.push(c); return c; };
-  city.crossingY = function (x, z) {
+  // `atY`, when given, is the height of whatever is asking. A deck only counts
+  // as ground once you are up at its level: without that, its height applies to
+  // anything inside its footprint, so driving up the sand alongside a bridge
+  // and turning in lifts you onto the deck — past whatever was blocking it.
+  city.crossingY = function (x, z, atY) {
     for (var i = 0; i < city.crossings.length; i++) {
       var y = city.crossings[i].deckY(x, z);
-      if (y !== null) return y;
+      if (y === null) continue;
+      if (atY !== undefined && atY < y - 2.5) continue;
+      return y;
     }
     return null;
   };
@@ -110,10 +116,28 @@ GAME.city = (function () {
     return best;
   };
 
-  city.isInWater = function (x, z) {
+  // `atY` matters here for the same reason it matters to the height lookup: a
+  // bridge overhead does not keep you dry when you are in the sea under it.
+  // is this within `pad` of a bridge deck, at any height? For deciding where
+  // not to plant a palm or stand a lamp post
+  city.nearCrossing = function (x, z, pad) {
+    for (var i = 0; i < city.crossings.length; i++) {
+      var c = city.crossings[i];
+      if (c.nearBy && c.nearBy(x, z, pad)) return true;
+    }
+    return false;
+  };
+
+  city.isInWater = function (x, z, atY) {
     if (city.isOnPier(x, z)) return false;
-    if (city.crossings.length && city.crossingY(x, z) !== null) return false;
+    if (city.crossings.length && city.crossingY(x, z, atY) !== null) return false;
     return !city.islandAt(x, z);
+  };
+  // Is there sea under this point, whatever is carried over it? A bridge deck
+  // is not water for the drown check, but it is still water underneath — which
+  // is what decides whether anything could be standing down there.
+  city.isOpenWater = function (x, z) {
+    return !city.isOnPier(x, z) && !city.islandAt(x, z);
   };
   city.isOnSand = function (x, z) {
     if (city.isOnPier(x, z)) return false;
@@ -136,13 +160,13 @@ GAME.city = (function () {
     return null;
   };
 
-  city.groundY = function (x, z) {
+  city.groundY = function (x, z, atY) {
     if (city.ramps.length) {
       var rp = city.rampAt(x, z);
       if (rp) return rp.y;
     }
     if (city.crossings.length) {
-      var cy = city.crossingY(x, z);
+      var cy = city.crossingY(x, z, atY);
       if (cy !== null) return cy;
     }
     if (city.decks.length) {
@@ -168,7 +192,7 @@ GAME.city = (function () {
   // street traffic never snaps onto a building — but a car that clears a roof
   // on a jump can land on it and drive around up there.
   city.driveSurfaceY = function (x, z, y) {
-    var best = city.groundY(x, z);
+    var best = city.groundY(x, z, y);
     var boxes = city.hash.query(x, z, 1);
     for (var i = 0; i < boxes.length; i++) {
       var b = boxes[i];
@@ -180,8 +204,8 @@ GAME.city = (function () {
   };
   // top surface at a point: the tallest solid building roof containing it,
   // else the terrain height. Used so aircraft can set down on rooftops.
-  city.surfaceY = function (x, z) {
-    var y = city.groundY(x, z);
+  city.surfaceY = function (x, z, atY) {
+    var y = city.groundY(x, z, atY);
     var boxes = city.hash.query(x, z, 1);
     for (var i = 0; i < boxes.length; i++) {
       var b = boxes[i];
@@ -307,7 +331,9 @@ GAME.city = (function () {
     'RESPRAY', 'HOSPITAL', 'POLICE', 'AXIS TOWER', 'COSTA ROSA PIER', 'FUN FAIR',
     // Isla Verde keeps its own names; appended, so every index above still holds
     'SUNNY SCOOPS', 'EL FARO', 'PUERTO DORADO', 'MARINA VERDE', 'MIRADOR',
-    'CASA DEL SOL', 'BAHIA CLUB', 'VERDE MOTORS'];
+    'CASA DEL SOL', 'BAHIA CLUB', 'VERDE MOTORS',
+    // the two ends of the world, for the signs over the bridges
+    'ISLA VERDE', 'COSTA ROSA'];
   var SIGN_COLORS = ['#ff4fa3', '#38e8ff', '#ffe14f', '#7dff6a', '#ff8a3d', '#c86bff', '#ff5d5d', '#59ffc8'];
   function signAtlas() {
     var cv = document.createElement('canvas');
@@ -585,15 +611,32 @@ GAME.city = (function () {
   var containerData = [];
 
   function buildBeach(scene, batches) {
-    // boardwalk planks + railing
-    batches.wood.addBox(365, 0.15, 0, 10, 0.3, 980, 0, 0x7a5a40, 0);
+    // Boardwalk planks and railing, in lengths with a gap wherever a bridge
+    // approach crosses. Laid as one long run it put a handrail straight across
+    // the road onto the bridge.
+    function crossed(z) {
+      return city.crossings.length &&
+        (city.crossingY(360, z) !== null || city.crossingY(371, z) !== null);
+    }
+    var runZ = null;
+    for (var bz = -490; bz <= 490; bz += 2) {
+      var open = !crossed(bz);
+      if (open && runZ === null) runZ = bz;
+      if ((!open || bz >= 490) && runZ !== null) {
+        var mid = (runZ + bz) / 2, span = bz - runZ;
+        if (span > 4) {
+          batches.wood.addBox(365, 0.15, mid, 10, 0.3, span, 0, 0x7a5a40, 0);
+          batches.wood.addBox(370.2, 1.45, mid, 0.24, 0.14, span - 1, 0, 0xb08a60, 0);
+        }
+        runZ = null;
+      }
+    }
     for (var z = -488; z < 488; z += 6) {
-      if ((z / 6 | 0) % 2 === 0) batches.wood.addBox(365, 0.32, z, 10, 0.04, 3, 0, 0x6a4c34, 0);
+      if ((z / 6 | 0) % 2 === 0 && !crossed(z)) batches.wood.addBox(365, 0.32, z, 10, 0.04, 3, 0, 0x6a4c34, 0);
     }
     for (var zr = -486; zr < 488; zr += 4) {
-      batches.wood.addBox(370.2, 0.9, zr, 0.18, 1.2, 0.18, 0, 0x9a7a58, 0);
+      if (!crossed(zr)) batches.wood.addBox(370.2, 0.9, zr, 0.18, 1.2, 0.18, 0, 0x9a7a58, 0);
     }
-    batches.wood.addBox(370.2, 1.45, 0, 0.24, 0.14, 976, 0, 0xb08a60, 0);
 
     // sand strip built as segments following the shoreline
     var sand = new GeoBatch();
@@ -762,11 +805,13 @@ GAME.city = (function () {
     var dummy = new THREE.Object3D();
 
     // palms
-    var palms = city.palmSpots;
     // extra palms scattered on boulevard sidewalks
     for (var z = -460; z < 480; z += 40) {
-      palms.push({ x: 341.5, z: z, s: 1 });
+      city.palmSpots.push({ x: 341.5, z: z, s: 1 });
     }
+    // nothing gets planted where a bridge runs — a palm through the deck is
+    // as wrong as a building on it
+    var palms = city.palmSpots.filter(function (q) { return !city.nearCrossing(q.x, q.z, 9); });
     var trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 6.4, 5);
     trunkGeo.translate(0, 3.2, 0);
     var trunkMesh = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: 0x6a4c34 }), palms.length);
@@ -797,7 +842,10 @@ GAME.city = (function () {
       return false;
     }
     var lightSpots = [];
-    function addLight(x, z, rot) { if (!city.inAirport(x, z)) lightSpots.push({ x: x, z: z, rot: rot }); }
+    function addLight(x, z, rot) {
+      if (city.inAirport(x, z) || city.nearCrossing(x, z, 9)) return;
+      lightSpots.push({ x: x, z: z, rot: rot });
+    }
     for (var i = 0; i < R.length; i++) {
       for (var d = -450; d <= 450; d += 60) {
         if (!nearAnyRoad(d + 20)) addLight(R[i] + 7.4, d + 20, Math.PI);
@@ -1083,6 +1131,7 @@ GAME.city = (function () {
     }
     function ok(x, z) {
       if (city.isInWater(x, z)) return false;
+      if (city.nearCrossing(x, z, 16)) return false;   // not on a bridge approach
       if (x < -470 || x > 396 || Math.abs(z) > 476) return false;
       for (var i = 0; i < out.length; i++) if (U.dist2(x, z, out[i].x, out[i].z) < 78 * 78) return false;
       var boxes = city.hash.query(x, z, 18);

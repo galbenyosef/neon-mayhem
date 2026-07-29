@@ -501,7 +501,7 @@ GAME.vehicles = (function () {
     car.lastHeading = car.heading;
 
     collideStatic(car, dt);
-    if (GAME.city.isInWater(car.pos.x, car.pos.z)) sinkCar(car);
+    if (GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) sinkCar(car);
   }
 
   // a jump has ended: score it if the player pulled it off, and take the knock
