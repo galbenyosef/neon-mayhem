@@ -3,11 +3,12 @@ GAME.hud = (function () {
   var shownCash = 0, targetCash = 0;
   var msgT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
-  var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 520;
+  var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 560;
+  var MAP_W = 1020, MAP_H = 560;   // world -520..1520 by -560..560, at 0.5 px/m
   var dmgFlash = null;
   var PICKUP_BLIP = {
     pistol: '#eef0ff', smg: '#ffe14f', shotgun: '#ff8a3d',
-    health: '#ff4d6a', armor: '#39c8ff'
+    health: '#ff4d6a', armor: '#39c8ff', rifle: '#8dffd8'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -51,6 +52,27 @@ GAME.hud = (function () {
     pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
     pauseBtn('pause-mute', function () { var m = GAME.audio.toggleMute(); $('pause-mute').textContent = m ? '🔇 MUTED' : '🔊 SOUND'; });
+    // music and effects are separate taps: kill the radio and keep the crashes,
+    // or the other way round. The choice is remembered.
+    function paintAudioBtns() {
+      $('pause-music').textContent = GAME.audio.musicOn ? '🎵 MUSIC: ON' : '🎵 MUSIC: OFF';
+      $('pause-sfx').textContent = GAME.audio.sfxOn ? '💥 SFX: ON' : '💥 SFX: OFF';
+    }
+    pauseBtn('pause-music', function () {
+      GAME.audio.setMusicOn(!GAME.audio.musicOn);
+      if (GAME.prefs) { GAME.prefs.musicOff = !GAME.audio.musicOn; GAME.save(); }
+      paintAudioBtns();
+    });
+    pauseBtn('pause-sfx', function () {
+      GAME.audio.setSfxOn(!GAME.audio.sfxOn);
+      if (GAME.prefs) { GAME.prefs.sfxOff = !GAME.audio.sfxOn; GAME.save(); }
+      paintAudioBtns();
+    });
+    if (GAME.prefs) {
+      if (GAME.prefs.musicOff) GAME.audio.setMusicOn(false);
+      if (GAME.prefs.sfxOff) GAME.audio.setSfxOn(false);
+    }
+    paintAudioBtns();
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
@@ -80,7 +102,7 @@ GAME.hud = (function () {
       ['#ff8a3d', 'Race'], ['#38e8ff', 'Courier'], ['#ff4fa3', 'Rampage'],
       ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
       ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
-      ['#8de0ff', '✈ Airport · Ⓗ Helipad'],
+      ['#8de0ff', '✈ Airport · Ⓗ Helipad'], ['#ffd7e4', '☀ Ice cream depot'],
       ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
     ];
     $('map-legend').innerHTML = legend.map(function (e) {
@@ -92,13 +114,13 @@ GAME.hud = (function () {
   var mapScale = 1, mapOffY = 0;
   function drawBigMap() {
     var cv = el.bigmap;
-    var size = Math.floor(Math.min(window.innerWidth * 0.86, window.innerHeight * 0.68, 560));
-    cv.width = size; cv.height = Math.floor(size * 520 / 700);
+    var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * 0.68 * MAP_W / MAP_H, 900));
+    cv.width = size; cv.height = Math.floor(size * MAP_H / MAP_W);
     var g = cv.getContext('2d');
-    mapScale = size / 700; mapOffY = 0;
+    mapScale = size / MAP_W; mapOffY = 0;
     g.fillStyle = '#141020';
     g.fillRect(0, 0, cv.width, cv.height);
-    g.drawImage(mapBuffer, 0, 0, 700 * mapScale, 520 * mapScale);
+    g.drawImage(mapBuffer, 0, 0, MAP_W * mapScale, MAP_H * mapScale);
     function w2mx(x) { return (x + MAP_OX) * MAP_S * mapScale; }
     function w2my(z) { return mapOffY + (z + MAP_OY) * MAP_S * mapScale; }
     // route + destination
@@ -165,9 +187,10 @@ GAME.hud = (function () {
       g.fill();
     });
     GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
-    badge(GAME.city.pois.police.x, GAME.city.pois.police.z, '#5aa0ff', 'P');
+    GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
+    if (GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
     // helipad: a ringed cyan disc with an H
     var hpb = GAME.city.helipad;
     g.fillStyle = '#8de0ff';
@@ -196,8 +219,8 @@ GAME.hud = (function () {
     var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
     var wx = cx / mapScale / MAP_S - MAP_OX;
     var wz = (cy - mapOffY) / mapScale / MAP_S - MAP_OY;
-    wx = U.clamp(wx, -495, 500);
-    wz = U.clamp(wz, -495, 495);
+    wx = U.clamp(wx, -495, 1500);
+    wz = U.clamp(wz, -540, 540);
     GAME.nav.setDest(wx, wz);
     drawBigMap();
   }
@@ -216,7 +239,7 @@ GAME.hud = (function () {
     ctlMode = mode;
     var txt = {
       car: '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide',
-      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-4</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
+      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-5</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
       heli: '<b>Space</b> up · <b>Shift</b> down · <b>W/S</b> forward · <b>A/D</b> yaw · <b>F</b> exit / bail out · <b>P</b> map',
       plane: '<b>W/S</b> throttle · <b>Space</b> climb · <b>Shift</b> dive · <b>A/D</b> turn · <b>Q/E</b> barrel roll · <b>F</b> bail out',
       chute: '<b>WASD</b> steer your descent · glide down to land'
@@ -227,24 +250,28 @@ GAME.hud = (function () {
 
   function buildMapBuffer() {
     mapBuffer = document.createElement('canvas');
-    mapBuffer.width = 700; mapBuffer.height = 520;
+    mapBuffer.width = MAP_W; mapBuffer.height = MAP_H;
     var g = mapBuffer.getContext('2d');
     function mx(x) { return (x + MAP_OX) * MAP_S; }
     function my(z) { return (z + MAP_OY) * MAP_S; }
     // island: water everywhere, then scan-fill the landmass with a sand rim
     var c = GAME.city;
     g.fillStyle = '#16305a';
-    g.fillRect(0, 0, 700, 520);
-    function isLand(x, z) {
-      return !(x > c.shoreline(z) || x < c.westShore(z) || z < c.northShore(x) || z > c.southShore(x));
-    }
+    g.fillRect(0, 0, MAP_W, MAP_H);
+    // every landmass draws the same way, so a second island needs no second
+    // branch here — it is land if some island contains it
+    function isLand(x, z) { return !!c.islandAt(x, z); }
     var CELL = 8;
-    for (var wx = -520; wx < 880; wx += CELL) {
-      for (var wz = -520; wz < 520; wz += CELL) {
+    for (var wx = -520; wx < 1520; wx += CELL) {
+      for (var wz = -560; wz < 560; wz += CELL) {
         var cxm = wx + CELL / 2, czm = wz + CELL / 2;
         if (!isLand(cxm, czm)) continue;
         var rim = !isLand(cxm + CELL, czm) || !isLand(cxm - CELL, czm) || !isLand(cxm, czm + CELL) || !isLand(cxm, czm - CELL);
-        g.fillStyle = rim ? '#8a7a58' : '#141020';
+        // relief shading, so the hills read on the map as well as underfoot
+        var gy = rim ? 0 : c.groundY(cxm, czm);
+        g.fillStyle = rim ? '#8a7a58' : gy > 2
+          ? 'rgb(' + Math.round(20 + gy * 1.5) + ',' + Math.round(16 + gy * 2.2) + ',' + Math.round(32 + gy * 0.8) + ')'
+          : '#141020';
         g.fillRect(mx(wx), my(wz), CELL * MAP_S + 0.5, CELL * MAP_S + 0.5);
       }
     }
@@ -266,9 +293,35 @@ GAME.hud = (function () {
     }
     g.strokeStyle = '#5a5478';
     g.beginPath(); g.moveTo(mx(350), my(-480)); g.lineTo(mx(350), my(480)); g.stroke();
+    // Isla Verde: its roads are polylines, so they draw as polylines
+    if (GAME.city.isla) {
+      var IS = GAME.city.isla;
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      g.strokeStyle = '#4a4462';
+      IS.net.forEach(function (seg) {
+        g.lineWidth = Math.max(2, seg.w * MAP_S * 2.0);
+        g.beginPath();
+        for (var k = 0; k < seg.pts.length; k++) {
+          var pt = seg.pts[k];
+          if (k) g.lineTo(mx(pt[0]), my(pt[1])); else g.moveTo(mx(pt[0]), my(pt[1]));
+        }
+        g.stroke();
+      });
+      // the bridges, in the same pink they are lit in
+      g.strokeStyle = '#b8548a'; g.lineWidth = 5;
+      IS.spans.forEach(function (sp) {
+        g.beginPath();
+        for (var k2 = 0; k2 < sp.pts.length; k2++) {
+          var q = sp.pts[k2];
+          if (k2) g.lineTo(mx(q[0]), my(q[1])); else g.moveTo(mx(q[0]), my(q[1]));
+        }
+        g.stroke();
+      });
+      g.lineCap = 'butt'; g.lineJoin = 'miter';
+    }
     // piers
     g.strokeStyle = '#6a5a48'; g.lineWidth = 4;
-    g.beginPath(); g.moveTo(mx(360), my(150)); g.lineTo(mx(505), my(150)); g.stroke();
+    g.beginPath(); g.moveTo(mx(360), my(250)); g.lineTo(mx(505), my(250)); g.stroke();
     g.beginPath(); g.moveTo(mx(360), my(-180)); g.lineTo(mx(470), my(-180)); g.stroke();
     // airport: fenced apron, a runway strip with a dashed centreline
     var A = GAME.city.airport;
@@ -288,10 +341,24 @@ GAME.hud = (function () {
     // POIs
     g.fillStyle = '#ff8aa8';
     GAME.city.pois.hospitals.forEach(function (H) { g.fillRect(mx(H.x) - 3, my(H.z) - 3, 6, 6); });
-    var PD = GAME.city.pois.police;
-    g.fillStyle = '#5aa0ff'; g.fillRect(mx(PD.x) - 3, my(PD.z) - 3, 6, 6);
+    g.fillStyle = '#5aa0ff';
+    GAME.city.pois.stations.forEach(function (st) { g.fillRect(mx(st.x) - 3, my(st.z) - 3, 6, 6); });
     g.fillStyle = '#c86bff';
     GAME.city.pois.resprays.forEach(function (r) { g.fillRect(mx(r.door.x) - 3, my(r.door.z) - 3, 6, 6); });
+    // the landmasses name themselves, written on the sea below each one
+    g.font = 'italic 700 17px "Segoe UI", Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = 'rgba(150,200,240,0.85)';
+    g.fillText('ISLA ROSA', mx(-70), my(542));
+    if (GAME.city.isla) {
+      // just under the island's own southernmost point, wherever that is
+      var southZ = -1e9, cxIsla = 0, n = 0;
+      for (var la = 0; la < Math.PI * 2; la += 0.05) {
+        var q = GAME.city.isla.ringPt(la, 1);
+        southZ = Math.max(southZ, q[1]); cxIsla += q[0]; n++;
+      }
+      g.fillText('ISLA VERDE', mx(cxIsla / n), my(Math.min(southZ + 26, 545)));
+    }
   }
 
   function drawMinimap() {
@@ -359,6 +426,7 @@ GAME.hud = (function () {
     }
     landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
     landmark(GAME.city.helipad.x, GAME.city.helipad.z);
+    if (GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
       var pc = cars[c];
@@ -546,7 +614,7 @@ GAME.hud = (function () {
 GAME.nav = (function () {
   var dest = null, path = [], recompT = 0;
 
-  function key(n) { return n.i + ',' + n.j; }
+  function key(n) { return n.id; }
 
   // BFS along the road-node graph; returns [{x,z}...] start->goal
   function roadPath(x0, z0, x1, z1) {
@@ -577,6 +645,7 @@ GAME.nav = (function () {
     // route to the road nearest the destination, then a short hop off the road,
     // so the drawn line stays on the streets instead of cutting through blocks
     var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
+    dest.rx = rp.x; dest.rz = rp.z;
     path = roadPath(px, pz, rp.x, rp.z);
     path.push({ x: rp.x, z: rp.z });
   }
@@ -598,7 +667,13 @@ GAME.nav = (function () {
       var P = GAME.player;
       var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
       var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-      if (U.dist2(px, pz, dest.x, dest.z) < 240) {
+      // Arrived means near, not on top of. A map click often lands mid-block,
+      // somewhere no road passes — so pulling up on the kerb beside it counts,
+      // and a car counts from further out than a person walking the last bit.
+      var R2 = P.inCar ? 26 * 26 : 12 * 12;
+      var dNow = U.dist2(px, pz, dest.x, dest.z);
+      var dRoad = dest.rx !== undefined ? U.dist2(px, pz, dest.rx, dest.rz) : 1e18;
+      if (dNow < R2 || (dRoad < R2 && dNow < 55 * 55)) {
         dest = null; path = [];
         GAME.hud.message('You have arrived.', 2.5);
         GAME.audio.pickup();

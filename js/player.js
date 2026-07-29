@@ -119,15 +119,13 @@ GAME.playerDrown = function () {
   GAME.audio.splash();
   GAME.hud.fade(function () {
     if (P.inCar) forceExitCar(true);
-    // wash up on whichever shore was crossed
+    // wash up on whichever shore was crossed, on whichever island that was
     var c = GAME.city;
-    var x = U.clamp(P.pos.x, -560, 560), z = U.clamp(P.pos.z, -560, 560);
-    if (x > c.shoreline(z)) x = c.shoreline(z) - 22;
-    if (x < c.westShore(z)) x = c.westShore(z) + 24;
-    if (z < c.northShore(x)) z = c.northShore(x) + 24;
-    if (z > c.southShore(x)) z = c.southShore(x) - 24;
-    P.pos.set(x, c.groundY(x, z), z);
-    P.heading = Math.atan2(-x, -z);
+    var sh = c.washAshore(P.pos.x, P.pos.z);
+    P.pos.set(sh.x, c.groundY(sh.x, sh.z), sh.z);
+    var isl = c.islandAt(sh.x, sh.z);
+    var ic = (isl && isl.centre) || { x: -70, z: 0 };
+    P.heading = Math.atan2(ic.x - sh.x, ic.z - sh.z);
     P.drowning = false;
     GAME.hud.message('You wash up on the beach, soaked.');
   });
@@ -144,19 +142,24 @@ function respawnAfterScreen() {
     if (kind === 'busted') {
       GAME.addCash(-(P.pendingFine || 0));
       P.pendingFine = 0;
-      var sp = GAME.city.pois.police.spawn;
-      P.pos.set(sp.x, 0, sp.z);
+      // released from whichever station covers where you were picked up
+      var sp = GAME.city.nearestStation(P.pos.x, P.pos.z).spawn;
+      P.pos.set(sp.x, GAME.city.groundY(sp.x, sp.z), sp.z);
     } else {
       P.armor = 0;
-      // wake up at the nearest hospital
+      // Wake up at the nearest hospital YOU CAN BE IN. Crash at the channel's
+      // edge and the island hospital is the closest one by distance — but a
+      // hospital behind a locked bridge cannot be where you wake up.
+      var unlocked = !GAME.isla || GAME.isla.isOpen();
       var hs = GAME.city.pois.hospitals;
       var sh = hs[0].spawn;
       var bd = 1e18;
       for (var hi = 0; hi < hs.length; hi++) {
+        if (hs[hi].isla && !unlocked) continue;
         var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
         if (d < bd) { bd = d; sh = hs[hi].spawn; }
       }
-      P.pos.set(sh.x, 0, sh.z);
+      P.pos.set(sh.x, GAME.city.groundY(sh.x, sh.z), sh.z);
     }
     P.weapons = { fist: { have: true, ammo: Infinity } };
     P.currentWeapon = 'fist';
@@ -170,12 +173,18 @@ function respawnAfterScreen() {
 
 function nearestEnterableCar() {
   var P = GAME.player;
-  return GAME.vehicles.findNearestCar(P.pos.x + Math.sin(P.heading) * 1.2, P.pos.z + Math.cos(P.heading) * 1.2, 4.6, null);
+  var car = GAME.vehicles.findNearestCar(P.pos.x + Math.sin(P.heading) * 1.2, P.pos.z + Math.cos(P.heading) * 1.2, 4.6, null);
+  // same level only: a helicopter on a roof cannot be boarded from the street
+  if (car && Math.abs(car.pos.y - P.pos.y) > 3) return null;
+  return car;
 }
 
 GAME.enterCar = function (car) {
   var P = GAME.player;
   if (!car || car.dead || P.inCar || P.entering) return false;
+  // boarding is a same-level act everywhere it can be asked for — a rooftop
+  // helicopter is not takeable from the pavement under it
+  if (Math.abs(car.pos.y - P.pos.y) > 3) return false;
   if (car.occupied === 'ai') {
     // jack: driver bails and flees
     var side = car.heading + Math.PI / 2;
@@ -218,7 +227,7 @@ function stepEnter(dt) {
   P.heading = U.angleLerp(P.heading, Math.atan2(doorX - P.pos.x, doorZ - P.pos.z), Math.min(1, dt * 10));
   P.pos.x = U.damp(P.pos.x, doorX, 9, dt);
   P.pos.z = U.damp(P.pos.z, doorZ, 9, dt);
-  P.pos.y = GAME.city.groundY(P.pos.x, P.pos.z);
+  P.pos.y = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
   P.mesh.rotation.y = P.heading;
   P.walkPhase = (P.walkPhase || 0) + dt * 11;
   var j = P.mesh.userData.joints;
@@ -242,6 +251,7 @@ function stepEnter(dt) {
     else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
     else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
     else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
+    else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
   }
 }
 
@@ -386,9 +396,9 @@ function updateOnFoot(dt) {
     }
   }
   P.pos.x = nx; P.pos.z = nz;
-  if (GAME.city.isInWater(P.pos.x, P.pos.z)) { GAME.playerDrown(); return; }
+  if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
-  var surf = GAME.city.surfaceY(P.pos.x, P.pos.z);
+  var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
   // Space jumps when you're on your feet (running gives you a longer hop)
   var grounded = P.pos.y <= surf + 0.06;
   var wantJump = GAME.key('Space') || T.jump;

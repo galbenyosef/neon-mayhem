@@ -121,7 +121,13 @@ var VEHICLES = {
   motorcycle: { label: 'Neon Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 130, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
-  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 }
+  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
+  // Isla Verde's own stock. The buggy is for the cove, the pickup for the
+  // villa lanes, the limo for the resort — and the truck sells ice cream.
+  buggy: { label: 'Dune Hopper', maxSpeed: 33, accel: 15, grip: 4.2, turn: 3.0, hp: 110, l: 3.4, w: 1.85, cabinH: 0.0, bodyH: 0.42, colors: [0xffb03a, 0x6ae8a0, 0xff6a8a, 0xf0f0f4], buggy: true },
+  pickup: { label: 'Sierra 4x4', maxSpeed: 30, accel: 10, grip: 6.0, turn: 2.0, hp: 240, l: 5.0, w: 2.05, cabinH: 0.78, bodyH: 0.78, colors: [0x7a8a68, 0xa8683a, 0x486888, 0xd0c0a0], pickup: true },
+  limo: { label: 'Vista Royale', maxSpeed: 31, accel: 8.5, grip: 5.4, turn: 1.5, hp: 210, l: 7.2, w: 2.0, cabinH: 0.62, bodyH: 0.55, colors: [0x14141a, 0xf0ece0] },
+  icecream: { label: 'Sunny Scoops', maxSpeed: 21, accel: 6.2, grip: 5.8, turn: 1.7, hp: 200, l: 5.2, w: 2.2, cabinH: 0, bodyH: 0.55, colors: [0xfdf6ec], icecream: true }
 };
 
 function buildBikeMesh(colorHex) {
@@ -266,9 +272,53 @@ function buildCarMesh(type, colorHex) {
     b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.5, 0.16, 0, 0xd83040, 0);
     b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
   }
-  var cabL = s.l * (type === 'van' ? 0.85 : 0.5);
-  var cabZ = type === 'sports' ? -0.35 : type === 'van' ? -0.1 : -0.15;
-  b.addBox(0, 0.42 + s.bodyH / 2 + s.cabinH / 2 - 0.05, cabZ, s.w * 0.82, s.cabinH, cabL, 0, type === 'police' ? 0x20242e : 0x141824, 0);
+  if (type === 'icecream') {
+    // A tall, square, upright van: one slab of a body from the windscreen to
+    // the back doors, a stripe round it, a serving hatch with an awning on the
+    // kerb side, and a pair of cones on the roof you can see three streets
+    // away. The tall body stands 2 cm proud of the chassis slab underneath it:
+    // give them the same width and the two coplanar side faces fight for
+    // depth — that was the truck's flicker.
+    var boxTop = 2.55, bw = s.w + 0.04, bhw = bw / 2;
+    b.addBox(0, 1.5, -0.25, bw, 2.1, s.l * 0.78, 0, colorHex, 0);          // body
+    b.addBox(0, 1.02, hl - 0.42, s.w * 0.98, 0.92, 0.9, 0, colorHex, 0);   // stubby bonnet
+    b.addBox(0, 1.9, hl - 0.5, s.w * 0.84, 0.86, 0.14, 0, 0x141824, 0);    // windscreen
+    b.addBox(bhw - 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);   // cab windows
+    b.addBox(-bhw + 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);
+    // the livery: a pink band and a blue pinstripe the length of the van
+    b.addBox(0, 1.28, -0.25, bw + 0.08, 0.34, s.l * 0.78, 0, 0xff7fb2, 0);
+    b.addBox(0, 1.02, -0.25, bw + 0.08, 0.1, s.l * 0.78, 0, 0x53c8ea, 0);
+    // serving hatch, awning and counter on the kerb side — the hatch sits
+    // clear of the stripe band's face rather than in the same plane as it
+    b.addBox(bhw + 0.07, 1.82, -0.5, 0.08, 0.9, 1.9, 0, 0x2a2230, 0);
+    b.addBox(bhw + 0.38, 2.36, -0.5, 0.72, 0.08, 2.1, 0, 0xff7fb2, 0);
+    b.addBox(bhw + 0.2, 1.3, -0.5, 0.34, 0.1, 2.0, 0, 0xf0e6d2, 0);
+    // roof cones, two abreast: both show from the front, and from the side
+    // they sit in the same slice so they read as one
+    [-0.5, 0.5].forEach(function (cx2) {
+      b.addBox(cx2, boxTop + 0.05, -0.3, 0.5, 0.5, 0.5, 0.7, 0xe0a860, 0);
+      b.addBox(cx2, boxTop + 0.42, -0.3, 0.66, 0.34, 0.66, 0.35, 0xffd7e4, 0);
+      b.addBox(cx2, boxTop + 0.72, -0.3, 0.5, 0.3, 0.5, 0.9, 0xfff0f4, 0);
+      b.addBox(cx2, boxTop + 0.94, -0.3, 0.28, 0.24, 0.28, 0, 0xffd7e4, 0);
+    });
+    // a chime horn on the roof, because the chimes have to come from somewhere
+    b.addBox(-0.62, boxTop + 0.15, 0.9, 0.3, 0.3, 0.44, 0, 0xd8c47a, 0);
+  }
+  if (type === 'pickup') {
+    b.addBox(0, 0.42 + s.bodyH / 2 + 0.22, -1.05, s.w, 0.45, s.l * 0.44, 0, 0x2a2a34, 0);   // bed walls
+  }
+  var cabL = s.l * (type === 'van' ? 0.85 : type === 'icecream' ? 0.34 : type === 'limo' ? 0.72 : 0.5);
+  var cabZ = type === 'sports' ? -0.35 : type === 'van' ? -0.1
+    : type === 'icecream' ? s.l * 0.28 : type === 'pickup' ? 0.35 : -0.15;
+  if (s.buggy) {
+    // no cabin at all: a roll hoop over an open tub
+    b.addBox(0, 1.05, -0.5, 0.12, 1.2, 0.12, 0, 0x2a2a34, 0);
+    b.addBox(0, 1.05, 0.5, 0.12, 1.2, 0.12, 0, 0x2a2a34, 0);
+    b.addBox(0, 1.6, 0, 0.12, 0.12, 1.1, 0, 0x2a2a34, 0);
+  }
+  if (s.cabinH > 0) {
+    b.addBox(0, 0.42 + s.bodyH / 2 + s.cabinH / 2 - 0.05, cabZ, s.w * 0.82, s.cabinH, cabL, 0, type === 'police' ? 0x20242e : 0x141824, 0);
+  }
   b.addBox(0, 0.28, hl * 0.72, s.w * 0.9, 0.32, 0.55, 0, 0x22262e, 0);
   b.addBox(0, 0.28, -hl * 0.72, s.w * 0.9, 0.32, 0.55, 0, 0x22262e, 0);
   var wy = 0.32, wx = hw - 0.12, wz = hl * 0.56;
@@ -458,7 +508,7 @@ GAME.vehicles = (function () {
     car.lastHeading = car.heading;
 
     collideStatic(car, dt);
-    if (GAME.city.isInWater(car.pos.x, car.pos.z)) sinkCar(car);
+    if (GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) sinkCar(car);
   }
 
   // a jump has ended: score it if the player pulled it off, and take the knock
@@ -504,6 +554,9 @@ GAME.vehicles = (function () {
         var b = boxes[bi];
         // jumped clear of it — don't clip a car that's sailing over a fence
         if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
+        // and don't clip a car driving under one: a bridge parapet belongs to
+        // the deck it stands on, not to the road it crosses over
+        if (b.minY !== undefined && car.pos.y < b.minY - 1) continue;
         if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
           // push out along the smallest penetration axis
           var dxl = px - b.minX, dxr = b.maxX - px, dzl = pz - b.minZ, dzr = b.maxZ - pz;
@@ -733,17 +786,24 @@ GAME.vehicles = (function () {
       var r = U.randRange(Math.random, 80, GAME.settings.bubbleRadius);
       var x = fc.x + Math.cos(ang) * r, z = fc.z + Math.sin(ang) * r;
       var rp = city.nearestRoadPoint(x, z);
-      if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
+      var onIsla = rp.axis === 'net';
+      if (!onIsla && (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480)) continue;
       if (city.inAirport(rp.x, rp.z)) continue; // keep the airfield clear
+      if (rp.kind === 'local') continue;        // no through traffic down a cul-de-sac
       // avoid spawning on top of others
       var clear = true;
       for (var c = 0; c < world.cars.length; c++) {
         if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, rp.x, rp.z) < 100) { clear = false; break; }
       }
       if (!clear) continue;
-      var types = ['sedan', 'sedan', 'taxi', 'sports', 'van', 'motorcycle'];
+      // the island runs a different mix, so crossing a bridge changes the
+      // traffic around you as well as the scenery
+      var types = onIsla
+        ? ['sedan', 'buggy', 'pickup', 'van', 'sports', 'limo', 'motorcycle']
+        : ['sedan', 'sedan', 'taxi', 'sports', 'van', 'motorcycle'];
       var type = types[Math.floor(Math.random() * types.length)];
-      var heading = rp.axis === 'z' ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+      var heading = onIsla ? rp.heading + (Math.random() < 0.5 ? 0 : Math.PI)
+        : rp.axis === 'z' ? (Math.random() < 0.5 ? 0 : Math.PI) : (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
       var car = spawnCar(type, rp.x, rp.z, heading, { occupied: 'ai', ai: { mode: 'traffic', desired: U.randRange(Math.random, 9, 13), laneX: 0, laneZ: 0 } });
       car.speed = 6;
       live++;
@@ -775,11 +835,13 @@ GAME.vehicles = (function () {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60) { clear = false; break; }
         }
         if (!clear) continue;
-        var types = ['sedan', 'sports', 'taxi', 'van', 'sedan'];
+        var types = sp.isla ? ['sedan', 'buggy', 'pickup', 'van', 'limo', 'sports']
+          : ['sedan', 'sports', 'taxi', 'van', 'sedan'];
         var type = sp.police ? 'police' : (sp.vtype || types[Math.floor(Math.random() * types.length)]);
         // special vehicles keep their exact heading; ordinary parked cars flip randomly
         var head = special ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
+        if (sp.y !== undefined) car.pos.y = sp.y;   // a spot up on a roof
         sp.live = car;
         live++;
       } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && !sp.live.dead) {
@@ -822,7 +884,9 @@ GAME.vehicles = (function () {
         var powered = (car === P.car && P.inCar);
         var restY = car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4;
         if (!powered) {
-          var hgy = GAME.city.groundY(car.pos.x, car.pos.z);
+          // the surface, not the street: an abandoned or parked aircraft over
+          // a rooftop settles on the roof instead of falling through it
+          var hgy = GAME.city.surfaceY(car.pos.x, car.pos.z, car.pos.y);
           if (car.pos.y > hgy + restY + 0.05) {
             car.vy = (car.vy || 0) - 12 * dt;
             car.pos.y += car.vy * dt;

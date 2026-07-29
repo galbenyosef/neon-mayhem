@@ -4,6 +4,8 @@ GAME.resolveCircle = function (x, z, r, feetY) {
     var b = boxes[i];
     // if the entity is standing on top of this box (a rooftop), don't shove it off
     if (feetY !== undefined && b.h !== undefined && b.h <= feetY + 0.2) continue;
+    // nor if the box belongs to a deck overhead — you walk under a bridge
+    if (feetY !== undefined && b.minY !== undefined && feetY < b.minY - 1) continue;
     var cx = U.clamp(x, b.minX, b.maxX), cz = U.clamp(z, b.minZ, b.maxZ);
     var dx = x - cx, dz = z - cz;
     var d2 = dx * dx + dz * dz;
@@ -139,11 +141,25 @@ GAME.peds = (function () {
     var x = ped.pos.x + Math.cos(a) * U.randRange(Math.random, 25, 60);
     var z = ped.pos.z + Math.sin(a) * U.randRange(Math.random, 25, 60);
     var rp = GAME.city.nearestRoadPoint(x, z);
+    // the probe can land in the channel, and then the other landmass answers
+    // for it — the waypoint stays on the one the stroller is standing on
+    if (GAME.city.islandIdAt(rp.x, rp.z) !== GAME.city.islandIdAt(ped.pos.x, ped.pos.z)) {
+      rp = GAME.city.nearestRoadPoint(ped.pos.x, ped.pos.z);
+    }
     var off = 8.4 * (Math.random() < 0.5 ? 1 : -1);
-    if (rp.axis === 'z') { ped.wpX = rp.x + off; ped.wpZ = rp.z; }
+    if (rp.axis === 'net') {
+      // a curved road: the pavement is along its normal, not along an axis
+      ped.wpX = rp.x + Math.cos(rp.heading) * off;
+      ped.wpZ = rp.z - Math.sin(rp.heading) * off;
+    } else if (rp.axis === 'z') { ped.wpX = rp.x + off; ped.wpZ = rp.z; }
     else { ped.wpX = rp.x; ped.wpZ = rp.z + off; }
-    ped.wpX = U.clamp(ped.wpX, -490, 368);
-    ped.wpZ = U.clamp(ped.wpZ, -490, 490);
+    // The clamp box is the MAINLAND. Clamping an island stroller's waypoint to
+    // it aimed every one of them at x=368 — the far side of the channel — and
+    // they all set off west through the grass and downhill into the sea.
+    if (rp.axis !== 'net') {
+      ped.wpX = U.clamp(ped.wpX, -490, 368);
+      ped.wpZ = U.clamp(ped.wpZ, -490, 490);
+    }
     ped.wpT = U.randRange(Math.random, 10, 20);
   }
 
@@ -275,7 +291,33 @@ GAME.peds = (function () {
       }
       var rp2 = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
-      if (GAME.city.isInWater(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
+      // A stopped vehicle is solid: nobody walks through a parked truck. Fast
+      // cars are left alone — the run-over check below is what handles those,
+      // and pushing people clear of them would make everyone unhittable. Job
+      // peds are exempt too: a fare climbing into the cab and a customer at
+      // the ice cream hatch have to reach INSIDE the body's rectangle, and
+      // the push held them at arm's length forever.
+      if (!ped.jobPed) for (var cv = 0; cv < world.cars.length; cv++) {
+        var pcv = world.cars[cv];
+        if (pcv.dead || Math.abs(pcv.speed) >= 4) continue;
+        if (Math.abs(pcv.pos.y - ped.pos.y) > 3) continue;
+        var vdx = ped.pos.x - pcv.pos.x, vdz = ped.pos.z - pcv.pos.z;
+        var vhl = pcv.spec.l / 2 + 0.4, vhw = pcv.spec.w / 2 + 0.4;
+        if (vdx * vdx + vdz * vdz > (vhl + 1) * (vhl + 1)) continue;
+        var vfx = Math.sin(pcv.heading), vfz = Math.cos(pcv.heading);
+        var lng = vdx * vfx + vdz * vfz;          // along the body
+        var lat2 = vdx * vfz - vdz * vfx;         // across it
+        if (Math.abs(lng) >= vhl || Math.abs(lat2) >= vhw) continue;
+        var penL = vhl - Math.abs(lng), penW = vhw - Math.abs(lat2);
+        if (penW <= penL) {
+          var ws = lat2 >= 0 ? 1 : -1;
+          ped.pos.x += vfz * ws * penW; ped.pos.z += -vfx * ws * penW;
+        } else {
+          var ls = lng >= 0 ? 1 : -1;
+          ped.pos.x += vfx * ls * penL; ped.pos.z += vfz * ls * penL;
+        }
+      }
+      if (GAME.city.isInWater(ped.pos.x, ped.pos.z, ped.pos.y)) { removePed(ped); continue; }
       if (!ped.jobPed && GAME.city.inAirport(ped.pos.x, ped.pos.z)) { removePed(ped); continue; }
       ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z) + (ped.diveY || 0);
       // the dive drives its own pose; the walk cycle would just make it slide
@@ -314,13 +356,20 @@ GAME.peds = (function () {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 60, GAME.settings.bubbleRadius);
       var x = fc.x + Math.cos(a) * r, z = fc.z + Math.sin(a) * r;
-      if (x > 340) x = U.randRange(Math.random, 356, 372); // boardwalk strollers
+      var isla = GAME.isla && GAME.isla.contains(x, z);
+      // the mainland's east edge is the boardwalk; over on the island the
+      // pavement follows whatever curve the road takes
+      if (!isla && x > 340 && x < 700) x = U.randRange(Math.random, 356, 372);
       var rp = GAME.city.nearestRoadPoint(x, z);
       var off = 8.4 * (Math.random() < 0.5 ? 1 : -1);
-      var px = rp.axis === 'z' ? rp.x + off : rp.x;
-      var pz = rp.axis === 'z' ? rp.z : rp.z + off;
-      if (x > 340) { px = x; pz = z; }
-      if (px < -490 || px > 372 || Math.abs(pz) > 490) continue;
+      var px, pz;
+      if (rp.axis === 'net') {
+        px = rp.x + Math.cos(rp.heading) * off;
+        pz = rp.z - Math.sin(rp.heading) * off;
+      } else if (rp.axis === 'z') { px = rp.x + off; pz = rp.z; }
+      else { px = rp.x; pz = rp.z + off; }
+      if (!isla && x > 340 && x < 700) { px = x; pz = z; }
+      if (rp.axis !== 'net' && (px < -490 || px > 372 || Math.abs(pz) > 490)) continue;
       if (GAME.city.isInWater(px, pz)) continue;
       if (GAME.city.inAirport(px, pz)) continue; // no strollers on the runway
       var ped = spawnPed(px, pz);

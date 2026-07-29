@@ -1,6 +1,7 @@
 GAME.audio = (function () {
   var ctx = null, master, sfxBus, radioBus, engineBus, verb;
-  var muted = false;
+  var sfxSwitch = null, musicSwitch = null;
+  var muted = false, musicOn = true, sfxOn = true;
   var noiseBuf = null;
   var engine = null, skidNode = null, sirenNode = null, rotorNode = null;
   var lastCrashT = -9, lastCrashV = 0;
@@ -39,13 +40,17 @@ GAME.audio = (function () {
     limiter.release.value = 0.18;
     limiter.connect(ctx.destination);
     master = ctx.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(limiter);
-    sfxBus = ctx.createGain(); sfxBus.gain.value = 0.72; sfxBus.connect(master);
-    radioBus = ctx.createGain(); radioBus.gain.value = 0; radioBus.connect(master);
+    // two switches under the master, so the music and everything else can be
+    // turned off on their own: the radio is one side, every effect the other
+    musicSwitch = ctx.createGain(); musicSwitch.gain.value = musicOn ? 1 : 0; musicSwitch.connect(master);
+    sfxSwitch = ctx.createGain(); sfxSwitch.gain.value = sfxOn ? 1 : 0; sfxSwitch.connect(master);
+    sfxBus = ctx.createGain(); sfxBus.gain.value = 0.72; sfxBus.connect(sfxSwitch);
+    radioBus = ctx.createGain(); radioBus.gain.value = 0; radioBus.connect(musicSwitch);
     // the engine sits under everything else and is gently rolled off up top so
     // it doesn't mask the radio
     engineBus = ctx.createGain(); engineBus.gain.value = 0;
     var engTone = ctx.createBiquadFilter(); engTone.type = 'lowpass'; engTone.frequency.value = 900;
-    engineBus.connect(engTone); engTone.connect(master);
+    engineBus.connect(engTone); engTone.connect(sfxSwitch);
     noiseBuf = makeNoiseBuffer();
     verb = ctx.createConvolver(); verb.buffer = makeImpulse(1.8, 3.2);
     var verbGain = ctx.createGain(); verbGain.gain.value = 0.35;
@@ -111,7 +116,7 @@ GAME.audio = (function () {
     var whineG = ctx.createGain(); whineG.gain.value = 0.035;
     whine.connect(whineG);
     var g = ctx.createGain(); g.gain.value = 0;
-    chopG.connect(g); whineG.connect(g); g.connect(master);
+    chopG.connect(g); whineG.connect(g); g.connect(sfxSwitch);
     src.start(); lfo.start(); whine.start();
     rotorNode = { g: g, f: f, lfo: lfo, whine: whine };
   }
@@ -233,10 +238,61 @@ GAME.audio = (function () {
     };
   })();
 
+  // ---------- title pads ----------
+  // Slow, warm chords under the attract mode: two detuned sines per note with
+  // a long swell in and out, nothing percussive. It runs through the music
+  // switch, and the moment the game starts it fades away under the radio.
+  var title = (function () {
+    var gain = null, timer = null, step = 0, nextT = 0;
+    var CHORDS = [[57, 60, 64, 71], [53, 57, 60, 69], [48, 55, 60, 67], [55, 59, 62, 67]];
+    function pad(freq, dur, amp, when) {
+      [0, 1.7].forEach(function (detune) {
+        var o = ctx.createOscillator(); o.type = 'sine';
+        o.frequency.value = freq + detune;
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, when);
+        g.gain.linearRampToValueAtTime(amp, when + dur * 0.35);
+        g.gain.setValueAtTime(amp, when + dur * 0.6);
+        g.gain.linearRampToValueAtTime(0.0001, when + dur);
+        o.connect(g); g.connect(gain);
+        o.start(when); o.stop(when + dur + 0.1);
+        o.onended = function () { try { o.disconnect(); g.disconnect(); } catch (e) { } };
+      });
+    }
+    function schedule() {
+      while (nextT < ctx.currentTime + 1.2) {
+        var chord = CHORDS[step % CHORDS.length];
+        for (var i = 0; i < chord.length; i++) {
+          pad(midi(chord[i]), 6.4, 0.028 - i * 0.004, nextT + i * 0.12);
+        }
+        // a high, quiet answer note halfway through every other bar
+        if (step % 2 === 1) pad(midi(chord[1] + 24), 3.2, 0.008, nextT + 2.6);
+        nextT += 5.2;
+        step++;
+      }
+    }
+    return {
+      start: function () {
+        if (!ctx || timer) return;
+        if (!gain) { gain = ctx.createGain(); gain.connect(musicSwitch); }
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 2.0);
+        nextT = ctx.currentTime + 0.1; step = 0;
+        schedule();
+        timer = setInterval(schedule, 400);
+      },
+      stop: function () {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (ctx && gain) gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.25);
+      }
+    };
+  })();
+
   return {
     get ctx() { return ctx; },
     init: init,
     radio: radio,
+    titleMusic: function (on) { if (on) title.start(); else title.stop(); },
     // freeze all audio (pause / tab backgrounded); resume brings it back
     suspend: function () {
       if (ctx && ctx.state === 'running') { engineBus.gain.value = 0; try { ctx.suspend(); } catch (e) { } }
@@ -250,6 +306,19 @@ GAME.audio = (function () {
       if (ctx) master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.05);
       return muted;
     },
+    // music and effects each have their own tap, independent of the master
+    get musicOn() { return musicOn; },
+    get sfxOn() { return sfxOn; },
+    setMusicOn: function (v) {
+      musicOn = !!v;
+      if (ctx && musicSwitch) musicSwitch.gain.setTargetAtTime(musicOn ? 1 : 0, ctx.currentTime, 0.05);
+      return musicOn;
+    },
+    setSfxOn: function (v) {
+      sfxOn = !!v;
+      if (ctx && sfxSwitch) sfxSwitch.gain.setTargetAtTime(sfxOn ? 1 : 0, ctx.currentTime, 0.05);
+      return sfxOn;
+    },
     // `kind` picks the voice: 'heli' and 'plane' run the rotor, anything else
     // the piston engine. Only one is ever audible.
     engineState: function (on, speedNorm, kind) {
@@ -259,7 +328,7 @@ GAME.audio = (function () {
       var air = on && (kind === 'heli' || kind === 'plane');
       // idle sits well back; it only leans in as you wind the revs out, so the
       // radio stays audible while cruising
-      engineBus.gain.setTargetAtTime(on && !air ? 0.05 + sn * 0.045 : 0, t, 0.12);
+      engineBus.gain.setTargetAtTime(on && !air ? 0.024 + sn * 0.022 : 0, t, 0.12);
       if (on && !air) {
         var f = 45 + sn * 160;
         engine.o.frequency.setTargetAtTime(f, t, 0.08);
@@ -313,6 +382,16 @@ GAME.audio = (function () {
     },
     yelp: function () { if (ctx) tone(500 + Math.random() * 300, 0.18, 0.14, 'triangle', 900); },
     pickup: function () { if (ctx) { tone(880, 0.09, 0.2, 'sine'); tone(1320, 0.14, 0.2, 'sine', 0, ctx.currentTime + 0.08); } },
+    // the ice cream chimes: a little run of bells, thin and carrying
+    chime: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      var notes = [1046, 1318, 1568, 1318, 1046, 784];
+      for (var i = 0; i < notes.length; i++) {
+        tone(notes[i], 0.26, 0.075, 'triangle', 0, t + i * 0.19);
+        tone(notes[i] * 2, 0.13, 0.028, 'sine', 0, t + i * 0.19);
+      }
+    },
     cashTick: function () { if (ctx) tone(1560, 0.04, 0.08, 'square'); },
     splash: function () { if (ctx) noiseBurst(0.5, 700, 0.4); },
     sting: function (kind) {

@@ -57,7 +57,8 @@
     opacity:0; transition:opacity .25s; white-space:nowrap; }
 
   #msg-line { left:50%; bottom:24%; transform:translateX(-50%); font-size:19px; font-weight:700; color:#fff;
-    text-shadow:0 0 10px rgba(255,120,220,.9); opacity:0; transition:opacity .3s; text-align:center; white-space:nowrap; }
+    text-shadow:0 0 10px rgba(255,120,220,.9); opacity:0; transition:opacity .3s; text-align:center;
+    max-width:70vw; white-space:normal; line-height:1.4; }
   #mission-hud { left:50%; top:12px; transform:translateX(-50%); text-align:center; display:none; }
   #mission-title { font-size:18px; font-weight:800; font-style:italic; color:#ffe08a; text-shadow:0 0 10px rgba(255,190,60,.8); }
   #mission-obj { font-size:15px; color:#e8f6ff; text-shadow:0 1px 3px #000; margin-top:2px; }
@@ -237,6 +238,8 @@
     <span class="mbtn" id="pause-resume">RESUME</span>
     <span class="mbtn" id="pause-map">🗺 MAP</span>
     <span class="mbtn" id="pause-mute">🔊 SOUND</span>
+    <span class="mbtn" id="pause-music">🎵 MUSIC: ON</span>
+    <span class="mbtn" id="pause-sfx">💥 SFX: ON</span>
     <span class="mbtn" id="pause-crt">📺 CRT</span>
     <span class="mbtn" id="pause-day">🕓 TIME: AUTO</span>
     <span class="mbtn" id="pause-fs">⛶ FULLSCREEN</span>
@@ -256,7 +259,7 @@
   <div id="controls-card">
     <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / Tab</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>
     <b>Q / E</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>Space</b> jump / handbrake &nbsp;·&nbsp; <b>F</b> enter / exit car &nbsp;·&nbsp; <b>Shift</b> sprint<br>
-    <b>1–4</b> weapons &nbsp;·&nbsp; <b>, / .</b> radio &nbsp;·&nbsp; <b>J</b> taxi/ambulance job &nbsp;·&nbsp; <b>P</b> map &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>T</b> CRT &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause
+    <b>1–5</b> weapons &nbsp;·&nbsp; <b>, / .</b> radio &nbsp;·&nbsp; <b>J</b> taxi / paramedic / ice cream job &nbsp;·&nbsp; <b>P</b> map &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>T</b> CRT &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause
   </div>
   <div id="title-footer">Fan-made tribute. Not affiliated with Rockstar Games or Take-Two Interactive. No original game assets used.</div>
 </div>
@@ -307,6 +310,7 @@ window.addEventListener('load', function () {
 <script src="js/analytics.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/city.js"></script>
+<script src="js/isla.js"></script>
 <script src="js/vehicles.js"></script>
 <script src="js/peds.js"></script>
 <script src="js/player.js"></script>

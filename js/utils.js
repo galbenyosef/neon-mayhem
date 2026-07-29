@@ -103,6 +103,32 @@ GeoBatch.prototype.addGroundQuad = function (cx, y, cz, sx, sz, rotY, color) {
     this.uv.push(uvq[idx[i]][0], uvq[idx[i]][1]);
   }
 };
+// Quad from four explicit corners, wound a-b-c-d — for surfaces that follow a
+// grade instead of being stepped out of flat tiles. `face` is the direction the
+// quad should point: get it wrong and the winding culls the face away, so the
+// quad is reversed to match rather than trusting the caller's corner order.
+GeoBatch.prototype.addQuad = function (a, b, c, d, color, face) {
+  var r = (color >> 16 & 255) / 255, g = (color >> 8 & 255) / 255, bl = (color & 255) / 255;
+  var ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+  var vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
+  var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  var l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+  nx /= l; ny /= l; nz /= l;
+  if (face && nx * face[0] + ny * face[1] + nz * face[2] < 0) {
+    var t = b; b = d; d = t;
+    nx = -nx; ny = -ny; nz = -nz;
+  }
+  var corners = [a, b, c, d];
+  var uvq = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  var idx = [0, 1, 2, 0, 2, 3];
+  for (var i = 0; i < 6; i++) {
+    var p = corners[idx[i]];
+    this.pos.push(p[0], p[1], p[2]);
+    this.nrm.push(nx, ny, nz);
+    this.col.push(r, g, bl);
+    this.uv.push(uvq[idx[i]][0], uvq[idx[i]][1]);
+  }
+};
 // Vertical quad centered at (cx,cy,cz), width w, height h, facing rotY direction; custom uv rect.
 GeoBatch.prototype.addWallQuad = function (cx, cy, cz, w, h, rotY, color, u0, v0, u1, v1) {
   var hw = w / 2, hh = h / 2;

@@ -2,9 +2,12 @@ var WEAPONS = {
   fist: { name: 'FISTS', slot: 1, damage: 14, range: 2.0, rate: 0.42, auto: false },
   pistol: { name: 'PISTOL', slot: 2, damage: 26, range: 60, rate: 0.34, auto: false, spread: 0.012 },
   smg: { name: 'SMG', slot: 3, damage: 11, range: 48, rate: 0.085, auto: true, spread: 0.045, driveby: true },
-  shotgun: { name: 'SHOTGUN', slot: 4, damage: 11, range: 24, rate: 0.95, auto: false, spread: 0.085, pellets: 7 }
+  shotgun: { name: 'SHOTGUN', slot: 4, damage: 11, range: 24, rate: 0.95, auto: false, spread: 0.085, pellets: 7 },
+  // The one thing you cannot buy, find in a crate or take off a cop: it sits
+  // on the observatory terrace on Isla Verde and nowhere else.
+  rifle: { name: 'RIFLE', slot: 5, damage: 68, range: 150, rate: 0.85, auto: false, spread: 0.002 }
 };
-var WEAPON_ORDER = ['fist', 'pistol', 'smg', 'shotgun'];
+var WEAPON_ORDER = ['fist', 'pistol', 'smg', 'shotgun', 'rifle'];
 
 GAME.combat = (function () {
   var aiming = false, lockTarget = null, lockIdx = 0;
@@ -294,7 +297,7 @@ GAME.combat = (function () {
   // the full arsenal — unlimited ammo is no use without something to fire it from
   function giveAllWeapons() {
     var P = GAME.player;
-    ['pistol', 'smg', 'shotgun'].forEach(function (w) {
+    ['pistol', 'smg', 'shotgun', 'rifle'].forEach(function (w) {
       P.weapons[w] = { have: true, ammo: Math.max(999, (P.weapons[w] && P.weapons[w].ammo) || 0) };
     });
     if (P.currentWeapon === 'fist') P.currentWeapon = 'pistol';
@@ -315,6 +318,7 @@ GAME.combat = (function () {
     pistol: { color: 0xd8d8e8, label: 'PISTOL AMMO' },
     smg: { color: 0xffe14f, label: 'SMG AMMO' },
     shotgun: { color: 0xff8a3d, label: 'SHOTGUN AMMO' },
+    rifle: { color: 0x8dffd8, label: 'RIFLE' },
     cash: { color: 0x8dffd8, label: 'CASH' }
   };
 
@@ -335,6 +339,12 @@ GAME.combat = (function () {
       b.addBox(0, 0.10, 0.10, 0.10, 0.11, 0.78, 0, color, 0);   // barrel
       b.addBox(0, 0.00, 0.10, 0.09, 0.09, 0.34, 0, 0x2a2a34, 0);   // pump
       b.addBox(0, 0.01, -0.40, 0.08, 0.20, 0.26, 0, color, 0);     // stock
+    } else if (type === 'rifle') {
+      b.addBox(0, 0.11, 0.22, 0.07, 0.08, 1.00, 0, color, 0);      // long barrel
+      b.addBox(0, 0.06, -0.10, 0.09, 0.16, 0.44, 0, 0x2a2a34, 0);  // receiver
+      b.addBox(0, -0.06, -0.06, 0.07, 0.18, 0.12, 0, 0x2a2a34, 0); // grip
+      b.addBox(0, 0.02, -0.46, 0.08, 0.20, 0.30, 0, color, 0);     // stock
+      b.addBox(0, 0.22, -0.02, 0.06, 0.10, 0.34, 0, 0xffffff, 0);  // scope
     } else if (type === 'health') {
       b.addBox(0, 0.10, 0, 0.62, 0.20, 0.16, 0, color, 0);      // cross bar
       b.addBox(0, 0.10, 0, 0.20, 0.62, 0.16, 0, color, 0);      // cross post
@@ -368,12 +378,12 @@ GAME.combat = (function () {
     initReticle();
     var spots = GAME.city.pickupSpots;
     for (var i = 0; i < spots.length; i++) {
-      addPickup(spots[i].x, spots[i].z, spots[i].type, true);
+      addPickup(spots[i].x, spots[i].z, spots[i].type, true, spots[i].y);
     }
   }
-  function addPickup(x, z, type, fixed) {
+  function addPickup(x, z, type, fixed, y) {
     var mesh = pickupMesh(type);
-    mesh.position.set(x, GAME.city.groundY(x, z) + 1.0, z);
+    mesh.position.set(x, y === undefined ? GAME.city.groundY(x, z) + 1.0 : y, z);
     GAME.scene.add(mesh);
     var p = { mesh: mesh, pos: mesh.position, type: type, fixed: !!fixed, respawnT: 0, ttl: fixed ? Infinity : 30, taken: false };
     GAME.world.pickups.push(p);
@@ -411,11 +421,14 @@ GAME.combat = (function () {
       var p = ps[i];
       if (p.taken) continue;
       if (U.dist2(p.pos.x, p.pos.z, P.pos.x, P.pos.z) > 1.9) continue;
+      // and on the same level: a pickup on a terrace is not collectable from
+      // the pavement underneath it
+      if (Math.abs(p.pos.y - (P.pos.y + 1)) > 3) continue;
       var label = PICKUP_DEFS[p.type].label;
       if (p.type === 'health') { if (P.health >= 100) continue; P.health = Math.min(100, P.health + 50); }
       else if (p.type === 'armor') { if (P.armor >= 100) continue; P.armor = Math.min(100, P.armor + 50); }
       else if (p.type === 'cash') { var amt = 10 + Math.floor(Math.random() * 30); GAME.addCash(amt); label = '$' + amt; }
-      else giveWeapon(p.type, p.type === 'pistol' ? 24 : p.type === 'smg' ? 50 : 10);
+      else giveWeapon(p.type, p.type === 'pistol' ? 24 : p.type === 'smg' ? 50 : p.type === 'rifle' ? 20 : 10);
       GAME.audio.pickup();
       GAME.hud.message(label, 1.2);
       if (p.fixed) { p.taken = true; p.respawnT = 45; p.mesh.visible = false; }
