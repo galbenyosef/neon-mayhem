@@ -61,6 +61,32 @@ GAME.addCash = function (n) {
   GAME.save();
 };
 
+// The whole save as a portable string, and the way back. Everything lives in
+// one localStorage key, so export is a wrapped copy of it and import is a
+// validated overwrite followed by a clean reload.
+GAME.exportSave = function () {
+  var s;
+  try { s = JSON.parse(localStorage.getItem('neonMayhemSave') || '{}'); } catch (e) { s = {}; }
+  return JSON.stringify({ game: 'neon-mayhem', v: 1, exported: new Date().toISOString(), save: s });
+};
+GAME.importSave = function (text) {
+  var o;
+  try { o = JSON.parse(text); } catch (e) { return { ok: false, why: 'That file is not a save.' }; }
+  // accept a wrapped export or a bare save object
+  var s = o && o.game === 'neon-mayhem' ? o.save : o;
+  if (!s || typeof s !== 'object' || (s.cash === undefined && !s.prefs && !s.bests)) {
+    return { ok: false, why: 'That file is not a Neon Mayhem save.' };
+  }
+  try {
+    localStorage.setItem('neonMayhemSave', JSON.stringify({
+      cash: typeof s.cash === 'number' ? s.cash : 250,
+      bests: s.bests || {},
+      prefs: s.prefs || {}
+    }));
+  } catch (e) { return { ok: false, why: 'Could not write the save.' }; }
+  return { ok: true };
+};
+
 GAME.playerDamage = function (amt, cause) {
   var P = GAME.player;
   if (!GAME.started || P.state !== 'alive' || GAME.godMode) return;
@@ -206,7 +232,8 @@ GAME.enterCar = function (car) {
     var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz, car.isPolice ? { cop: true } : undefined);
     if (!car.isPolice && driver.temper > 0.55) {
       driver.state = 'attack';
-      driver.attackT = 10;
+      driver.attackT = 12;
+      driver.stolenCar = car;   // it's THEIR car — they'll try to take it back
     } else {
       driver.state = 'flee';
       driver.fleeT = 8;

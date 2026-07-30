@@ -1263,8 +1263,11 @@ GAME.city = (function () {
           var shape = SHAPES[out.length % SHAPES.length];
           var vergeOut = 11 + shape.w / 2;
           var bst = out.length % 3 === 2;
-          // verge beside a north-south road, launching along it
+          // verge beside a north-south road, launching along it. The airfield
+          // is off-limits to the filler: a random ramp beside the apron sat
+          // right where the plane parks. (The hand-placed runway jumps stay.)
           var vx = R[i2] + side * vergeOut, vz = d + jitter;
+          if (city.inAirport(vx, vz)) continue;
           if (offRoad(vx, vz) && ok(vx, vz)) {
             var vrot = side > 0 ? 0 : Math.PI, vok = false;
             for (var fv = 0; fv < 2; fv++) {
@@ -1275,6 +1278,7 @@ GAME.city = (function () {
           }
           // verge beside an east-west road
           var hx = d + jitter, hz = R[i2] + side * vergeOut;
+          if (city.inAirport(hx, hz)) continue;
           if (hx < 340 && offRoad(hx, hz) && ok(hx, hz)) {
             var hrot = side > 0 ? Math.PI / 2 : -Math.PI / 2, hok = false;
             for (var fh = 0; fh < 2; fh++) {

@@ -558,7 +558,11 @@ GAME.vehicles = (function () {
     var fx = fwdX(car), fz = fwdZ(car);
     var sxv = fz, szv = -fx;
     var hl = car.spec.l / 2 - 0.2, hw = car.spec.w / 2;
-    var corners = [[hl, hw], [hl, -hw], [-hl, hw], [-hl, -hw]];
+    // corners alone let a half-metre lamp post slip clean between the front
+    // samples — hit one dead-centre and the car ghosted through. Sampling the
+    // middles of each edge as well closes the gap below anything we build.
+    var corners = [[hl, hw], [hl, -hw], [-hl, hw], [-hl, -hw],
+      [hl, 0], [-hl, 0], [hl, hw / 2], [hl, -hw / 2], [0, hw], [0, -hw]];
     var boxes = GAME.city.hash.query(car.pos.x, car.pos.z, car.spec.l);
     if (!boxes.length) return;
     for (var ci = 0; ci < corners.length; ci++) {
@@ -874,6 +878,15 @@ GAME.vehicles = (function () {
       // despawn far traffic
       if (car.ai && car.ai.mode === 'traffic' && !car.mission) {
         if (U.dist2(car.pos.x, car.pos.z, fc.x, fc.z) > 200 * 200) { removeCar(car); continue; }
+      }
+      // abandoned rides don't pile up forever: anything ownerless, off-duty
+      // and out of sight for long enough is towed. Parked-spot cars have
+      // their own lifecycle, and the garage replaces anything you bought.
+      if (!car.ai && !car.parkedSpot && !car.mission && car.occupied !== 'player' && car !== P.car && !car.dead) {
+        if (U.dist2(car.pos.x, car.pos.z, fc.x, fc.z) > 280 * 280) {
+          car.abandonT = (car.abandonT || 0) + dt;
+          if (car.abandonT > 18) { removeCar(car); continue; }
+        } else car.abandonT = 0;
       }
       if (car.dead) {
         if (!car.deadT) car.deadT = 0;

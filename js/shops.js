@@ -188,7 +188,7 @@ GAME.shops = (function () {
     }
     return [
       row('motorcycle', 'NEON STREAK', 'The bike. Fast, loud, unwise.', 4000),
-      row('superbike', 'CORMORÁN GT', 'Showroom exclusive. Nobody else rides one.', 12000),
+      row('superbike', 'CORMORÁN GT', 'Showroom exclusive. Nobody else rides one.', 20000),
       row('buggy', 'DUNE BUGGY', 'Made for sand and bad decisions.', 9000),
       row('limo', 'STRETCH LIMO', 'Arrive like you own the strip.', 18000),
       row('monster', 'SLEDGEHAMMER', 'The monster truck, no stunt jumps required.', 35000),

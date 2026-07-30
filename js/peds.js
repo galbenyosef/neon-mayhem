@@ -292,41 +292,76 @@ GAME.peds = (function () {
         ped.speed = U.damp(ped.speed, 4.6, 4, dt);
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
       } else if (ped.state === 'attack') {
-        // this one is coming for you: chase, swing when in reach, thump the
-        // bodywork if you hide in a car. They give up once you speed off, get
-        // too far, or the fight has gone on long enough — then they run.
+        // this one is coming for you — properly. They run you down faster
+        // than you can walk away, throw quick jabs off both hands, and the
+        // one whose car you stole chases the CAR: bangs on it, hauls you out
+        // of the seat if you sit there, and drives off in it. They give up
+        // once you speed away, get too far, or the fight has gone on long
+        // enough — then they run.
         ped.attackT -= dt;
         var tcar = P.inCar && P.car ? P.car : null;
-        var ty = tcar ? tcar.pos.y : P.pos.y;
-        var ad2 = U.dist2(ped.pos.x, ped.pos.z, P.pos.x, P.pos.z);
-        if (ped.attackT <= 0 || ad2 > 45 * 45 || P.state !== 'alive' ||
-          Math.abs(ty - ped.pos.y) > 3 || (tcar && Math.abs(tcar.speed) > 8)) {
+        var myCar = ped.stolenCar && !ped.stolenCar.dead && ped.stolenCar.occupied !== 'ai' ? ped.stolenCar : null;
+        var chaseCar = myCar && U.dist2(ped.pos.x, ped.pos.z, myCar.pos.x, myCar.pos.z) < 55 * 55;
+        var tx = chaseCar ? myCar.pos.x : P.pos.x;
+        var tz = chaseCar ? myCar.pos.z : P.pos.z;
+        var ty = chaseCar ? myCar.pos.y : (tcar ? tcar.pos.y : P.pos.y);
+        var tSpeed = chaseCar ? Math.abs(myCar.speed) : (tcar ? Math.abs(tcar.speed) : 0);
+        var ad2 = U.dist2(ped.pos.x, ped.pos.z, tx, tz);
+        if (ped.attackT <= 0 || ad2 > 55 * 55 || P.state !== 'alive' ||
+          Math.abs(ty - ped.pos.y) > 3 || tSpeed > 10) {
           ped.state = 'flee';
           ped.fleeT = 4;
           ped.fleeX = P.pos.x; ped.fleeZ = P.pos.z;
           ped.aimPose = false;
         } else {
-          var ah = Math.atan2(P.pos.x - ped.pos.x, P.pos.z - ped.pos.z);
-          ped.heading = U.angleLerp(ped.heading, ah, Math.min(1, dt * 7));
+          var ah = Math.atan2(tx - ped.pos.x, tz - ped.pos.z);
+          ped.heading = U.angleLerp(ped.heading, ah, Math.min(1, dt * 10));
           ped.aimPose = true;
-          var reach = tcar ? (tcar.spec.l / 2 + 1.4) : 1.5;
+          var targetCarBody = chaseCar ? myCar : tcar;
+          var reach = targetCarBody ? (targetCarBody.spec.l / 2 + 1.5) : 1.7;
           if (ad2 > reach * reach) {
-            ped.speed = U.damp(ped.speed, 4.4, 4, dt);
+            // angry beats scared: they close faster than anyone flees
+            ped.speed = U.damp(ped.speed, 5.4, 6, dt);
+            ped.yankT = 0;
           } else {
             ped.speed = U.damp(ped.speed, 0, 9, dt);
             ped.punchT -= dt;
-            if (ped.punchT <= 0) {
-              ped.punchT = 0.8;
+            if (chaseCar && tSpeed < 2.5) {
+              // hands on his own car: a beat of hammering, then the door
+              ped.yankT = (ped.yankT || 0) + dt;
+              if (ped.yankT > 0.9) {
+                var mine = P.inCar && P.car === myCar;
+                var boarding = P.entering && P.entering.car === myCar;
+                if (mine) {
+                  GAME.exitCar();
+                  GAME.hud.message('He wants his ride back.', 2.5);
+                  GAME.audio.yelp();
+                } else if (!boarding) {
+                  // owner slides back in and drives off, done with you
+                  myCar.occupied = 'ai';
+                  myCar.ai = { mode: 'traffic', desired: 12, laneX: 0, laneZ: 0 };
+                  if (myCar.parkedSpot) { myCar.parkedSpot.live = null; myCar.parkedSpot = null; }
+                  removePed(ped);
+                  continue;
+                }
+              } else if (ped.punchT <= 0) {
+                ped.punchT = 0.5;
+                GAME.vehicles.damageCar(myCar, 2, 'fists', false);
+                GAME.audio.crash(0.15);
+              }
+            } else if (ped.punchT <= 0) {
+              ped.punchT = 0.55;
+              ped.punchArm = !ped.punchArm;
               if (tcar) { GAME.vehicles.damageCar(tcar, 2, 'fists', false); GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12); }
-              else GAME.playerDamage(5, 'fists');
-              GAME.audio.crash(0.15);
+              else GAME.playerDamage(6, 'fists');
+              GAME.audio.crash(0.18);
             }
           }
-          // a haymaker pose: lead arm up, swinging with each punch
+          // quick jabs off alternating hands, not a slow-motion haymaker
           var aj = ped.mesh.userData.joints;
-          var swing = Math.max(0, ped.punchT) / 0.8;
-          aj.armR.rotation.x = -2.1 + swing * 0.9;
-          aj.armL.rotation.x = -0.9;
+          var jab = U.clamp(ped.punchT / 0.55, 0, 1);
+          aj[ped.punchArm ? 'armR' : 'armL'].rotation.x = -2.3 + jab * 1.1;
+          aj[ped.punchArm ? 'armL' : 'armR'].rotation.x = -1.2;
         }
       } else if (ped.state === 'dive') {
         // a real dive: they leave their feet, arc through the air and land —
@@ -456,8 +491,8 @@ GAME.peds = (function () {
     else if (!ped.isCop) {
       // not everyone runs. The short-tempered turn and swing — unless they are
       // already badly hurt, in which case discretion wins after all.
-      var fights = byPlayer && ped.hp > 10 &&
-        (ped.state === 'attack' || (ped.temper || 0) > 0.62);
+      var fights = byPlayer && ped.hp > 6 &&
+        (ped.state === 'attack' || (ped.temper || 0) > 0.45);
       if (fights) {
         ped.state = 'attack';
         ped.attackT = 9;

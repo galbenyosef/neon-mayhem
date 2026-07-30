@@ -1240,6 +1240,9 @@ GAME.isla = (function () {
         b.addBox(lx, ly + 3.4, lz, 0.26, 6, 0.26, 0, 0x3a3a46, 0);
         b.addBox(lx - lnx * lside * 1.1, ly + 6.5, lz - lnz * lside * 1.1, 2.2, 0.2, 0.2, la, 0x3a3a46, 0);
         batches.glow.addBox(lx - lnx * lside * 2.0, ly + 6.3, lz - lnz * lside * 2.0, 0.66, 0.2, 0.4, la, 0xffc88a, 0);
+        // the deck lamps are as solid as their street cousins; minY keeps the
+        // water under the span honest for anyone swimming beneath it
+        city.addSolid(lx, lz, 0.6, 0.6, ly + 6, 'prop', true, ly - 1);
       }
       // gantries where the climb starts and where it sets down, not out in the
       // junction the approach leaves from. Each carries the name of where the

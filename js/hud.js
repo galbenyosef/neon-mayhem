@@ -77,6 +77,30 @@ GAME.hud = (function () {
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
     pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
+    // the save travels: export downloads a file, import reads one back and
+    // reloads into the imported life
+    pauseBtn('pause-export', function () {
+      var blob = new Blob([GAME.exportSave()], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'neon-mayhem-save.json';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      GAME.track('save-exported');
+    });
+    pauseBtn('pause-import', function () { $('save-file').click(); });
+    $('save-file').addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        var r = GAME.importSave(String(rd.result));
+        if (r.ok) { GAME.track('save-imported'); location.reload(); }
+        else alert(r.why);
+      };
+      rd.readAsText(f);
+    });
     pauseBtn('pause-exit', function () { location.reload(); });
     // death screens: tap to skip the wait
     ['wasted-screen', 'busted-screen'].forEach(function (id) {
