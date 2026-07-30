@@ -186,13 +186,19 @@ GAME.enterCar = function (car) {
   // helicopter is not takeable from the pavement under it
   if (Math.abs(car.pos.y - P.pos.y) > 3) return false;
   if (car.occupied === 'ai') {
-    // jack: driver bails and flees
+    // jack: the driver bails — and not all of them run. The short-tempered
+    // turn on you and try to take their ride back with their fists.
     var side = car.heading + Math.PI / 2;
     var dx = Math.sin(side) * 1.6, dz = Math.cos(side) * 1.6;
     var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz, car.isPolice ? { cop: true } : undefined);
-    driver.state = 'flee';
-    driver.fleeT = 8;
-    driver.fleeX = car.pos.x; driver.fleeZ = car.pos.z;
+    if (!car.isPolice && driver.temper > 0.55) {
+      driver.state = 'attack';
+      driver.attackT = 10;
+    } else {
+      driver.state = 'flee';
+      driver.fleeT = 8;
+      driver.fleeX = car.pos.x; driver.fleeZ = car.pos.z;
+    }
     if (car.isPolice) driver.isCop = false; // he's fleeing his stolen cruiser, not chasing
     GAME.audio.yelp();
     GAME.police.reportCrime(car.isPolice ? 'steal_police' : 'jack', car.pos);

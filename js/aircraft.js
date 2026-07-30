@@ -58,6 +58,12 @@ GAME.aircraft = (function () {
     var minY = GAME.city.surfaceY(car.pos.x, car.pos.z) + 1.4;
     if (car.pos.y < minY) {
       car.pos.y = minY;
+      // no floats on this airframe: set down on open water and it goes under
+      if (GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) {
+        GAME.hud.message('The sea took it.', 3);
+        GAME.vehicles.sinkCar(car);
+        return;
+      }
       if (car.vy < -9) { GAME.vehicles.damageCar(car, -car.vy * 3, 'wall'); GAME.cameraShake = Math.min(1, -car.vy / 12); }
       if (car.vy < 0) car.vy = 0;
     }
@@ -86,6 +92,21 @@ GAME.aircraft = (function () {
 
     var gy = GAME.city.surfaceY(car.pos.x, car.pos.z);
     var onGround = car.pos.y <= gy + car.spec.wheelH + 0.35;
+    // the sea is not a runway. Wheels-down on open water the plane is lost —
+    // fast and it breaks up, slow and it goes under, leaving you swimming.
+    // (Checked here, before the ground branches treat the water as tarmac and
+    // let it ski along the surface.)
+    if (onGround && GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) {
+      if (car.speed > 20) {
+        GAME.cameraShake = 1;
+        GAME.hud.message('You ditched it in the sea.', 3);
+        GAME.vehicles.explodeCar(car, 'water');
+      } else {
+        GAME.hud.message('The sea took it.', 3);
+        GAME.vehicles.sinkCar(car);
+      }
+      return;
+    }
 
     car.speed = U.clamp((car.speed || 0) + thr * car.spec.accel * dt, 0, car.spec.maxSpeed);
     car.speed *= Math.exp(-0.09 * dt);
@@ -137,6 +158,18 @@ GAME.aircraft = (function () {
     var surf = GAME.city.surfaceY(car.pos.x, car.pos.z);
     if (car.pos.y < surf + car.spec.wheelH) {
       car.pos.y = surf + car.spec.wheelH;
+      // a steep arrival over water is the same ditching, caught mid-descent
+      if (GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) {
+        if (car.speed > 20 || vy < -12) {
+          GAME.cameraShake = 1;
+          GAME.hud.message('You ditched it in the sea.', 3);
+          GAME.vehicles.explodeCar(car, 'water');
+        } else {
+          GAME.hud.message('The sea took it.', 3);
+          GAME.vehicles.sinkCar(car);
+        }
+        return;
+      }
       // a steep arrival, or touching down inverted, writes the aircraft off
       var inverted = Math.abs(U.wrapPI(car.roll || 0)) > 1.1 || Math.abs(U.wrapPI(car.pitch)) > 1.2;
       if (vy < -18 || (vy < -6 && inverted)) {

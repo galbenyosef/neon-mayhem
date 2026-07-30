@@ -59,6 +59,8 @@ GAME.stunts = (function () {
         { label: 'Unlocked', value: 'MONSTER TRUCK' }
       ]
     });
+    // clearing every jump is the other way across the channel
+    if (GAME.isla) GAME.isla.checkUnlock();
   }
 
   return {

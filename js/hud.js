@@ -498,6 +498,7 @@ GAME.hud = (function () {
       // the sim loop halts while the map is open; silence the engine drone
       if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
       else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
+      if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
       api.refreshFsBtn();
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },

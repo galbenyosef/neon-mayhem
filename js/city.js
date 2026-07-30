@@ -285,6 +285,7 @@ GAME.city = (function () {
     { minX: -440, maxX: -360, minZ: -10, maxZ: 48 },
     { minX: -195, maxX: -105, minZ: -138, maxZ: -85 }, // police station
     { minX: 155, maxX: 215, minZ: -110, maxZ: -50 },   // respray garages
+    { minX: -26, maxX: 26, minZ: -226, maxZ: -174 },   // the helipad tower
     { minX: -448, maxX: -408, minZ: -200, maxZ: -160 },
     { minX: 252, maxX: 292, minZ: -440, maxZ: -400 }
   ];
@@ -410,12 +411,18 @@ GAME.city = (function () {
     batches.ground.addGroundQuad(-70, 0, 0, 860, 1000, 0, 0x17131f);
     // asphalt: vertical roads
     var asphalt = new GeoBatch();
+    // the grid stops at the airport fence: the roads that used to run the full
+    // strip carried straight across the runway. Anything overlapping the fence
+    // box ends just north of it instead.
+    var AP = city.airport;
     for (var i = 0; i < R.length; i++) {
-      asphalt.addGroundQuad(R[i], 0.03, 0, ROAD_HALF * 2, 960, 0, 0x100e16);
+      var hitsAirport = R[i] + ROAD_HALF > AP.fx0 && R[i] - ROAD_HALF < AP.fx1;
+      var zEnd = hitsAirport ? AP.fz0 - 1 : 480;
+      asphalt.addGroundQuad(R[i], 0.03, (-480 + zEnd) / 2, ROAD_HALF * 2, zEnd + 480, 0, 0x100e16);
       asphalt.addGroundQuad(-72, 0.03, R[i], 856, ROAD_HALF * 2, 0, 0x100e16);
       // dashed center lines
       for (var d = -470; d < 470; d += 12) {
-        batches.marks.addGroundQuad(R[i], 0.06, d + 3, 0.25, 4, 0, 0xd8c46a);
+        if (d + 5 < zEnd) batches.marks.addGroundQuad(R[i], 0.06, d + 3, 0.25, 4, 0, 0xd8c46a);
         if (d > -500 && d < 350) batches.marks.addGroundQuad(d + 3, 0.06, R[i], 4, 0.25, 0, 0xd8c46a);
       }
     }
@@ -604,19 +611,26 @@ GAME.city = (function () {
       addSolid(H.x, H.z - 12, 60, 28, 18);
       addSign(batches.signs, 19, H.x, 14, H.z + 2.3, 0, 30, 5);
     });
-    // The find: a helipad on the main hospital's roof, with a helicopter on
-    // it. It shows on no map — the way onto it is out of the sky, a parachute
-    // off the plane or a long jump, and the reward for arriving is a way off
-    // again. This is the mainland's only helicopter.
-    var RH = P.hospitals[0];
-    var roofY = 18.06, padX = RH.x + 12, padZ = RH.z - 12;
-    batches.ground.addGroundQuad(padX, roofY, padZ, 16, 16, 0, 0x1a1a22);
-    batches.marks.addGroundQuad(padX - 2.2, roofY + 0.03, padZ, 1, 7, 0, 0xf0d020);
-    batches.marks.addGroundQuad(padX + 2.2, roofY + 0.03, padZ, 1, 7, 0, 0xf0d020);
-    batches.marks.addGroundQuad(padX, roofY + 0.03, padZ, 3.6, 1, 0, 0xf0d020);
+    // The find: a helipad crowning a downtown tower, with a helicopter on it.
+    // It shows on no map — the way onto it is out of the sky, a parachute off
+    // the plane onto the roof, and the reward for arriving is a way off again.
+    // This is the mainland's only helicopter. It used to sit on the hospital
+    // roof, but eighteen metres is barely a find; now it takes real flying.
+    var HT = { x: 0, z: -200, h: 72 };
+    batches.downtown.addBox(HT.x, HT.h / 2, HT.z, 30, HT.h, 30, 0, 0xb8c4e8, 28);
+    addSolid(HT.x, HT.z, 30, 30, HT.h);
+    var roofY = HT.h + 0.06, padX = HT.x, padZ = HT.z;
+    // low parapet, scenery only — a wall solid up here would fight the skids
+    [[-14.4, 0, 1.2, 30], [14.4, 0, 1.2, 30], [0, -14.4, 30, 1.2], [0, 14.4, 30, 1.2]].forEach(function (pp) {
+      batches.generic.addBox(HT.x + pp[0], HT.h + 0.5, HT.z + pp[1], pp[2], 1.0, pp[3], 0, 0x8a94b8, 0);
+    });
+    batches.ground.addGroundQuad(padX, roofY + 0.06, padZ, 16, 16, 0, 0x1a1a22);
+    batches.marks.addGroundQuad(padX - 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
+    batches.marks.addGroundQuad(padX + 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
+    batches.marks.addGroundQuad(padX, roofY + 0.12, padZ, 3.6, 1, 0, 0xf0d020);
     // corner ring segments, drawn as four bars so it reads from the air
     [[-6.6, 0, 1.2, 13.6], [6.6, 0, 1.2, 13.6], [0, -6.6, 13.6, 1.2], [0, 6.6, 13.6, 1.2]].forEach(function (q) {
-      batches.marks.addGroundQuad(padX + q[0], roofY + 0.02, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
+      batches.marks.addGroundQuad(padX + q[0], roofY + 0.1, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
     });
     city.roofHelipad = { x: padX, z: padZ, y: roofY };
     city.parkedSpots.push({ x: padX, z: padZ, y: roofY, heading: Math.PI / 2, vtype: 'helicopter' });
@@ -1205,6 +1219,18 @@ GAME.city = (function () {
         if (lx < -466 || lx > 392 || Math.abs(lz) > 472) return false;
         if (city.isInWater(lx, lz)) return false;
       }
+      // and nothing tall in the air corridor: a wall two metres past the lip
+      // turns the jump into a face-plant that can never be credited
+      for (var t2 = 0.1; t2 <= 1.3; t2 += 0.06) {
+        var cx2 = x + ux * (len / 2 + range * t2);
+        var cz2 = z + uz * (len / 2 + range * t2);
+        var boxes = city.hash.query(cx2, cz2, 3);
+        for (var b2 = 0; b2 < boxes.length; b2++) {
+          var q2 = boxes[b2];
+          if (q2.h === undefined || q2.h < 3) continue;
+          if (cx2 > q2.minX - 2 && cx2 < q2.maxX + 2 && cz2 > q2.minZ - 2 && cz2 < q2.maxZ + 2) return false;
+        }
+      }
       return true;
     }
     for (var a = 0; a < anchors.length && out.length < TARGET; a++) {
@@ -1329,6 +1355,22 @@ GAME.city = (function () {
       var bc = P(0, hl + 1.1, 0);
       var across = Math.abs(Math.cos(s.rot)) > 0.5;
       addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, s.h * 0.62, 'building');
+      // the raked flanks are solid too. Every ramp is axis-aligned, so each
+      // side is three stepped boxes rising with the deck — walk or drive into
+      // the side and you hit a wall, while anyone ON the deck stands above the
+      // step beside them and riding up the low quarter still works for angled
+      // hits on the approach. Boxes run lengthways along the ramp (world axis
+      // depends on the rotation), one metre thick, flush with the deck edge.
+      for (var sd = -1; sd <= 1; sd += 2) {
+        for (var st = 0; st < 3; st++) {
+          var t0 = 0.25 + st * 0.25, t1 = t0 + 0.25;
+          var lzMid = -hl + s.len * (t0 + t1) / 2, lzLen = s.len * 0.25 + 0.2;
+          var wc = P(sd * (s.w / 2 + 0.5), lzMid, 0);
+          addSolid(wc[0], wc[2],
+            across ? 1.0 : lzLen, across ? lzLen : 1.0,
+            s.h * t1, 'prop', true);
+        }
+      }
     }
     var g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));

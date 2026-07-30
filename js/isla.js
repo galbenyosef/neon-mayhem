@@ -611,6 +611,13 @@ GAME.isla = (function () {
     }
     return n;
   }
+  // finding every stunt jump is the other key to the bridges. At build time
+  // GAME.stunts has not loaded its save yet, so read the stored flag as well.
+  function stuntsDone() {
+    if (GAME.stunts && GAME.stunts.complete) return true;
+    return !!(GAME.prefs && GAME.prefs.stunts && GAME.prefs.stunts.rewarded);
+  }
+  function earned() { return missionsDone() >= REQUIRED || stuntsDone(); }
   function setOpen(v) {
     if (open === v) return;
     open = v;
@@ -619,18 +626,20 @@ GAME.isla = (function () {
   }
   function checkUnlock() {
     if (open) return false;
-    if (missionsDone() < REQUIRED) return false;
+    if (!earned()) return false;
     setOpen(true);
     GAME.hud.message('THE BRIDGES ARE OPEN — Isla Verde is east across the channel.', 6);
     GAME.audio.sting('win');
     GAME.track('isla-unlocked');
-    GAME.share.show({
+    // when the stunt reward's own card is already up, don't paint over it —
+    // the message above carries the news
+    if (!GAME.shareOpen) GAME.share.show({
       slug: 'isla-open',
       eyebrow: 'COSTA ROSA · 1986',
       title: 'BRIDGES OPEN',
       subtitle: 'Isla Verde is yours to explore',
       accent: '#8de8b0',
-      stats: [{ label: 'Jobs done', value: String(missionsDone()) },
+      stats: [{ label: 'Jobs done', value: stuntsDone() && missionsDone() < REQUIRED ? 'ALL JUMPS' : String(missionsDone()) },
         { label: 'Bridges', value: '2' },
         { label: 'Next', value: 'Head east' }]
     });
@@ -1391,7 +1400,7 @@ GAME.isla = (function () {
       map: city.signTex, transparent: true, vertexColors: true, side: THREE.DoubleSide
     }));
 
-    setOpen(missionsDone() >= REQUIRED);
+    setOpen(earned());
   }
 
   // A word at the barrier, so a closed bridge explains itself instead of just
@@ -1416,7 +1425,7 @@ GAME.isla = (function () {
       var p = unlockProgress();
       hintT = 6;
       GAME.hud.message('BRIDGE CLOSED — finish ' + (p.need - p.done) + ' more job' +
-        (p.need - p.done === 1 ? '' : 's') + ' in Costa Rosa and it opens.', 3.5);
+        (p.need - p.done === 1 ? '' : 's') + ' in Costa Rosa (or find every stunt jump) and it opens.', 3.5);
       return;
     }
   }

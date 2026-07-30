@@ -243,6 +243,10 @@ GAME.share = (function () {
     draw(o);
     el['share-screen'].style.display = 'flex';
     GAME.shareOpen = true;
+    // hand the mouse back at once — with the pointer still locked, the card's
+    // buttons could not be clicked and the browser swallowed the first Esc
+    if (document.exitPointerLock) document.exitPointerLock();
+    if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
     GAME.track('result-card-shown');
   }
   function hide() {
@@ -251,6 +255,7 @@ GAME.share = (function () {
     GAME.shareOpen = false;
     lastBlob = null;
     current = null;
+    if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
   }
 
   return { init: init, show: show, hide: hide, get isOpen() { return !!GAME.shareOpen; } };

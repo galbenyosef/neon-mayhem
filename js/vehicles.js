@@ -204,9 +204,12 @@ function buildPlaneMesh(colors) {
   g.rotation.order = 'YXZ';
   var b = new GeoBatch();
   b.addBox(0, 1.2, 0, 1.5, 1.5, 9, 0, body, 0);            // fuselage
-  b.addBox(0, 1.5, 3.0, 1.1, 0.9, 2.2, 0, 0x141824, 0);    // cockpit glass
+  // the canopy rides proud of the fuselage: with both tops on the same plane
+  // (1.95) the dark glass and the body fought for depth and the roof flickered
+  b.addBox(0, 1.62, 3.0, 1.1, 0.9, 2.2, 0, 0x141824, 0);   // cockpit glass
   b.addBox(0, 1.35, -0.4, 12, 0.28, 2.2, 0, body, 0);      // main wing
-  b.addBox(0, 1.35, -0.4, 12, 0.3, 0.3, 0, accent, 0);     // wing stripe
+  // the stripe stands clear of the wing on every face — flush tops shimmer
+  b.addBox(0, 1.35, -0.4, 12.1, 0.36, 0.36, 0, accent, 0); // wing stripe
   b.addBox(0, 1.4, -4.4, 4.4, 0.22, 1.2, 0, body, 0);      // tailplane
   b.addBox(0, 2.1, -4.4, 0.22, 1.6, 1.2, 0, accent, 0);    // vertical fin
   b.addBox(-0.55, 0.35, 1.0, 0.14, 0.7, 0.14, 0, 0x0c0c10, 0);
@@ -944,6 +947,7 @@ GAME.vehicles = (function () {
     update: update,
     damageCar: damageCar,
     explodeCar: explodeCar,
+    sinkCar: sinkCar,
     trafficControls: trafficControls,
     findNearestCar: findNearestCar,
     fwdX: fwdX, fwdZ: fwdZ

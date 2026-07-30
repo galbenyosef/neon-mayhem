@@ -272,6 +272,9 @@ GAME.initInput = function (canvas) {
   canvas.addEventListener('mousedown', function (e) {
     if (e.button === 0) { inp.lmb = true; inp.lmbPressed = true; }
     if (e.button === 2) inp.rmb = true;
+    // a click back into the game is a real gesture: if the browser threw us
+    // out of fullscreen over an Esc on an overlay, this is where it comes back
+    if (GAME.started && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
     if (GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas) {
       canvas.requestPointerLock && canvas.requestPointerLock();
     }

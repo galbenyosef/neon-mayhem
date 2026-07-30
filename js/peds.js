@@ -84,7 +84,9 @@ GAME.peds = (function () {
       hp: opts.cop ? 60 : 30,
       isCop: !!opts.cop,
       armed: !!opts.cop,
-      fleeT: 0, diveT: 0, deadT: 0,
+      // how quick this one is to swing back rather than run
+      temper: Math.random(),
+      fleeT: 0, diveT: 0, deadT: 0, attackT: 0, punchT: 0,
       // how alert this one is, and how long they take to react to a car
       dodgeSkill: Math.random(),
       reactDelay: U.randRange(Math.random, 0.15, 0.45), reactT: 0,
@@ -127,6 +129,7 @@ GAME.peds = (function () {
     for (var i = 0; i < world.peds.length; i++) {
       var p = world.peds[i];
       if (p.dead || p.isCop) continue;
+      if (p.state === 'attack') continue;   // mid-brawl, past being scared off
       if (U.dist2(p.pos.x, p.pos.z, x, z) < r2) {
         p.state = 'flee';
         p.fleeT = U.randRange(Math.random, 4, 8);
@@ -258,6 +261,43 @@ GAME.peds = (function () {
         ped.heading = U.angleLerp(ped.heading, fh + Math.sin(GAME.time * 3 + i) * 0.5, Math.min(1, dt * 5));
         ped.speed = U.damp(ped.speed, 4.6, 4, dt);
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
+      } else if (ped.state === 'attack') {
+        // this one is coming for you: chase, swing when in reach, thump the
+        // bodywork if you hide in a car. They give up once you speed off, get
+        // too far, or the fight has gone on long enough — then they run.
+        ped.attackT -= dt;
+        var tcar = P.inCar && P.car ? P.car : null;
+        var ty = tcar ? tcar.pos.y : P.pos.y;
+        var ad2 = U.dist2(ped.pos.x, ped.pos.z, P.pos.x, P.pos.z);
+        if (ped.attackT <= 0 || ad2 > 45 * 45 || P.state !== 'alive' ||
+          Math.abs(ty - ped.pos.y) > 3 || (tcar && Math.abs(tcar.speed) > 8)) {
+          ped.state = 'flee';
+          ped.fleeT = 4;
+          ped.fleeX = P.pos.x; ped.fleeZ = P.pos.z;
+          ped.aimPose = false;
+        } else {
+          var ah = Math.atan2(P.pos.x - ped.pos.x, P.pos.z - ped.pos.z);
+          ped.heading = U.angleLerp(ped.heading, ah, Math.min(1, dt * 7));
+          ped.aimPose = true;
+          var reach = tcar ? (tcar.spec.l / 2 + 1.4) : 1.5;
+          if (ad2 > reach * reach) {
+            ped.speed = U.damp(ped.speed, 4.4, 4, dt);
+          } else {
+            ped.speed = U.damp(ped.speed, 0, 9, dt);
+            ped.punchT -= dt;
+            if (ped.punchT <= 0) {
+              ped.punchT = 0.8;
+              if (tcar) { GAME.vehicles.damageCar(tcar, 2, 'fists', false); GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12); }
+              else GAME.playerDamage(5, 'fists');
+              GAME.audio.crash(0.15);
+            }
+          }
+          // a haymaker pose: lead arm up, swinging with each punch
+          var aj = ped.mesh.userData.joints;
+          var swing = Math.max(0, ped.punchT) / 0.8;
+          aj.armR.rotation.x = -2.1 + swing * 0.9;
+          aj.armL.rotation.x = -0.9;
+        }
       } else if (ped.state === 'dive') {
         // a real dive: they leave their feet, arc through the air and land —
         // rather than sliding sideways with the walk cycle still playing
@@ -384,9 +424,19 @@ GAME.peds = (function () {
     GAME.fx.spawn(ped.pos.x, 1.2, ped.pos.z, { count: 3, color: 0xc42848, spread: 1, vy: 1, life: 0.3, grav: -3 });
     if (ped.hp <= 0) kill(ped, 'shot', byPlayer);
     else if (!ped.isCop) {
-      ped.state = 'flee';
-      ped.fleeT = 6;
-      ped.fleeX = GAME.player.pos.x; ped.fleeZ = GAME.player.pos.z;
+      // not everyone runs. The short-tempered turn and swing — unless they are
+      // already badly hurt, in which case discretion wins after all.
+      var fights = byPlayer && ped.hp > 10 &&
+        (ped.state === 'attack' || (ped.temper || 0) > 0.62);
+      if (fights) {
+        ped.state = 'attack';
+        ped.attackT = 9;
+        GAME.audio.yelp();
+      } else {
+        ped.state = 'flee';
+        ped.fleeT = 6;
+        ped.fleeX = GAME.player.pos.x; ped.fleeZ = GAME.player.pos.z;
+      }
     }
   }
 
