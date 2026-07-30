@@ -179,7 +179,14 @@
     text-shadow:0 0 16px rgba(255,100,200,.8); }
   #shop-tag { color:#9fd8ff; font-size:13px; letter-spacing:2px; margin-top:2px; }
   #shop-cash { color:#8dffd8; font-size:20px; font-weight:800; margin-top:8px; text-shadow:0 0 10px rgba(60,255,190,.8); }
-  #shop-items { margin-top:14px; width:min(92vw,560px); max-height:52vh; overflow:auto; }
+  #shop-body { display:flex; gap:18px; align-items:flex-start; margin-top:14px; }
+  #shop-items { position:relative; width:min(60vw,470px); max-height:50vh; overflow-y:auto;
+    scrollbar-width:none; -ms-overflow-style:none; }
+  #shop-items::-webkit-scrollbar { display:none; }
+  #shop-preview { display:block; border-radius:12px; background:radial-gradient(90% 90% at 50% 40%, #241640 0%, #0d0818 100%);
+    border:1px solid rgba(255,150,210,.4); box-shadow:0 0 18px rgba(255,105,180,.25); }
+  #shop-preview-tag { color:#9fd8ff; font-size:11.5px; letter-spacing:2px; text-align:center; margin-top:6px; }
+  @media (max-width:760px) { #shop-body { flex-direction:column-reverse; align-items:center; } #shop-items { width:88vw; max-height:34vh; } }
   .shop-row { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:9px 16px; margin:5px 0;
     border-radius:9px; cursor:pointer; background:rgba(255,105,180,.08); border:1px solid rgba(255,150,210,.28); }
   .shop-row .nm { color:#ffe8f6; font-weight:800; font-size:15px; }
@@ -300,7 +307,13 @@
   <div id="shop-title"></div>
   <div id="shop-tag"></div>
   <div id="shop-cash"></div>
-  <div id="shop-items"></div>
+  <div id="shop-body">
+    <div id="shop-items"></div>
+    <div id="shop-side" style="display:none">
+      <canvas id="shop-preview" width="240" height="280"></canvas>
+      <div id="shop-preview-tag"></div>
+    </div>
+  </div>
   <div id="shop-note"></div>
   <div id="shop-hint">W/S select &nbsp;·&nbsp; Enter buy &nbsp;·&nbsp; Esc leave &nbsp;·&nbsp; or click</div>
   <div><span class="mbtn" id="shop-close">LEAVE</span></div>

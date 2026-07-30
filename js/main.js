@@ -362,6 +362,8 @@
     var wantNear = relH > (cam.near > 0.2 ? 34 : 46) ? 2.0 : 0.1;
     if (wantNear !== cam.near) { cam.near = wantNear; cam.updateProjectionMatrix(); }
     renderer.render(GAME.scene, GAME.cameraObj);
+    // the shop's turntable preview spins even while the sim is frozen
+    if (GAME.shops && GAME.shops.renderPreview) GAME.shops.renderPreview();
   }
 
   // headless-drivable test hooks

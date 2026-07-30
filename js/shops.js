@@ -7,6 +7,13 @@ GAME.shops = (function () {
   var el = {}, openShop = null, sel = 0, locations = [], markerMesh = null, markerData = [];
   var leftSince = {};   // reopen only after you step off the mat
 
+  // sign-atlas slots for the storefront names — indexes into city.js SIGN_TEXTS,
+  // which appends these nine in this exact order after 'ISLA ROSA' (slot 33)
+  var SIGN_SLOT = {
+    hardware0: 34, hardware1: 35, dress0: 36, barber0: 37,
+    showroom0: 38, casino0: 39, home_dock: 40, home_condo: 41, home_villa: 42
+  };
+
   // ---------- wardrobe ----------
   var SHIRTS = [
     { id: 'white', name: 'Club White', hex: 0xf0f0f8 },
@@ -174,12 +181,18 @@ GAME.shops = (function () {
   }
   function showroomItems() {
     var islaOpen = !GAME.isla || GAME.isla.isOpen();
+    function row(id, name, ds, price, off) {
+      var inGarage = garage().indexOf(id) >= 0;
+      return { id: id, name: name, price: price, off: off,
+        owned: inGarage, ds: inGarage ? 'In your garage — a fresh one always waits at home.' : ds };
+    }
     return [
-      { id: 'motorcycle', name: 'NEON STREAK', ds: 'The bike. Fast, loud, unwise.', price: 4000 },
-      { id: 'buggy', name: 'DUNE BUGGY', ds: 'Made for sand and bad decisions.', price: 9000 },
-      { id: 'limo', name: 'STRETCH LIMO', ds: 'Arrive like you own the strip.', price: 18000 },
-      { id: 'monster', name: 'SLEDGEHAMMER', ds: 'The monster truck, no stunt jumps required.', price: 35000 },
-      { id: 'helicopter', name: 'PELICANO', ds: islaOpen ? 'Your own bird, delivered outside.' : 'Import license pending — open the bridges first.', price: 60000, off: !islaOpen }
+      row('motorcycle', 'NEON STREAK', 'The bike. Fast, loud, unwise.', 4000),
+      row('superbike', 'CORMORÁN GT', 'Showroom exclusive. Nobody else rides one.', 12000),
+      row('buggy', 'DUNE BUGGY', 'Made for sand and bad decisions.', 9000),
+      row('limo', 'STRETCH LIMO', 'Arrive like you own the strip.', 18000),
+      row('monster', 'SLEDGEHAMMER', 'The monster truck, no stunt jumps required.', 35000),
+      row('helicopter', 'PELICANO', islaOpen ? 'Your own bird, delivered outside.' : 'Import license pending — open the bridges first.', 60000, !islaOpen)
     ];
   }
   function bribeItems() {
@@ -228,6 +241,7 @@ GAME.shops = (function () {
     if (id === 'rest') { P.health = 100; note('You slept like 1986 would never end.'); return; }
     ownedList().push(loc.sh.id);
     GAME.save();
+    refreshGarageSpots();   // the fleet moves home with you
     GAME.track('safehouse-bought');
     note('The keys are yours.');
     GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all.', 5);
@@ -242,14 +256,72 @@ GAME.shops = (function () {
         { label: 'Perk', value: 'GEAR KEPT' }]
     });
   }
+  // ---------- the garage ----------
+  // A deed, not a rental: every vehicle you buy is registered to a parking
+  // spot at your best property (or the showroom forecourt while you rent).
+  // The parked-vehicle spawner already guarantees specials at their spot, so
+  // wreck it, sink it or leave it across the channel — a fresh one is waiting
+  // at home. The registry persists; the spots are rebuilt every boot.
+  var garageSpots = {};   // type -> the live parkedSpot object
+  function garage() {
+    GAME.prefs = GAME.prefs || {};
+    if (!GAME.prefs.garage) GAME.prefs.garage = [];
+    return GAME.prefs.garage;
+  }
+  function homeBase() {
+    // the priciest property you own is home; the forecourt is the fallback
+    var unlocked = !GAME.isla || GAME.isla.isOpen();
+    var best = null;
+    for (var i = 0; i < SAFEHOUSES.length; i++) {
+      var s = SAFEHOUSES[i];
+      if (!owns(s.id) || !s.at) continue;
+      if (s.isla && !unlocked) continue;
+      if (!best || s.price > best.price) best = s;
+    }
+    if (best) return { x: best.at.x, z: best.at.z, heading: 0 };
+    var sr = locations.filter(function (l) { return l.kind === 'showroom'; })[0];
+    return sr ? { x: sr.forecourt.x, z: sr.forecourt.z, heading: sr.heading || 0 } : { x: 0, z: 0, heading: 0 };
+  }
+  function refreshGarageSpots() {
+    var base = homeBase();
+    garage().forEach(function (type, i) {
+      var s = clearSpot(base.x + 6 + (i % 3) * 5, base.z + 6 + Math.floor(i / 3) * 6);
+      var g = garageSpots[type];
+      if (!g) {
+        g = { x: s.x, z: s.z, heading: base.heading, vtype: type, owned: true };
+        garageSpots[type] = g;
+        GAME.city.parkedSpots.push(g);
+      } else {
+        g.x = s.x; g.z = s.z; g.heading = base.heading;
+      }
+    });
+  }
+
   function buyShowroom(loc, id) {
     var at = loc.forecourt;
     var spot = clearSpot(at.x, at.z);
     var car = GAME.vehicles.spawnCar(id, spot.x, spot.z, loc.heading || 0, {});
     if (id === 'monster') GAME.city.unlockMonsterTruck();
+    if (garage().indexOf(id) < 0) garage().push(id);
+    GAME.save();
+    refreshGarageSpots();
+    GAME.fx.flash(spot.x, 1.5, spot.z, 5);
+    GAME.audio.sting('win');
     GAME.track('showroom-' + id);
+    var spec = GAME.vehicles.TYPES[id];
     note('Keys in the ignition, right outside.');
-    GAME.hud.message('Delivered to the forecourt. Try not to scratch it immediately.', 4);
+    GAME.hud.message('Delivered to the forecourt — and registered to your garage: lose it and a fresh one waits at ' +
+      (ownsAny() ? 'your place' : 'the showroom') + '.', 5);
+    GAME.share.show({
+      slug: 'bought-' + id,
+      eyebrow: 'GRAN ROSA MOTORS · 1986',
+      title: (spec ? spec.label.toUpperCase() : id.toUpperCase()),
+      subtitle: 'Bought outright, registered to your garage',
+      accent: '#8dffd8',
+      stats: [{ label: 'Paid', value: '$' + (items(loc).filter(function (r) { return r.id === id; })[0] || { price: 0 }).price.toLocaleString() },
+        { label: 'Plate', value: 'ROSA-' + String(garage().length).padStart(2, '0') },
+        { label: 'Kept at', value: ownsAny() ? 'HOME' : 'SHOWROOM' }]
+    });
     return car;
   }
   function buyBribe(id) {
@@ -309,6 +381,121 @@ GAME.shops = (function () {
     }
   }
 
+  // ---------- storefronts ----------
+  // Every shop is a real building: the doormat sits at its door and the name
+  // is up in lights on the face. The door always looks toward the road the
+  // mat was placed off of, and the whole footprint is vetted against solids,
+  // roads, water and ramps — with sideways nudges before giving up.
+  function buildShopfronts(scene) {
+    var SIZES = {
+      hardware: { w: 10, d: 7, h: 5 },
+      dress: { w: 9, d: 6.5, h: 4.6 },
+      barber: { w: 8, d: 6, h: 4.2 },
+      showroom: { w: 18, d: 10, h: 6 },
+      casino: { w: 5.5, d: 5, h: 3.8 },
+      safehouse: { w: 9, d: 7, h: 7.5 }
+    };
+    var walls = new GeoBatch();      // window-textured shells
+    var trims = new GeoBatch();      // doors, awnings, roof lips (unlit color)
+    var signs = new GeoBatch();
+    // ramps were placed before the shops existed, and their placement vetted
+    // an empty air corridor past the lip — don't build a wall into it now
+    function corridorClear(cx, cz, sx, sz) {
+      var ramps = GAME.city.ramps || [];
+      var half = Math.max(sx, sz) / 2;
+      for (var i = 0; i < ramps.length; i++) {
+        var r = ramps[i];
+        var ux = Math.sin(r.rot), uz = Math.cos(r.rot);
+        var lx = r.x + ux * r.len / 2, lz = r.z + uz * r.len / 2;
+        var L = r.boost ? 260 : 90;
+        var t = ((cx - lx) * ux + (cz - lz) * uz) / L;
+        if (t < -0.15 || t > 1) continue;
+        var px = lx + ux * t * L, pz = lz + uz * t * L;
+        if (U.dist2(cx, cz, px, pz) < Math.pow(r.w / 2 + half + 3, 2)) return false;
+      }
+      return true;
+    }
+    function footprintClear(cx, cz, sx, sz) {
+      if (!corridorClear(cx, cz, sx, sz)) return false;
+      var pts = [[0, 0], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+      for (var i = 0; i < pts.length; i++) {
+        var px = cx + pts[i][0] * (sx / 2 + 0.6), pz = cz + pts[i][1] * (sz / 2 + 0.6);
+        if (GAME.city.isInWater(px, pz) && !GAME.city.isOnPier(px, pz)) return false;
+        if (GAME.city.rampAt(px, pz)) return false;
+        if (GAME.city.nearCrossing && GAME.city.nearCrossing(px, pz, 10)) return false;
+        var rp = GAME.city.nearestRoadPoint(px, pz);
+        if (U.dist2(px, pz, rp.x, rp.z) < 8.5 * 8.5) return false;
+        var boxes = GAME.city.hash.query(px, pz, 1);
+        for (var b = 0; b < boxes.length; b++) {
+          var q = boxes[b];
+          if (px > q.minX - 0.4 && px < q.maxX + 0.4 && pz > q.minZ - 0.4 && pz < q.maxZ + 0.4) return false;
+        }
+      }
+      return true;
+    }
+    locations.forEach(function (loc) {
+      if (loc.kind === 'bribe') return;   // the police station is already a building
+      var S = SIZES[loc.kind];
+      if (!S) return;
+      // Hunt outward from the intended spot for a mat whose building fits:
+      // the door faces whatever road is nearest to each candidate. Boot-time,
+      // a handful of shops — the ring search costs nothing and survives any
+      // future reshuffle of ramps and blocks around it.
+      var placed = null;
+      var cands = [[0, 0]];
+      for (var ring = 1; ring <= 6 && !placed; ring++) {
+        for (var a = 0; a < 8; a++) cands.push([Math.cos(a / 8 * Math.PI * 2) * ring * 5, Math.sin(a / 8 * Math.PI * 2) * ring * 5]);
+      }
+      for (var si = 0; si < cands.length && !placed; si++) {
+        var mx = loc.at.x + cands[si][0], mz = loc.at.z + cands[si][1];
+        var rp = GAME.city.nearestRoadPoint(mx, mz);
+        var dx = mx - rp.x, dz = mz - rp.z;
+        var dir = Math.abs(dx) >= Math.abs(dz) ? { x: Math.sign(dx) || 1, z: 0 } : { x: 0, z: Math.sign(dz) || 1 };
+        // the mat itself must be standable and off the carriageway
+        if (GAME.city.isInWater(mx, mz) && !GAME.city.isOnPier(mx, mz)) continue;
+        if (GAME.city.rampAt(mx, mz)) continue;
+        if (U.dist2(mx, mz, rp.x, rp.z) < 9.5 * 9.5) continue;
+        var sx = dir.x !== 0 ? S.d : S.w, sz = dir.x !== 0 ? S.w : S.d;
+        var cx = mx + dir.x * (S.d / 2 + 1.2), cz = mz + dir.z * (S.d / 2 + 1.2);
+        if (footprintClear(cx, cz, sx, sz)) placed = { mx: mx, mz: mz, cx: cx, cz: cz, sx: sx, sz: sz, dir: dir };
+      }
+      if (!placed) return;                // mat-only fallback; rare
+      var dir = placed.dir;
+      loc.at = { x: placed.mx, z: placed.mz };
+      if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
+      var gy = GAME.city.groundY(placed.cx, placed.cz);
+      // shell, sunk half a metre so sloped ground never shows a gap
+      walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, 0xb9a8d8, 28);
+      trims.addBox(placed.cx, gy + S.h + 0.22, placed.cz, placed.sx + 0.6, 0.34, placed.sz + 0.6, 0, 0x241a36, 0);
+      GAME.city.addSolid(placed.cx, placed.cz, placed.sx, placed.sz, gy + S.h);
+      // door face bits sit proud of the wall plane
+      var fx = placed.cx - dir.x * (S.d / 2), fz = placed.cz - dir.z * (S.d / 2);
+      var doorW = Math.min(2.4, S.w - 2);
+      // door
+      trims.addBox(fx - dir.x * 0.09, gy + 1.5, fz - dir.z * 0.09,
+        dir.x !== 0 ? 0.18 : doorW, 3.0, dir.x !== 0 ? doorW : 0.18, 0, 0x120c1e, 0);
+      // awning in the shop's color
+      trims.addBox(fx - dir.x * 0.55, gy + 3.1, fz - dir.z * 0.55,
+        dir.x !== 0 ? 1.1 : S.w - 1.2, 0.16, dir.x !== 0 ? S.w - 1.2 : 1.1, 0, loc.color, 0);
+      // the name in lights
+      var slot = SIGN_SLOT[loc.id];
+      if (slot !== undefined) {
+        var rotY = dir.x !== 0 ? (dir.x < 0 ? Math.PI / 2 : -Math.PI / 2) : (dir.z < 0 ? 0 : Math.PI);
+        GAME.city.addSign(signs, slot, fx - dir.x * 0.16, gy + S.h - 0.85, fz - dir.z * 0.16,
+          rotY, Math.min(S.w - 0.8, 9), 1.5);
+      }
+    });
+    var wallMesh = new THREE.Mesh(walls.build(), GAME.city.lam(GAME.city.tex.strip));
+    wallMesh.matrixAutoUpdate = false;
+    scene.add(wallMesh);
+    var trimMesh = new THREE.Mesh(trims.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    trimMesh.matrixAutoUpdate = false;
+    scene.add(trimMesh);
+    var signMesh = new THREE.Mesh(signs.build(), GAME.city.signMesh.material);
+    signMesh.matrixAutoUpdate = false;
+    scene.add(signMesh);
+  }
+
   // one instanced-ish batch of glowing doormats, pulsing in update()
   function buildMarkers(scene) {
     var g = new THREE.Group();
@@ -363,8 +550,96 @@ GAME.shops = (function () {
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr">' + (it.owned ? 'YOURS' : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE') + '</div>';
       row.addEventListener('click', function () { sel = i; buy(it.id); });
+      row.addEventListener('mouseenter', function () { if (sel !== i) { sel = i; render(); } });
       el.items.appendChild(row);
     });
+    // the keyboard walks the whole list: keep the selected row in view
+    var selRow = el.items.children[sel];
+    if (selRow && selRow.scrollIntoView) selRow.scrollIntoView({ block: 'nearest' });
+    setPreview(list[sel]);
+  }
+
+  // ---------- the turntable ----------
+  // A live 3D preview beside the list: the mannequin wears whatever the
+  // selected row would put on you, the showroom spins the actual machine.
+  // Its own tiny renderer, driven from the main loop's rAF (the sim is
+  // frozen behind a shop, the render loop is not).
+  var pv = { renderer: null, scene: null, cam: null, obj: null, key: '', on: false };
+  function ensurePv() {
+    if (pv.renderer) return;
+    var canvas = $('shop-preview');
+    pv.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    pv.renderer.setSize(240, 280, false);
+    pv.scene = new THREE.Scene();
+    pv.scene.add(new THREE.HemisphereLight(0xcfd8ff, 0x2a2038, 1.0));
+    var dl = new THREE.DirectionalLight(0xfff0d8, 0.9);
+    dl.position.set(3, 5, 4);
+    pv.scene.add(dl);
+    pv.cam = new THREE.PerspectiveCamera(38, 240 / 280, 0.1, 60);
+  }
+  function clearPvObj() {
+    if (!pv.obj) return;
+    pv.scene.remove(pv.obj);
+    disposeTree(pv.obj);
+    pv.obj = null;
+  }
+  function previewOutfit(it) {
+    var o = { shirt: outfit().shirt, pants: outfit().pants, hairStyle: outfit().hairStyle, hairColor: outfit().hairColor };
+    if (it) {
+      if (it.id.indexOf('shirt_') === 0) o.shirt = it.id.slice(6);
+      else if (it.id.indexOf('pants_') === 0) o.pants = it.id.slice(6);
+      else if (it.id.indexOf('style_') === 0) o.hairStyle = it.id.slice(6);
+      else if (it.id.indexOf('color_') === 0) o.hairColor = it.id.slice(6);
+    }
+    return o;
+  }
+  function setPreview(it) {
+    var kind = openShop && openShop.kind;
+    var wants = it && (kind === 'dress' || kind === 'barber' || kind === 'showroom');
+    var side = $('shop-side');
+    pv.on = !!wants;
+    if (side) side.style.display = wants ? 'block' : 'none';
+    if (!wants) { clearPvObj(); pv.key = ''; return; }
+    ensurePv();
+    var tag = $('shop-preview-tag');
+    if (kind === 'showroom') {
+      var key = 'car:' + it.id;
+      if (tag) tag.textContent = it.name;
+      if (key === pv.key) return;
+      pv.key = key;
+      clearPvObj();
+      pv.obj = GAME.vehicles.buildMesh(it.id);
+      if (!pv.obj) return;
+      var spec = GAME.vehicles.TYPES[it.id];
+      var r = Math.max(spec.l, 4) * 0.62 + 2.2;
+      pv.cam.position.set(r * 0.75, spec.l * 0.28 + 1.6, r * 0.75);
+      pv.cam.lookAt(0, Math.max(0.8, spec.l * 0.1), 0);
+    } else {
+      var o = previewOutfit(it);
+      var pkey = 'ped:' + o.shirt + '/' + o.pants + '/' + o.hairStyle + '/' + o.hairColor;
+      if (tag) tag.textContent = it.name;
+      if (pkey === pv.key) return;
+      pv.key = pkey;
+      clearPvObj();
+      var m = GAME.peds.buildPedMesh({ noHair: true });
+      var j = m.userData.joints;
+      j.torso.material = new THREE.MeshLambertMaterial({ color: byId(SHIRTS, o.shirt).hex });
+      j.armL.children[0].material = j.torso.material;
+      j.armR.children[0].material = j.torso.material;
+      j.legL.children[0].material = new THREE.MeshLambertMaterial({ color: byId(PANTS, o.pants).hex });
+      j.legR.children[0].material = j.legL.children[0].material;
+      var hair = GAME.peds.makeHair(o.hairStyle, byId(HAIRCOLORS, o.hairColor).hex);
+      if (hair) { hair.position.y = 1.6; m.add(hair); }
+      pv.obj = m;
+      pv.cam.position.set(0, 1.5, 3.2);
+      pv.cam.lookAt(0, 1.0, 0);
+    }
+    pv.scene.add(pv.obj);
+  }
+  function renderPreview() {
+    if (!pv.on || !pv.renderer || !pv.obj || !GAME.shopOpen) return;
+    pv.obj.rotation.y += 0.016;
+    pv.renderer.render(pv.scene, pv.cam);
   }
   function buy(id) {
     if (!openShop) return false;
@@ -408,6 +683,9 @@ GAME.shops = (function () {
     openShop = null;
     el.screen.style.display = 'none';
     GAME.shopOpen = false;
+    pv.on = false;
+    clearPvObj();
+    pv.key = '';
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
   }
 
@@ -425,7 +703,9 @@ GAME.shops = (function () {
     if (el.close) el.close.addEventListener('click', close);
     window.addEventListener('keydown', onKey);
     buildLocations();
+    buildShopfronts(scene);   // may slide a doormat to fit its building
     buildMarkers(scene);
+    refreshGarageSpots();     // bought vehicles wait at home from last session
     applyOutfit();
   }
 
@@ -488,8 +768,12 @@ GAME.shops = (function () {
     init: init, update: update, open: open, close: close, buy: buy,
     nearHint: nearHint, blips: blips, applyOutfit: applyOutfit,
     homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns,
+    renderPreview: renderPreview,
+    garage: function () { return garage().slice(); },
+    garageSpot: function (type) { return garageSpots[type] || null; },
     get isOpen() { return !!openShop; },
     get current() { return openShop; },
+    get selected() { return openShop ? items(openShop)[sel] : null; },
     locations: function () { return locations; },
     wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS }
   };

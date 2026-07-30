@@ -119,6 +119,9 @@ var VEHICLES = {
   police: { label: 'Cruiser', maxSpeed: 35, accel: 13.5, grip: 5.0, turn: 2.4, hp: 200, l: 4.6, w: 1.95, cabinH: 0.6, bodyH: 0.55, colors: [0xe8ecf2] },
   ambulance: { label: 'Ambulance', maxSpeed: 27, accel: 8.5, grip: 5.6, turn: 1.8, hp: 240, l: 5.3, w: 2.15, cabinH: 1.15, bodyH: 1.0, colors: [0xf2f2f6] },
   motorcycle: { label: 'Neon Streak', maxSpeed: 46, accel: 22, grip: 2.9, turn: 3.1, hp: 130, l: 2.2, w: 0.7, cabinH: 0.0, bodyH: 0.45, colors: [0xff2f7a, 0x38e8ff, 0x20242e, 0xffe14f], bike: true },
+  // showroom exclusive: never in traffic, never parked on a verge — the only
+  // way onto one is to pay GRAN ROSA MOTORS for it
+  superbike: { label: 'Cormorán GT', maxSpeed: 55, accel: 27, grip: 3.5, turn: 3.3, hp: 150, l: 2.3, w: 0.72, cabinH: 0.0, bodyH: 0.5, colors: [0x101018], bike: true, trim: 0x38e8ff },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
   airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
@@ -130,13 +133,22 @@ var VEHICLES = {
   icecream: { label: 'Sunny Scoops', maxSpeed: 21, accel: 6.2, grip: 5.8, turn: 1.7, hp: 200, l: 5.2, w: 2.2, cabinH: 0, bodyH: 0.55, colors: [0xfdf6ec], icecream: true }
 };
 
-function buildBikeMesh(colorHex) {
+function buildBikeMesh(colorHex, trim) {
   var g = new THREE.Group();
   var b = new GeoBatch();
   b.addBox(0, 0.62, 0, 0.28, 0.34, 1.5, 0, colorHex, 0);       // fuel tank / frame
   b.addBox(0, 0.78, -0.55, 0.42, 0.14, 0.5, 0, 0x141824, 0);    // seat
   b.addBox(0, 0.98, 0.62, 0.5, 0.1, 0.1, 0, 0x101014, 0);       // handlebars
   b.addBox(0, 0.7, 0.7, 0.16, 0.24, 0.24, 0, 0x0c0c10, 0);      // front cowl
+  if (trim) {
+    // the GT wears a full fairing, a tail cowl and racing stripes in its
+    // trim color — reads as a different machine at a glance
+    b.addBox(0, 0.56, 0.42, 0.4, 0.34, 0.6, 0, colorHex, 0);    // fairing
+    b.addBox(0, 0.6, 0.44, 0.44, 0.1, 0.62, 0, trim, 0);        // fairing stripe
+    b.addBox(0, 0.82, -0.86, 0.34, 0.16, 0.34, 0, colorHex, 0); // tail cowl
+    b.addBox(0, 0.815, 0, 0.32, 0.06, 1.56, 0, trim, 0);        // spine stripe
+    b.addBox(0, 0.9, 0.58, 0.34, 0.16, 0.1, 0, 0x141824, 0);    // screen
+  }
   var wheel = new GeoBatch();
   wheel.addBox(0, 0.34, 0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
   wheel.addBox(0, 0.34, -0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
@@ -262,7 +274,7 @@ function buildCarMesh(type, colorHex) {
   if (s.monster) return buildMonsterMesh(colorHex);
   if (s.plane) return buildPlaneMesh(s.colors);
   if (s.heli) return buildHeliMesh(colorHex);
-  if (s.bike) return buildBikeMesh(colorHex);
+  if (s.bike) return buildBikeMesh(colorHex, s.trim);
   var g = new THREE.Group();
   var b = new GeoBatch();
   var hl = s.l / 2, hw = s.w / 2;
@@ -950,6 +962,11 @@ GAME.vehicles = (function () {
     sinkCar: sinkCar,
     trafficControls: trafficControls,
     findNearestCar: findNearestCar,
+    // a display copy of a vehicle's mesh, for the showroom's turntable
+    buildMesh: function (type) {
+      var s = VEHICLES[type];
+      return s ? buildCarMesh(type, s.colors[0]) : null;
+    },
     fwdX: fwdX, fwdZ: fwdZ
   };
 })();

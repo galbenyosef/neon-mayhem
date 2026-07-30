@@ -343,7 +343,11 @@ GAME.city = (function () {
     // The two ends of the world, for the signs over the bridges. Costa Rosa
     // is the CITY — the whole map, both islands. The mainland is Isla Rosa,
     // the neon island; Isla Verde is the green one across the channel.
-    'ISLA VERDE', 'ISLA ROSA'];
+    'ISLA VERDE', 'ISLA ROSA',
+    // storefronts — the shops are real buildings with their names in lights
+    // (slots consumed by js/shops.js; keep this order in sync with SIGN_SLOT there)
+    'ROSA HARDWARE', 'VERDE HARDWARE', 'THREADS', 'CORTES CUTS',
+    'GRAN ROSA MOTORS', 'THE LUCKY GULL', 'DOCKSIDE FLAT', 'STRIP CONDO', 'MARINA VILLA'];
   var SIGN_COLORS = ['#ff4fa3', '#38e8ff', '#ffe14f', '#7dff6a', '#ff8a3d', '#c86bff', '#ff5d5d', '#59ffc8'];
   function signAtlas() {
     var cv = document.createElement('canvas');
