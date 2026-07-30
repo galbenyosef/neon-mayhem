@@ -193,7 +193,10 @@ SpatialHash.prototype.query = function (x, z, r) {
   return out;
 };
 // Segment LOS test: returns true if segment is clear of all boxes.
-SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1) {
+// `aboveY`, when given, is the viewer's eye height: anything topping out below
+// it is seen over (a parapet, a kerb), and anything that only STARTS above it
+// (a bridge deck overhead) is seen under. Without it the check stays flat-2D.
+SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1, aboveY) {
   var dx = x1 - x0, dz = z1 - z0;
   var len = Math.sqrt(dx * dx + dz * dz);
   var steps = Math.max(1, Math.ceil(len / (this.cell * 0.8)));
@@ -206,6 +209,10 @@ SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1) {
       if (checked.has(b)) continue;
       checked.add(b);
       if (b.noLOS) continue;
+      if (aboveY !== undefined) {
+        if (b.h !== undefined && b.h < aboveY - 0.4) continue;
+        if (b.minY !== undefined && b.minY > aboveY + 0.6) continue;
+      }
       if (segIntersectsAABB(x0, z0, x1, z1, b)) return false;
     }
   }

@@ -87,9 +87,10 @@ GAME.missions = (function () {
       cps: [[50, 50], [150, -50], [50, -250], [-50, -350], [-150, -250], [-150, -50], [-50, 50]]
     },
     // courier drops are generated fresh each run (see rollCourierStops)
-    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 95, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 110, legMax: 240 },
-    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 110, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 120, legMax: 260 },
-    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 100, start: { x: 364, z: 104 }, drops: 4, legMin: 100, legMax: 220 },
+    // courier clocks are meant to be beaten narrowly, not strolled through
+    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 76, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 110, legMax: 240 },
+    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 88, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 120, legMax: 260 },
+    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 80, start: { x: 364, z: 104 }, drops: 4, legMin: 100, legMax: 220 },
     { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 60, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
     { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 60, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
     { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
@@ -98,7 +99,7 @@ GAME.missions = (function () {
     // Coordinates come from the island itself once it has registered.
     { id: 'race3', type: 'race', name: 'ALTA VERDE CLIMB', reward: 750, isla: 'climb', start: null, cps: null },
     { id: 'race4', type: 'race', name: 'MIRADOR RUN', reward: 800, isla: 'mirador', start: null, cps: null },
-    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 115, isla: 'port', start: null, drops: 4, legMin: 110, legMax: 240 },
+    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 94, isla: 'port', start: null, drops: 4, legMin: 110, legMax: 240 },
     { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 60, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
   ];
 
@@ -383,7 +384,7 @@ GAME.missions = (function () {
       // an ambulance fills up before running to the hospital; a cab takes one fare
       capacity: kind === 'ambulance' ? 3 : 1,
       level: 1, targets: [], aboard: 0,
-      timeLeft: kind === 'ambulance' ? 110 : 95,
+      timeLeft: kind === 'ambulance' ? 92 : 80,
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
@@ -665,7 +666,8 @@ GAME.missions = (function () {
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
     var msg = word + '! +$' + fare;
-    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 45 : 50) + n * 12, 190);
+    // each fare buys less slack than it used to; the shift stays under pressure
+    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 36 : 38) + n * 9, 150);
 
     if (active.targets.length) {
       // still people waiting on this level — go back out for them

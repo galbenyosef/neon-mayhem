@@ -133,8 +133,21 @@ GAME.isla = (function () {
     for (i = 0; i <= 200; i++) ring.push(ringPt(i / 200 * TAU, 0.845));
     road(ring, 14, 'ring').closed = true;
 
-    // Puerto Dorado — the island's only grid, because a port earns one
-    [-40, 30, 100, 170].forEach(function (gz) { iroad([[768, gz], [930, gz]], 13, 'port'); });
+    // Puerto Dorado — the island's only grid, because a port earns one.
+    // The quay streets used to start at one fixed x, and the sea does not
+    // respect grids: at one latitude that western end stood in open water,
+    // with traffic driving straight off it — the first thing anyone saw
+    // coming over the bridge. Each street now walks east until it finds
+    // honest ground before it begins.
+    function firmGround(px, pz) {
+      var wx = tx(px), wz = tz(pz);
+      return contains(wx, wz) && inland(wx, wz) > 0.055;
+    }
+    [-40, 30, 100, 170].forEach(function (gz) {
+      var x0 = 768;
+      while (x0 < 860 && !firmGround(x0, gz)) x0 += 3;
+      iroad([[x0, gz], [930, gz]], 13, 'port');
+    });
     // two north-south streets, not three: the westmost one ran alongside the
     // coast road for its whole length and served the same buildings
     [865, 930].forEach(function (gx) { iroad([[gx, -40], [gx, 170]], 13, 'port'); });
@@ -967,24 +980,37 @@ GAME.isla = (function () {
   // climbs to an open first floor — no interior, just the roof terrace, its
   // parapet, and the rotunda rising out of the middle of it. The far end of
   // the terrace is the only place in the world the rifle exists.
-  var OBS = { W: 46, D: 34, H: 7.2, STAIR_W: 9, STAIR_L: 22, PAR: 1.1 };
+  var OBS = { W: 46, D: 34, H: 7.2, STAIR_W: 9, STAIR_L: 22, PAR: 0.5 };
   function buildObservatory(b, sg, scene) {
     var O = POI.observatory;
     var y = groundY(O.x, O.z);
     var hw = OBS.W / 2, hd = OBS.D / 2, top = y + OBS.H;
 
+    // Warm sandstone, not the old near-white: a white-shirted player stood on
+    // a white terrace simply vanished. Body, trim and terrace are three
+    // distinct tones now, and everything reads against everything.
+    var WALL = 0xc4a97e, TRIM = 0xe3d3ac, PLINTH = 0x99805f, TERRACE = 0x8d7a5e;
+
     // plinth and main block
-    b.addBox(O.x, y + 0.6, O.z, OBS.W + 6, 1.2, OBS.D + 6, 0, 0xb8b4ac, 0);
-    b.addBox(O.x, y + OBS.H / 2, O.z, OBS.W, OBS.H, OBS.D, 0, 0xdcdcd4, 0);
+    b.addBox(O.x, y + 0.6, O.z, OBS.W + 6, 1.2, OBS.D + 6, 0, PLINTH, 0);
+    b.addBox(O.x, y + OBS.H / 2, O.z, OBS.W, OBS.H, OBS.D, 0, WALL, 0);
     city.addSolid(O.x, O.z, OBS.W, OBS.D, top);
     // pilasters down the long faces, so it reads as a building and not a slab
     for (var i = -3; i <= 3; i++) {
       var px = O.x + i * (OBS.W / 7.4);
-      b.addBox(px, y + OBS.H / 2, O.z + hd + 0.35, 1.6, OBS.H, 0.7, 0, 0xf0efe6, 0);
-      b.addBox(px, y + OBS.H / 2, O.z - hd - 0.35, 1.6, OBS.H, 0.7, 0, 0xf0efe6, 0);
+      b.addBox(px, y + OBS.H / 2, O.z + hd + 0.35, 1.6, OBS.H, 0.7, 0, TRIM, 0);
+      b.addBox(px, y + OBS.H / 2, O.z - hd - 0.35, 1.6, OBS.H, 0.7, 0, TRIM, 0);
     }
-    // cornice
-    b.addBox(O.x, top + 0.3, O.z, OBS.W + 2.4, 0.6, OBS.D + 2.4, 0, 0xf0efe6, 0);
+    // The cornice is a RING around the roof edge, not a slab across it. The
+    // old slab lay 0.6m of stone over the whole terrace while the player
+    // walked on the solid beneath — every visitor waded shin-deep in roof.
+    [[0, hd + 0.7, OBS.W + 2.4, 1.4], [0, -hd - 0.7, OBS.W + 2.4, 1.4],
+     [hw + 0.7, 0, 1.4, OBS.D], [-hw - 0.7, 0, 1.4, OBS.D]].forEach(function (c) {
+      b.addBox(O.x + c[0], top - 0.3, O.z + c[1], c[2], 0.6, c[3], 0, TRIM, 0);
+    });
+    // and the terrace floor itself, a darker wash a hair proud of the block's
+    // own roof face (flush would z-fight; 3cm is invisible underfoot)
+    b.addBox(O.x, top - 0.06, O.z, OBS.W - 0.4, 0.18, OBS.D - 0.4, 0, TERRACE, 0);
 
     // The steps. A sloped deck, not a stack of boxes: the walk code will only
     // step you up 20 cm at a time, which would take thirty-six of them.
@@ -1002,19 +1028,22 @@ GAME.isla = (function () {
       var t0 = (k + 0.5) / STEPS;
       var zz = foot - OBS.STAIR_L * t0;
       b.addBox(sx, footY + (top - footY) * t0 - 0.06, zz,
-        OBS.STAIR_W, 0.18, OBS.STAIR_L / STEPS + 0.06, 0, k % 2 ? 0xd0cfc6 : 0xdcdbd2, 0);
+        OBS.STAIR_W, 0.18, OBS.STAIR_L / STEPS + 0.06, 0, k % 2 ? 0xa8916c : 0xb89f78, 0);
     }
     // cheek walls either side of the flight, so you cannot walk off it
     for (var e2 = 0; e2 < 2; e2++) {
       var ex = sx + (e2 ? 1 : -1) * (OBS.STAIR_W / 2 + 0.5);
-      b.addBox(ex, y + OBS.H / 2 + 0.4, sz, 1, OBS.H + 0.8, OBS.STAIR_L, 0, 0xcfcec4, 0);
+      b.addBox(ex, y + OBS.H / 2 + 0.4, sz, 1, OBS.H + 0.8, OBS.STAIR_L, 0, PLINTH, 0);
       city.addSolid(ex, sz, 1, OBS.STAIR_L, top + 0.9);
     }
 
-    // the terrace parapet, open only where the steps arrive
+    // The terrace parapet, open where the steps arrive — and knee-high now: a
+    // waist-high wall made the terrace a playpen. At half a metre you shoot
+    // over it standing (the eye-height ray clears it) and hop it to leap off
+    // the front of the building whenever the mood takes you.
     function parapet(cx, cz, w, d) {
-      b.addBox(cx, top + OBS.PAR / 2 + 0.6, cz, w, OBS.PAR, d, 0, 0xf0efe6, 0);
-      city.addSolid(cx, cz, w, d, top + OBS.PAR + 0.6);
+      b.addBox(cx, top + OBS.PAR / 2, cz, w, OBS.PAR, d, 0, TRIM, 0);
+      city.addSolid(cx, cz, w, d, top + OBS.PAR);
     }
     parapet(O.x, O.z - hd + 0.5, OBS.W, 1);                       // north
     parapet(O.x - hw + 0.5, O.z, 1, OBS.D);                       // west
@@ -1026,19 +1055,19 @@ GAME.isla = (function () {
 
     // the rotunda and its dome, standing in the middle of the terrace so the
     // north end of it stays open — that far strip is where the reward sits
-    b.addBox(O.x, top + 4.2, O.z, 16, 8, 16, 0, 0xe8e7de, 0);
+    b.addBox(O.x, top + 4.2, O.z, 16, 8, 16, 0, WALL, 0);
     city.addSolid(O.x, O.z, 16, 16, top + 8.2);
     var dome = new THREE.Mesh(new THREE.SphereGeometry(8.4, 20, 12, 0, TAU, 0, Math.PI / 2),
-      new THREE.MeshLambertMaterial({ color: 0xe4e8f0 }));
+      new THREE.MeshLambertMaterial({ color: 0x6e9d8d }));
     dome.position.set(O.x, top + 8.2, O.z);
     scene.add(dome);
     // two smaller domes on the wings, the way an observatory carries them
     [-1, 1].forEach(function (sgn) {
       var wx = O.x + sgn * (hw - 4.5);
-      b.addBox(wx, top + 2.2, O.z + 10, 9, 4, 9, 0, 0xe8e7de, 0);
+      b.addBox(wx, top + 2.2, O.z + 10, 9, 4, 9, 0, WALL, 0);
       city.addSolid(wx, O.z + 10, 9, 9, top + 4.2);
       var d2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 14, 9, 0, TAU, 0, Math.PI / 2),
-        new THREE.MeshLambertMaterial({ color: 0xdfe4ee }));
+        new THREE.MeshLambertMaterial({ color: 0x679384 }));
       d2.position.set(wx, top + 4.2, O.z + 10);
       scene.add(d2);
     });
@@ -1047,7 +1076,10 @@ GAME.isla = (function () {
     beacon.position.set(O.x, top + 18.6, O.z);
     scene.add(beacon);
     city.islaBeacon = beacon;
-    city.addSign(sg, 28, O.x, y + 4.6, O.z + hd + 0.9, 0, 26, 4.4);
+    // the name rides high on the rotunda drum, both faces, where the stairs
+    // can't hide it — it used to sit at ground level behind the flight
+    city.addSign(sg, 28, O.x, top + 5.8, O.z + 8.35, 0, 15, 2.6);
+    city.addSign(sg, 28, O.x, top + 5.8, O.z - 8.35, Math.PI, 15, 2.6);
 
     // the reward, on the far strip of the terrace from the steps
     city.pickupSpots.push({ x: O.x, z: O.z - hd + 4.5, y: top + 1.1, type: 'rifle' });

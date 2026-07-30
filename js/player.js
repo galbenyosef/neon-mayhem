@@ -360,7 +360,9 @@ GAME.updatePlayer = function (dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
   if (P.state !== 'alive') {
     P.stateT += dt;
-    if (P.stateT > 1.2 && !P.respawnQueued && (P.stateT > 3.2 || GAME.key('KeyR') || GAME.key('Enter') || GAME.skipScreen)) {
+    // R means NOW: it arms almost immediately, and the automatic continue
+    // sits far enough out that pressing it visibly matters
+    if (P.stateT > 0.6 && !P.respawnQueued && (P.stateT > 6 || GAME.key('KeyR') || GAME.key('Enter') || GAME.skipScreen)) {
       GAME.skipScreen = false;
       P.respawnQueued = true;
       respawnAfterScreen();
@@ -615,15 +617,17 @@ function updateCamera(dt) {
   var aiming = GAME.combat.aiming && !P.inCar;
 
   if (P.inCar && P.car) {
-    if (Math.abs(mdx) > 1 || Math.abs(mdy) > 1) cam.freeT = 2.2;
+    // any mouse action holds the free look; two idle seconds and the camera
+    // swings itself back behind the car so the road ahead is visible again
+    if (Math.abs(mdx) > 0.5 || Math.abs(mdy) > 0.5) cam.freeT = 2.0;
     cam.freeT = Math.max(0, cam.freeT - dt);
     if (cam.freeT > 0) {
       cam.yaw -= mdx * 0.0032;
       cam.pitch = U.clamp(cam.pitch + mdy * 0.002, 0.08, 1.1);
     } else {
       var behind = P.car.heading + (P.car.speed < -2 ? Math.PI : 0);
-      cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 2.4));
-      cam.pitch = U.damp(cam.pitch, 0.26, 2, dt);
+      cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 3.4));
+      cam.pitch = U.damp(cam.pitch, 0.26, 2.6, dt);
     }
     var heli = P.car.spec.heli, plane = P.car.spec.plane;
     var sp = heli ? Math.abs(P.car.heliSpeed || 0) : Math.abs(P.car.speed);
