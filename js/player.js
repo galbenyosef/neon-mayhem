@@ -19,7 +19,7 @@ GAME.focus = function () {
 
 GAME.initPlayer = function () {
   var P = GAME.player;
-  var mesh = GAME.peds.buildPedMesh({});
+  var mesh = GAME.peds.buildPedMesh({ noHair: true }); // the wardrobe supplies the hair
   // fixed outfit so the player reads distinctly
   mesh.userData.joints.torso.material = new THREE.MeshLambertMaterial({ color: 0xf0f0f8 });
   mesh.userData.joints.armL.children[0].material = mesh.userData.joints.torso.material;
@@ -94,7 +94,10 @@ GAME.playerWasted = function (cause) {
   GAME.timeScale = 0.35;
   killLoopingAudio();
   GAME.audio.sting('wasted');
-  GAME.hud.showBig('wasted', 'You wake up at the hospital. Weapons gone, cash intact.');
+  var home = GAME.shops && GAME.shops.ownsAny();
+  GAME.hud.showBig('wasted', home
+    ? 'You wake up at your place. Cash and weapons intact.'
+    : 'You wake up at the hospital. Weapons gone, cash intact.');
   GAME.missions.failActive('You got wasted.');
 };
 
@@ -147,22 +150,32 @@ function respawnAfterScreen() {
       P.pos.set(sp.x, GAME.city.groundY(sp.x, sp.z), sp.z);
     } else {
       P.armor = 0;
-      // Wake up at the nearest hospital YOU CAN BE IN. Crash at the channel's
-      // edge and the island hospital is the closest one by distance — but a
-      // hospital behind a locked bridge cannot be where you wake up.
-      var unlocked = !GAME.isla || GAME.isla.isOpen();
-      var hs = GAME.city.pois.hospitals;
-      var sh = hs[0].spawn;
-      var bd = 1e18;
-      for (var hi = 0; hi < hs.length; hi++) {
-        if (hs[hi].isla && !unlocked) continue;
-        var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
-        if (d < bd) { bd = d; sh = hs[hi].spawn; }
+      // Property changes everything: own a safehouse and you wake up in your
+      // own bed with your arsenal untouched. Otherwise it's the nearest
+      // hospital YOU CAN BE IN — crash at the channel's edge and the island
+      // hospital is closest by distance, but a hospital behind a locked
+      // bridge cannot be where you wake up.
+      var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
+      if (home) {
+        P.pos.set(home.x, GAME.city.groundY(home.x, home.z), home.z);
+      } else {
+        var unlocked = !GAME.isla || GAME.isla.isOpen();
+        var hs = GAME.city.pois.hospitals;
+        var sh = hs[0].spawn;
+        var bd = 1e18;
+        for (var hi = 0; hi < hs.length; hi++) {
+          if (hs[hi].isla && !unlocked) continue;
+          var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
+          if (d < bd) { bd = d; sh = hs[hi].spawn; }
+        }
+        P.pos.set(sh.x, GAME.city.groundY(sh.x, sh.z), sh.z);
       }
-      P.pos.set(sh.x, GAME.city.groundY(sh.x, sh.z), sh.z);
     }
-    P.weapons = { fist: { have: true, ammo: Infinity } };
-    P.currentWeapon = 'fist';
+    var keepGear = kind === 'wasted' && GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
+    if (!keepGear) {
+      P.weapons = { fist: { have: true, ammo: Infinity } };
+      P.currentWeapon = 'fist';
+    }
     // every stunt jump found: the arsenal survives a hospital or cell visit
     if (GAME.unlimitedAmmo) GAME.combat.giveAllWeapons();
     GAME.combat.refreshWeaponHud();

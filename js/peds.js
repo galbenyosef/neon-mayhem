@@ -25,12 +25,36 @@ GAME.resolveCircle = function (x, z, r, feetY) {
   return { x: x, z: z };
 };
 
+// hair, built around the head's origin: a cap over the crown plus a panel down
+// the back. Everything stands a little proud of the head so no face is shared.
+// 'buzz' returns null — that's the bald look, now a choice instead of the rule.
+function makeHair(style, colorHex) {
+  if (style === 'buzz') return null;
+  var g = new THREE.Group();
+  var mat = new THREE.MeshLambertMaterial({ color: colorHex });
+  if (style === 'mohawk') {
+    var hawk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.24, 0.3), mat);
+    hawk.position.y = 0.22;
+    g.add(hawk);
+  } else {
+    var capH = style === 'flat' ? 0.16 : 0.1;
+    var cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, capH, 0.3), mat);
+    cap.position.y = 0.14 + capH / 2;
+    g.add(cap);
+    var back = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.06), mat);
+    back.position.set(0, 0.05, -0.145);
+    g.add(back);
+  }
+  return g;
+}
+
 function buildPedMesh(opts) {
   opts = opts || {};
   var g = new THREE.Group();
   var shirtColors = [0xf7a8c4, 0x9fe8d8, 0xf9d99a, 0x8fd0f0, 0xe86a8a, 0x8a6ae8, 0xf0f0e8, 0x60c890];
   var pantColors = [0x3a4a68, 0x684a3a, 0x2a2a34, 0x8a4a5a, 0xd8d0c0];
   var skins = [0xeac8a8, 0xc89878, 0x8a6848, 0x6a4c34, 0xf0d8c0];
+  var hairColors = [0x1c1a18, 0x5a3c22, 0x2e2018, 0xd8b86a, 0xa8482a, 0x8a8a90];
   var shirt = opts.cop ? 0x2a4a8a : U.pick(Math.random, shirtColors);
   var pants = opts.cop ? 0x1a2a4a : U.pick(Math.random, pantColors);
   var skin = U.pick(Math.random, skins);
@@ -49,6 +73,12 @@ function buildPedMesh(opts) {
     var cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), mats.pants);
     cap.position.y = 1.78;
     g.add(cap);
+  } else if (!opts.noHair) {
+    // nobody in this town is bald unless they paid the barber for it
+    // (the player's own hair is the wardrobe's business — see shops.js)
+    var styles = ['crew', 'crew', 'crew', 'flat', 'flat', 'mohawk'];
+    var hair = makeHair(U.pick(Math.random, styles), U.pick(Math.random, hairColors));
+    if (hair) { hair.position.y = 1.6; g.add(hair); }
   }
   function limb(w, len, mat, x, y) {
     var pivot = new THREE.Group();
@@ -440,5 +470,5 @@ GAME.peds = (function () {
     }
   }
 
-  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh };
+  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair };
 })();

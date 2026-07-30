@@ -172,6 +172,28 @@
     background:rgba(255,105,180,.18); border:1px solid rgba(255,150,210,.6); color:#ffd9f2; font-weight:800; font-size:14px; }
   .mbtn:active { background:rgba(255,105,180,.45); }
 
+  /* shop / property / casino browser — same family as the pause and map screens */
+  #shop-screen { position:fixed; inset:0; z-index:36; display:none; align-items:center; justify-content:center;
+    flex-direction:column; background:rgba(8,4,18,.88); font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+  #shop-title { font-size:30px; font-weight:900; font-style:italic; color:#ffd9f2; letter-spacing:4px;
+    text-shadow:0 0 16px rgba(255,100,200,.8); }
+  #shop-tag { color:#9fd8ff; font-size:13px; letter-spacing:2px; margin-top:2px; }
+  #shop-cash { color:#8dffd8; font-size:20px; font-weight:800; margin-top:8px; text-shadow:0 0 10px rgba(60,255,190,.8); }
+  #shop-items { margin-top:14px; width:min(92vw,560px); max-height:52vh; overflow:auto; }
+  .shop-row { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:9px 16px; margin:5px 0;
+    border-radius:9px; cursor:pointer; background:rgba(255,105,180,.08); border:1px solid rgba(255,150,210,.28); }
+  .shop-row .nm { color:#ffe8f6; font-weight:800; font-size:15px; }
+  .shop-row .ds { color:#bcd4ee; font-size:12px; margin-top:1px; }
+  .shop-row .pr { color:#8dffd8; font-weight:800; font-size:15px; white-space:nowrap; }
+  .shop-row .sw { display:inline-block; width:13px; height:13px; border-radius:3px; margin-right:8px;
+    border:1px solid rgba(255,255,255,.6); vertical-align:-2px; }
+  .shop-row.sel { background:rgba(255,105,180,.26); border-color:rgba(255,170,220,.85); }
+  .shop-row.off { opacity:.45; cursor:default; }
+  .shop-row.owned .pr { color:#ffe08a; }
+  #shop-note { color:#ffe08a; font-size:14px; font-weight:700; margin-top:10px; min-height:18px;
+    text-shadow:0 0 8px rgba(255,190,60,.6); }
+  #shop-hint { color:#cfe6ff; font-size:12.5px; margin-top:6px; }
+
   #fade-layer { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; z-index:25; transition:opacity .5s; }
   #crt-layer { position:fixed; inset:0; pointer-events:none; z-index:20; display:none;
     background:repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
@@ -274,6 +296,16 @@
   <div><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
 </div>
 
+<div id="shop-screen">
+  <div id="shop-title"></div>
+  <div id="shop-tag"></div>
+  <div id="shop-cash"></div>
+  <div id="shop-items"></div>
+  <div id="shop-note"></div>
+  <div id="shop-hint">W/S select &nbsp;·&nbsp; Enter buy &nbsp;·&nbsp; Esc leave &nbsp;·&nbsp; or click</div>
+  <div><span class="mbtn" id="shop-close">LEAVE</span></div>
+</div>
+
 <div id="fade-layer"></div>
 <div id="crt-layer"></div>
 
@@ -320,6 +352,7 @@ window.addEventListener('load', function () {
 <script src="js/missions.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/share.js"></script>
+<script src="js/shops.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/main.js"></script>
 </body>

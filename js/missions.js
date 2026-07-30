@@ -1112,6 +1112,9 @@ GAME.missions = (function () {
           hint = { d: rd, text: 'RESPRAY · $100 — repairs your ride and clears the heat' + (P.inCar ? '' : '   —   drive in') };
         }
       }
+      // and the shops share the one readout instead of talking over it
+      var sh = GAME.shops && GAME.shops.nearHint(px, pz);
+      if (sh && (!hint || sh.d < hint.d)) hint = sh;
       GAME.hud.setPoiHint(hint ? hint.text : '');
       return;
     }

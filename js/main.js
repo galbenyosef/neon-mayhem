@@ -43,6 +43,7 @@
     GAME.stunts.load();
     GAME.hud.init();
     GAME.share.init();
+    GAME.shops.init(scene);
     GAME.initInput(canvas);
     GAME.combat.refreshWeaponHud();
     GAME.hud.wantedChanged(0);
@@ -63,7 +64,8 @@
         return;
       }
       if (code === 'Escape') {
-        if (GAME.mapOpen) GAME.hud.toggleMap(false);
+        if (GAME.shopOpen) GAME.shops.close();
+        else if (GAME.mapOpen) GAME.hud.toggleMap(false);
         else GAME.togglePause();
       }
       if (code === 'KeyP') GAME.hud.toggleMap();
@@ -238,7 +240,7 @@
   // going away IS the Esc press: treat it as one.
   document.addEventListener('pointerlockchange', function () {
     if (document.pointerLockElement) return;
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen &&
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen &&
       GAME.player.state === 'alive') GAME.togglePause();
   });
 
@@ -247,7 +249,7 @@
   // an overlay calls it.
   GAME.syncOverlayMusic = function () {
     if (!GAME.audio.ctx) return;
-    GAME.audio.titleMusic(!GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen);
+    GAME.audio.titleMusic(!GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen);
   };
 
   GAME.togglePause = function () {
@@ -272,7 +274,7 @@
   // audio. Pausing no longer suspends the context (the pads play on), so a
   // hidden tab always suspends explicitly here.
   function onHide() {
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && GAME.player.state === 'alive') GAME.togglePause();
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && GAME.player.state === 'alive') GAME.togglePause();
     GAME.audio.suspend();
   }
   function onShow() {
@@ -317,6 +319,7 @@
     GAME.police.update(dt);
     GAME.missions.update(dt);
     if (GAME.isla) GAME.isla.tick(dt);
+    GAME.shops.update(dt);
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();
@@ -337,7 +340,7 @@
         g0++;
       }
       if (g0 === 5) accumulator = 0;
-    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen) {
+    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
       accumulator += real * GAME.timeScale;
       var guard = 0;
       while (accumulator >= STEP && guard < 5) {

@@ -103,6 +103,7 @@ GAME.hud = (function () {
       ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
       ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
       ['#8de0ff', '✈ Airport · Ⓗ Helipad'], ['#ffd7e4', '☀ Ice cream depot'],
+      ['#8de8b0', '$ Shops · H — your place'],
       ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
     ];
     $('map-legend').innerHTML = legend.map(function (e) {
@@ -189,6 +190,7 @@ GAME.hud = (function () {
     GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
     GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
+    if (GAME.shops) GAME.shops.blips().forEach(function (s) { badge(s.x, s.z, s.color, s.label); });
     badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
     if (GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
     // helipad: a ringed cyan disc with an H
@@ -389,6 +391,14 @@ GAME.hud = (function () {
       if (pp.taken || !PICKUP_BLIP[pp.type]) continue;
       if (U.dist2(pp.pos.x, pp.pos.z, px, pz) > 150 * 150) continue;
       blip(pp.pos.x, pp.pos.z, PICKUP_BLIP[pp.type], 2.6 / zoom);
+    }
+    // nearby shops and property, so the doormats are findable from the radar
+    if (GAME.shops) {
+      var sb = GAME.shops.blips();
+      for (var sbi = 0; sbi < sb.length; sbi++) {
+        if (U.dist2(sb[sbi].x, sb[sbi].z, px, pz) > 170 * 170) continue;
+        blip(sb[sbi].x, sb[sbi].z, sb[sbi].color, 3.2 / zoom);
+      }
     }
     // active mission route (race checkpoints / current delivery stop)
     var mroute = GAME.missions.getRoutePoints();
