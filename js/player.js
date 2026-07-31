@@ -44,15 +44,36 @@ GAME.initPlayer = function () {
 function loadSave() {
   try {
     var s = JSON.parse(localStorage.getItem('neonMayhemSave') || '{}');
-    if (typeof s.cash === 'number') GAME.player.cash = s.cash;
+    var P = GAME.player;
+    if (typeof s.cash === 'number') P.cash = s.cash;
     GAME.bests = s.bests || {};
     GAME.prefs = s.prefs || {};
+    // the body comes back the way it was left: condition, armor, and the
+    // whole loadout with its ammo (fists are a birthright, not cargo)
+    if (typeof s.health === 'number') P.health = U.clamp(s.health, 1, 100);
+    if (typeof s.armor === 'number') P.armor = U.clamp(s.armor, 0, 100);
+    if (s.loadout) {
+      for (var w in s.loadout) {
+        if (typeof s.loadout[w] === 'number') P.weapons[w] = { have: true, ammo: s.loadout[w] };
+      }
+      if (s.currentWeapon && P.weapons[s.currentWeapon]) P.currentWeapon = s.currentWeapon;
+    }
     if (GAME.prefs.timeMode && GAME.setTimeMode) GAME.setTimeMode(GAME.prefs.timeMode);
   } catch (e) { GAME.bests = {}; GAME.prefs = {}; }
 }
 GAME.save = function () {
   try {
-    localStorage.setItem('neonMayhemSave', JSON.stringify({ cash: GAME.player.cash, bests: GAME.bests || {}, prefs: GAME.prefs || {} }));
+    var P = GAME.player;
+    // the loadout, minus fists (Infinity has no JSON form and needs none)
+    var loadout = {};
+    for (var w in P.weapons) {
+      if (w !== 'fist' && P.weapons[w].have && isFinite(P.weapons[w].ammo)) loadout[w] = P.weapons[w].ammo;
+    }
+    localStorage.setItem('neonMayhemSave', JSON.stringify({
+      cash: P.cash, bests: GAME.bests || {}, prefs: GAME.prefs || {},
+      health: Math.round(P.health), armor: Math.round(P.armor),
+      loadout: loadout, currentWeapon: P.currentWeapon
+    }));
   } catch (e) { }
 };
 GAME.addCash = function (n) {
@@ -61,30 +82,43 @@ GAME.addCash = function (n) {
   GAME.save();
 };
 
-// The whole save as a portable string, and the way back. Everything lives in
-// one localStorage key, so export is a wrapped copy of it and import is a
-// validated overwrite followed by a clean reload.
+// The whole save as a portable string, and the way back. The export first
+// flushes the live state (health, ammo, everything GAME.save carries) and
+// then copies EVERY localStorage key verbatim — if a future feature adds a
+// second key, it rides along without this code changing. Import restores
+// all keys and reloads into the imported life.
 GAME.exportSave = function () {
-  var s;
-  try { s = JSON.parse(localStorage.getItem('neonMayhemSave') || '{}'); } catch (e) { s = {}; }
-  return JSON.stringify({ game: 'neon-mayhem', v: 1, exported: new Date().toISOString(), save: s });
+  GAME.save();   // snapshot the moment, not the last checkpoint
+  var storage = {};
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      storage[k] = localStorage.getItem(k);
+    }
+  } catch (e) { }
+  return JSON.stringify({ game: 'neon-mayhem', v: 2, exported: new Date().toISOString(), storage: storage }, null, 1);
 };
 GAME.importSave = function (text) {
   var o;
   try { o = JSON.parse(text); } catch (e) { return { ok: false, why: 'That file is not a save.' }; }
-  // accept a wrapped export or a bare save object
-  var s = o && o.game === 'neon-mayhem' ? o.save : o;
-  if (!s || typeof s !== 'object' || (s.cash === undefined && !s.prefs && !s.bests)) {
-    return { ok: false, why: 'That file is not a Neon Mayhem save.' };
-  }
   try {
-    localStorage.setItem('neonMayhemSave', JSON.stringify({
-      cash: typeof s.cash === 'number' ? s.cash : 250,
-      bests: s.bests || {},
-      prefs: s.prefs || {}
-    }));
+    if (o && o.game === 'neon-mayhem' && o.storage && typeof o.storage === 'object') {
+      // v2: the full storage dump
+      if (typeof o.storage.neonMayhemSave !== 'string') return { ok: false, why: 'That save file is missing its game data.' };
+      JSON.parse(o.storage.neonMayhemSave);   // must at least be JSON
+      for (var k in o.storage) {
+        if (typeof o.storage[k] === 'string') localStorage.setItem(k, o.storage[k]);
+      }
+      return { ok: true };
+    }
+    // v1 wrapped a single save object; a bare save object is also accepted
+    var s = o && o.game === 'neon-mayhem' ? o.save : o;
+    if (!s || typeof s !== 'object' || (s.cash === undefined && !s.prefs && !s.bests)) {
+      return { ok: false, why: 'That file is not a Neon Mayhem save.' };
+    }
+    localStorage.setItem('neonMayhemSave', JSON.stringify(s));
+    return { ok: true };
   } catch (e) { return { ok: false, why: 'Could not write the save.' }; }
-  return { ok: true };
 };
 
 GAME.playerDamage = function (amt, cause) {

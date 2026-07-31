@@ -320,6 +320,9 @@
     GAME.missions.update(dt);
     if (GAME.isla) GAME.isla.tick(dt);
     GAME.shops.update(dt);
+    // slow autosave heartbeat: health and ammo drift without touching cash,
+    // and the save should never be more than ten seconds behind the life
+    if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();
