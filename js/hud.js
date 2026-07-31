@@ -134,7 +134,7 @@ GAME.hud = (function () {
       ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
       ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
       ['#8de0ff', '✈ Airport · Ⓗ Helipad'], ['#ffd7e4', '☀ Ice cream depot'],
-      ['#8de8b0', '$ Shops · H — your place'],
+      ['#8de8b0', '$ Shops & property'], ['#5dff9e', '⌂ Your safehouse'],
       ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
     ];
     $('map-legend').innerHTML = legend.map(function (e) {
@@ -221,7 +221,31 @@ GAME.hud = (function () {
     GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
     GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
     GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
-    if (GAME.shops) GAME.shops.blips().forEach(function (s) { badge(s.x, s.z, s.color, s.label); });
+    if (GAME.shops) GAME.shops.blips().forEach(function (s) {
+      if (!s.home) { badge(s.x, s.z, s.color, s.label); return; }
+      // property you OWN is a landmark, not a shop dot: a ringed disc with a
+      // drawn house (fonts can't be trusted with ⌂) and the name beside it
+      var hx = w2mx(s.x), hy = w2my(s.z);
+      g.fillStyle = s.color;
+      g.beginPath(); g.arc(hx, hy, 11, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.stroke();
+      g.fillStyle = '#0c2418';
+      g.beginPath();                        // roof
+      g.moveTo(hx - 6, hy - 0.5); g.lineTo(hx, hy - 6); g.lineTo(hx + 6, hy - 0.5);
+      g.closePath(); g.fill();
+      g.fillRect(hx - 4, hy - 0.5, 8, 5.5); // walls
+      g.fillStyle = s.color;
+      g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
+      if (s.name) {
+        g.font = 'bold 11px Arial, sans-serif';
+        g.textAlign = 'left'; g.textBaseline = 'middle';
+        g.strokeStyle = 'rgba(8,4,18,.9)'; g.lineWidth = 3;
+        g.strokeText(s.name, hx + 15, hy);
+        g.fillStyle = '#c8ffe0';
+        g.fillText(s.name, hx + 15, hy);
+        g.textAlign = 'center';
+      }
+    });
     badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
     if (GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
     // helipad: a ringed cyan disc with an H
@@ -423,12 +447,26 @@ GAME.hud = (function () {
       if (U.dist2(pp.pos.x, pp.pos.z, px, pz) > 150 * 150) continue;
       blip(pp.pos.x, pp.pos.z, PICKUP_BLIP[pp.type], 2.6 / zoom);
     }
-    // nearby shops and property, so the doormats are findable from the radar
+    // nearby shops and property, so the doormats are findable from the radar.
+    // Homes you own ignore the range gate and wear a white ring — wherever
+    // you are, the radar says which way home is.
     if (GAME.shops) {
       var sb = GAME.shops.blips();
       for (var sbi = 0; sbi < sb.length; sbi++) {
-        if (U.dist2(sb[sbi].x, sb[sbi].z, px, pz) > 170 * 170) continue;
-        blip(sb[sbi].x, sb[sbi].z, sb[sbi].color, 3.2 / zoom);
+        var sbp = sb[sbi];
+        if (!sbp.home && U.dist2(sbp.x, sbp.z, px, pz) > 170 * 170) continue;
+        if (sbp.home) {
+          // clamp far homes to the radar rim so the direction still reads
+          var rx = (sbp.x - px) * MAP_S, rz = (sbp.z - pz) * MAP_S;
+          var rr = Math.sqrt(rx * rx + rz * rz);
+          var lim = 78 / zoom;
+          if (rr > lim) { rx = rx / rr * lim; rz = rz / rr * lim; }
+          g.fillStyle = sbp.color;
+          g.beginPath(); g.arc(rx, rz, 4.4 / zoom, 0, Math.PI * 2); g.fill();
+          g.strokeStyle = '#ffffff'; g.lineWidth = 1.6 / zoom; g.stroke();
+        } else {
+          blip(sbp.x, sbp.z, sbp.color, 3.2 / zoom);
+        }
       }
     }
     // active mission route (race checkpoints / current delivery stop)

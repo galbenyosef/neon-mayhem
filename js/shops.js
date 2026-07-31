@@ -849,10 +849,13 @@ GAME.shops = (function () {
     var out = [];
     for (var i = 0; i < locations.length; i++) {
       var loc = locations[i];
+      var home = loc.kind === 'safehouse' && owns(loc.sh.id);
       out.push({
         x: loc.at.x, z: loc.at.z,
-        color: '#' + loc.color.toString(16).padStart(6, '0'),
-        label: loc.kind === 'safehouse' ? (owns(loc.sh.id) ? 'H' : '$') : '$'
+        color: home ? '#5dff9e' : '#' + loc.color.toString(16).padStart(6, '0'),
+        label: loc.kind === 'safehouse' ? (home ? '⌂' : '$') : '$',
+        home: home,
+        name: loc.kind === 'safehouse' ? loc.sh.name : null
       });
     }
     return out;
