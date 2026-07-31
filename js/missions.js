@@ -1297,24 +1297,27 @@ GAME.missions = (function () {
       return currentCp();
     },
     getBlips: function () {
+      // `kind` keys each blip to its legend entry, so the map legend can
+      // hide and show marker families like a chart legend
       var out = [];
       GAME.city.pois.resprays.forEach(function (g) {
-        out.push({ x: g.door.x, z: g.door.z, color: '#c86bff', size: 4 });
+        out.push({ x: g.door.x, z: g.door.z, color: '#c86bff', size: 4, kind: 'respray' });
       });
       if (!active) {
         for (var i = 0; i < markers.length; i++) {
           var d = markers[i].def;
           if (!defAvailable(d)) continue;
-          out.push({ x: d.start.x, z: d.start.z, color: '#' + MARKER_COLORS[d.type].toString(16).padStart(6, '0'), size: 4 });
+          var kind = d.type === 'race' ? 'race' : d.type === 'courier' ? 'courier' : 'rampage';
+          out.push({ x: d.start.x, z: d.start.z, color: '#' + MARKER_COLORS[d.type].toString(16).padStart(6, '0'), size: 4, kind: kind });
         }
       } else {
         // every waiting fare/patient shows on the map, not just the nearest
         if (active.targets) {
           for (var t = 0; t < active.targets.length; t++) {
-            out.push({ x: active.targets[t].x, z: active.targets[t].z, color: '#ffe14f', size: 4 });
+            out.push({ x: active.targets[t].x, z: active.targets[t].z, color: '#ffe14f', size: 4, kind: 'objective' });
           }
         }
-        if (cpMarker.visible) out.push({ x: cpMarker.position.x, z: cpMarker.position.z, color: '#ffe14f', size: 5 });
+        if (cpMarker.visible) out.push({ x: cpMarker.position.x, z: cpMarker.position.z, color: '#ffe14f', size: 5, kind: 'objective' });
       }
       return out;
     }

@@ -129,17 +129,41 @@ GAME.hud = (function () {
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
     el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
 
-    var legend = [
-      ['#ff8a3d', 'Race'], ['#38e8ff', 'Courier'], ['#ff4fa3', 'Rampage'],
-      ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
-      ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
-      ['#8de0ff', '✈ Airport · Ⓗ Helipad'], ['#ffd7e4', '☀ Ice cream depot'],
-      ['#8de8b0', '$ Shops & property'], ['#5dff9e', '⌂ Your safehouse'],
-      ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
-    ];
-    $('map-legend').innerHTML = legend.map(function (e) {
-      return '<span class="lgd"><i style="background:' + e[0] + '"></i>' + e[1] + '</span>';
+    // legend entries behave like a chart's: click one to hide that marker
+    // family on both maps, click again to bring it back. Choices persist.
+    (GAME.prefs && GAME.prefs.mapHidden || []).forEach(function (k) { mapHidden[k] = true; });
+    refreshLegend();
+  }
+
+  // ---------- toggleable legend ----------
+  var mapHidden = {};
+  var LEGEND = [
+    ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'],
+    ['#c86bff', 'S — Respray', 'respray'], ['#ff8aa8', 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
+    ['#eef0ff', 'Weapon', 'weapon'], ['#ff4d6a', 'Health', 'health'], ['#39c8ff', 'Armor', 'armor'],
+    ['#8de0ff', '✈ Airport · Ⓗ Helipad', 'airport'], ['#ffd7e4', '☀ Ice cream depot', 'icecream'],
+    ['#8de8b0', '$ Shops & property', 'shops'], ['#5dff9e', '⌂ Your safehouse', 'home'],
+    ['#ff8aff', 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
+  ];
+  function catVis(k) { return !mapHidden[k]; }
+  function pickupCat(t) { return t === 'health' ? 'health' : t === 'armor' ? 'armor' : 'weapon'; }
+  function toggleCat(k) {
+    mapHidden[k] = !mapHidden[k];
+    GAME.prefs = GAME.prefs || {};
+    GAME.prefs.mapHidden = Object.keys(mapHidden).filter(function (k2) { return mapHidden[k2]; });
+    GAME.save();
+    refreshLegend();
+    if (GAME.mapOpen) drawBigMap();
+  }
+  function refreshLegend() {
+    var box = $('map-legend');
+    box.innerHTML = LEGEND.map(function (e) {
+      return '<span class="lgd' + (mapHidden[e[2]] ? ' off' : '') + '" data-k="' + e[2] + '">' +
+        '<i style="background:' + e[0] + '"></i>' + e[1] + '</span>';
     }).join('');
+    for (var i = 0; i < box.children.length; i++) {
+      box.children[i].addEventListener('click', function () { toggleCat(this.getAttribute('data-k')); });
+    }
   }
 
   // ---------- full-screen map ----------
@@ -159,7 +183,7 @@ GAME.hud = (function () {
     var P = GAME.player;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    if (GAME.nav.dest) {
+    if (GAME.nav.dest && catVis('dest')) {
       g.strokeStyle = 'rgba(141,255,216,.95)';
       g.lineWidth = 2.5;
       g.beginPath();
@@ -174,7 +198,7 @@ GAME.hud = (function () {
       g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();
     }
     // active mission route
-    var mroute = GAME.missions.getRoutePoints();
+    var mroute = catVis('objective') ? GAME.missions.getRoutePoints() : null;
     if (mroute && mroute.length) {
       g.strokeStyle = 'rgba(255,138,61,.95)';
       g.lineWidth = 2.5;
@@ -193,6 +217,7 @@ GAME.hud = (function () {
     // mission / respray blips
     var mb = GAME.missions.getBlips();
     for (var i = 0; i < mb.length; i++) {
+      if (mb[i].kind && !catVis(mb[i].kind)) continue;
       g.fillStyle = mb[i].color;
       g.beginPath();
       g.arc(w2mx(mb[i].x), w2my(mb[i].z), 5, 0, Math.PI * 2);
@@ -213,15 +238,17 @@ GAME.hud = (function () {
     // weapon / health / armor pickups
     GAME.world.pickups.forEach(function (pk) {
       if (pk.taken || !PICKUP_BLIP[pk.type]) return;
+      if (!catVis(pickupCat(pk.type))) return;
       g.fillStyle = PICKUP_BLIP[pk.type];
       g.beginPath();
       g.arc(w2mx(pk.pos.x), w2my(pk.pos.z), 3.5, 0, Math.PI * 2);
       g.fill();
     });
-    GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
-    GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
-    GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
+    if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
+    if (catVis('police')) GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
+    if (catVis('respray')) GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     if (GAME.shops) GAME.shops.blips().forEach(function (s) {
+      if (!catVis(s.home ? 'home' : 'shops')) return;
       if (!s.home) { badge(s.x, s.z, s.color, s.label); return; }
       // property you OWN is a landmark, not a shop dot: a ringed disc with a
       // drawn house (fonts can't be trusted with ⌂) — the legend does the
@@ -238,19 +265,21 @@ GAME.hud = (function () {
       g.fillStyle = s.color;
       g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
     });
-    badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
-    if (GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
+    if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
+    if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
     // helipad: a ringed cyan disc with an H
-    var hpb = GAME.city.helipad;
-    g.fillStyle = '#8de0ff';
-    g.beginPath(); g.arc(w2mx(hpb.x), w2my(hpb.z), 8, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
-    g.strokeStyle = '#0c0816'; g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) - 3, w2my(hpb.z) + 3.5);
-    g.moveTo(w2mx(hpb.x) + 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z) + 3.5);
-    g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z)); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z));
-    g.stroke();
+    if (catVis('airport')) {
+      var hpb = GAME.city.helipad;
+      g.fillStyle = '#8de0ff';
+      g.beginPath(); g.arc(w2mx(hpb.x), w2my(hpb.z), 8, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+      g.strokeStyle = '#0c0816'; g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) - 3, w2my(hpb.z) + 3.5);
+      g.moveTo(w2mx(hpb.x) + 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z) + 3.5);
+      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z)); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z));
+      g.stroke();
+    }
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -436,6 +465,7 @@ GAME.hud = (function () {
     for (var pu = 0; pu < pk.length; pu++) {
       var pp = pk[pu];
       if (pp.taken || !PICKUP_BLIP[pp.type]) continue;
+      if (!catVis(pickupCat(pp.type))) continue;
       if (U.dist2(pp.pos.x, pp.pos.z, px, pz) > 150 * 150) continue;
       blip(pp.pos.x, pp.pos.z, PICKUP_BLIP[pp.type], 2.6 / zoom);
     }
@@ -446,6 +476,7 @@ GAME.hud = (function () {
       var sb = GAME.shops.blips();
       for (var sbi = 0; sbi < sb.length; sbi++) {
         var sbp = sb[sbi];
+        if (!catVis(sbp.home ? 'home' : 'shops')) continue;
         if (!sbp.home && U.dist2(sbp.x, sbp.z, px, pz) > 170 * 170) continue;
         if (sbp.home) {
           // clamp far homes to the radar rim so the direction still reads
@@ -462,7 +493,7 @@ GAME.hud = (function () {
       }
     }
     // active mission route (race checkpoints / current delivery stop)
-    var mroute = GAME.missions.getRoutePoints();
+    var mroute = catVis('objective') ? GAME.missions.getRoutePoints() : null;
     if (mroute && mroute.length) {
       g.strokeStyle = 'rgba(255,138,61,.95)';
       g.lineWidth = 2.4 / zoom;
@@ -474,7 +505,7 @@ GAME.hud = (function () {
       if (mobj) blip(mobj[0], mobj[1], '#ffe14f', 4.5 / zoom);
     }
     // nav route
-    if (GAME.nav.dest) {
+    if (GAME.nav.dest && catVis('dest')) {
       g.strokeStyle = 'rgba(141,255,216,.95)';
       g.lineWidth = 2.4 / zoom;
       g.beginPath();
@@ -486,7 +517,10 @@ GAME.hud = (function () {
       blip(GAME.nav.dest.x, GAME.nav.dest.z, '#ff8aff', 4.5 / zoom);
     }
     var mb = GAME.missions.getBlips();
-    for (var i = 0; i < mb.length; i++) blip(mb[i].x, mb[i].z, mb[i].color, mb[i].size);
+    for (var i = 0; i < mb.length; i++) {
+      if (mb[i].kind && !catVis(mb[i].kind)) continue;
+      blip(mb[i].x, mb[i].z, mb[i].color, mb[i].size);
+    }
     // airport + helipad landmarks: a ringed cyan blip so they stand out on the radar
     function landmark(x, z) {
       var lx = (x - px) * MAP_S, lz = (z - pz) * MAP_S;
@@ -495,9 +529,11 @@ GAME.hud = (function () {
       g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 / zoom;
       g.beginPath(); g.arc(lx, lz, 5.6 / zoom, 0, Math.PI * 2); g.stroke();
     }
-    landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
-    landmark(GAME.city.helipad.x, GAME.city.helipad.z);
-    if (GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
+    if (catVis('airport')) {
+      landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
+      landmark(GAME.city.helipad.x, GAME.city.helipad.z);
+    }
+    if (catVis('icecream') && GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
       var pc = cars[c];

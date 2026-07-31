@@ -166,8 +166,11 @@
   #map-hint { color:#cfe6ff; font-size:13px; margin-top:8px; }
   #map-legend { display:flex; flex-wrap:wrap; gap:3px 16px; justify-content:center; max-width:86vw; margin-top:8px;
     color:#cfe6ff; font-size:12.5px; }
-  #map-legend .lgd { display:inline-flex; align-items:center; gap:6px; }
+  #map-legend .lgd { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    padding:1px 6px; border-radius:6px; }
+  #map-legend .lgd:hover { background:rgba(255,255,255,.08); }
   #map-legend .lgd i { width:10px; height:10px; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.5); }
+  #map-legend .lgd.off { opacity:.32; text-decoration:line-through; }
   .mbtn { display:inline-block; margin:10px 8px 0; padding:8px 22px; border-radius:8px; cursor:pointer;
     background:rgba(255,105,180,.18); border:1px solid rgba(255,150,210,.6); color:#ffd9f2; font-weight:800; font-size:14px; }
   .mbtn:active { background:rgba(255,105,180,.45); }
@@ -304,7 +307,7 @@
   <div id="map-title">COSTA ROSA</div>
   <canvas id="bigmap" width="560" height="560"></canvas>
   <div id="map-legend"></div>
-  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
+  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; click a legend entry to hide / show those markers &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
   <div><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
 </div>
 
