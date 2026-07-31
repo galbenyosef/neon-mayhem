@@ -4,7 +4,7 @@
 // wheel on the pier. Every shop is a walk-in: stand on the glowing doormat and
 // the counter opens. The world freezes while you browse, the way the map does.
 GAME.shops = (function () {
-  var el = {}, openShop = null, sel = 0, locations = [], markerMesh = null, markerData = [];
+  var el = {}, openShop = null, sel = 0, armedIdx = -1, locations = [], markerMesh = null, markerData = [];
   var leftSince = {};   // reopen only after you step off the mat
   var spinProps = [];   // slow turntables: the showroom's display car, etc.
 
@@ -615,11 +615,23 @@ GAME.shops = (function () {
     list.forEach(function (it, i) {
       var row = document.createElement('div');
       var afford = P.cash >= it.price;
+      var buyable = !it.owned && !it.off && afford;
       row.className = 'shop-row' + (i === sel ? ' sel' : '') + ((it.off || !afford) && !it.owned ? ' off' : '') + (it.owned ? ' owned' : '');
       var sw = it.sw !== undefined ? '<span class="sw" style="background:#' + it.sw.toString(16).padStart(6, '0') + '"></span>' : '';
+      // Trying is free; paying is a second, deliberate act. A hover or first
+      // click only previews; the click ARMS the row and grows an explicit
+      // BUY chip, and only a click on an armed row (or Enter) pays. Nothing
+      // is armed when the counter opens, so no first click ever charges.
+      var armed = i === armedIdx && buyable;
+      var priceCell = it.owned ? 'YOURS'
+        : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
+          : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
-        '<div class="pr">' + (it.owned ? 'YOURS' : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE') + '</div>';
-      row.addEventListener('click', function () { sel = i; buy(it.id); });
+        '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
+      row.addEventListener('click', function () {
+        if (armedIdx !== i) { sel = i; armedIdx = i; render(); }
+        else buy(it.id);
+      });
       row.addEventListener('mouseenter', function () { if (sel !== i) { sel = i; render(); } });
       el.items.appendChild(row);
     });
@@ -740,14 +752,15 @@ GAME.shops = (function () {
     if (!loc || openShop) return false;
     openShop = loc;
     sel = 0;
+    armedIdx = -1;   // nothing is primed to buy until the player acts
     note('');
     var hint = $('shop-hint');
     if (hint) hint.textContent =
       loc.kind === 'dress' || loc.kind === 'barber'
-        ? 'W/S browse — the mirror shows YOU wearing the highlighted item  ·  Enter buy  ·  Esc leave'
+        ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY pays  ·  Esc leave'
         : loc.kind === 'showroom'
-          ? 'W/S browse — the turntable shows the machine itself  ·  Enter buy  ·  Esc leave'
-          : 'W/S select  ·  Enter buy  ·  Esc leave  ·  or click';
+          ? 'Click or W/S to put it on the turntable  ·  BUY pays  ·  Esc leave'
+          : 'Click or W/S to select  ·  BUY (or Enter) pays  ·  Esc leave';
     el.screen.style.display = 'flex';
     GAME.shopOpen = true;
     if (document.exitPointerLock) document.exitPointerLock();
@@ -772,8 +785,8 @@ GAME.shops = (function () {
   function onKey(e) {
     if (!GAME.shopOpen || !openShop) return;
     var list = items(openShop);
-    if (e.code === 'KeyS' || e.code === 'ArrowDown') { sel = (sel + 1) % list.length; render(); }
-    else if (e.code === 'KeyW' || e.code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; render(); }
+    if (e.code === 'KeyS' || e.code === 'ArrowDown') { sel = (sel + 1) % list.length; armedIdx = sel; render(); }
+    else if (e.code === 'KeyW' || e.code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; armedIdx = sel; render(); }
     else if (e.code === 'Enter' || e.code === 'KeyE') { if (list[sel]) buy(list[sel].id); }
   }
 

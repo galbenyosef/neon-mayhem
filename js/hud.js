@@ -88,7 +88,14 @@ GAME.hud = (function () {
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
       GAME.track('save-exported');
     });
-    pauseBtn('pause-import', function () { $('save-file').click(); });
+    pauseBtn('pause-import', function () {
+      // an import is an overwrite: make sure the player knows the life they
+      // are living right now is about to be replaced, and offer the way out
+      if (!window.confirm(
+        'Importing a save REPLACES your current progress — cash, property, garage, look, everything.\n\n' +
+        'If you want to keep this life, press Cancel and use EXPORT SAVE first.\n\nImport and overwrite?')) return;
+      $('save-file').click();
+    });
     $('save-file').addEventListener('change', function () {
       var f = this.files && this.files[0];
       this.value = '';
