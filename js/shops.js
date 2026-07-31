@@ -6,6 +6,7 @@
 GAME.shops = (function () {
   var el = {}, openShop = null, sel = 0, locations = [], markerMesh = null, markerData = [];
   var leftSince = {};   // reopen only after you step off the mat
+  var spinProps = [];   // slow turntables: the showroom's display car, etc.
 
   // sign-atlas slots for the storefront names — indexes into city.js SIGN_TEXTS,
   // which appends these nine in this exact order after 'ISLA ROSA' (slot 33)
@@ -48,9 +49,17 @@ GAME.shops = (function () {
     { id: 'cyan', name: 'Electric Cyan', hex: 0x38c8e8 }
   ];
 
+  // the same skin palette the crowd draws from — but the player's tone is
+  // rolled once and saved, so "you" look like you every session, and the
+  // changing-room mannequin can be an honest mirror
+  var SKINS = [0xeac8a8, 0xc89878, 0x8a6848, 0x6a4c34, 0xf0d8c0];
   function outfit() {
     GAME.prefs = GAME.prefs || {};
     if (!GAME.prefs.outfit) GAME.prefs.outfit = { shirt: 'white', pants: 'teal', hairStyle: 'crew', hairColor: 'black' };
+    if (!GAME.prefs.outfit.skin) {
+      GAME.prefs.outfit.skin = SKINS[Math.floor(Math.random() * SKINS.length)];
+      GAME.save();
+    }
     return GAME.prefs.outfit;
   }
   function byId(list, id, fallback) {
@@ -66,6 +75,7 @@ GAME.shops = (function () {
     var j = P.mesh.userData.joints;
     j.torso.material.color.setHex(byId(SHIRTS, o.shirt).hex);
     j.legL.children[0].material.color.setHex(byId(PANTS, o.pants).hex);
+    j.head.material.color.setHex(o.skin);
     // hair rides the head so aiming poses carry it
     if (P.hairMesh) { P.hairMesh.parent.remove(P.hairMesh); disposeTree(P.hairMesh); P.hairMesh = null; }
     var hair = GAME.peds.makeHair(o.hairStyle, byId(HAIRCOLORS, o.hairColor).hex);
@@ -351,7 +361,9 @@ GAME.shops = (function () {
       { id: 'hardware0', kind: 'hardware', name: 'ROSA HARDWARE', tag: 'Tools for loud problems', at: clearSpot(361, -64), color: 0xffd24a },
       { id: 'dress0', kind: 'dress', name: 'THREADS', tag: 'The changing room is that way', at: clearSpot(361, 92), color: 0xff8fd0 },
       { id: 'barber0', kind: 'barber', name: 'CORTES CUTS', tag: 'Walk-ins welcome', at: clearSpot(361, -120), color: 0x8fd0ff },
-      { id: 'showroom0', kind: 'showroom', name: 'GRAN ROSA MOTORS', tag: 'Special orders, delivered outside', at: clearSpot(-160, 378), forecourt: { x: -176, z: 386 }, heading: Math.PI / 2, color: 0x8dffd8 },
+      // the dealership sits on the southern arterial with room for a glass
+      // hall and a forecourt — it used to squat at the airport's entry gate
+      { id: 'showroom0', kind: 'showroom', name: 'GRAN ROSA MOTORS', tag: 'Special orders, delivered outside', at: clearSpot(90, 378), forecourt: { x: 64, z: 384 }, heading: Math.PI / 2, color: 0x8dffd8 },
       { id: 'casino0', kind: 'casino', name: 'THE LUCKY GULL', tag: 'A wheel, a bird, your wallet', at: clearSpot(448, 250), color: 0xffe14f }
     ];
     // a bribe desk at every station, both sides of the channel
@@ -387,13 +399,16 @@ GAME.shops = (function () {
   // mat was placed off of, and the whole footprint is vetted against solids,
   // roads, water and ramps — with sideways nudges before giving up.
   function buildShopfronts(scene) {
+    // Each trade gets its own building, sized and dressed for what it sells —
+    // not one grey hut with different labels. Walls are tinted per kind so the
+    // row of shops reads at a glance against the city's plain blocks.
     var SIZES = {
-      hardware: { w: 10, d: 7, h: 5 },
-      dress: { w: 9, d: 6.5, h: 4.6 },
-      barber: { w: 8, d: 6, h: 4.2 },
-      showroom: { w: 18, d: 10, h: 6 },
-      casino: { w: 5.5, d: 5, h: 3.8 },
-      safehouse: { w: 9, d: 7, h: 7.5 }
+      hardware: { w: 14, d: 9, h: 6, wall: 0xd8a25a },
+      dress: { w: 13, d: 8, h: 5.5, wall: 0xf0c8dc },
+      barber: { w: 10, d: 7, h: 5, wall: 0xbcd8f0 },
+      showroom: { w: 26, d: 15, h: 7.5, wall: 0x3c4258 },
+      casino: { w: 9, d: 8, h: 5.5, wall: 0xe8c86a },
+      safehouse: { w: 10, d: 8, h: 9, wall: 0xc8bca8 }
     };
     var walls = new GeoBatch();      // window-textured shells
     var trims = new GeoBatch();      // doors, awnings, roof lips (unlit color)
@@ -465,24 +480,79 @@ GAME.shops = (function () {
       if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
       var gy = GAME.city.groundY(placed.cx, placed.cz);
       // shell, sunk half a metre so sloped ground never shows a gap
-      walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, 0xb9a8d8, 28);
+      walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, S.wall, 28);
       trims.addBox(placed.cx, gy + S.h + 0.22, placed.cz, placed.sx + 0.6, 0.34, placed.sz + 0.6, 0, 0x241a36, 0);
       GAME.city.addSolid(placed.cx, placed.cz, placed.sx, placed.sz, gy + S.h);
-      // door face bits sit proud of the wall plane
+      // the door face and its outward normal (-dir); everything on the
+      // facade hangs off these
       var fx = placed.cx - dir.x * (S.d / 2), fz = placed.cz - dir.z * (S.d / 2);
-      var doorW = Math.min(2.4, S.w - 2);
+      var px2 = { x: dir.z, z: -dir.x };  // along-facade axis
+      var doorW = Math.min(2.6, S.w - 2);
+      function onFace(out, along, y, w, h, thick, color) {
+        // a box on the facade plane: `along` slides it sideways, `out` stands
+        // it proud, w × h in the face, `thick` into it
+        trims.addBox(fx - dir.x * out + px2.x * along, y, fz - dir.z * out + px2.z * along,
+          dir.x !== 0 ? thick : w, h, dir.x !== 0 ? w : thick, 0, color, 0);
+      }
       // door
-      trims.addBox(fx - dir.x * 0.09, gy + 1.5, fz - dir.z * 0.09,
-        dir.x !== 0 ? 0.18 : doorW, 3.0, dir.x !== 0 ? doorW : 0.18, 0, 0x120c1e, 0);
+      onFace(0.09, 0, gy + 1.5, doorW, 3.0, 0.18, 0x120c1e);
       // awning in the shop's color
-      trims.addBox(fx - dir.x * 0.55, gy + 3.1, fz - dir.z * 0.55,
-        dir.x !== 0 ? 1.1 : S.w - 1.2, 0.16, dir.x !== 0 ? S.w - 1.2 : 1.1, 0, loc.color, 0);
+      onFace(0.55, 0, gy + 3.15, S.w - 1.2, 0.16, 1.1, loc.color);
+      // ---- per-trade dressing ----
+      if (loc.kind === 'dress') {
+        // lit display windows flanking the door, a dressed dummy in each
+        [-1, 1].forEach(function (sside) {
+          var off = sside * (doorW / 2 + 2.4);
+          onFace(0.12, off, gy + 1.7, 3.2, 2.6, 0.14, 0xfff4e0);
+          onFace(0.3, off, gy + 1.15, 0.5, 0.9, 0.3, sside < 0 ? 0xf78ab8 : 0x8fd0f0);
+          onFace(0.3, off, gy + 1.85, 0.34, 0.34, 0.3, 0xeac8a8);
+        });
+      } else if (loc.kind === 'barber') {
+        // the pole: red-white-blue courses, standing proud beside the door
+        for (var pb = 0; pb < 6; pb++) {
+          onFace(0.6, doorW / 2 + 1.1, gy + 1.1 + pb * 0.34, 0.34, 0.34, 0.34,
+            pb % 3 === 0 ? 0xe23a3a : pb % 3 === 1 ? 0xf2f2f2 : 0x3a6ae2);
+        }
+        onFace(0.12, -(doorW / 2 + 1.9), gy + 1.8, 2.4, 2.2, 0.14, 0xfff4e0);
+      } else if (loc.kind === 'hardware') {
+        // roller door beside the entrance and a steel band over the front
+        onFace(0.1, doorW / 2 + 2.6, gy + 1.6, 4.0, 3.2, 0.16, 0x585c66);
+        onFace(0.14, 0, gy + S.h - 1.9, S.w - 1.0, 0.5, 0.2, 0x585c66);
+      } else if (loc.kind === 'casino') {
+        // the gull's wheel over the door, wedge-striped in gold and night
+        for (var cs = 0; cs < 8; cs++) {
+          var ca = cs / 8 * Math.PI * 2;
+          onFace(0.25, Math.cos(ca) * 1.5, gy + S.h + 1.5 + Math.sin(ca) * 1.5, 0.8, 0.8, 0.3,
+            cs % 2 ? 0xffe14f : 0x241a36);
+        }
+      } else if (loc.kind === 'showroom') {
+        // a glass hall: full-width lit glazing, and the trade's own proof —
+        // a machine on a turntable out front (spun in update())
+        onFace(0.12, 0, gy + 2.3, S.w - 2, 4.2, 0.14, 0x9fd8e8);
+        onFace(0.2, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x8dffd8);
+        var plX = fx - dir.x * 7 + px2.x * (S.w / 2 - 3);
+        var plZ = fz - dir.z * 7 + px2.z * (S.w / 2 - 3);
+        trims.addBox(plX, gy + 0.4, plZ, 4.4, 0.8, 4.4, 0, 0x8dffd8, 0);
+        GAME.city.addSolid(plX, plZ, 4.4, 4.4, gy + 0.8, 'prop', true);
+        var showCar = GAME.vehicles.buildMesh('sports');
+        if (showCar) {
+          showCar.position.set(plX, gy + 0.8, plZ);
+          scene.add(showCar);
+          spinProps.push({ mesh: showCar, rate: 0.35 });
+        }
+      } else if (loc.kind === 'safehouse') {
+        // a home: upstairs window band and a lamp by the door
+        onFace(0.12, 0, gy + S.h - 2.2, S.w - 3, 1.6, 0.14, 0xffe9b0);
+        onFace(0.45, doorW / 2 + 0.8, gy + 3.4, 0.3, 0.5, 0.3, 0xffd890);
+      }
       // the name in lights
       var slot = SIGN_SLOT[loc.id];
       if (slot !== undefined) {
         var rotY = dir.x !== 0 ? (dir.x < 0 ? Math.PI / 2 : -Math.PI / 2) : (dir.z < 0 ? 0 : Math.PI);
-        GAME.city.addSign(signs, slot, fx - dir.x * 0.16, gy + S.h - 0.85, fz - dir.z * 0.16,
-          rotY, Math.min(S.w - 0.8, 9), 1.5);
+        // a dark board behind the glyphs so the name reads day and night
+        onFace(0.12, 0, gy + S.h - 0.85, Math.min(S.w - 0.8, 11) + 0.8, 1.9, 0.14, 0x14101f);
+        GAME.city.addSign(signs, slot, fx - dir.x * 0.22, gy + S.h - 0.85, fz - dir.z * 0.22,
+          rotY, Math.min(S.w - 0.8, 11), 1.6);
       }
     });
     var wallMesh = new THREE.Mesh(walls.build(), GAME.city.lam(GAME.city.tex.strip));
@@ -569,13 +639,13 @@ GAME.shops = (function () {
     if (pv.renderer) return;
     var canvas = $('shop-preview');
     pv.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-    pv.renderer.setSize(240, 280, false);
+    pv.renderer.setSize(300, 340, false);
     pv.scene = new THREE.Scene();
     pv.scene.add(new THREE.HemisphereLight(0xcfd8ff, 0x2a2038, 1.0));
     var dl = new THREE.DirectionalLight(0xfff0d8, 0.9);
     dl.position.set(3, 5, 4);
     pv.scene.add(dl);
-    pv.cam = new THREE.PerspectiveCamera(38, 240 / 280, 0.1, 60);
+    pv.cam = new THREE.PerspectiveCamera(38, 300 / 340, 0.1, 60);
   }
   function clearPvObj() {
     if (!pv.obj) return;
@@ -584,7 +654,7 @@ GAME.shops = (function () {
     pv.obj = null;
   }
   function previewOutfit(it) {
-    var o = { shirt: outfit().shirt, pants: outfit().pants, hairStyle: outfit().hairStyle, hairColor: outfit().hairColor };
+    var o = { shirt: outfit().shirt, pants: outfit().pants, hairStyle: outfit().hairStyle, hairColor: outfit().hairColor, skin: outfit().skin };
     if (it) {
       if (it.id.indexOf('shirt_') === 0) o.shirt = it.id.slice(6);
       else if (it.id.indexOf('pants_') === 0) o.pants = it.id.slice(6);
@@ -615,9 +685,11 @@ GAME.shops = (function () {
       pv.cam.position.set(r * 0.75, spec.l * 0.28 + 1.6, r * 0.75);
       pv.cam.lookAt(0, Math.max(0.8, spec.l * 0.1), 0);
     } else {
+      // an honest mirror: YOUR skin, YOUR current outfit, with only the
+      // hovered row swapped in — this is exactly how you'd walk out
       var o = previewOutfit(it);
-      var pkey = 'ped:' + o.shirt + '/' + o.pants + '/' + o.hairStyle + '/' + o.hairColor;
-      if (tag) tag.textContent = it.name;
+      var pkey = 'ped:' + o.shirt + '/' + o.pants + '/' + o.hairStyle + '/' + o.hairColor + '/' + o.skin;
+      if (tag) tag.textContent = 'YOU · wearing ' + it.name.replace(/^(SHIRT|PANTS|CUT|COLOR) · /, '');
       if (pkey === pv.key) return;
       pv.key = pkey;
       clearPvObj();
@@ -628,6 +700,7 @@ GAME.shops = (function () {
       j.armR.children[0].material = j.torso.material;
       j.legL.children[0].material = new THREE.MeshLambertMaterial({ color: byId(PANTS, o.pants).hex });
       j.legR.children[0].material = j.legL.children[0].material;
+      j.head.material = new THREE.MeshLambertMaterial({ color: o.skin });
       var hair = GAME.peds.makeHair(o.hairStyle, byId(HAIRCOLORS, o.hairColor).hex);
       if (hair) { hair.position.y = 1.6; m.add(hair); }
       pv.obj = m;
@@ -668,6 +741,13 @@ GAME.shops = (function () {
     openShop = loc;
     sel = 0;
     note('');
+    var hint = $('shop-hint');
+    if (hint) hint.textContent =
+      loc.kind === 'dress' || loc.kind === 'barber'
+        ? 'W/S browse — the mirror shows YOU wearing the highlighted item  ·  Enter buy  ·  Esc leave'
+        : loc.kind === 'showroom'
+          ? 'W/S browse — the turntable shows the machine itself  ·  Enter buy  ·  Esc leave'
+          : 'W/S select  ·  Enter buy  ·  Esc leave  ·  or click';
     el.screen.style.display = 'flex';
     GAME.shopOpen = true;
     if (document.exitPointerLock) document.exitPointerLock();
@@ -721,6 +801,7 @@ GAME.shops = (function () {
       // owned property mats calm down to a steady glow
       if (m.loc.kind === 'safehouse' && owns(m.loc.sh.id)) m.ring.material.opacity = 0.35;
     }
+    for (var sp = 0; sp < spinProps.length; sp++) spinProps[sp].mesh.rotation.y += dt * spinProps[sp].rate;
     if (GAME.shopOpen || !GAME.started || P.state !== 'alive') return;
     var unlocked = !GAME.isla || GAME.isla.isOpen();
     for (var k = 0; k < locations.length; k++) {
