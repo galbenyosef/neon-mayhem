@@ -854,8 +854,7 @@ GAME.shops = (function () {
         x: loc.at.x, z: loc.at.z,
         color: home ? '#5dff9e' : '#' + loc.color.toString(16).padStart(6, '0'),
         label: loc.kind === 'safehouse' ? (home ? '⌂' : '$') : '$',
-        home: home,
-        name: loc.kind === 'safehouse' ? loc.sh.name : null
+        home: home
       });
     }
     return out;

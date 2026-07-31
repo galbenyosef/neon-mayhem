@@ -224,7 +224,8 @@ GAME.hud = (function () {
     if (GAME.shops) GAME.shops.blips().forEach(function (s) {
       if (!s.home) { badge(s.x, s.z, s.color, s.label); return; }
       // property you OWN is a landmark, not a shop dot: a ringed disc with a
-      // drawn house (fonts can't be trusted with ⌂) and the name beside it
+      // drawn house (fonts can't be trusted with ⌂) — the legend does the
+      // talking, the way a map should
       var hx = w2mx(s.x), hy = w2my(s.z);
       g.fillStyle = s.color;
       g.beginPath(); g.arc(hx, hy, 11, 0, Math.PI * 2); g.fill();
@@ -236,15 +237,6 @@ GAME.hud = (function () {
       g.fillRect(hx - 4, hy - 0.5, 8, 5.5); // walls
       g.fillStyle = s.color;
       g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
-      if (s.name) {
-        g.font = 'bold 11px Arial, sans-serif';
-        g.textAlign = 'left'; g.textBaseline = 'middle';
-        g.strokeStyle = 'rgba(8,4,18,.9)'; g.lineWidth = 3;
-        g.strokeText(s.name, hx + 15, hy);
-        g.fillStyle = '#c8ffe0';
-        g.fillText(s.name, hx + 15, hy);
-        g.textAlign = 'center';
-      }
     });
     badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
     if (GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
