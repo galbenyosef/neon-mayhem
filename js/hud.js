@@ -179,7 +179,11 @@ GAME.hud = (function () {
   var mapScale = 1, mapOffY = 0;
   function drawBigMap() {
     var cv = el.bigmap;
-    var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * 0.68 * MAP_W / MAP_H, 900));
+    // short screens hand more of their height to the legend and buttons —
+    // a map you can see all of beats a bigger map with the CLOSE button
+    // pushed off the bottom
+    var hFactor = window.innerHeight < 460 ? 0.52 : 0.68;
+    var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * hFactor * MAP_W / MAP_H, 900));
     cv.width = size; cv.height = Math.floor(size * MAP_H / MAP_W);
     var g = cv.getContext('2d');
     mapScale = size / MAP_W; mapOffY = 0;
