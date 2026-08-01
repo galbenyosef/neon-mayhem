@@ -171,6 +171,8 @@
   #map-legend .lgd:hover { background:rgba(255,255,255,.08); }
   #map-legend .lgd i { width:10px; height:10px; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.5); }
   #map-legend .lgd.off { opacity:.32; text-decoration:line-through; }
+  /* fingers need bigger targets than mouse pointers do */
+  @media (pointer:coarse) { #map-legend .lgd { padding:6px 10px; } }
   .mbtn { display:inline-block; margin:10px 8px 0; padding:8px 22px; border-radius:8px; cursor:pointer;
     background:rgba(255,105,180,.18); border:1px solid rgba(255,150,210,.6); color:#ffd9f2; font-weight:800; font-size:14px; }
   .mbtn:active { background:rgba(255,105,180,.45); }

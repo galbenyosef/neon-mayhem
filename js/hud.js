@@ -162,7 +162,16 @@ GAME.hud = (function () {
         '<i style="background:' + e[0] + '"></i>' + e[1] + '</span>';
     }).join('');
     for (var i = 0; i < box.children.length; i++) {
-      box.children[i].addEventListener('click', function () { toggleCat(this.getAttribute('data-k')); });
+      // taps don't reliably become clicks in this app (same reason the pause
+      // screen and fs button bind both); touchend's preventDefault also stops
+      // the browser double-firing a synthetic click after it
+      ['click', 'touchend'].forEach(function (ev) {
+        box.children[i].addEventListener(ev, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleCat(this.getAttribute('data-k'));
+        });
+      });
     }
   }
 
