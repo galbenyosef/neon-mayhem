@@ -16,6 +16,22 @@ GAME.aircraft = (function () {
     GAME.hud.message('RESTRICTED AIRSPACE — turn back.', 2.5);
   }
 
+  // The airframe wears its damage out loud. Hard landings and wall grazes
+  // chip aircraft hp silently, and the first anyone knew was the explosion
+  // on the next takeoff — "I was at 100% health" (the PLAYER was; the
+  // aircraft wasn't). Threshold crossings now announce themselves.
+  function warnAirframe(car) {
+    var f = car.hp / car.spec.hp;
+    if (f <= 0.2 && car.airframeWarn !== 2) {
+      car.airframeWarn = 2;
+      GAME.hud.message('The airframe is coming apart — one more knock ends it.', 3.5);
+      GAME.audio.sting('busted');
+    } else if (f <= 0.45 && f > 0.2 && car.airframeWarn !== 1) {
+      car.airframeWarn = 1;
+      GAME.hud.message('The airframe is damaged — land gently.', 3);
+    }
+  }
+
   // arcade helicopter: collective (up/down), cyclic (nose tilt = forward),
   // pedal (yaw). Called from player.js while the player flies a heli.
   function updateHeli(dt) {
@@ -70,6 +86,7 @@ GAME.aircraft = (function () {
 
     GAME.audio.engineState(true, 0.42 + Math.min(0.5, Math.abs(car.heliSpeed) / car.spec.maxSpeed * 0.4 + (up > 0 ? 0.15 : 0)), 'heli');
     car.mesh.rotation.set(fwd * -0.16, car.heading, -yaw * 0.18);
+    warnAirframe(car);
   }
 
   // arcade fixed-wing: throttle for speed, pitch to climb once past stall,
@@ -186,6 +203,7 @@ GAME.aircraft = (function () {
     GAME.audio.engineState(true, 0.35 + Math.min(0.6, car.speed / car.spec.maxSpeed * 0.6), 'plane');
     // bank into turns on top of any barrel roll the pilot is holding
     car.mesh.rotation.set(-car.pitch, car.heading, car.roll - yawIn * 0.4);
+    warnAirframe(car);
   }
 
   function startParachute(x, y, z, heading) {

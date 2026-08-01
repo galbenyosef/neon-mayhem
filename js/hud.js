@@ -591,6 +591,19 @@ GAME.hud = (function () {
     var P = GAME.player;
     el['health-fill'].style.width = U.clamp(P.health, 0, 100) + '%';
     el['armor-fill'].style.width = U.clamp(P.armor, 0, 100) + '%';
+    // aircraft wear their condition on the HUD: their damage is otherwise
+    // invisible until the explosion, and "wasted out of nowhere" was just a
+    // dying airframe nobody could see
+    var vl = document.getElementById('vehicle-line');
+    if (vl) {
+      var av = P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane) ? P.car : null;
+      if (av) {
+        var af = U.clamp(av.hp / av.spec.hp, 0, 1);
+        vl.textContent = 'AIRFRAME ' + Math.round(af * 100) + '%';
+        vl.style.color = af > 0.6 ? '#8dffd8' : af > 0.3 ? '#ffd24a' : '#ff5d7a';
+        vl.style.display = 'block';
+      } else vl.style.display = 'none';
+    }
     if (msgT > 0) { msgT -= dt; if (msgT <= 0) el['msg-line'].style.opacity = 0; }
     if (radioT > 0) { radioT -= dt; if (radioT <= 0) el['radio-popup'].style.opacity = 0; }
     zoneT -= dt;

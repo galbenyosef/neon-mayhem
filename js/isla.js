@@ -405,7 +405,10 @@ GAME.isla = (function () {
   // — the ground has to come back to the terrain somewhere, and over 16 m an
   // eight-metre difference is a wall. The width follows the height difference
   // instead, so the batter always lies back at roughly the same angle.
-  var CUT_SLOPE = 0.26, MIN_SHOULDER = 10, MAX_SHOULDER = 64;
+  // MIN_SHOULDER wide enough that even a shallow cut pulls a band of mesh
+  // vertices down to road level — narrow shoulders under a coarse mesh were
+  // how a road could vanish beneath the grass
+  var CUT_SLOPE = 0.26, MIN_SHOULDER = 14, MAX_SHOULDER = 64;
   var GX0 = 0, GZ0 = 0, GNX = 0, GNZ = 0, GCELL = 40, GRID = null;
   var sBestD = null, sBestT = null, sStamp = null, stampCtr = 0;
 
@@ -746,7 +749,11 @@ GAME.isla = (function () {
   // the land as a polar mesh, so the coast is the mesh edge and the relief is
   // whatever groundY says — the roads are already cut into it
   function buildLand(b) {
-    var RINGS = 34, SECT = 128;
+    // Fine enough that a road cutting always catches mesh vertices: at the
+    // old 128x34 a ~20m coast cell could straddle a shallow 14m-wide cut
+    // completely, and the grass roofed over the road — the north bridge
+    // landed on a ring road nobody could see.
+    var RINGS = 52, SECT = 192;
     for (var s = 0; s < SECT; s++) {
       var a0 = s / SECT * TAU, a1 = (s + 1) / SECT * TAU;
       for (var r = 0; r < RINGS; r++) {

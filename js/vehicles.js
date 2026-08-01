@@ -851,7 +851,10 @@ GAME.vehicles = (function () {
       if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
         for (var c = 0; c < world.cars.length; c++) {
-          if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60) { clear = false; break; }
+          if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60 &&
+            Math.abs(world.cars[c].pos.y - (sp.y || 0)) < 6) { clear = false; break; }
+          // the check is height-aware: street traffic 72m below the tower's
+          // helipad must not block the helicopter from appearing on it
         }
         if (!clear) continue;
         var types = sp.isla ? ['sedan', 'buggy', 'pickup', 'van', 'limo', 'sports']

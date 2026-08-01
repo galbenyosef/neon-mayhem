@@ -34,9 +34,13 @@ GAME.city = (function () {
     return 432 + 20 * Math.sin(z * 0.006) + 8 * Math.sin(z * 0.021 + 2);
   };
   // the city is an island: curved waterlines on the other three sides
-  city.westShore = function (z) { return -512 + 7 * Math.sin(z * 0.009 + 1.5); };
-  city.northShore = function (x) { return -512 + 7 * Math.sin(x * 0.011 + 4); };
-  city.southShore = function (x) { return 512 + 7 * Math.sin(x * 0.013 + 2); };
+  // These waterlines are the LOGICAL coast, and they must not be more
+  // generous than the drawn land plane (x -500..360, z -500..500): the old
+  // curved shores reached up to 19m past it, leaving a band of "dry" open
+  // sea on three sides where a car could drive along the water's surface.
+  city.westShore = function (z) { return -498; };
+  city.northShore = function (x) { return -498; };
+  city.southShore = function (x) { return 498; };
   // the east piers. The z=150 slot belongs to the south bridge now, so the
   // pier that used to sit there stepped down a block.
   var PIERS = [[250, 505], [-180, 470]];
@@ -992,7 +996,11 @@ GAME.city = (function () {
     var twr = new GeoBatch();
     twr.addBox(-100, 55, -100, 26, 110, 26, Math.PI / 4, 0x9aa8d0, 32);
     twr.addBox(-100, 113, -100, 14, 6, 14, Math.PI / 4, 0x30284a, 0);
-    addSolid(-100, -100, 30, 30, 110);
+    // the tower is rotated 45°: its AABB is 26·√2 ≈ 37 wide. The old 30x30
+    // solid undershot the corners, so a helicopter setting down near one
+    // stood on air and fell through "the roof". The crown gets its own cap.
+    addSolid(-100, -100, 37, 37, 110);
+    addSolid(-100, -100, 15, 15, 111.2);
     var twrTex = windowTexture('#0e1226', ['#a8e8ff', '#ffd0e8', '#ffe9a8'], 10, 9, 0.6);
     var twrMesh = new THREE.Mesh(twr.build(), new THREE.MeshLambertMaterial({ map: twrTex, emissive: 0xccccdd, emissiveMap: twrTex, vertexColors: true }));
     twrMesh.matrixAutoUpdate = false;
@@ -1002,8 +1010,10 @@ GAME.city = (function () {
     crown.rotation.y = Math.PI / 4;
     scene.add(crown);
     var signB = new GeoBatch();
-    addSign(signB, 21, -100, 119, -100, 0, 26, 5);
-    addSign(signB, 21, -100, 119, -100, Math.PI, 26, 5);
+    // the two faces used to sit in the SAME plane — two double-sided quads
+    // fighting for depth is exactly the flicker the name board showed
+    addSign(signB, 21, -100, 119, -100.25, 0, 26, 5);
+    addSign(signB, 21, -100, 119, -99.75, Math.PI, 26, 5);
     var sm = new THREE.Mesh(signB.build(), city.signMesh.material);
     sm.matrixAutoUpdate = false;
     scene.add(sm);

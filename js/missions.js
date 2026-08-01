@@ -1068,9 +1068,17 @@ GAME.missions = (function () {
         else if (P.car.type === 'ambulance') jobKind = 'ambulance';
         else if (P.car.type === 'icecream') jobKind = 'icecream';
       }
-      GAME.jobAvailable = jobKind;
+      // Nobody hires a driver the police are actively chasing: no mission or
+      // shift starts while you carry stars. Lose the heat first — respray,
+      // bribe, or lie low.
+      var hot = GAME.police.wanted > 0;
+      GAME.jobAvailable = hot ? null : jobKind;
       if (jobKind && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
         GAME.input.touch.job = false;
+        if (hot) {
+          GAME.hud.message('Nobody rides with the heat on you — lose the stars first.', 2.5);
+          return;
+        }
         startJob(jobKind);
         return;
       }
@@ -1092,11 +1100,13 @@ GAME.missions = (function () {
         // name what the marker is (and what it wants) whenever you're standing near it
         if (dd < 34 * 34) {
           var label = TYPE_LABEL[d.type] + ' · ' + d.name;
-          if (need && !P.inCar) label += '   —   come back in a vehicle';
+          if (hot) label += '   —   lose the heat first';
+          else if (need && !P.inCar) label += '   —   come back in a vehicle';
           else if (d.type === 'race' && air) label += '   —   not in an aircraft';
           else if (dd < (need ? 20 : 7)) label += '   —   starting…';
           if (!hint || dd < hint.d) hint = { d: dd, text: label };
         }
+        if (hot) continue;   // wanted stars close every start line
         if (need && !P.inCar) continue;
         // no cheesing a street race from a helicopter or plane
         if (d.type === 'race' && air) continue;
