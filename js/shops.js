@@ -4,7 +4,7 @@
 // wheel on the pier. Every shop is a walk-in: stand on the glowing doormat and
 // the counter opens. The world freezes while you browse, the way the map does.
 GAME.shops = (function () {
-  var el = {}, openShop = null, sel = 0, armedIdx = -1, locations = [], markerMesh = null, markerData = [];
+  var el = {}, openShop = null, sel = 0, pendingBuy = null, locations = [], markerMesh = null, markerData = [];
   var leftSince = {};   // reopen only after you step off the mat
   var spinProps = [];   // slow turntables: the showroom's display car, etc.
 
@@ -36,7 +36,11 @@ GAME.shops = (function () {
   ];
   var HAIRSTYLES = [
     { id: 'crew', name: 'Crew Cut' },
-    { id: 'flat', name: 'Flattop' },
+    { id: 'flattop', name: 'Flattop' },
+    { id: 'pompadour', name: 'Pompadour' },
+    { id: 'mullet', name: 'Mullet' },
+    { id: 'afro', name: 'Afro' },
+    { id: 'ponytail', name: 'Ponytail' },
     { id: 'mohawk', name: 'Mohawk' },
     { id: 'buzz', name: 'Shaved (back to bald)' }
   ];
@@ -60,6 +64,7 @@ GAME.shops = (function () {
       GAME.prefs.outfit.skin = SKINS[Math.floor(Math.random() * SKINS.length)];
       GAME.save();
     }
+    if (GAME.prefs.outfit.hairStyle === 'flat') GAME.prefs.outfit.hairStyle = 'flattop'; // old save id
     return GAME.prefs.outfit;
   }
   function byId(list, id, fallback) {
@@ -90,7 +95,7 @@ GAME.shops = (function () {
   // ---------- safehouses ----------
   var SAFEHOUSES = [
     { id: 'dock', name: 'DOCKSIDE FLAT', price: 6000, at: { x: -404, z: 64 }, tag: 'A cot over the harbor. It counts.' },
-    { id: 'condo', name: 'STRIP CONDO', price: 18000, at: { x: 361, z: 208 }, tag: 'Neon out every window.' },
+    { id: 'condo', name: 'STRIP CONDO', price: 18000, at: { x: 337, z: 208 }, tag: 'Neon out every window.' },
     { id: 'villa', name: 'MARINA VILLA', price: 45000, at: null, isla: true, tag: 'The good life, across the channel.' }
   ];
   function ownedList() {
@@ -173,12 +178,14 @@ GAME.shops = (function () {
     return rows;
   }
   function barberItems() {
+    // cuts first, then dye — and the dye rows say HAIR COLOR out loud, because
+    // an unlabeled color swatch next to a head reads as something it isn't
     var o = outfit(), rows = [];
     HAIRSTYLES.forEach(function (s) {
       rows.push({ id: 'style_' + s.id, name: 'CUT · ' + s.name, price: 150, owned: o.hairStyle === s.id, ds: o.hairStyle === s.id ? 'Your current cut.' : '' });
     });
     HAIRCOLORS.forEach(function (s) {
-      rows.push({ id: 'color_' + s.id, name: 'COLOR · ' + s.name, price: 100, sw: s.hex, owned: o.hairColor === s.id, ds: o.hairColor === s.id ? 'Your current color.' : '' });
+      rows.push({ id: 'color_' + s.id, name: 'HAIR COLOR · ' + s.name, price: 100, sw: s.hex, owned: o.hairColor === s.id, ds: o.hairColor === s.id ? 'Your current color.' : '' });
     });
     return rows;
   }
@@ -358,9 +365,12 @@ GAME.shops = (function () {
   function buildLocations() {
     var stations = GAME.city.pois.stations || [];
     locations = [
-      { id: 'hardware0', kind: 'hardware', name: 'ROSA HARDWARE', tag: 'Tools for loud problems', at: clearSpot(361, -64), color: 0xffd24a },
-      { id: 'dress0', kind: 'dress', name: 'THREADS', tag: 'The changing room is that way', at: clearSpot(361, 92), color: 0xff8fd0 },
-      { id: 'barber0', kind: 'barber', name: 'CORTES CUTS', tag: 'Walk-ins welcome', at: clearSpot(361, -120), color: 0x8fd0ff },
+      // the strip shops live IN the western building row, facing the strip —
+      // reserved slots in city.js keep those footprints clear, so the shops
+      // replace nameless blocks instead of squatting on the beach footpath
+      { id: 'hardware0', kind: 'hardware', name: 'ROSA HARDWARE', tag: 'Tools for loud problems', at: clearSpot(337, -64), color: 0xffd24a },
+      { id: 'dress0', kind: 'dress', name: 'THREADS', tag: 'The changing room is that way', at: clearSpot(337, 92), color: 0xff8fd0 },
+      { id: 'barber0', kind: 'barber', name: 'CORTES CUTS', tag: 'Walk-ins welcome', at: clearSpot(337, -120), color: 0x8fd0ff },
       // the dealership sits on the southern arterial with room for a glass
       // hall and a forecourt — it used to squat at the airport's entry gate
       { id: 'showroom0', kind: 'showroom', name: 'GRAN ROSA MOTORS', tag: 'Special orders, delivered outside', at: clearSpot(90, 378), forecourt: { x: 64, z: 384 }, heading: Math.PI / 2, color: 0x8dffd8 },
@@ -618,19 +628,19 @@ GAME.shops = (function () {
       var buyable = !it.owned && !it.off && afford;
       row.className = 'shop-row' + (i === sel ? ' sel' : '') + ((it.off || !afford) && !it.owned ? ' off' : '') + (it.owned ? ' owned' : '');
       var sw = it.sw !== undefined ? '<span class="sw" style="background:#' + it.sw.toString(16).padStart(6, '0') + '"></span>' : '';
-      // Trying is free; paying is a second, deliberate act. A hover or first
-      // click only previews; the click ARMS the row and grows an explicit
-      // BUY chip, and only a click on an armed row (or Enter) pays. Nothing
-      // is armed when the counter opens, so no first click ever charges.
-      var armed = i === armedIdx && buyable;
+      // Trying is free; paying goes through a gate. Hover or click previews;
+      // the selected row wears a BUY chip, and BUY (or Enter, or a second
+      // click) opens a confirmation card — nothing is ever bought without
+      // answering it. Re-visiting a row can only ever re-preview it.
+      var armed = i === sel && buyable;
       var priceCell = it.owned ? 'YOURS'
         : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
           : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
       row.addEventListener('click', function () {
-        if (armedIdx !== i) { sel = i; armedIdx = i; render(); }
-        else buy(it.id);
+        if (sel !== i) { sel = i; render(); }
+        else openConfirm(it);
       });
       row.addEventListener('mouseenter', function () { if (sel !== i) { sel = i; render(); } });
       el.items.appendChild(row);
@@ -701,7 +711,7 @@ GAME.shops = (function () {
       // hovered row swapped in — this is exactly how you'd walk out
       var o = previewOutfit(it);
       var pkey = 'ped:' + o.shirt + '/' + o.pants + '/' + o.hairStyle + '/' + o.hairColor + '/' + o.skin;
-      if (tag) tag.textContent = 'YOU · wearing ' + it.name.replace(/^(SHIRT|PANTS|CUT|COLOR) · /, '');
+      if (tag) tag.textContent = 'YOU · wearing ' + it.name.replace(/^(SHIRT|PANTS|CUT|HAIR COLOR) · /, '');
       if (pkey === pv.key) return;
       pv.key = pkey;
       clearPvObj();
@@ -726,6 +736,28 @@ GAME.shops = (function () {
     pv.obj.rotation.y += 0.016;
     pv.renderer.render(pv.scene, pv.cam);
   }
+  // the purchase gate. The card names the thing and its price; only CONFIRM
+  // (or Enter while it's up) actually spends money, in every shop alike.
+  function openConfirm(it) {
+    if (!openShop || !it || it.owned || it.off) return;
+    var P = GAME.player;
+    if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); return; }
+    pendingBuy = it.id;
+    $('shop-confirm-name').textContent = it.name;
+    $('shop-confirm-price').textContent = it.price > 0 ? 'Price: $' + it.price.toLocaleString() : 'Free';
+    $('shop-confirm').style.display = 'flex';
+  }
+  function cancelConfirm() {
+    pendingBuy = null;
+    var c = $('shop-confirm');
+    if (c) c.style.display = 'none';
+  }
+  function confirmYes() {
+    var id = pendingBuy;
+    cancelConfirm();
+    if (id) buy(id);
+  }
+
   function buy(id) {
     if (!openShop) return false;
     var list = items(openShop), it = null;
@@ -752,15 +784,15 @@ GAME.shops = (function () {
     if (!loc || openShop) return false;
     openShop = loc;
     sel = 0;
-    armedIdx = -1;   // nothing is primed to buy until the player acts
+    cancelConfirm();
     note('');
     var hint = $('shop-hint');
     if (hint) hint.textContent =
       loc.kind === 'dress' || loc.kind === 'barber'
-        ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY pays  ·  Esc leave'
+        ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY asks before it charges  ·  Esc leave'
         : loc.kind === 'showroom'
-          ? 'Click or W/S to put it on the turntable  ·  BUY pays  ·  Esc leave'
-          : 'Click or W/S to select  ·  BUY (or Enter) pays  ·  Esc leave';
+          ? 'Click or W/S to put it on the turntable  ·  BUY asks before it charges  ·  Esc leave'
+          : 'Click or W/S to select  ·  BUY (or Enter) asks before it charges  ·  Esc leave';
     el.screen.style.display = 'flex';
     GAME.shopOpen = true;
     if (document.exitPointerLock) document.exitPointerLock();
@@ -772,6 +804,7 @@ GAME.shops = (function () {
   }
   function close() {
     if (!openShop) return;
+    if (pendingBuy !== null) { cancelConfirm(); return; }   // Esc backs out of the card first
     leftSince[openShop.id] = false;   // must step off the mat before it reopens
     openShop = null;
     el.screen.style.display = 'none';
@@ -784,16 +817,25 @@ GAME.shops = (function () {
 
   function onKey(e) {
     if (!GAME.shopOpen || !openShop) return;
+    if (pendingBuy !== null) {
+      // the confirmation card owns the keys while it's up
+      if (e.code === 'Enter' || e.code === 'KeyE') confirmYes();
+      return;
+    }
     var list = items(openShop);
-    if (e.code === 'KeyS' || e.code === 'ArrowDown') { sel = (sel + 1) % list.length; armedIdx = sel; render(); }
-    else if (e.code === 'KeyW' || e.code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; armedIdx = sel; render(); }
-    else if (e.code === 'Enter' || e.code === 'KeyE') { if (list[sel]) buy(list[sel].id); }
+    if (e.code === 'KeyS' || e.code === 'ArrowDown') { sel = (sel + 1) % list.length; render(); }
+    else if (e.code === 'KeyW' || e.code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; render(); }
+    else if (e.code === 'Enter' || e.code === 'KeyE') { if (list[sel]) openConfirm(list[sel]); }
   }
 
   function init(scene) {
     ['shop-screen', 'shop-title', 'shop-tag', 'shop-cash', 'shop-items', 'shop-note', 'shop-close']
       .forEach(function (id) { el[id.replace('shop-', '')] = $(id); });
     if (el.close) el.close.addEventListener('click', close);
+    ['click', 'touchend'].forEach(function (ev) {
+      $('shop-confirm-yes').addEventListener(ev, function (e) { e.preventDefault(); confirmYes(); });
+      $('shop-confirm-no').addEventListener(ev, function (e) { e.preventDefault(); cancelConfirm(); });
+    });
     window.addEventListener('keydown', onKey);
     buildLocations();
     buildShopfronts(scene);   // may slide a doormat to fit its building

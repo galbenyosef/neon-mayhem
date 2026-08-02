@@ -290,6 +290,12 @@ GAME.city = (function () {
     { minX: -195, maxX: -105, minZ: -138, maxZ: -85 }, // police station
     { minX: 155, maxX: 215, minZ: -110, maxZ: -50 },   // respray garages
     { minX: -26, maxX: 26, minZ: -226, maxZ: -174 },   // the helipad tower
+    // shop slots in the strip's western building row: the storefronts build
+    // into these gaps and read as part of the street, not beach clutter
+    { minX: 318, maxX: 346, minZ: -78, maxZ: -50 },    // hardware
+    { minX: 318, maxX: 346, minZ: 78, maxZ: 106 },     // tailor
+    { minX: 318, maxX: 346, minZ: -134, maxZ: -106 },  // barber
+    { minX: 318, maxX: 346, minZ: 194, maxZ: 222 },    // strip condo
     { minX: -448, maxX: -408, minZ: -200, maxZ: -160 },
     { minX: 252, maxX: 292, minZ: -440, maxZ: -400 }
   ];

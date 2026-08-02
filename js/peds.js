@@ -25,25 +25,52 @@ GAME.resolveCircle = function (x, z, r, feetY) {
   return { x: x, z: z };
 };
 
-// hair, built around the head's origin: a cap over the crown plus a panel down
-// the back. Everything stands a little proud of the head so no face is shared.
-// 'buzz' returns null — that's the bald look, now a choice instead of the rule.
+// hair, built around the head's origin, and every style its own silhouette —
+// when a flattop and a crew cut differ by six centimetres nobody can tell
+// what the barber is selling. Everything stands proud of the head so no face
+// is shared. 'buzz' returns null — bald is a choice now, not the rule.
 function makeHair(style, colorHex) {
   if (style === 'buzz') return null;
   var g = new THREE.Group();
   var mat = new THREE.MeshLambertMaterial({ color: colorHex });
-  if (style === 'mohawk') {
-    var hawk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.24, 0.3), mat);
-    hawk.position.y = 0.22;
-    g.add(hawk);
-  } else {
-    var capH = style === 'flat' ? 0.16 : 0.1;
-    var cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, capH, 0.3), mat);
-    cap.position.y = 0.14 + capH / 2;
-    g.add(cap);
-    var back = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.06), mat);
-    back.position.set(0, 0.05, -0.145);
-    g.add(back);
+  function box(w, h, d, x, y, z) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  }
+  switch (style) {
+    case 'crew':       // short and tidy: low cap, trimmed back
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.3, 0.14, 0.06, 0, 0.08, -0.145);
+      break;
+    case 'flat':       // old saves called the flattop 'flat'
+    case 'flattop':    // a proper landing pad, square and tall
+      box(0.32, 0.3, 0.32, 0, 0.3, 0);
+      break;
+    case 'mohawk':     // a thin crest, nothing on the sides
+      box(0.09, 0.3, 0.34, 0, 0.26, 0);
+      break;
+    case 'pompadour':  // swept up and forward, heavy over the brow
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.28, 0.22, 0.16, 0, 0.28, 0.08);
+      break;
+    case 'mullet':     // business up top, party down the neck
+      box(0.3, 0.12, 0.3, 0, 0.2, 0);
+      box(0.3, 0.34, 0.08, 0, -0.02, -0.16);
+      break;
+    case 'afro':       // full volume all round
+      box(0.42, 0.3, 0.42, 0, 0.26, 0);
+      box(0.36, 0.16, 0.36, 0, 0.06, -0.06);
+      break;
+    case 'ponytail':   // tight cap, tail out the back
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.09, 0.09, 0.2, 0, 0.16, -0.24);
+      box(0.08, 0.3, 0.08, 0, -0.02, -0.3);
+      break;
+    default:           // unknown id: the crew cut is nobody's bad haircut
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.3, 0.14, 0.06, 0, 0.08, -0.145);
   }
   return g;
 }
@@ -76,7 +103,7 @@ function buildPedMesh(opts) {
   } else if (!opts.noHair) {
     // nobody in this town is bald unless they paid the barber for it
     // (the player's own hair is the wardrobe's business — see shops.js)
-    var styles = ['crew', 'crew', 'crew', 'flat', 'flat', 'mohawk'];
+    var styles = ['crew', 'crew', 'crew', 'flattop', 'flattop', 'pompadour', 'mullet', 'afro', 'ponytail', 'mohawk'];
     var hair = makeHair(U.pick(Math.random, styles), U.pick(Math.random, hairColors));
     if (hair) { hair.position.y = 1.6; g.add(hair); }
   }
