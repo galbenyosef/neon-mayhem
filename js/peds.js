@@ -489,10 +489,12 @@ GAME.peds = (function () {
     GAME.fx.spawn(ped.pos.x, 1.2, ped.pos.z, { count: 3, color: 0xc42848, spread: 1, vy: 1, life: 0.3, grav: -3 });
     if (ped.hp <= 0) kill(ped, 'shot', byPlayer);
     else if (!ped.isCop) {
-      // not everyone runs. The short-tempered turn and swing — unless they are
-      // already badly hurt, in which case discretion wins after all.
-      var fights = byPlayer && ped.hp > 6 &&
-        (ped.state === 'attack' || (ped.temper || 0) > 0.45);
+      // Not everyone runs — and whoever DOES turn to fight, fights. The old
+      // hp floor made every brawler quit after two punches, which read as
+      // no fight at all. Once committed, they go the distance; only someone
+      // nearly dead before it starts thinks better of it.
+      var fights = byPlayer &&
+        (ped.state === 'attack' || ((ped.temper || 0) > 0.45 && ped.hp > 4));
       if (fights) {
         ped.state = 'attack';
         ped.attackT = 9;

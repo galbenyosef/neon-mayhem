@@ -31,6 +31,7 @@ GAME.police = (function () {
     return false;
   }
 
+  var lastCopKillT = -99;
   function reportCrime(type, pos) {
     var now = GAME.time;
     if (!PER_VICTIM[type] && crimeCooldown[type] && now - crimeCooldown[type] < 1.2) return;
@@ -40,9 +41,21 @@ GAME.police = (function () {
     var before = stars();
     // offending while already wanted escalates faster — the response ramps up
     var gain = (CRIME_HEAT[type] || 20) * (1 + before * 0.22);
+    if (type === 'kill_cop') {
+      // a burst of cop kills is ONE firefight, not a ladder to five stars:
+      // two officers stepping into your bumper used to jump 1 -> 5 in a
+      // second. Kills inside the same eight seconds barely add heat; the
+      // floor still guarantees three stars for killing the law.
+      if (now - lastCopKillT < 8) gain = 26;
+      lastCopKillT = now;
+    }
     heat = Math.min(560, heat + gain);
-    if (type === 'kill_cop') heat = Math.max(heat, THRESH[Math.min(5, before + 2)]);
+    if (type === 'kill_cop') heat = Math.max(heat, THRESH[3] + 10);
     if (type === 'steal_police') heat = Math.max(heat, THRESH[1] + 5);
+    // and no single offence moves the needle more than one star past where
+    // you stood (except that cop-kill floor) — five stars are EARNED
+    var capStar = Math.max(type === 'kill_cop' ? 3 : 0, Math.min(5, before + 1));
+    if (capStar < 5) heat = Math.min(heat, THRESH[capStar + 1] - 8);
     lastSeen = 0;
     var after = stars();
     if (after > before) { GAME.hud.wantedChanged(after); if (after >= 3) GAME.track('wanted-' + after); }

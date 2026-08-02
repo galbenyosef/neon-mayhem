@@ -612,11 +612,30 @@ GAME.city = (function () {
 
   function buildPOIs(batches, atlas) {
     var P = city.pois;
-    // hospitals (the island builds its own; this is Costa Rosa's)
+    // hospitals (the island builds its own; this is Costa Rosa's). Dressed
+    // like the institution it is, not a white shoebox: banded facade, an
+    // emergency canopy on columns, and a red cross you can read from the air.
     P.hospitals.forEach(function (H) {
       if (H.isla) return;
       batches.generic.addBox(H.x, 9, H.z - 12, 60, 18, 28, 0, 0xd8e8f0, 28);
       addSolid(H.x, H.z - 12, 60, 28, 18);
+      batches.generic.addBox(H.x, 1.5, H.z - 12, 60.6, 3, 28.6, 0, 0xc05a6a, 0);      // base band
+      // cornice as a RIM, not a slab — a slab across the roof re-buries
+      // anyone standing on the solid beneath it (the observatory lesson)
+      [[0, -14.15, 60.6, 0.9], [0, 14.15, 60.6, 0.9], [-30.15, 0, 0.9, 28.6], [30.15, 0, 0.9, 28.6]].forEach(function (c) {
+        batches.generic.addBox(H.x + c[0], 18.35, H.z - 12 + c[1], c[2], 0.7, c[3], 0, 0xb8ccd8, 0);
+      });
+      batches.generic.addBox(H.x - 22, 20.4, H.z - 12, 10, 4, 10, 0, 0xc8dce8, 0);    // plant room
+      // emergency canopy over the entrance
+      batches.generic.addBox(H.x, 4.6, H.z + 4.4, 20, 0.7, 6, 0, 0xc05a6a, 0);
+      [-8, 8].forEach(function (cx2) {
+        batches.generic.addBox(H.x + cx2, 2.3, H.z + 6.6, 0.7, 4.6, 0.7, 0, 0xe8f0f4, 0);
+      });
+      // the cross, proud of the facade and again flat on the roof
+      batches.marks.addBox(H.x + 20, 12.5, H.z + 2.35, 1.6, 6, 0.3, 0, 0xe23a4a, 0);
+      batches.marks.addBox(H.x + 20, 12.5, H.z + 2.35, 4.8, 1.8, 0.28, 0, 0xe23a4a, 0);
+      batches.marks.addGroundQuad(H.x, 18.08, H.z - 12, 2.2, 8, 0, 0xe23a4a);
+      batches.marks.addGroundQuad(H.x, 18.08, H.z - 12, 8, 2.2, 0, 0xe23a4a);
       addSign(batches.signs, 19, H.x, 14, H.z + 2.3, 0, 30, 5);
     });
     // The find: a helipad crowning a downtown tower, with a helicopter on it.
@@ -643,9 +662,24 @@ GAME.city = (function () {
     city.roofHelipad = { x: padX, z: padZ, y: roofY };
     city.parkedSpots.push({ x: padX, z: padZ, y: roofY, heading: Math.PI / 2, vtype: 'helicopter' });
 
-    // police station (Costa Rosa's; the island builds its own)
+    // police station (Costa Rosa's; the island builds its own): navy base
+    // band, a columned portico, blue lamps flanking the door, flag mast
     batches.generic.addBox(P.police.x, 7, P.police.z + 10, 70, 14, 26, 0, 0x8a94c0, 28);
     addSolid(P.police.x, P.police.z + 10, 70, 26, 14);
+    batches.generic.addBox(P.police.x, 1.4, P.police.z + 10, 70.6, 2.8, 26.6, 0, 0x2c3a6a, 0);   // base band
+    [[0, -13.15, 70.6, 0.9], [0, 13.15, 70.6, 0.9], [-35.15, 0, 0.9, 26.6], [35.15, 0, 0.9, 26.6]].forEach(function (c) {
+      batches.generic.addBox(P.police.x + c[0], 14.35, P.police.z + 10 + c[1], c[2], 0.7, c[3], 0, 0x6a76a8, 0);
+    });
+    batches.generic.addBox(P.police.x, 4.9, P.police.z - 4.6, 16, 0.7, 4.4, 0, 0x2c3a6a, 0);      // portico
+    [-6, 6].forEach(function (cx3) {
+      batches.generic.addBox(P.police.x + cx3, 2.45, P.police.z - 6.2, 0.8, 4.9, 0.8, 0, 0xc8d0e8, 0);
+    });
+    // blue lamps either side of the door (basic material: they read at night)
+    [-8.6, 8.6].forEach(function (cx4) {
+      batches.marks.addBox(P.police.x + cx4, 4.2, P.police.z - 3.2, 0.6, 0.9, 0.6, 0, 0x4da3ff, 0);
+    });
+    batches.generic.addBox(P.police.x + 28, 9, P.police.z - 2, 0.4, 18, 0.4, 0, 0xb8c0d8, 0);     // mast
+    batches.marks.addBox(P.police.x + 29.2, 16.5, P.police.z - 2, 2.4, 1.4, 0.1, 0, 0x4da3ff, 0); // pennant
     addSign(batches.signs, 20, P.police.x, 11, P.police.z - 3.3, Math.PI, 26, 4.5);
     // respray garages: three walls + roof, opening faces west toward a road
     P.resprays.forEach(function (G) {

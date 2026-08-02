@@ -558,56 +558,64 @@ GAME.vehicles = (function () {
     var fx = fwdX(car), fz = fwdZ(car);
     var sxv = fz, szv = -fx;
     var hl = car.spec.l / 2 - 0.2, hw = car.spec.w / 2;
-    // corners alone let a half-metre lamp post slip clean between the front
-    // samples — hit one dead-centre and the car ghosted through. Sampling the
-    // middles of each edge as well closes the gap below anything we build.
-    var corners = [[hl, hw], [hl, -hw], [-hl, hw], [-hl, -hw],
-      [hl, 0], [-hl, 0], [hl, hw / 2], [hl, -hw / 2], [0, hw], [0, -hw]];
+    // Exact body-vs-box overlap (separating axes: world X/Z + the car's own),
+    // not sample points. Sampling always had gaps: a thin post could pass
+    // between samples, and a BUILDING CORNER could poke through the body
+    // between two of them — you could clip through the corner of a block.
     var boxes = GAME.city.hash.query(car.pos.x, car.pos.z, car.spec.l);
     if (!boxes.length) return;
-    for (var ci = 0; ci < corners.length; ci++) {
-      var lx = corners[ci][0], lw = corners[ci][1];
-      var px = car.pos.x + fx * lx + sxv * lw;
-      var pz = car.pos.z + fz * lx + szv * lw;
-      for (var bi = 0; bi < boxes.length; bi++) {
-        var b = boxes[bi];
-        // jumped clear of it — don't clip a car that's sailing over a fence
-        if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
-        // and don't clip a car driving under one: a bridge parapet belongs to
-        // the deck it stands on, not to the road it crosses over
-        if (b.minY !== undefined && car.pos.y < b.minY - 1) continue;
-        if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
-          // push out along the smallest penetration axis
-          var dxl = px - b.minX, dxr = b.maxX - px, dzl = pz - b.minZ, dzr = b.maxZ - pz;
-          var m = Math.min(dxl, dxr, dzl, dzr);
-          var nx = 0, nz = 0;
-          if (m === dxl) nx = -1; else if (m === dxr) nx = 1; else if (m === dzl) nz = -1; else nz = 1;
-          car.pos.x += nx * m; car.pos.z += nz * m;
-          var impact = Math.abs(car.vx * nx + car.vz * nz);
-          var vn = car.vx * nx + car.vz * nz;
-          if (vn < 0) {
-            car.vx -= nx * vn * 1.4; car.vz -= nz * vn * 1.4;
-            // decompose back into speed/lat
-            car.speed = car.vx * fx + car.vz * fz;
-            car.lat = car.vx * fz + car.vz * -fx;
-          }
-          // one event per contact: a car grinding along a wall reports a hit
-          // every frame, which both shreds its health and machine-guns the
-          // crash sound until it works free
-          if (impact > 4 && (car.hitCd || 0) <= 0) {
-            car.hitCd = 0.25;
-            damageCar(car, Math.min(32, impact * 1.5), 'wall');
-            GAME.audio.crash(impact / 18);
-            GAME.fx.spawn(px, 0.7, pz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
-            if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
-            // riders get thrown off in a hard wall hit
-            if (car.spec.bike && car === GAME.player.car && GAME.player.onBike && impact > 9) {
-              GAME.ejectBike(impact);
-            }
-          }
-          return;
+    var afx = Math.abs(fx), afz = Math.abs(fz);
+    for (var bi = 0; bi < boxes.length; bi++) {
+      var b = boxes[bi];
+      // jumped clear of it — don't clip a car that's sailing over a fence
+      if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
+      // and don't clip a car driving under one: a bridge parapet belongs to
+      // the deck it stands on, not to the road it crosses over
+      if (b.minY !== undefined && car.pos.y < b.minY - 1) continue;
+      var bcx = (b.minX + b.maxX) / 2, bcz = (b.minZ + b.maxZ) / 2;
+      var bhx = (b.maxX - b.minX) / 2, bhz = (b.maxZ - b.minZ) / 2;
+      var dxc = car.pos.x - bcx, dzc = car.pos.z - bcz;
+      var oX = (afx * hl + Math.abs(sxv) * hw) + bhx - Math.abs(dxc);
+      if (oX <= 0) continue;
+      var oZ = (afz * hl + Math.abs(szv) * hw) + bhz - Math.abs(dzc);
+      if (oZ <= 0) continue;
+      var dF = dxc * fx + dzc * fz;
+      var oF = hl + (bhx * afx + bhz * afz) - Math.abs(dF);
+      if (oF <= 0) continue;
+      var dS = dxc * sxv + dzc * szv;
+      var oS = hw + (bhx * Math.abs(sxv) + bhz * Math.abs(szv)) - Math.abs(dS);
+      if (oS <= 0) continue;
+      // overlapping on every axis: push out along the least-overlap axis
+      var m = Math.min(oX, oZ, oF, oS);
+      var nx, nz;
+      if (m === oX) { nx = dxc >= 0 ? 1 : -1; nz = 0; }
+      else if (m === oZ) { nx = 0; nz = dzc >= 0 ? 1 : -1; }
+      else if (m === oF) { var sf = dF >= 0 ? 1 : -1; nx = fx * sf; nz = fz * sf; }
+      else { var ss = dS >= 0 ? 1 : -1; nx = sxv * ss; nz = szv * ss; }
+      car.pos.x += nx * m; car.pos.z += nz * m;
+      var impact = Math.abs(car.vx * nx + car.vz * nz);
+      var vn = car.vx * nx + car.vz * nz;
+      if (vn < 0) {
+        car.vx -= nx * vn * 1.4; car.vz -= nz * vn * 1.4;
+        // decompose back into speed/lat
+        car.speed = car.vx * fx + car.vz * fz;
+        car.lat = car.vx * fz + car.vz * -fx;
+      }
+      // one event per contact: a car grinding along a wall reports a hit
+      // every frame, which both shreds its health and machine-guns the
+      // crash sound until it works free
+      if (impact > 4 && (car.hitCd || 0) <= 0) {
+        car.hitCd = 0.25;
+        damageCar(car, Math.min(32, impact * 1.5), 'wall');
+        GAME.audio.crash(impact / 18);
+        GAME.fx.spawn(car.pos.x + nx, 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
+        if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
+        // riders get thrown off in a hard wall hit
+        if (car.spec.bike && car === GAME.player.car && GAME.player.onBike && impact > 9) {
+          GAME.ejectBike(impact);
         }
       }
+      return;
     }
   }
 

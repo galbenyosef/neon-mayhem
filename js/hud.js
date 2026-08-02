@@ -312,6 +312,13 @@ GAME.hud = (function () {
     var wz = (cy - mapOffY) / mapScale / MAP_S - MAP_OY;
     wx = U.clamp(wx, -495, 1500);
     wz = U.clamp(wz, -540, 540);
+    // no charting a course into open sea: a click on the water walks the pin
+    // to the nearest road instead (a bridge deck is a fine destination as-is)
+    if (GAME.city.isInWater(wx, wz)) {
+      var rp = GAME.city.nearestRoadPoint(wx, wz);
+      if (GAME.city.isInWater(rp.x, rp.z)) return;   // nothing honest to aim at
+      wx = rp.x; wz = rp.z;
+    }
     GAME.nav.setDest(wx, wz);
     drawBigMap();
   }
