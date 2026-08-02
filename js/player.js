@@ -157,10 +157,16 @@ GAME.playerWasted = function (cause) {
   GAME.timeScale = 0.35;
   killLoopingAudio();
   GAME.audio.sting('wasted');
-  var home = GAME.shops && GAME.shops.ownsAny();
+  // the card tells the truth about THIS death: a bed only counts on the
+  // island you went down on — and if you own one elsewhere, say why it
+  // didn't help, so the rule teaches itself
+  var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
+  var ownsElsewhere = !home && GAME.shops && GAME.shops.ownsAny();
   GAME.hud.showBig('wasted', home
     ? 'You wake up at your place. Cash and weapons intact.'
-    : 'You wake up at the hospital. Weapons gone, cash intact.');
+    : ownsElsewhere
+      ? 'You wake up at the local hospital — your bed is on the other island. Weapons gone, cash intact.'
+      : 'You wake up at the hospital. Weapons gone, cash intact.');
   GAME.missions.failActive('You got wasted.');
 };
 
@@ -222,13 +228,18 @@ function respawnAfterScreen() {
       if (home) {
         P.pos.set(home.x, GAME.city.groundY(home.x, home.z), home.z);
       } else {
+        // the hospital on the island you went down on — an ambulance does
+        // not carry you across the channel. Off-island beds only come into
+        // it if this island somehow has none you can be in.
         var unlocked = !GAME.isla || GAME.isla.isOpen();
+        var onIsla = !!(GAME.isla && GAME.isla.contains(P.pos.x, P.pos.z));
         var hs = GAME.city.pois.hospitals;
         var sh = hs[0].spawn;
         var bd = 1e18;
         for (var hi = 0; hi < hs.length; hi++) {
           if (hs[hi].isla && !unlocked) continue;
           var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
+          if (!!hs[hi].isla !== onIsla) d += 1e12;
           if (d < bd) { bd = d; sh = hs[hi].spawn; }
         }
         P.pos.set(sh.x, GAME.city.groundY(sh.x, sh.z), sh.z);

@@ -111,15 +111,20 @@ GAME.shops = (function () {
     }
     return false;
   }
-  // where you wake up when you own property: the nearest bed that is actually
-  // reachable (nothing behind a locked bridge)
+  // Where you wake up when you own property: the nearest owned bed ON THE
+  // ISLAND WHERE YOU WENT DOWN. Death is local — going down on Isla Verde
+  // and waking on the mainland strip made no sense, and it made the condo
+  // WORSE to own the further you ranged. A bed on each island is now a real
+  // reason to buy twice; with no bed on this island it's the local hospital.
   function homeSpawn(x, z) {
     var unlocked = !GAME.isla || GAME.isla.isOpen();
+    var onIsla = !!(GAME.isla && GAME.isla.contains(x, z));
     var best = null, bd = 1e18;
     for (var i = 0; i < SAFEHOUSES.length; i++) {
       var s = SAFEHOUSES[i];
       if (!owns(s.id) || !s.at) continue;
       if (s.isla && !unlocked) continue;
+      if (!!s.isla !== onIsla) continue;
       var d = U.dist2(x, z, s.at.x, s.at.z);
       if (d < bd) { bd = d; best = { x: s.at.x, z: s.at.z, name: s.name }; }
     }
