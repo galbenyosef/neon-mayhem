@@ -655,7 +655,7 @@ GAME.isla = (function () {
       title: 'BRIDGES OPEN',
       subtitle: 'Isla Verde is yours to explore',
       accent: '#8de8b0',
-      stats: [{ label: 'Jobs done', value: stuntsDone() && missionsDone() < REQUIRED ? 'ALL JUMPS' : String(missionsDone()) },
+      stats: [{ label: 'Missions', value: stuntsDone() && missionsDone() < REQUIRED ? 'ALL JUMPS' : String(missionsDone()) },
         { label: 'Bridges', value: '2' },
         { label: 'Next', value: 'Head east' }]
     });
@@ -1484,8 +1484,11 @@ GAME.isla = (function () {
       if (earned()) { checkUnlock(); return; }
       var p = unlockProgress();
       hintT = 6;
-      GAME.hud.message('BRIDGE CLOSED — finish ' + (p.need - p.done) + ' more job' +
-        (p.need - p.done === 1 ? '' : 's') + ' in Costa Rosa (or find every stunt jump) and it opens.', 3.5);
+      // name what actually counts: only the marked missions, each once —
+      // "jobs" pointed players at taxi shifts and repeats, which don't add
+      var left = p.need - p.done;
+      GAME.hud.message('BRIDGE CLOSED — finish ' + left + ' more marked mission' + (left === 1 ? '' : 's') +
+        ' in Costa Rosa (races, rampages, deliveries — each counts once; taxi-style shifts don’t), or find every stunt jump.', 4.5);
       return;
     }
   }

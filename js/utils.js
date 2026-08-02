@@ -271,6 +271,12 @@ GAME.initInput = function (canvas) {
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Tab') e.preventDefault();
     if (!e.repeat) inp.keys[e.code] = true;
+    // Any key is a real gesture that can bring fullscreen back after the
+    // browser dropped it over an Esc — EXCEPT Esc itself, which browsers
+    // refuse to honor for requestFullscreen (it is the reserved exit key).
+    // So resuming with Esc stays windowed for exactly one keypress: the
+    // first W (or anything else) restores it.
+    if (GAME.started && !e.repeat && e.code !== 'Escape' && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
     if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(e.code);
   });
   window.addEventListener('keyup', function (e) { inp.keys[e.code] = false; });
