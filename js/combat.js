@@ -341,6 +341,7 @@ GAME.combat = (function () {
   // each pickup reads as the thing it gives: a pistol/SMG/shotgun silhouette,
   // a medical cross, a shield, or a cash bundle — instead of a generic cube
   function pickupShape(type, color) {
+    color = color || (PICKUP_DEFS[type] ? PICKUP_DEFS[type].color : 0xd8d8e8);
     var b = new GeoBatch();
     if (type === 'pistol') {
       b.addBox(0, 0.10, 0.06, 0.09, 0.13, 0.46, 0, color, 0);   // slide
@@ -482,6 +483,7 @@ GAME.combat = (function () {
     giveAllWeapons: giveAllWeapons,
     selectWeapon: selectWeapon,
     dropPickup: dropPickup,
+    pickupShape: pickupShape,
     refreshWeaponHud: refreshWeaponHud,
     npcShoot: npcShoot,
     setAimTouch: function (on) { GAME.input.touch.aim = on; }

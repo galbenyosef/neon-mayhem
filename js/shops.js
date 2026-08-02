@@ -685,16 +685,96 @@ GAME.shops = (function () {
     }
     return o;
   }
+  // small helper for the prop previews: a colored box added to a group
+  function pbox(g, x, y, z, w, h, d, color, glow) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshLambertMaterial(glow
+        ? { color: color, emissive: color, emissiveIntensity: 0.6 }
+        : { color: color }));
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  }
+  // every counter shows its goods: guns and kit at the hardware store, the
+  // cash itself at the police desk, a chip stack at the casino, the house
+  // at a safehouse — nothing is bought sight unseen
+  function propPreview(kind, it) {
+    var g = new THREE.Group();
+    pbox(g, 0, 0.03, 0, 3.4, 0.06, 3.4, 0x2a2f4a);            // display plinth
+    if (kind === 'hardware') {
+      var shape = { armor: 'armor', medkit: 'health' }[it.id] || it.id;
+      var m = GAME.combat.pickupShape(shape);
+      m.scale.set(2.1, 2.1, 2.1);
+      m.position.y = 1.0;
+      g.add(m);
+    } else if (kind === 'bribe') {
+      // the bribe is money on the table — CLEAN SLATE stacks one bundle per star
+      var n = it.id === 'slate' ? Math.max(1, GAME.police.wanted) : 1;
+      for (var i = 0; i < n; i++) {
+        var b = GAME.combat.pickupShape('cash');
+        b.scale.set(1.7, 1.7, 1.7);
+        b.position.y = 0.55 + i * 0.42;
+        b.rotation.y = (i % 2) * 0.5 - 0.25;
+        g.add(b);
+      }
+    } else if (kind === 'casino') {
+      // your stake as a chip stack: taller bet, taller tower
+      var chips = { bet100: 4, bet500: 9, bet2000: 18 }[it.id] || 4;
+      var cols = [0xff2d95, 0x2de8ff, 0xf5f0ff];
+      for (var c = 0; c < chips; c++) {
+        var chip = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.12, 18),
+          new THREE.MeshLambertMaterial({ color: cols[c % 3], emissive: cols[c % 3], emissiveIntensity: 0.35 }));
+        chip.position.set(Math.sin(c * 2.4) * 0.03, 0.62 + c * 0.13, Math.cos(c * 2.4) * 0.03);
+        g.add(chip);
+      }
+    } else if (kind === 'safehouse') {
+      var sh = openShop.sh || {};
+      if (sh.id === 'dock') {
+        [-0.7, 0.7].forEach(function (px) { [-0.55, 0.55].forEach(function (pz) {
+          pbox(g, px, 0.31, pz, 0.09, 0.5, 0.09, 0x7a5b3e); }); });
+        pbox(g, 0, 0.6, 0, 1.9, 0.08, 1.6, 0x9a7b52);          // deck on stilts
+        pbox(g, 0, 1.1, 0, 1.5, 0.92, 1.2, 0x9adfe8);          // the shack
+        pbox(g, 0, 1.6, 0, 1.7, 0.08, 1.4, 0xf2f2f6);          // flat roof
+        pbox(g, 0.3, 1.0, 0.62, 0.34, 0.56, 0.05, 0x30323e);   // door
+        pbox(g, -0.32, 1.2, 0.62, 0.34, 0.3, 0.04, 0xfff3b8, true);
+      } else if (sh.id === 'villa') {
+        pbox(g, 0.2, 0.56, 0, 2.5, 1.0, 1.7, 0xffe8d1);        // ground floor
+        pbox(g, -0.35, 1.46, 0, 1.3, 0.8, 1.3, 0xffd9e8);      // upper wing
+        pbox(g, -0.35, 1.9, 0, 1.5, 0.08, 1.5, 0xf2f2f6);
+        pbox(g, 0.85, 1.1, 0, 1.3, 0.08, 1.8, 0xf2f2f6);       // terrace lip
+        pbox(g, 0.6, 0.62, 0.88, 0.36, 0.62, 0.05, 0x30323e);  // door
+        pbox(g, 0.6, 1.02, 0.92, 0.8, 0.07, 0.3, 0xff7fb8);    // awning
+        [-0.2, -0.9].forEach(function (px) { pbox(g, px, 0.62, 0.88, 0.4, 0.34, 0.04, 0xb8f6ff, true); });
+      } else {
+        pbox(g, 0, 1.2, 0, 1.35, 2.3, 1.35, 0xf3d9e2);         // the condo tower
+        pbox(g, 0, 2.4, 0, 1.5, 0.09, 1.5, 0xffffff);
+        for (var r = 0; r < 4; r++) for (var q = -1; q <= 1; q++)
+          pbox(g, q * 0.4, 0.82 + r * 0.42, 0.69, 0.26, 0.24, 0.03, 0xfff3b8, true);
+        pbox(g, 0, 0.45, 0.69, 0.34, 0.7, 0.04, 0x30323e);     // lobby door
+      }
+    }
+    return g;
+  }
   function setPreview(it) {
     var kind = openShop && openShop.kind;
-    var wants = it && (kind === 'dress' || kind === 'barber' || kind === 'showroom');
+    var wants = it && kind;
     var side = $('shop-side');
     pv.on = !!wants;
     if (side) side.style.display = wants ? 'block' : 'none';
     if (!wants) { clearPvObj(); pv.key = ''; return; }
     ensurePv();
     var tag = $('shop-preview-tag');
-    if (kind === 'showroom') {
+    if (kind === 'hardware' || kind === 'bribe' || kind === 'casino' || kind === 'safehouse') {
+      var pkey2 = 'prop:' + kind + ':' + it.id + (kind === 'bribe' ? ':' + GAME.police.wanted : '');
+      if (tag) tag.textContent = kind === 'safehouse' ? openShop.sh.name : it.name;
+      if (pkey2 === pv.key) return;
+      pv.key = pkey2;
+      clearPvObj();
+      pv.obj = propPreview(kind, it);
+      var tall = kind === 'safehouse' && (!openShop.sh || openShop.sh.id !== 'dock' && openShop.sh.id !== 'villa');
+      pv.cam.position.set(0, tall ? 2.2 : 1.8, tall ? 4.8 : 4.0);
+      pv.cam.lookAt(0, tall ? 1.2 : 0.85, 0);
+    } else if (kind === 'showroom') {
       var key = 'car:' + it.id;
       if (tag) tag.textContent = it.name;
       if (key === pv.key) return;
