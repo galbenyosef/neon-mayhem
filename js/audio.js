@@ -284,7 +284,8 @@ GAME.audio = (function () {
       stop: function () {
         if (timer) { clearInterval(timer); timer = null; }
         if (ctx && gain) gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.25);
-      }
+      },
+      get on() { return !!timer; }
     };
   })();
 
@@ -293,6 +294,7 @@ GAME.audio = (function () {
     init: init,
     radio: radio,
     titleMusic: function (on) { if (on) title.start(); else title.stop(); },
+    get titleMusicOn() { return title.on; },
     // freeze all audio (pause / tab backgrounded); resume brings it back
     suspend: function () {
       if (ctx && ctx.state === 'running') { engineBus.gain.value = 0; try { ctx.suspend(); } catch (e) { } }

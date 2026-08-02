@@ -59,6 +59,8 @@ GAME.stunts = (function () {
         { label: 'Unlocked', value: 'MONSTER TRUCK' }
       ]
     });
+    // clearing every jump is the other way across the channel
+    if (GAME.isla) GAME.isla.checkUnlock();
   }
 
   return {
@@ -85,9 +87,10 @@ GAME.missions = (function () {
       cps: [[50, 50], [150, -50], [50, -250], [-50, -350], [-150, -250], [-150, -50], [-50, 50]]
     },
     // courier drops are generated fresh each run (see rollCourierStops)
-    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 95, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 110, legMax: 240 },
-    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 110, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 120, legMax: 260 },
-    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 100, start: { x: 364, z: 104 }, drops: 4, legMin: 100, legMax: 220 },
+    // courier clocks are meant to be beaten narrowly, not strolled through
+    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 76, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 110, legMax: 240 },
+    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 88, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 120, legMax: 260 },
+    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 80, start: { x: 364, z: 104 }, drops: 4, legMin: 100, legMax: 220 },
     { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 60, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
     { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 60, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
     { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
@@ -96,7 +99,7 @@ GAME.missions = (function () {
     // Coordinates come from the island itself once it has registered.
     { id: 'race3', type: 'race', name: 'ALTA VERDE CLIMB', reward: 750, isla: 'climb', start: null, cps: null },
     { id: 'race4', type: 'race', name: 'MIRADOR RUN', reward: 800, isla: 'mirador', start: null, cps: null },
-    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 115, isla: 'port', start: null, drops: 4, legMin: 110, legMax: 240 },
+    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 94, isla: 'port', start: null, drops: 4, legMin: 110, legMax: 240 },
     { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 60, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
   ];
 
@@ -381,10 +384,11 @@ GAME.missions = (function () {
       // an ambulance fills up before running to the hospital; a cab takes one fare
       capacity: kind === 'ambulance' ? 3 : 1,
       level: 1, targets: [], aboard: 0,
-      timeLeft: kind === 'ambulance' ? 110 : 95,
+      timeLeft: kind === 'ambulance' ? 92 : 80,
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
+    if (active.targets[0]) faceToward(active.targets[0].x, active.targets[0].z);
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
@@ -663,7 +667,8 @@ GAME.missions = (function () {
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
     var msg = word + '! +$' + fare;
-    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 45 : 50) + n * 12, 190);
+    // each fare buys less slack than it used to; the shift stays under pressure
+    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 36 : 38) + n * 9, 150);
 
     if (active.targets.length) {
       // still people waiting on this level — go back out for them
@@ -750,6 +755,21 @@ GAME.missions = (function () {
     }
   }
 
+  // point the driver (and the camera) at the first objective, so a run never
+  // begins facing a wall you have to three-point-turn away from
+  function faceToward(x, z) {
+    var P = GAME.player;
+    if (P.inCar && P.car) {
+      P.car.heading = Math.atan2(x - P.car.pos.x, z - P.car.pos.z);
+      P.car.lat = 0;
+      GAME.cam.yaw = P.car.heading;
+    } else {
+      P.heading = Math.atan2(x - P.pos.x, z - P.pos.z);
+      GAME.cam.yaw = P.heading;
+    }
+    GAME.cam.freeT = 0;
+  }
+
   function start(def) {
     var P = GAME.player;
     GAME.track('mission-started-' + def.type);
@@ -759,6 +779,9 @@ GAME.missions = (function () {
       // a fresh set of drops every time you take the run
       stops: def.type === 'courier' ? rollCourierStops(def) : null
     };
+    // orient first, before rivals form up on the (new) heading
+    var first = def.type === 'race' ? def.cps[0] : active.stops ? active.stops[0] : null;
+    if (first) faceToward(first[0], first[1]);
     if (def.type === 'race') {
       for (var i = 0; i < 3; i++) {
         var off = (i + 1) * 5;
@@ -1064,9 +1087,17 @@ GAME.missions = (function () {
         else if (P.car.type === 'ambulance') jobKind = 'ambulance';
         else if (P.car.type === 'icecream') jobKind = 'icecream';
       }
-      GAME.jobAvailable = jobKind;
+      // Nobody hires a driver the police are actively chasing: no mission or
+      // shift starts while you carry stars. Lose the heat first — respray,
+      // bribe, or lie low.
+      var hot = GAME.police.wanted > 0;
+      GAME.jobAvailable = hot ? null : jobKind;
       if (jobKind && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
         GAME.input.touch.job = false;
+        if (hot) {
+          GAME.hud.message('Nobody rides with the heat on you — lose the stars first.', 2.5);
+          return;
+        }
         startJob(jobKind);
         return;
       }
@@ -1088,11 +1119,13 @@ GAME.missions = (function () {
         // name what the marker is (and what it wants) whenever you're standing near it
         if (dd < 34 * 34) {
           var label = TYPE_LABEL[d.type] + ' · ' + d.name;
-          if (need && !P.inCar) label += '   —   come back in a vehicle';
+          if (hot) label += '   —   lose the heat first';
+          else if (need && !P.inCar) label += '   —   come back in a vehicle';
           else if (d.type === 'race' && air) label += '   —   not in an aircraft';
           else if (dd < (need ? 20 : 7)) label += '   —   starting…';
           if (!hint || dd < hint.d) hint = { d: dd, text: label };
         }
+        if (hot) continue;   // wanted stars close every start line
         if (need && !P.inCar) continue;
         // no cheesing a street race from a helicopter or plane
         if (d.type === 'race' && air) continue;
@@ -1110,6 +1143,9 @@ GAME.missions = (function () {
           hint = { d: rd, text: 'RESPRAY · $100 — repairs your ride and clears the heat' + (P.inCar ? '' : '   —   drive in') };
         }
       }
+      // and the shops share the one readout instead of talking over it
+      var sh = GAME.shops && GAME.shops.nearHint(px, pz);
+      if (sh && (!hint || sh.d < hint.d)) hint = sh;
       GAME.hud.setPoiHint(hint ? hint.text : '');
       return;
     }
@@ -1290,24 +1326,27 @@ GAME.missions = (function () {
       return currentCp();
     },
     getBlips: function () {
+      // `kind` keys each blip to its legend entry, so the map legend can
+      // hide and show marker families like a chart legend
       var out = [];
       GAME.city.pois.resprays.forEach(function (g) {
-        out.push({ x: g.door.x, z: g.door.z, color: '#c86bff', size: 4 });
+        out.push({ x: g.door.x, z: g.door.z, color: '#c86bff', size: 4, kind: 'respray' });
       });
       if (!active) {
         for (var i = 0; i < markers.length; i++) {
           var d = markers[i].def;
           if (!defAvailable(d)) continue;
-          out.push({ x: d.start.x, z: d.start.z, color: '#' + MARKER_COLORS[d.type].toString(16).padStart(6, '0'), size: 4 });
+          var kind = d.type === 'race' ? 'race' : d.type === 'courier' ? 'courier' : 'rampage';
+          out.push({ x: d.start.x, z: d.start.z, color: '#' + MARKER_COLORS[d.type].toString(16).padStart(6, '0'), size: 4, kind: kind });
         }
       } else {
         // every waiting fare/patient shows on the map, not just the nearest
         if (active.targets) {
           for (var t = 0; t < active.targets.length; t++) {
-            out.push({ x: active.targets[t].x, z: active.targets[t].z, color: '#ffe14f', size: 4 });
+            out.push({ x: active.targets[t].x, z: active.targets[t].z, color: '#ffe14f', size: 4, kind: 'objective' });
           }
         }
-        if (cpMarker.visible) out.push({ x: cpMarker.position.x, z: cpMarker.position.z, color: '#ffe14f', size: 5 });
+        if (cpMarker.visible) out.push({ x: cpMarker.position.x, z: cpMarker.position.z, color: '#ffe14f', size: 5, kind: 'objective' });
       }
       return out;
     }

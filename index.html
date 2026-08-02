@@ -40,6 +40,8 @@
   #wanted-stars { font-size:24px; letter-spacing:3px; color:rgba(255,255,255,.22); text-shadow:none; margin-top:2px; }
   #wanted-stars .lit { color:#ffd24a; text-shadow:0 0 10px rgba(255,190,40,.9); }
   #weapon-line { margin-top:4px; font-size:15px; font-weight:700; color:#ffb3e2; text-shadow:0 0 8px rgba(255,80,170,.8); }
+  #vehicle-line { margin-top:2px; font-size:13px; font-weight:800; letter-spacing:1px; display:none;
+    text-shadow:0 0 8px rgba(0,0,0,.7); }
 
   .bar { width:170px; height:11px; margin-top:5px; margin-left:auto; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.35); border-radius:6px; overflow:hidden; }
   .bar > div { height:100%; transition:width .15s; }
@@ -77,9 +79,9 @@
     animation:bigFade .45s ease-out; }
   #busted-screen { background:radial-gradient(120% 90% at 50% 45%, rgba(10,50,120,.55) 0%, rgba(4,8,26,.88) 55%, rgba(3,5,16,.96) 100%); }
   @keyframes bigFade { from { opacity:0 } to { opacity:1 } }
-  #share-screen { position:fixed; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column;
+  #share-screen { position:fixed; inset:0; display:none; align-items:center; justify-content:safe center; flex-direction:column;
     z-index:34; padding:18px; gap:14px; background:rgba(5,2,12,.9); animation:bigFade .3s ease-out;
-    font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+    font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; overflow-y:auto; }
   /* both caps, so a short landscape phone shrinks the card instead of pushing
      the buttons off the bottom; the intrinsic ratio is kept either way */
   #share-canvas { width:auto; height:auto; max-width:min(92vw,860px); max-height:62vh; border-radius:14px;
@@ -142,9 +144,18 @@
   #title-footer { position:absolute; bottom:10px; width:100%; text-align:center; color:rgba(210,220,255,.55); font-size:11.5px; padding:0 12px; }
   #title-best { margin-top:10px; color:#ffe08a; font-size:14px; text-shadow:0 0 8px rgba(255,190,60,.6); }
 
-  #pause-screen { position:fixed; inset:0; z-index:35; display:none; align-items:center; justify-content:center; flex-direction:column;
-    background:rgba(8,4,18,.82); }
-  #pause-screen h2 { font-size:44px; font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:5px; text-shadow:0 0 16px rgba(60,220,255,.8); margin:0 0 14px; }
+  /* overlay screens center their content, but when a short screen makes it
+     overflow, `safe center` + overflow-y lets it scroll instead of clipping
+     both ends off (centered flex overflow is unreachable — no scrollbar can
+     reach above the top edge) */
+  #pause-screen { position:fixed; inset:0; z-index:35; display:none; align-items:center; justify-content:safe center; flex-direction:column;
+    background:rgba(8,4,18,.82); overflow-y:auto; padding:14px 0; }
+  #pause-screen h2 { font-size:clamp(24px,7vh,44px); font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:5px; text-shadow:0 0 16px rgba(60,220,255,.8); margin:0 0 14px; flex-shrink:0; }
+  @media (max-height:460px) {
+    #pause-screen h2 { margin:0 0 4px; }
+    #pause-controls { display:none; }   /* the controls card is on the title screen and under H */
+    #pause-stunts { margin-top:2px; font-size:12px; }
+  }
 
   #fs-btn { position:fixed; right:14px; bottom:14px; z-index:65; width:36px; height:36px; border-radius:8px;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
@@ -157,20 +168,82 @@
     border-radius:8px; padding:4px 14px; pointer-events:none; white-space:nowrap; }
   #controls-bar b { color:#9df3ff; }
 
-  #map-screen { position:fixed; inset:0; z-index:38; display:none; align-items:center; justify-content:center;
-    flex-direction:column; background:rgba(8,4,18,.9); }
-  #map-title { font-size:26px; font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:4px;
-    text-shadow:0 0 14px rgba(60,220,255,.8); margin-bottom:8px; }
+  #map-screen { position:fixed; inset:0; z-index:38; display:none; align-items:center; justify-content:safe center;
+    flex-direction:column; background:rgba(8,4,18,.9); overflow-y:auto; padding:10px 0; }
+  #map-title { font-size:clamp(17px,4.5vh,26px); font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:4px;
+    text-shadow:0 0 14px rgba(60,220,255,.8); margin-bottom:6px; flex-shrink:0; }
+  @media (max-height:460px) {
+    #map-hint { display:none; }
+    #map-legend { font-size:11px; gap:2px 10px; margin-top:5px; }
+    #map-screen .mbtn { margin:6px 6px 0; padding:5px 14px; font-size:12.5px; }
+  }
   #bigmap { border:2px solid rgba(255,105,180,.7); border-radius:10px; box-shadow:0 0 20px rgba(255,105,180,.4);
     cursor:crosshair; touch-action:none; }
   #map-hint { color:#cfe6ff; font-size:13px; margin-top:8px; }
   #map-legend { display:flex; flex-wrap:wrap; gap:3px 16px; justify-content:center; max-width:86vw; margin-top:8px;
     color:#cfe6ff; font-size:12.5px; }
-  #map-legend .lgd { display:inline-flex; align-items:center; gap:6px; }
+  #map-legend .lgd { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    padding:1px 6px; border-radius:6px; }
+  #map-legend .lgd:hover { background:rgba(255,255,255,.08); }
   #map-legend .lgd i { width:10px; height:10px; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.5); }
+  #map-legend .lgd.off { opacity:.32; text-decoration:line-through; }
+  /* fingers need bigger targets than mouse pointers do */
+  @media (pointer:coarse) { #map-legend .lgd { padding:6px 10px; } }
   .mbtn { display:inline-block; margin:10px 8px 0; padding:8px 22px; border-radius:8px; cursor:pointer;
     background:rgba(255,105,180,.18); border:1px solid rgba(255,150,210,.6); color:#ffd9f2; font-weight:800; font-size:14px; }
   .mbtn:active { background:rgba(255,105,180,.45); }
+
+  /* shop / property / casino browser — same family as the pause and map screens */
+  #shop-screen { position:fixed; inset:0; z-index:36; display:none; align-items:center; justify-content:safe center;
+    flex-direction:column; background:rgba(8,4,18,.88); font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    overflow-y:auto; padding:12px 0; }
+  #shop-title { font-size:clamp(20px,5.5vh,30px); font-weight:900; font-style:italic; color:#ffd9f2; letter-spacing:4px;
+    text-shadow:0 0 16px rgba(255,100,200,.8); flex-shrink:0; }
+  #shop-tag { color:#9fd8ff; font-size:13px; letter-spacing:2px; margin-top:2px; }
+  #shop-cash { color:#8dffd8; font-size:clamp(15px,3.8vh,20px); font-weight:800; margin-top:6px; text-shadow:0 0 10px rgba(60,255,190,.8); }
+  #shop-body { display:flex; gap:18px; align-items:flex-start; margin-top:12px; }
+  #shop-items { position:relative; width:min(60vw,470px); max-height:min(50vh,480px); overflow-y:auto;
+    scrollbar-width:none; -ms-overflow-style:none; }
+  #shop-items::-webkit-scrollbar { display:none; }
+  /* the pane scales with the screen height; the render buffer stays 300x340 */
+  #shop-preview { display:block; height:min(340px,42vh); width:auto; aspect-ratio:300/340;
+    border-radius:12px; background:radial-gradient(90% 90% at 50% 40%, #241640 0%, #0d0818 100%);
+    border:1px solid rgba(255,150,210,.4); box-shadow:0 0 18px rgba(255,105,180,.25); }
+  #shop-preview-tag { color:#9fd8ff; font-size:11.5px; letter-spacing:2px; text-align:center; margin-top:6px; }
+  @media (max-width:760px) { #shop-body { flex-direction:column-reverse; align-items:center; } #shop-items { width:88vw; max-height:34vh; } }
+  @media (max-height:460px) {
+    #shop-tag { display:none; }
+    #shop-body { margin-top:6px; gap:12px; }
+    #shop-items { max-height:44vh; }
+    #shop-preview { height:34vh; }
+    #shop-hint { display:none; }
+    #shop-note { margin-top:4px; min-height:14px; font-size:12px; }
+    .shop-row { padding:6px 12px; margin:4px 0; }
+  }
+  .shop-row { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:9px 16px; margin:5px 0;
+    border-radius:9px; cursor:pointer; background:rgba(255,105,180,.08); border:1px solid rgba(255,150,210,.28); }
+  .shop-row .nm { color:#ffe8f6; font-weight:800; font-size:15px; }
+  .shop-row .ds { color:#bcd4ee; font-size:12px; margin-top:1px; }
+  .shop-row .pr { color:#8dffd8; font-weight:800; font-size:15px; white-space:nowrap; }
+  .shop-row .pr.buychip { background:rgba(141,255,216,.16); border:1px solid rgba(141,255,216,.75);
+    border-radius:7px; padding:5px 12px; text-shadow:0 0 8px rgba(60,255,190,.6); }
+  .shop-row .sw { display:inline-block; width:13px; height:13px; border-radius:3px; margin-right:8px;
+    border:1px solid rgba(255,255,255,.6); vertical-align:-2px; }
+  .shop-row.sel { background:rgba(255,105,180,.26); border-color:rgba(255,170,220,.85); }
+  .shop-row.off { opacity:.45; cursor:default; }
+  .shop-row.owned .pr { color:#ffe08a; }
+  #shop-note { color:#ffe08a; font-size:14px; font-weight:700; margin-top:10px; min-height:18px;
+    text-shadow:0 0 8px rgba(255,190,60,.6); }
+  /* the purchase gate: nothing is bought without walking through this */
+  #shop-confirm { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(5,2,12,.72); z-index:2; }
+  #shop-confirm-card { background:rgba(16,8,30,.97); border:1px solid rgba(255,150,210,.65); border-radius:14px;
+    padding:20px 28px; text-align:center; max-width:min(86vw,420px); box-shadow:0 12px 44px rgba(0,0,0,.6); }
+  #shop-confirm-name { color:#ffe8f6; font-weight:900; font-size:19px; letter-spacing:1px; }
+  #shop-confirm-price { color:#8dffd8; font-weight:800; font-size:17px; margin-top:6px;
+    text-shadow:0 0 8px rgba(60,255,190,.6); }
+  #shop-confirm-hint { color:#9fd8ff; font-size:11.5px; margin-top:10px; letter-spacing:1px; }
+  #shop-hint { color:#cfe6ff; font-size:12.5px; margin-top:6px; }
 
   #fade-layer { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; z-index:25; transition:opacity .5s; }
   #crt-layer { position:fixed; inset:0; pointer-events:none; z-index:20; display:none;
@@ -203,6 +276,7 @@
     <div class="bar"><div id="health-fill"></div></div>
     <div class="bar"><div id="armor-fill"></div></div>
     <div id="weapon-line"></div>
+    <div id="vehicle-line"></div>
   </div>
   <div class="panel" id="radio-popup"></div>
   <div class="panel" id="zone-popup"></div>
@@ -243,9 +317,14 @@
     <span class="mbtn" id="pause-crt">📺 CRT</span>
     <span class="mbtn" id="pause-day">🕓 TIME: AUTO</span>
     <span class="mbtn" id="pause-fs">⛶ FULLSCREEN</span>
+    <span class="mbtn" id="pause-export">💾 EXPORT SAVE</span>
+    <span class="mbtn" id="pause-import">📂 IMPORT SAVE</span>
     <span class="mbtn" id="pause-exit">EXIT TO TITLE</span>
   </div>
+  <input type="file" id="save-file" accept=".json,application/json" style="display:none">
   <div style="margin-top:12px;color:#8dffd8;font-weight:700;">ESC or tap anywhere — resume</div>
+  <div style="margin-top:8px;font-size:12px;"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
+    style="color:#9fd8ff;" onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
 </div>
 
 <div id="fs-btn" title="Fullscreen">⛶</div>
@@ -261,7 +340,9 @@
     <b>Q / E</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>Space</b> jump / handbrake &nbsp;·&nbsp; <b>F</b> enter / exit car &nbsp;·&nbsp; <b>Shift</b> sprint<br>
     <b>1–5</b> weapons &nbsp;·&nbsp; <b>, / .</b> radio &nbsp;·&nbsp; <b>J</b> taxi / paramedic / ice cream job &nbsp;·&nbsp; <b>P</b> map &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>T</b> CRT &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause
   </div>
-  <div id="title-footer">Fan-made tribute. Not affiliated with Rockstar Games or Take-Two Interactive. No original game assets used.</div>
+  <div id="title-footer">Fan-made tribute. Not affiliated with Rockstar Games or Take-Two Interactive. No original game assets used.
+    &nbsp;·&nbsp; <a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
+      style="color:#9df3ff;pointer-events:auto;">github.com/pranshuparmar/neon-mayhem</a></div>
 </div>
 
 <div id="controls-bar"></div>
@@ -270,8 +351,35 @@
   <div id="map-title">COSTA ROSA</div>
   <canvas id="bigmap" width="560" height="560"></canvas>
   <div id="map-legend"></div>
-  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
+  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; click a legend entry to hide / show those markers &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
   <div><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
+</div>
+
+<div id="shop-screen">
+  <div id="shop-title"></div>
+  <div id="shop-tag"></div>
+  <div id="shop-cash"></div>
+  <div id="shop-body">
+    <div id="shop-items"></div>
+    <div id="shop-side" style="display:none">
+      <canvas id="shop-preview" width="300" height="340"></canvas>
+      <div id="shop-preview-tag"></div>
+    </div>
+  </div>
+  <div id="shop-note"></div>
+  <div id="shop-hint">W/S select &nbsp;·&nbsp; Enter buy &nbsp;·&nbsp; Esc leave &nbsp;·&nbsp; or click</div>
+  <div><span class="mbtn" id="shop-close">LEAVE</span></div>
+  <div id="shop-confirm">
+    <div id="shop-confirm-card">
+      <div id="shop-confirm-name"></div>
+      <div id="shop-confirm-price"></div>
+      <div style="margin-top:6px;">
+        <span class="mbtn" id="shop-confirm-yes">CONFIRM</span>
+        <span class="mbtn" id="shop-confirm-no">CANCEL</span>
+      </div>
+      <div id="shop-confirm-hint">Enter — confirm &nbsp;·&nbsp; Esc — cancel</div>
+    </div>
+  </div>
 </div>
 
 <div id="fade-layer"></div>
@@ -320,6 +428,7 @@ window.addEventListener('load', function () {
 <script src="js/missions.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/share.js"></script>
+<script src="js/shops.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/main.js"></script>
 </body>

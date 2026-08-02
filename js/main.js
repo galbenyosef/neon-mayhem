@@ -43,6 +43,7 @@
     GAME.stunts.load();
     GAME.hud.init();
     GAME.share.init();
+    GAME.shops.init(scene);
     GAME.initInput(canvas);
     GAME.combat.refreshWeaponHud();
     GAME.hud.wantedChanged(0);
@@ -56,8 +57,14 @@
     GAME.onKeyDown = function (code) {
       if (code === 'Enter' && !GAME.started) { GAME.startGame(); return; }
       if (!GAME.started) return;
+      // the result card closes on any of the keys a hand is likely to be on —
+      // it never needed the mouse
+      if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {
+        GAME.share.hide();
+        return;
+      }
       if (code === 'Escape') {
-        if (GAME.shareOpen) GAME.share.hide();
+        if (GAME.shopOpen) GAME.shops.close();
         else if (GAME.mapOpen) GAME.hud.toggleMap(false);
         else GAME.togglePause();
       }
@@ -100,9 +107,22 @@
         .catch(function () { });
     } catch (e) { }
   };
+  // Esc on the pause screen also throws the browser out of fullscreen — its
+  // rule, not ours, and the Esc keydown carries no user activation so we
+  // cannot put it back right then. Remember that the exit was not asked for,
+  // and re-enter on the next real gesture (a click back into the game).
+  var fsRestore = false, fsManual = false;
   GAME.toggleFullscreen = function () {
-    if (document.fullscreenElement) { document.exitFullscreen().catch(function () { }); }
-    else GAME.enterFullscreen();
+    if (document.fullscreenElement) { fsManual = true; document.exitFullscreen().catch(function () { }); }
+    else { fsRestore = false; GAME.enterFullscreen(); }
+  };
+  document.addEventListener('fullscreenchange', function () {
+    if (document.fullscreenElement) { fsRestore = false; return; }
+    if (fsManual) { fsManual = false; return; }
+    if (GAME.started) fsRestore = true;
+  });
+  GAME.maybeRestoreFullscreen = function () {
+    if (fsRestore && !document.fullscreenElement) GAME.enterFullscreen();
   };
 
   // night (df 0) and day (df 1) endpoint palettes; intermediate df gives dusk
@@ -220,9 +240,17 @@
   // going away IS the Esc press: treat it as one.
   document.addEventListener('pointerlockchange', function () {
     if (document.pointerLockElement) return;
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen &&
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen &&
       GAME.player.state === 'alive') GAME.togglePause();
   });
+
+  // The soothing pads from the title also play under every overlay — pause,
+  // the map, a result card. One place decides; everyone who opens or closes
+  // an overlay calls it.
+  GAME.syncOverlayMusic = function () {
+    if (!GAME.audio.ctx) return;
+    GAME.audio.titleMusic(!GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen);
+  };
 
   GAME.togglePause = function () {
     if (!GAME.started) return;
@@ -232,22 +260,27 @@
       GAME.audio.engineState(false, 0);
       GAME.audio.skid(0);
       GAME.audio.siren(0);
-      GAME.audio.suspend();
+      // the context stays running: the title pads keep the pause screen warm
+      // (the radio and engines are tick-driven, so they fall silent on their own)
       if (document.exitPointerLock) document.exitPointerLock();
     } else {
       GAME.audio.resume();
+      GAME.maybeRestoreFullscreen();
     }
+    GAME.syncOverlayMusic();
   };
 
-  // auto-pause when the tab/app is backgrounded or loses focus, and freeze audio
+  // auto-pause when the tab/app is backgrounded or loses focus, and freeze
+  // audio. Pausing no longer suspends the context (the pads play on), so a
+  // hidden tab always suspends explicitly here.
   function onHide() {
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && GAME.player.state === 'alive') GAME.togglePause();
-    else GAME.audio.suspend();
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && GAME.player.state === 'alive') GAME.togglePause();
+    GAME.audio.suspend();
   }
   function onShow() {
-    // resume whenever we're not paused — the map being open must not strand the
-    // audio context suspended (closing the map doesn't itself resume it)
-    if (!GAME.paused) GAME.audio.resume();
+    // always bring the context back: if we sit on the pause screen the pads
+    // should be heard again, and an open map must not strand it suspended
+    GAME.audio.resume();
   }
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) onHide(); else onShow();
@@ -286,6 +319,10 @@
     GAME.police.update(dt);
     GAME.missions.update(dt);
     if (GAME.isla) GAME.isla.tick(dt);
+    GAME.shops.update(dt);
+    // slow autosave heartbeat: health and ammo drift without touching cash,
+    // and the save should never be more than ten seconds behind the life
+    if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();
@@ -306,7 +343,7 @@
         g0++;
       }
       if (g0 === 5) accumulator = 0;
-    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen) {
+    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
       accumulator += real * GAME.timeScale;
       var guard = 0;
       while (accumulator >= STEP && guard < 5) {
@@ -316,7 +353,23 @@
       }
       if (guard === 5) accumulator = 0;
     }
+    // From altitude the road layers sat closer together than the depth buffer
+    // could tell apart (0.03m of separation against ~0.2m of precision at half
+    // a kilometre with near=0.1), and the streets shimmered from the plane.
+    // Nothing is ever close to a camera that is high above the ground, so the
+    // near plane climbs with it — 20x the depth precision — and drops back the
+    // moment the camera is down among things it could clip. Hysteresis keeps
+    // it from toggling on the boundary.
+    var cam = GAME.cameraObj;
+    // the sky (domes, stars, moon) tracks the viewer so its rim can never be
+    // reached — horizon height stays at world level, hence y locked to 0
+    if (GAME.city.skyAnchor) GAME.city.skyAnchor.position.set(cam.position.x, 0, cam.position.z);
+    var relH = cam.position.y - GAME.city.surfaceY(cam.position.x, cam.position.z, cam.position.y);
+    var wantNear = relH > (cam.near > 0.2 ? 34 : 46) ? 2.0 : 0.1;
+    if (wantNear !== cam.near) { cam.near = wantNear; cam.updateProjectionMatrix(); }
     renderer.render(GAME.scene, GAME.cameraObj);
+    // the shop's turntable preview spins even while the sim is frozen
+    if (GAME.shops && GAME.shops.renderPreview) GAME.shops.renderPreview();
   }
 
   // headless-drivable test hooks

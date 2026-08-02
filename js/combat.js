@@ -24,19 +24,28 @@ GAME.combat = (function () {
     GAME.scene.add(reticle);
   }
 
+  // the rifle locks on at most of its range; everything else stays close-in.
+  // Eye-height line of sight means a parapet or a rooftop's own edge no
+  // longer hides the whole street below — the sniper's perch finally works.
+  function lockRange() {
+    var wd = WEAPONS[GAME.player.currentWeapon];
+    return wd && wd.range >= 100 ? wd.range * 0.85 : 44;
+  }
   function candidates() {
     var P = GAME.player, cam = GAME.cam;
     var list = [];
+    var range = lockRange();
+    var eye = P.pos.y + 1.35;
     var peds = GAME.world.peds;
     for (var i = 0; i < peds.length; i++) {
       var t = peds[i];
       if (t.dead) continue;
       var dx = t.pos.x - P.pos.x, dz = t.pos.z - P.pos.z;
       var d = Math.sqrt(dx * dx + dz * dz);
-      if (d > 44 || d < 0.5) continue;
+      if (d > range || d < 0.5) continue;
       var ang = Math.abs(U.wrapPI(Math.atan2(dx, dz) - cam.yaw));
       if (ang > 0.75) continue;
-      if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z)) continue;
+      if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z, eye)) continue;
       list.push({ t: t, score: ang * 30 + d });
     }
     // vehicles are lockable too (pursuing cruisers etc.), weighted after people
@@ -46,10 +55,10 @@ GAME.combat = (function () {
       if (car.dead || car === P.car) continue;
       var cdx = car.pos.x - P.pos.x, cdz = car.pos.z - P.pos.z;
       var cd = Math.sqrt(cdx * cdx + cdz * cdz);
-      if (cd > 44 || cd < 0.5) continue;
+      if (cd > range || cd < 0.5) continue;
       var cang = Math.abs(U.wrapPI(Math.atan2(cdx, cdz) - cam.yaw));
       if (cang > 0.7) continue;
-      if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, car.pos.x, car.pos.z)) continue;
+      if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, car.pos.x, car.pos.z, eye)) continue;
       list.push({ t: car, score: cang * 30 + cd + 14 });
     }
     list.sort(function (a, b) { return a.score - b.score; });
@@ -103,8 +112,14 @@ GAME.combat = (function () {
     }
     var boxes = GAME.city.hash.query(ox + dirX * bestT / 2, oz + dirZ * bestT / 2, bestT / 2 + 15);
     for (var b = 0; b < boxes.length; b++) {
-      if (boxes[b].noLOS) continue;
-      var tb = rayAABB(ox, oz, dirX, dirZ, boxes[b]);
+      var bx = boxes[b];
+      if (bx.noLOS) continue;
+      // the world blocks at muzzle height: shots clear anything that tops out
+      // below the barrel (kerbs, low parapets — firing down off a roof) and
+      // pass under anything that only starts above it (a bridge deck)
+      if (bx.h !== undefined && bx.h < oy - 0.4) continue;
+      if (bx.minY !== undefined && bx.minY > oy + 0.6) continue;
+      var tb = rayAABB(ox, oz, dirX, dirZ, bx);
       if (tb < bestT) { bestT = tb; hit = { kind: 'wall', t: tb }; }
     }
     return { t: bestT, hit: hit };
@@ -207,7 +222,8 @@ GAME.combat = (function () {
       if (GAME.keyPressed('KeyQ')) cycleTarget(-1);
       if (GAME.keyPressed('KeyE')) cycleTarget(1);
       if (inp.wheel !== 0) { cycleTarget(inp.wheel > 0 ? 1 : -1); inp.wheel = 0; }
-      if (lockTarget && (lockTarget.dead || U.dist2(lockTarget.pos.x, lockTarget.pos.z, P.pos.x, P.pos.z) > 2600)) {
+      var keep = lockRange() + 8;
+      if (lockTarget && (lockTarget.dead || U.dist2(lockTarget.pos.x, lockTarget.pos.z, P.pos.x, P.pos.z) > keep * keep)) {
         var c = candidates();
         lockTarget = c.length ? c[0] : null;
       }
@@ -325,6 +341,7 @@ GAME.combat = (function () {
   // each pickup reads as the thing it gives: a pistol/SMG/shotgun silhouette,
   // a medical cross, a shield, or a cash bundle — instead of a generic cube
   function pickupShape(type, color) {
+    color = color || (PICKUP_DEFS[type] ? PICKUP_DEFS[type].color : 0xd8d8e8);
     var b = new GeoBatch();
     if (type === 'pistol') {
       b.addBox(0, 0.10, 0.06, 0.09, 0.13, 0.46, 0, color, 0);   // slide
@@ -457,6 +474,7 @@ GAME.combat = (function () {
     WEAPONS: WEAPONS,
     get aiming() { return aiming; },
     get lockTarget() { return lockTarget; },
+    get lockTarget() { return lockTarget; },
     update: update,
     updatePickups: updatePickups,
     checkPickups: checkPickups,
@@ -465,6 +483,7 @@ GAME.combat = (function () {
     giveAllWeapons: giveAllWeapons,
     selectWeapon: selectWeapon,
     dropPickup: dropPickup,
+    pickupShape: pickupShape,
     refreshWeaponHud: refreshWeaponHud,
     npcShoot: npcShoot,
     setAimTouch: function (on) { GAME.input.touch.aim = on; }

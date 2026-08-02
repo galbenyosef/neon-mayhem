@@ -77,6 +77,37 @@ GAME.hud = (function () {
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
     pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
+    // the save travels: export downloads a file, import reads one back and
+    // reloads into the imported life
+    pauseBtn('pause-export', function () {
+      var blob = new Blob([GAME.exportSave()], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'neon-mayhem-save.json';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      GAME.track('save-exported');
+    });
+    pauseBtn('pause-import', function () {
+      // an import is an overwrite: make sure the player knows the life they
+      // are living right now is about to be replaced, and offer the way out
+      if (!window.confirm(
+        'Importing a save REPLACES your current progress — cash, property, garage, look, everything.\n\n' +
+        'If you want to keep this life, press Cancel and use EXPORT SAVE first.\n\nImport and overwrite?')) return;
+      $('save-file').click();
+    });
+    $('save-file').addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        var r = GAME.importSave(String(rd.result));
+        if (r.ok) { GAME.track('save-imported'); location.reload(); }
+        else alert(r.why);
+      };
+      rd.readAsText(f);
+    });
     pauseBtn('pause-exit', function () { location.reload(); });
     // death screens: tap to skip the wait
     ['wasted-screen', 'busted-screen'].forEach(function (id) {
@@ -98,23 +129,61 @@ GAME.hud = (function () {
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
     el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
 
-    var legend = [
-      ['#ff8a3d', 'Race'], ['#38e8ff', 'Courier'], ['#ff4fa3', 'Rampage'],
-      ['#c86bff', 'S — Respray'], ['#ff8aa8', 'H — Hospital'], ['#5aa0ff', 'P — Police'],
-      ['#eef0ff', 'Weapon'], ['#ff4d6a', 'Health'], ['#39c8ff', 'Armor'],
-      ['#8de0ff', '✈ Airport · Ⓗ Helipad'], ['#ffd7e4', '☀ Ice cream depot'],
-      ['#ff8aff', 'Destination'], ['#ffe14f', 'Objective']
-    ];
-    $('map-legend').innerHTML = legend.map(function (e) {
-      return '<span class="lgd"><i style="background:' + e[0] + '"></i>' + e[1] + '</span>';
+    // legend entries behave like a chart's: click one to hide that marker
+    // family on both maps, click again to bring it back. Choices persist.
+    (GAME.prefs && GAME.prefs.mapHidden || []).forEach(function (k) { mapHidden[k] = true; });
+    refreshLegend();
+  }
+
+  // ---------- toggleable legend ----------
+  var mapHidden = {};
+  var LEGEND = [
+    ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'],
+    ['#c86bff', 'S — Respray', 'respray'], ['#ff8aa8', 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
+    ['#eef0ff', 'Weapon', 'weapon'], ['#ff4d6a', 'Health', 'health'], ['#39c8ff', 'Armor', 'armor'],
+    ['#8de0ff', '✈ Airport · Ⓗ Helipad', 'airport'], ['#ffd7e4', '☀ Ice cream depot', 'icecream'],
+    ['#8de8b0', '$ Shops & property', 'shops'], ['#5dff9e', '⌂ Your safehouse', 'home'],
+    ['#ff8aff', 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
+  ];
+  function catVis(k) { return !mapHidden[k]; }
+  function pickupCat(t) { return t === 'health' ? 'health' : t === 'armor' ? 'armor' : 'weapon'; }
+  function toggleCat(k) {
+    mapHidden[k] = !mapHidden[k];
+    GAME.prefs = GAME.prefs || {};
+    GAME.prefs.mapHidden = Object.keys(mapHidden).filter(function (k2) { return mapHidden[k2]; });
+    GAME.save();
+    refreshLegend();
+    if (GAME.mapOpen) drawBigMap();
+  }
+  function refreshLegend() {
+    var box = $('map-legend');
+    box.innerHTML = LEGEND.map(function (e) {
+      return '<span class="lgd' + (mapHidden[e[2]] ? ' off' : '') + '" data-k="' + e[2] + '">' +
+        '<i style="background:' + e[0] + '"></i>' + e[1] + '</span>';
     }).join('');
+    for (var i = 0; i < box.children.length; i++) {
+      // taps don't reliably become clicks in this app (same reason the pause
+      // screen and fs button bind both); touchend's preventDefault also stops
+      // the browser double-firing a synthetic click after it
+      ['click', 'touchend'].forEach(function (ev) {
+        box.children[i].addEventListener(ev, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleCat(this.getAttribute('data-k'));
+        });
+      });
+    }
   }
 
   // ---------- full-screen map ----------
   var mapScale = 1, mapOffY = 0;
   function drawBigMap() {
     var cv = el.bigmap;
-    var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * 0.68 * MAP_W / MAP_H, 900));
+    // short screens hand more of their height to the legend and buttons —
+    // a map you can see all of beats a bigger map with the CLOSE button
+    // pushed off the bottom
+    var hFactor = window.innerHeight < 460 ? 0.52 : 0.68;
+    var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * hFactor * MAP_W / MAP_H, 900));
     cv.width = size; cv.height = Math.floor(size * MAP_H / MAP_W);
     var g = cv.getContext('2d');
     mapScale = size / MAP_W; mapOffY = 0;
@@ -127,7 +196,7 @@ GAME.hud = (function () {
     var P = GAME.player;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    if (GAME.nav.dest) {
+    if (GAME.nav.dest && catVis('dest')) {
       g.strokeStyle = 'rgba(141,255,216,.95)';
       g.lineWidth = 2.5;
       g.beginPath();
@@ -142,7 +211,7 @@ GAME.hud = (function () {
       g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();
     }
     // active mission route
-    var mroute = GAME.missions.getRoutePoints();
+    var mroute = catVis('objective') ? GAME.missions.getRoutePoints() : null;
     if (mroute && mroute.length) {
       g.strokeStyle = 'rgba(255,138,61,.95)';
       g.lineWidth = 2.5;
@@ -161,6 +230,7 @@ GAME.hud = (function () {
     // mission / respray blips
     var mb = GAME.missions.getBlips();
     for (var i = 0; i < mb.length; i++) {
+      if (mb[i].kind && !catVis(mb[i].kind)) continue;
       g.fillStyle = mb[i].color;
       g.beginPath();
       g.arc(w2mx(mb[i].x), w2my(mb[i].z), 5, 0, Math.PI * 2);
@@ -181,27 +251,48 @@ GAME.hud = (function () {
     // weapon / health / armor pickups
     GAME.world.pickups.forEach(function (pk) {
       if (pk.taken || !PICKUP_BLIP[pk.type]) return;
+      if (!catVis(pickupCat(pk.type))) return;
       g.fillStyle = PICKUP_BLIP[pk.type];
       g.beginPath();
       g.arc(w2mx(pk.pos.x), w2my(pk.pos.z), 3.5, 0, Math.PI * 2);
       g.fill();
     });
-    GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
-    GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
-    GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
-    badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
-    if (GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
+    if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
+    if (catVis('police')) GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
+    if (catVis('respray')) GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
+    if (GAME.shops) GAME.shops.blips().forEach(function (s) {
+      if (!catVis(s.home ? 'home' : 'shops')) return;
+      if (!s.home) { badge(s.x, s.z, s.color, s.label); return; }
+      // property you OWN is a landmark, not a shop dot: a ringed disc with a
+      // drawn house (fonts can't be trusted with ⌂) — the legend does the
+      // talking, the way a map should
+      var hx = w2mx(s.x), hy = w2my(s.z);
+      g.fillStyle = s.color;
+      g.beginPath(); g.arc(hx, hy, 11, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.stroke();
+      g.fillStyle = '#0c2418';
+      g.beginPath();                        // roof
+      g.moveTo(hx - 6, hy - 0.5); g.lineTo(hx, hy - 6); g.lineTo(hx + 6, hy - 0.5);
+      g.closePath(); g.fill();
+      g.fillRect(hx - 4, hy - 0.5, 8, 5.5); // walls
+      g.fillStyle = s.color;
+      g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
+    });
+    if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
+    if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
     // helipad: a ringed cyan disc with an H
-    var hpb = GAME.city.helipad;
-    g.fillStyle = '#8de0ff';
-    g.beginPath(); g.arc(w2mx(hpb.x), w2my(hpb.z), 8, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
-    g.strokeStyle = '#0c0816'; g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) - 3, w2my(hpb.z) + 3.5);
-    g.moveTo(w2mx(hpb.x) + 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z) + 3.5);
-    g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z)); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z));
-    g.stroke();
+    if (catVis('airport')) {
+      var hpb = GAME.city.helipad;
+      g.fillStyle = '#8de0ff';
+      g.beginPath(); g.arc(w2mx(hpb.x), w2my(hpb.z), 8, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+      g.strokeStyle = '#0c0816'; g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) - 3, w2my(hpb.z) + 3.5);
+      g.moveTo(w2mx(hpb.x) + 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z) + 3.5);
+      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z)); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z));
+      g.stroke();
+    }
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -221,6 +312,13 @@ GAME.hud = (function () {
     var wz = (cy - mapOffY) / mapScale / MAP_S - MAP_OY;
     wx = U.clamp(wx, -495, 1500);
     wz = U.clamp(wz, -540, 540);
+    // no charting a course into open sea: a click on the water walks the pin
+    // to the nearest road instead (a bridge deck is a fine destination as-is)
+    if (GAME.city.isInWater(wx, wz)) {
+      var rp = GAME.city.nearestRoadPoint(wx, wz);
+      if (GAME.city.isInWater(rp.x, rp.z)) return;   // nothing honest to aim at
+      wx = rp.x; wz = rp.z;
+    }
     GAME.nav.setDest(wx, wz);
     drawBigMap();
   }
@@ -387,11 +485,35 @@ GAME.hud = (function () {
     for (var pu = 0; pu < pk.length; pu++) {
       var pp = pk[pu];
       if (pp.taken || !PICKUP_BLIP[pp.type]) continue;
+      if (!catVis(pickupCat(pp.type))) continue;
       if (U.dist2(pp.pos.x, pp.pos.z, px, pz) > 150 * 150) continue;
       blip(pp.pos.x, pp.pos.z, PICKUP_BLIP[pp.type], 2.6 / zoom);
     }
+    // nearby shops and property, so the doormats are findable from the radar.
+    // Homes you own ignore the range gate and wear a white ring — wherever
+    // you are, the radar says which way home is.
+    if (GAME.shops) {
+      var sb = GAME.shops.blips();
+      for (var sbi = 0; sbi < sb.length; sbi++) {
+        var sbp = sb[sbi];
+        if (!catVis(sbp.home ? 'home' : 'shops')) continue;
+        if (!sbp.home && U.dist2(sbp.x, sbp.z, px, pz) > 170 * 170) continue;
+        if (sbp.home) {
+          // clamp far homes to the radar rim so the direction still reads
+          var rx = (sbp.x - px) * MAP_S, rz = (sbp.z - pz) * MAP_S;
+          var rr = Math.sqrt(rx * rx + rz * rz);
+          var lim = 78 / zoom;
+          if (rr > lim) { rx = rx / rr * lim; rz = rz / rr * lim; }
+          g.fillStyle = sbp.color;
+          g.beginPath(); g.arc(rx, rz, 4.4 / zoom, 0, Math.PI * 2); g.fill();
+          g.strokeStyle = '#ffffff'; g.lineWidth = 1.6 / zoom; g.stroke();
+        } else {
+          blip(sbp.x, sbp.z, sbp.color, 3.2 / zoom);
+        }
+      }
+    }
     // active mission route (race checkpoints / current delivery stop)
-    var mroute = GAME.missions.getRoutePoints();
+    var mroute = catVis('objective') ? GAME.missions.getRoutePoints() : null;
     if (mroute && mroute.length) {
       g.strokeStyle = 'rgba(255,138,61,.95)';
       g.lineWidth = 2.4 / zoom;
@@ -403,7 +525,7 @@ GAME.hud = (function () {
       if (mobj) blip(mobj[0], mobj[1], '#ffe14f', 4.5 / zoom);
     }
     // nav route
-    if (GAME.nav.dest) {
+    if (GAME.nav.dest && catVis('dest')) {
       g.strokeStyle = 'rgba(141,255,216,.95)';
       g.lineWidth = 2.4 / zoom;
       g.beginPath();
@@ -415,7 +537,10 @@ GAME.hud = (function () {
       blip(GAME.nav.dest.x, GAME.nav.dest.z, '#ff8aff', 4.5 / zoom);
     }
     var mb = GAME.missions.getBlips();
-    for (var i = 0; i < mb.length; i++) blip(mb[i].x, mb[i].z, mb[i].color, mb[i].size);
+    for (var i = 0; i < mb.length; i++) {
+      if (mb[i].kind && !catVis(mb[i].kind)) continue;
+      blip(mb[i].x, mb[i].z, mb[i].color, mb[i].size);
+    }
     // airport + helipad landmarks: a ringed cyan blip so they stand out on the radar
     function landmark(x, z) {
       var lx = (x - px) * MAP_S, lz = (z - pz) * MAP_S;
@@ -424,9 +549,11 @@ GAME.hud = (function () {
       g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 / zoom;
       g.beginPath(); g.arc(lx, lz, 5.6 / zoom, 0, Math.PI * 2); g.stroke();
     }
-    landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
-    landmark(GAME.city.helipad.x, GAME.city.helipad.z);
-    if (GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
+    if (catVis('airport')) {
+      landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
+      landmark(GAME.city.helipad.x, GAME.city.helipad.z);
+    }
+    if (catVis('icecream') && GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
       var pc = cars[c];
@@ -471,6 +598,19 @@ GAME.hud = (function () {
     var P = GAME.player;
     el['health-fill'].style.width = U.clamp(P.health, 0, 100) + '%';
     el['armor-fill'].style.width = U.clamp(P.armor, 0, 100) + '%';
+    // aircraft wear their condition on the HUD: their damage is otherwise
+    // invisible until the explosion, and "wasted out of nowhere" was just a
+    // dying airframe nobody could see
+    var vl = document.getElementById('vehicle-line');
+    if (vl) {
+      var av = P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane) ? P.car : null;
+      if (av) {
+        var af = U.clamp(av.hp / av.spec.hp, 0, 1);
+        vl.textContent = 'AIRFRAME ' + Math.round(af * 100) + '%';
+        vl.style.color = af > 0.6 ? '#8dffd8' : af > 0.3 ? '#ffd24a' : '#ff5d7a';
+        vl.style.display = 'block';
+      } else vl.style.display = 'none';
+    }
     if (msgT > 0) { msgT -= dt; if (msgT <= 0) el['msg-line'].style.opacity = 0; }
     if (radioT > 0) { radioT -= dt; if (radioT <= 0) el['radio-popup'].style.opacity = 0; }
     zoneT -= dt;
@@ -498,6 +638,7 @@ GAME.hud = (function () {
       // the sim loop halts while the map is open; silence the engine drone
       if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
       else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
+      if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
       api.refreshFsBtn();
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },

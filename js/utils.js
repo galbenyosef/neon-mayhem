@@ -193,7 +193,10 @@ SpatialHash.prototype.query = function (x, z, r) {
   return out;
 };
 // Segment LOS test: returns true if segment is clear of all boxes.
-SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1) {
+// `aboveY`, when given, is the viewer's eye height: anything topping out below
+// it is seen over (a parapet, a kerb), and anything that only STARTS above it
+// (a bridge deck overhead) is seen under. Without it the check stays flat-2D.
+SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1, aboveY) {
   var dx = x1 - x0, dz = z1 - z0;
   var len = Math.sqrt(dx * dx + dz * dz);
   var steps = Math.max(1, Math.ceil(len / (this.cell * 0.8)));
@@ -206,6 +209,10 @@ SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1) {
       if (checked.has(b)) continue;
       checked.add(b);
       if (b.noLOS) continue;
+      if (aboveY !== undefined) {
+        if (b.h !== undefined && b.h < aboveY - 0.4) continue;
+        if (b.minY !== undefined && b.minY > aboveY + 0.6) continue;
+      }
       if (segIntersectsAABB(x0, z0, x1, z1, b)) return false;
     }
   }
@@ -264,6 +271,12 @@ GAME.initInput = function (canvas) {
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Tab') e.preventDefault();
     if (!e.repeat) inp.keys[e.code] = true;
+    // Any key is a real gesture that can bring fullscreen back after the
+    // browser dropped it over an Esc — EXCEPT Esc itself, which browsers
+    // refuse to honor for requestFullscreen (it is the reserved exit key).
+    // So resuming with Esc stays windowed for exactly one keypress: the
+    // first W (or anything else) restores it.
+    if (GAME.started && !e.repeat && e.code !== 'Escape' && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
     if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(e.code);
   });
   window.addEventListener('keyup', function (e) { inp.keys[e.code] = false; });
@@ -272,6 +285,9 @@ GAME.initInput = function (canvas) {
   canvas.addEventListener('mousedown', function (e) {
     if (e.button === 0) { inp.lmb = true; inp.lmbPressed = true; }
     if (e.button === 2) inp.rmb = true;
+    // a click back into the game is a real gesture: if the browser threw us
+    // out of fullscreen over an Esc on an overlay, this is where it comes back
+    if (GAME.started && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
     if (GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas) {
       canvas.requestPointerLock && canvas.requestPointerLock();
     }

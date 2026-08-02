@@ -25,12 +25,63 @@ GAME.resolveCircle = function (x, z, r, feetY) {
   return { x: x, z: z };
 };
 
+// hair, built around the head's origin, and every style its own silhouette —
+// when a flattop and a crew cut differ by six centimetres nobody can tell
+// what the barber is selling. Everything stands proud of the head so no face
+// is shared. 'buzz' returns null — bald is a choice now, not the rule.
+function makeHair(style, colorHex) {
+  if (style === 'buzz') return null;
+  var g = new THREE.Group();
+  var mat = new THREE.MeshLambertMaterial({ color: colorHex });
+  function box(w, h, d, x, y, z) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  }
+  switch (style) {
+    case 'crew':       // short and tidy: low cap, trimmed back
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.3, 0.14, 0.06, 0, 0.08, -0.145);
+      break;
+    case 'flat':       // old saves called the flattop 'flat'
+    case 'flattop':    // a proper landing pad, square and tall
+      box(0.32, 0.3, 0.32, 0, 0.3, 0);
+      break;
+    case 'mohawk':     // a thin crest, nothing on the sides
+      box(0.09, 0.3, 0.34, 0, 0.26, 0);
+      break;
+    case 'pompadour':  // swept up and forward, heavy over the brow
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.28, 0.22, 0.16, 0, 0.28, 0.08);
+      break;
+    case 'mullet':     // business up top, party down the neck
+      box(0.3, 0.12, 0.3, 0, 0.2, 0);
+      box(0.3, 0.34, 0.08, 0, -0.02, -0.16);
+      break;
+    case 'afro':       // full volume all round
+      box(0.42, 0.3, 0.42, 0, 0.26, 0);
+      box(0.36, 0.16, 0.36, 0, 0.06, -0.06);
+      break;
+    case 'ponytail':   // tight cap, tail out the back
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.09, 0.09, 0.2, 0, 0.16, -0.24);
+      box(0.08, 0.3, 0.08, 0, -0.02, -0.3);
+      break;
+    default:           // unknown id: the crew cut is nobody's bad haircut
+      box(0.3, 0.1, 0.3, 0, 0.19, 0);
+      box(0.3, 0.14, 0.06, 0, 0.08, -0.145);
+  }
+  return g;
+}
+
 function buildPedMesh(opts) {
   opts = opts || {};
   var g = new THREE.Group();
   var shirtColors = [0xf7a8c4, 0x9fe8d8, 0xf9d99a, 0x8fd0f0, 0xe86a8a, 0x8a6ae8, 0xf0f0e8, 0x60c890];
   var pantColors = [0x3a4a68, 0x684a3a, 0x2a2a34, 0x8a4a5a, 0xd8d0c0];
   var skins = [0xeac8a8, 0xc89878, 0x8a6848, 0x6a4c34, 0xf0d8c0];
+  var hairColors = [0x1c1a18, 0x5a3c22, 0x2e2018, 0xd8b86a, 0xa8482a, 0x8a8a90];
   var shirt = opts.cop ? 0x2a4a8a : U.pick(Math.random, shirtColors);
   var pants = opts.cop ? 0x1a2a4a : U.pick(Math.random, pantColors);
   var skin = U.pick(Math.random, skins);
@@ -49,6 +100,12 @@ function buildPedMesh(opts) {
     var cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), mats.pants);
     cap.position.y = 1.78;
     g.add(cap);
+  } else if (!opts.noHair) {
+    // nobody in this town is bald unless they paid the barber for it
+    // (the player's own hair is the wardrobe's business — see shops.js)
+    var styles = ['crew', 'crew', 'crew', 'flattop', 'flattop', 'pompadour', 'mullet', 'afro', 'ponytail', 'mohawk'];
+    var hair = makeHair(U.pick(Math.random, styles), U.pick(Math.random, hairColors));
+    if (hair) { hair.position.y = 1.6; g.add(hair); }
   }
   function limb(w, len, mat, x, y) {
     var pivot = new THREE.Group();
@@ -84,7 +141,9 @@ GAME.peds = (function () {
       hp: opts.cop ? 60 : 30,
       isCop: !!opts.cop,
       armed: !!opts.cop,
-      fleeT: 0, diveT: 0, deadT: 0,
+      // how quick this one is to swing back rather than run
+      temper: Math.random(),
+      fleeT: 0, diveT: 0, deadT: 0, attackT: 0, punchT: 0,
       // how alert this one is, and how long they take to react to a car
       dodgeSkill: Math.random(),
       reactDelay: U.randRange(Math.random, 0.15, 0.45), reactT: 0,
@@ -127,6 +186,7 @@ GAME.peds = (function () {
     for (var i = 0; i < world.peds.length; i++) {
       var p = world.peds[i];
       if (p.dead || p.isCop) continue;
+      if (p.state === 'attack') continue;   // mid-brawl, past being scared off
       if (U.dist2(p.pos.x, p.pos.z, x, z) < r2) {
         p.state = 'flee';
         p.fleeT = U.randRange(Math.random, 4, 8);
@@ -258,6 +318,89 @@ GAME.peds = (function () {
         ped.heading = U.angleLerp(ped.heading, fh + Math.sin(GAME.time * 3 + i) * 0.5, Math.min(1, dt * 5));
         ped.speed = U.damp(ped.speed, 4.6, 4, dt);
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
+      } else if (ped.state === 'attack') {
+        // this one is coming for you — properly. They run you down faster
+        // than you can walk away, throw quick jabs off both hands, and the
+        // one whose car you stole chases the CAR: bangs on it, hauls you out
+        // of the seat if you sit there, and drives off in it. They give up
+        // once you speed away, get too far, or the fight has gone on long
+        // enough — then they run.
+        ped.attackT -= dt;
+        var tcar = P.inCar && P.car ? P.car : null;
+        var myCar = ped.stolenCar && !ped.stolenCar.dead && ped.stolenCar.occupied !== 'ai' ? ped.stolenCar : null;
+        var chaseCar = myCar && U.dist2(ped.pos.x, ped.pos.z, myCar.pos.x, myCar.pos.z) < 55 * 55;
+        var tx = chaseCar ? myCar.pos.x : P.pos.x;
+        var tz = chaseCar ? myCar.pos.z : P.pos.z;
+        var ty = chaseCar ? myCar.pos.y : (tcar ? tcar.pos.y : P.pos.y);
+        var tSpeed = chaseCar ? Math.abs(myCar.speed) : (tcar ? Math.abs(tcar.speed) : 0);
+        var ad2 = U.dist2(ped.pos.x, ped.pos.z, tx, tz);
+        if (ped.attackT <= 0 || ad2 > 55 * 55 || P.state !== 'alive' ||
+          Math.abs(ty - ped.pos.y) > 3 || tSpeed > 10) {
+          ped.state = 'flee';
+          ped.fleeT = 4;
+          ped.fleeX = P.pos.x; ped.fleeZ = P.pos.z;
+          ped.aimPose = false;
+        } else {
+          var ah = Math.atan2(tx - ped.pos.x, tz - ped.pos.z);
+          ped.heading = U.angleLerp(ped.heading, ah, Math.min(1, dt * 10));
+          ped.aimPose = true;
+          var targetCarBody = chaseCar ? myCar : tcar;
+          var reach = targetCarBody ? (targetCarBody.spec.l / 2 + 1.5) : 1.7;
+          if (ad2 > reach * reach) {
+            // angry beats scared: they close faster than anyone flees
+            ped.speed = U.damp(ped.speed, 5.4, 6, dt);
+            ped.yankT = 0;
+          } else {
+            ped.speed = U.damp(ped.speed, 0, 9, dt);
+            ped.punchT -= dt;
+            if (chaseCar && tSpeed < 2.5) {
+              // hands on his own car: hammering first, a shouted warning at
+              // the door, and only then the yank. The clock restarts whenever
+              // possession changes, so time he spent banging while you were
+              // still climbing in can never mature into an instant ejection.
+              var mine = P.inCar && P.car === myCar;
+              var boarding = P.entering && P.entering.car === myCar;
+              if (mine !== ped.hadDriver) { ped.hadDriver = mine; ped.yankT = 0; ped.yankWarned = false; }
+              ped.yankT = (ped.yankT || 0) + dt;
+              if (mine && !ped.yankWarned && ped.yankT > 0.7) {
+                ped.yankWarned = true;
+                GAME.hud.message('He’s got the door handle — floor it or lose the seat.', 2);
+                GAME.audio.yelp();
+              }
+              if (ped.yankT > 1.7) {
+                if (mine) {
+                  GAME.exitCar();
+                  GAME.hud.message('He wants his ride back.', 2.5);
+                  GAME.audio.yelp();
+                  ped.yankT = 0;
+                  ped.yankWarned = false;
+                } else if (!boarding) {
+                  // owner slides back in and drives off, done with you
+                  myCar.occupied = 'ai';
+                  myCar.ai = { mode: 'traffic', desired: 12, laneX: 0, laneZ: 0 };
+                  if (myCar.parkedSpot) { myCar.parkedSpot.live = null; myCar.parkedSpot = null; }
+                  removePed(ped);
+                  continue;
+                }
+              } else if (ped.punchT <= 0) {
+                ped.punchT = 0.5;
+                GAME.vehicles.damageCar(myCar, 2, 'fists', false);
+                GAME.audio.crash(0.15);
+              }
+            } else if (ped.punchT <= 0) {
+              ped.punchT = 0.55;
+              ped.punchArm = !ped.punchArm;
+              if (tcar) { GAME.vehicles.damageCar(tcar, 2, 'fists', false); GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12); }
+              else GAME.playerDamage(6, 'fists');
+              GAME.audio.crash(0.18);
+            }
+          }
+          // quick jabs off alternating hands, not a slow-motion haymaker
+          var aj = ped.mesh.userData.joints;
+          var jab = U.clamp(ped.punchT / 0.55, 0, 1);
+          aj[ped.punchArm ? 'armR' : 'armL'].rotation.x = -2.3 + jab * 1.1;
+          aj[ped.punchArm ? 'armL' : 'armR'].rotation.x = -1.2;
+        }
       } else if (ped.state === 'dive') {
         // a real dive: they leave their feet, arc through the air and land —
         // rather than sliding sideways with the walk cycle still playing
@@ -384,11 +527,23 @@ GAME.peds = (function () {
     GAME.fx.spawn(ped.pos.x, 1.2, ped.pos.z, { count: 3, color: 0xc42848, spread: 1, vy: 1, life: 0.3, grav: -3 });
     if (ped.hp <= 0) kill(ped, 'shot', byPlayer);
     else if (!ped.isCop) {
-      ped.state = 'flee';
-      ped.fleeT = 6;
-      ped.fleeX = GAME.player.pos.x; ped.fleeZ = GAME.player.pos.z;
+      // Not everyone runs — and whoever DOES turn to fight, fights. The old
+      // hp floor made every brawler quit after two punches, which read as
+      // no fight at all. Once committed, they go the distance; only someone
+      // nearly dead before it starts thinks better of it.
+      var fights = byPlayer &&
+        (ped.state === 'attack' || ((ped.temper || 0) > 0.45 && ped.hp > 4));
+      if (fights) {
+        ped.state = 'attack';
+        ped.attackT = 9;
+        GAME.audio.yelp();
+      } else {
+        ped.state = 'flee';
+        ped.fleeT = 6;
+        ped.fleeX = GAME.player.pos.x; ped.fleeZ = GAME.player.pos.z;
+      }
     }
   }
 
-  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh };
+  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair };
 })();

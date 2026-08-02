@@ -19,7 +19,7 @@ GAME.focus = function () {
 
 GAME.initPlayer = function () {
   var P = GAME.player;
-  var mesh = GAME.peds.buildPedMesh({});
+  var mesh = GAME.peds.buildPedMesh({ noHair: true }); // the wardrobe supplies the hair
   // fixed outfit so the player reads distinctly
   mesh.userData.joints.torso.material = new THREE.MeshLambertMaterial({ color: 0xf0f0f8 });
   mesh.userData.joints.armL.children[0].material = mesh.userData.joints.torso.material;
@@ -44,21 +44,84 @@ GAME.initPlayer = function () {
 function loadSave() {
   try {
     var s = JSON.parse(localStorage.getItem('neonMayhemSave') || '{}');
-    if (typeof s.cash === 'number') GAME.player.cash = s.cash;
+    var P = GAME.player;
+    if (typeof s.cash === 'number') P.cash = s.cash;
     GAME.bests = s.bests || {};
     GAME.prefs = s.prefs || {};
+    // the body comes back the way it was left: condition, armor, and the
+    // whole loadout with its ammo (fists are a birthright, not cargo)
+    if (typeof s.health === 'number') P.health = U.clamp(s.health, 1, 100);
+    if (typeof s.armor === 'number') P.armor = U.clamp(s.armor, 0, 100);
+    if (s.loadout) {
+      for (var w in s.loadout) {
+        if (typeof s.loadout[w] === 'number') P.weapons[w] = { have: true, ammo: s.loadout[w] };
+      }
+      if (s.currentWeapon && P.weapons[s.currentWeapon]) P.currentWeapon = s.currentWeapon;
+    }
     if (GAME.prefs.timeMode && GAME.setTimeMode) GAME.setTimeMode(GAME.prefs.timeMode);
+    // the island decided its gates at build time, before this save existed in
+    // memory — re-judge now that the mission record is actually loaded
+    if (GAME.isla) GAME.isla.syncUnlock();
   } catch (e) { GAME.bests = {}; GAME.prefs = {}; }
 }
 GAME.save = function () {
   try {
-    localStorage.setItem('neonMayhemSave', JSON.stringify({ cash: GAME.player.cash, bests: GAME.bests || {}, prefs: GAME.prefs || {} }));
+    var P = GAME.player;
+    // the loadout, minus fists (Infinity has no JSON form and needs none)
+    var loadout = {};
+    for (var w in P.weapons) {
+      if (w !== 'fist' && P.weapons[w].have && isFinite(P.weapons[w].ammo)) loadout[w] = P.weapons[w].ammo;
+    }
+    localStorage.setItem('neonMayhemSave', JSON.stringify({
+      cash: P.cash, bests: GAME.bests || {}, prefs: GAME.prefs || {},
+      health: Math.round(P.health), armor: Math.round(P.armor),
+      loadout: loadout, currentWeapon: P.currentWeapon
+    }));
   } catch (e) { }
 };
 GAME.addCash = function (n) {
   GAME.player.cash = Math.max(0, GAME.player.cash + n);
   GAME.hud.cashChanged();
   GAME.save();
+};
+
+// The whole save as a portable string, and the way back. The export first
+// flushes the live state (health, ammo, everything GAME.save carries) and
+// then copies EVERY localStorage key verbatim — if a future feature adds a
+// second key, it rides along without this code changing. Import restores
+// all keys and reloads into the imported life.
+GAME.exportSave = function () {
+  GAME.save();   // snapshot the moment, not the last checkpoint
+  var storage = {};
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      storage[k] = localStorage.getItem(k);
+    }
+  } catch (e) { }
+  return JSON.stringify({ game: 'neon-mayhem', v: 2, exported: new Date().toISOString(), storage: storage }, null, 1);
+};
+GAME.importSave = function (text) {
+  var o;
+  try { o = JSON.parse(text); } catch (e) { return { ok: false, why: 'That file is not a save.' }; }
+  try {
+    if (o && o.game === 'neon-mayhem' && o.storage && typeof o.storage === 'object') {
+      // v2: the full storage dump
+      if (typeof o.storage.neonMayhemSave !== 'string') return { ok: false, why: 'That save file is missing its game data.' };
+      JSON.parse(o.storage.neonMayhemSave);   // must at least be JSON
+      for (var k in o.storage) {
+        if (typeof o.storage[k] === 'string') localStorage.setItem(k, o.storage[k]);
+      }
+      return { ok: true };
+    }
+    // v1 wrapped a single save object; a bare save object is also accepted
+    var s = o && o.game === 'neon-mayhem' ? o.save : o;
+    if (!s || typeof s !== 'object' || (s.cash === undefined && !s.prefs && !s.bests)) {
+      return { ok: false, why: 'That file is not a Neon Mayhem save.' };
+    }
+    localStorage.setItem('neonMayhemSave', JSON.stringify(s));
+    return { ok: true };
+  } catch (e) { return { ok: false, why: 'Could not write the save.' }; }
 };
 
 GAME.playerDamage = function (amt, cause) {
@@ -94,7 +157,16 @@ GAME.playerWasted = function (cause) {
   GAME.timeScale = 0.35;
   killLoopingAudio();
   GAME.audio.sting('wasted');
-  GAME.hud.showBig('wasted', 'You wake up at the hospital. Weapons gone, cash intact.');
+  // the card tells the truth about THIS death: a bed only counts on the
+  // island you went down on — and if you own one elsewhere, say why it
+  // didn't help, so the rule teaches itself
+  var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
+  var ownsElsewhere = !home && GAME.shops && GAME.shops.ownsAny();
+  GAME.hud.showBig('wasted', home
+    ? 'You wake up at your place. Cash and weapons intact.'
+    : ownsElsewhere
+      ? 'You wake up at the local hospital — your bed is on the other island. Weapons gone, cash intact.'
+      : 'You wake up at the hospital. Weapons gone, cash intact.');
   GAME.missions.failActive('You got wasted.');
 };
 
@@ -147,22 +219,37 @@ function respawnAfterScreen() {
       P.pos.set(sp.x, GAME.city.groundY(sp.x, sp.z), sp.z);
     } else {
       P.armor = 0;
-      // Wake up at the nearest hospital YOU CAN BE IN. Crash at the channel's
-      // edge and the island hospital is the closest one by distance — but a
-      // hospital behind a locked bridge cannot be where you wake up.
-      var unlocked = !GAME.isla || GAME.isla.isOpen();
-      var hs = GAME.city.pois.hospitals;
-      var sh = hs[0].spawn;
-      var bd = 1e18;
-      for (var hi = 0; hi < hs.length; hi++) {
-        if (hs[hi].isla && !unlocked) continue;
-        var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
-        if (d < bd) { bd = d; sh = hs[hi].spawn; }
+      // Property changes everything: own a safehouse and you wake up in your
+      // own bed with your arsenal untouched. Otherwise it's the nearest
+      // hospital YOU CAN BE IN — crash at the channel's edge and the island
+      // hospital is closest by distance, but a hospital behind a locked
+      // bridge cannot be where you wake up.
+      var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
+      if (home) {
+        P.pos.set(home.x, GAME.city.groundY(home.x, home.z), home.z);
+      } else {
+        // the hospital on the island you went down on — an ambulance does
+        // not carry you across the channel. Off-island beds only come into
+        // it if this island somehow has none you can be in.
+        var unlocked = !GAME.isla || GAME.isla.isOpen();
+        var onIsla = !!(GAME.isla && GAME.isla.contains(P.pos.x, P.pos.z));
+        var hs = GAME.city.pois.hospitals;
+        var sh = hs[0].spawn;
+        var bd = 1e18;
+        for (var hi = 0; hi < hs.length; hi++) {
+          if (hs[hi].isla && !unlocked) continue;
+          var d = U.dist2(P.pos.x, P.pos.z, hs[hi].x, hs[hi].z);
+          if (!!hs[hi].isla !== onIsla) d += 1e12;
+          if (d < bd) { bd = d; sh = hs[hi].spawn; }
+        }
+        P.pos.set(sh.x, GAME.city.groundY(sh.x, sh.z), sh.z);
       }
-      P.pos.set(sh.x, GAME.city.groundY(sh.x, sh.z), sh.z);
     }
-    P.weapons = { fist: { have: true, ammo: Infinity } };
-    P.currentWeapon = 'fist';
+    var keepGear = kind === 'wasted' && GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
+    if (!keepGear) {
+      P.weapons = { fist: { have: true, ammo: Infinity } };
+      P.currentWeapon = 'fist';
+    }
     // every stunt jump found: the arsenal survives a hospital or cell visit
     if (GAME.unlimitedAmmo) GAME.combat.giveAllWeapons();
     GAME.combat.refreshWeaponHud();
@@ -186,13 +273,20 @@ GAME.enterCar = function (car) {
   // helicopter is not takeable from the pavement under it
   if (Math.abs(car.pos.y - P.pos.y) > 3) return false;
   if (car.occupied === 'ai') {
-    // jack: driver bails and flees
+    // jack: the driver bails — and not all of them run. The short-tempered
+    // turn on you and try to take their ride back with their fists.
     var side = car.heading + Math.PI / 2;
     var dx = Math.sin(side) * 1.6, dz = Math.cos(side) * 1.6;
     var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz, car.isPolice ? { cop: true } : undefined);
-    driver.state = 'flee';
-    driver.fleeT = 8;
-    driver.fleeX = car.pos.x; driver.fleeZ = car.pos.z;
+    if (!car.isPolice && driver.temper > 0.55) {
+      driver.state = 'attack';
+      driver.attackT = 12;
+      driver.stolenCar = car;   // it's THEIR car — they'll try to take it back
+    } else {
+      driver.state = 'flee';
+      driver.fleeT = 8;
+      driver.fleeX = car.pos.x; driver.fleeZ = car.pos.z;
+    }
     if (car.isPolice) driver.isCop = false; // he's fleeing his stolen cruiser, not chasing
     GAME.audio.yelp();
     GAME.police.reportCrime(car.isPolice ? 'steal_police' : 'jack', car.pos);
@@ -314,7 +408,9 @@ GAME.updatePlayer = function (dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
   if (P.state !== 'alive') {
     P.stateT += dt;
-    if (P.stateT > 1.2 && !P.respawnQueued && (P.stateT > 3.2 || GAME.key('KeyR') || GAME.key('Enter') || GAME.skipScreen)) {
+    // R means NOW: it arms almost immediately, and the automatic continue
+    // sits far enough out that pressing it visibly matters
+    if (P.stateT > 0.6 && !P.respawnQueued && (P.stateT > 6 || GAME.key('KeyR') || GAME.key('Enter') || GAME.skipScreen)) {
       GAME.skipScreen = false;
       P.respawnQueued = true;
       respawnAfterScreen();
@@ -569,15 +665,17 @@ function updateCamera(dt) {
   var aiming = GAME.combat.aiming && !P.inCar;
 
   if (P.inCar && P.car) {
-    if (Math.abs(mdx) > 1 || Math.abs(mdy) > 1) cam.freeT = 2.2;
+    // any mouse action holds the free look; two idle seconds and the camera
+    // swings itself back behind the car so the road ahead is visible again
+    if (Math.abs(mdx) > 0.5 || Math.abs(mdy) > 0.5) cam.freeT = 2.0;
     cam.freeT = Math.max(0, cam.freeT - dt);
     if (cam.freeT > 0) {
       cam.yaw -= mdx * 0.0032;
       cam.pitch = U.clamp(cam.pitch + mdy * 0.002, 0.08, 1.1);
     } else {
       var behind = P.car.heading + (P.car.speed < -2 ? Math.PI : 0);
-      cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 2.4));
-      cam.pitch = U.damp(cam.pitch, 0.26, 2, dt);
+      cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 3.4));
+      cam.pitch = U.damp(cam.pitch, 0.26, 2.6, dt);
     }
     var heli = P.car.spec.heli, plane = P.car.spec.plane;
     var sp = heli ? Math.abs(P.car.heliSpeed || 0) : Math.abs(P.car.speed);

@@ -34,9 +34,13 @@ GAME.city = (function () {
     return 432 + 20 * Math.sin(z * 0.006) + 8 * Math.sin(z * 0.021 + 2);
   };
   // the city is an island: curved waterlines on the other three sides
-  city.westShore = function (z) { return -512 + 7 * Math.sin(z * 0.009 + 1.5); };
-  city.northShore = function (x) { return -512 + 7 * Math.sin(x * 0.011 + 4); };
-  city.southShore = function (x) { return 512 + 7 * Math.sin(x * 0.013 + 2); };
+  // These waterlines are the LOGICAL coast, and they must not be more
+  // generous than the drawn land plane (x -500..360, z -500..500): the old
+  // curved shores reached up to 19m past it, leaving a band of "dry" open
+  // sea on three sides where a car could drive along the water's surface.
+  city.westShore = function (z) { return -498; };
+  city.northShore = function (x) { return -498; };
+  city.southShore = function (x) { return 498; };
   // the east piers. The z=150 slot belongs to the south bridge now, so the
   // pier that used to sit there stepped down a block.
   var PIERS = [[250, 505], [-180, 470]];
@@ -285,6 +289,13 @@ GAME.city = (function () {
     { minX: -440, maxX: -360, minZ: -10, maxZ: 48 },
     { minX: -195, maxX: -105, minZ: -138, maxZ: -85 }, // police station
     { minX: 155, maxX: 215, minZ: -110, maxZ: -50 },   // respray garages
+    { minX: -26, maxX: 26, minZ: -226, maxZ: -174 },   // the helipad tower
+    // shop slots in the strip's western building row: the storefronts build
+    // into these gaps and read as part of the street, not beach clutter
+    { minX: 318, maxX: 346, minZ: -78, maxZ: -50 },    // hardware
+    { minX: 318, maxX: 346, minZ: 78, maxZ: 106 },     // tailor
+    { minX: 318, maxX: 346, minZ: -134, maxZ: -106 },  // barber
+    { minX: 318, maxX: 346, minZ: 194, maxZ: 222 },    // strip condo
     { minX: -448, maxX: -408, minZ: -200, maxZ: -160 },
     { minX: 252, maxX: 292, minZ: -440, maxZ: -400 }
   ];
@@ -342,7 +353,11 @@ GAME.city = (function () {
     // The two ends of the world, for the signs over the bridges. Costa Rosa
     // is the CITY — the whole map, both islands. The mainland is Isla Rosa,
     // the neon island; Isla Verde is the green one across the channel.
-    'ISLA VERDE', 'ISLA ROSA'];
+    'ISLA VERDE', 'ISLA ROSA',
+    // storefronts — the shops are real buildings with their names in lights
+    // (slots consumed by js/shops.js; keep this order in sync with SIGN_SLOT there)
+    'ROSA HARDWARE', 'VERDE HARDWARE', 'THREADS', 'CORTES CUTS',
+    'GRAN ROSA MOTORS', 'THE LUCKY GULL', 'DOCKSIDE FLAT', 'STRIP CONDO', 'MARINA VILLA'];
   var SIGN_COLORS = ['#ff4fa3', '#38e8ff', '#ffe14f', '#7dff6a', '#ff8a3d', '#c86bff', '#ff5d5d', '#59ffc8'];
   function signAtlas() {
     var cv = document.createElement('canvas');
@@ -410,12 +425,18 @@ GAME.city = (function () {
     batches.ground.addGroundQuad(-70, 0, 0, 860, 1000, 0, 0x17131f);
     // asphalt: vertical roads
     var asphalt = new GeoBatch();
+    // the grid stops at the airport fence: the roads that used to run the full
+    // strip carried straight across the runway. Anything overlapping the fence
+    // box ends just north of it instead.
+    var AP = city.airport;
     for (var i = 0; i < R.length; i++) {
-      asphalt.addGroundQuad(R[i], 0.03, 0, ROAD_HALF * 2, 960, 0, 0x100e16);
+      var hitsAirport = R[i] + ROAD_HALF > AP.fx0 && R[i] - ROAD_HALF < AP.fx1;
+      var zEnd = hitsAirport ? AP.fz0 - 1 : 480;
+      asphalt.addGroundQuad(R[i], 0.03, (-480 + zEnd) / 2, ROAD_HALF * 2, zEnd + 480, 0, 0x100e16);
       asphalt.addGroundQuad(-72, 0.03, R[i], 856, ROAD_HALF * 2, 0, 0x100e16);
       // dashed center lines
       for (var d = -470; d < 470; d += 12) {
-        batches.marks.addGroundQuad(R[i], 0.06, d + 3, 0.25, 4, 0, 0xd8c46a);
+        if (d + 5 < zEnd) batches.marks.addGroundQuad(R[i], 0.06, d + 3, 0.25, 4, 0, 0xd8c46a);
         if (d > -500 && d < 350) batches.marks.addGroundQuad(d + 3, 0.06, R[i], 4, 0.25, 0, 0xd8c46a);
       }
     }
@@ -597,33 +618,80 @@ GAME.city = (function () {
 
   function buildPOIs(batches, atlas) {
     var P = city.pois;
-    // hospitals (the island builds its own; this is Costa Rosa's)
+    // hospitals (the island builds its own; this is Costa Rosa's). Dressed
+    // like the institution it is, not a white shoebox: banded facade, an
+    // emergency canopy on columns, and a red cross you can read from the air.
     P.hospitals.forEach(function (H) {
       if (H.isla) return;
       batches.generic.addBox(H.x, 9, H.z - 12, 60, 18, 28, 0, 0xd8e8f0, 28);
       addSolid(H.x, H.z - 12, 60, 28, 18);
+      batches.generic.addBox(H.x, 1.5, H.z - 12, 60.6, 3, 28.6, 0, 0xc05a6a, 0);      // base band
+      // cornice as a RIM, not a slab — a slab across the roof re-buries
+      // anyone standing on the solid beneath it (the observatory lesson).
+      // The short strips BUTT against the long ones instead of running the
+      // full depth — overlapped corners are two coplanar faces flickering
+      [[0, -14.15, 60.6, 0.9], [0, 14.15, 60.6, 0.9], [-30.15, 0, 0.9, 27.4], [30.15, 0, 0.9, 27.4]].forEach(function (c) {
+        batches.generic.addBox(H.x + c[0], 18.35, H.z - 12 + c[1], c[2], 0.7, c[3], 0, 0xb8ccd8, 0);
+      });
+      batches.generic.addBox(H.x - 22, 20.4, H.z - 12, 10, 4, 10, 0, 0xc8dce8, 0);    // plant room
+      // emergency canopy over the entrance
+      batches.generic.addBox(H.x, 4.6, H.z + 4.4, 20, 0.7, 6, 0, 0xc05a6a, 0);
+      [-8, 8].forEach(function (cx2) {
+        batches.generic.addBox(H.x + cx2, 2.3, H.z + 6.6, 0.7, 4.6, 0.7, 0, 0xe8f0f4, 0);
+      });
+      // the cross, proud of the facade and again flat on the roof
+      batches.marks.addBox(H.x + 20, 12.5, H.z + 2.35, 1.6, 6, 0.3, 0, 0xe23a4a, 0);
+      batches.marks.addBox(H.x + 20, 12.5, H.z + 2.35, 4.8, 1.8, 0.28, 0, 0xe23a4a, 0);
+      batches.marks.addGroundQuad(H.x, 18.08, H.z - 12, 2.2, 8, 0, 0xe23a4a);
+      batches.marks.addGroundQuad(H.x, 18.08, H.z - 12, 8, 2.2, 0, 0xe23a4a);
       addSign(batches.signs, 19, H.x, 14, H.z + 2.3, 0, 30, 5);
     });
-    // The find: a helipad on the main hospital's roof, with a helicopter on
-    // it. It shows on no map — the way onto it is out of the sky, a parachute
-    // off the plane or a long jump, and the reward for arriving is a way off
-    // again. This is the mainland's only helicopter.
-    var RH = P.hospitals[0];
-    var roofY = 18.06, padX = RH.x + 12, padZ = RH.z - 12;
-    batches.ground.addGroundQuad(padX, roofY, padZ, 16, 16, 0, 0x1a1a22);
-    batches.marks.addGroundQuad(padX - 2.2, roofY + 0.03, padZ, 1, 7, 0, 0xf0d020);
-    batches.marks.addGroundQuad(padX + 2.2, roofY + 0.03, padZ, 1, 7, 0, 0xf0d020);
-    batches.marks.addGroundQuad(padX, roofY + 0.03, padZ, 3.6, 1, 0, 0xf0d020);
+    // The find: a helipad crowning a downtown tower, with a helicopter on it.
+    // It shows on no map — the way onto it is out of the sky, a parachute off
+    // the plane onto the roof, and the reward for arriving is a way off again.
+    // This is the mainland's only helicopter. It used to sit on the hospital
+    // roof, but eighteen metres is barely a find; now it takes real flying.
+    var HT = { x: 0, z: -200, h: 72 };
+    batches.downtown.addBox(HT.x, HT.h / 2, HT.z, 30, HT.h, 30, 0, 0xb8c4e8, 28);
+    addSolid(HT.x, HT.z, 30, 30, HT.h);
+    var roofY = HT.h + 0.06, padX = HT.x, padZ = HT.z;
+    // low parapet, scenery only — a wall solid up here would fight the skids.
+    // Inset from the tower edge (outer faces shared the wall planes) and
+    // mitred at the corners (the bars used to overlap there, both faces
+    // fighting for the same pixels on approach from the air)
+    [[-14.3, 0, 1.2, 29.8], [14.3, 0, 1.2, 29.8], [0, -14.3, 27.4, 1.2], [0, 14.3, 27.4, 1.2]].forEach(function (pp) {
+      batches.generic.addBox(HT.x + pp[0], HT.h + 0.5, HT.z + pp[1], pp[2], 1.0, pp[3], 0, 0x8a94b8, 0);
+    });
+    batches.ground.addGroundQuad(padX, roofY + 0.06, padZ, 16, 16, 0, 0x1a1a22);
+    batches.marks.addGroundQuad(padX - 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
+    batches.marks.addGroundQuad(padX + 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
+    batches.marks.addGroundQuad(padX, roofY + 0.12, padZ, 3.6, 1, 0, 0xf0d020);
     // corner ring segments, drawn as four bars so it reads from the air
     [[-6.6, 0, 1.2, 13.6], [6.6, 0, 1.2, 13.6], [0, -6.6, 13.6, 1.2], [0, 6.6, 13.6, 1.2]].forEach(function (q) {
-      batches.marks.addGroundQuad(padX + q[0], roofY + 0.02, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
+      batches.marks.addGroundQuad(padX + q[0], roofY + 0.1, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
     });
     city.roofHelipad = { x: padX, z: padZ, y: roofY };
     city.parkedSpots.push({ x: padX, z: padZ, y: roofY, heading: Math.PI / 2, vtype: 'helicopter' });
 
-    // police station (Costa Rosa's; the island builds its own)
+    // police station (Costa Rosa's; the island builds its own): navy base
+    // band, a columned portico, blue lamps flanking the door, flag mast
     batches.generic.addBox(P.police.x, 7, P.police.z + 10, 70, 14, 26, 0, 0x8a94c0, 28);
     addSolid(P.police.x, P.police.z + 10, 70, 26, 14);
+    batches.generic.addBox(P.police.x, 1.4, P.police.z + 10, 70.6, 2.8, 26.6, 0, 0x2c3a6a, 0);   // base band
+    // short cornice strips butt against the long ones — mitred, not overlapped
+    [[0, -13.15, 70.6, 0.9], [0, 13.15, 70.6, 0.9], [-35.15, 0, 0.9, 25.4], [35.15, 0, 0.9, 25.4]].forEach(function (c) {
+      batches.generic.addBox(P.police.x + c[0], 14.35, P.police.z + 10 + c[1], c[2], 0.7, c[3], 0, 0x6a76a8, 0);
+    });
+    batches.generic.addBox(P.police.x, 4.9, P.police.z - 4.6, 16, 0.7, 4.4, 0, 0x2c3a6a, 0);      // portico
+    [-6, 6].forEach(function (cx3) {
+      batches.generic.addBox(P.police.x + cx3, 2.45, P.police.z - 6.2, 0.8, 4.9, 0.8, 0, 0xc8d0e8, 0);
+    });
+    // blue lamps either side of the door (basic material: they read at night)
+    [-8.6, 8.6].forEach(function (cx4) {
+      batches.marks.addBox(P.police.x + cx4, 4.2, P.police.z - 3.2, 0.6, 0.9, 0.6, 0, 0x4da3ff, 0);
+    });
+    batches.generic.addBox(P.police.x + 28, 9, P.police.z - 2, 0.4, 18, 0.4, 0, 0xb8c0d8, 0);     // mast
+    batches.marks.addBox(P.police.x + 29.2, 16.5, P.police.z - 2, 2.4, 1.4, 0.1, 0, 0x4da3ff, 0); // pennant
     addSign(batches.signs, 20, P.police.x, 11, P.police.z - 3.3, Math.PI, 26, 4.5);
     // respray garages: three walls + roof, opening faces west toward a road
     P.resprays.forEach(function (G) {
@@ -769,14 +837,23 @@ GAME.city = (function () {
       [0.55, '#5a92d8'], [1, '#2f63b0']
     ]);
     city.skyTextures = { night: nightTex, day: dayTex };
+    // The whole celestial set rides in one group that follows the camera.
+    // Built world-anchored, the dome circled the MAINLAND's origin — and Isla
+    // Verde's east coast reaches within 240 m of its rim, where the horizon
+    // band stood up out of the sea like a wall and the ocean plane carried on
+    // past it. A horizon you can drive to isn't a horizon; pinned to the
+    // viewer it is unreachable from every island, including future ones.
+    var celestial = new THREE.Group();
+    scene.add(celestial);
+    city.skyAnchor = celestial;
     // base dusk/night dome (tinted darker at deep night) with a day dome fading over it
     var sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 20, 14), new THREE.MeshBasicMaterial({ map: nightTex, side: THREE.BackSide, fog: false, depthWrite: false }));
     sky.renderOrder = -10;
-    scene.add(sky);
+    celestial.add(sky);
     city.sky = sky;
     var skyDay = new THREE.Mesh(new THREE.SphereGeometry(1390, 20, 14), new THREE.MeshBasicMaterial({ map: dayTex, side: THREE.BackSide, fog: false, depthWrite: false, transparent: true, opacity: 0 }));
     skyDay.renderOrder = -9;
-    scene.add(skyDay);
+    celestial.add(skyDay);
     city.skyDay = skyDay;
 
     var starPos = [];
@@ -788,18 +865,18 @@ GAME.city = (function () {
     var sg = new THREE.BufferGeometry();
     sg.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
     var stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 2.6, fog: false, sizeAttenuation: false }));
-    scene.add(stars);
+    celestial.add(stars);
     city.stars = stars;
 
     var moon = new THREE.Mesh(new THREE.CircleGeometry(60, 24), new THREE.MeshBasicMaterial({ color: 0xf0ead8, fog: false }));
     moon.position.set(1150, 520, -220);
     moon.lookAt(0, 0, 0);
-    scene.add(moon);
+    celestial.add(moon);
     city.moon = moon;
     var halo = new THREE.Mesh(new THREE.CircleGeometry(130, 24), new THREE.MeshBasicMaterial({ map: radialGlowTexture('rgba(220,225,255,0.5)'), transparent: true, blending: THREE.AdditiveBlending, fog: false, depthWrite: false }));
     halo.position.copy(moon.position).multiplyScalar(0.985);
     halo.lookAt(0, 0, 0);
-    scene.add(halo);
+    celestial.add(halo);
     city.moonHalo = halo;
   }
 
@@ -974,7 +1051,11 @@ GAME.city = (function () {
     var twr = new GeoBatch();
     twr.addBox(-100, 55, -100, 26, 110, 26, Math.PI / 4, 0x9aa8d0, 32);
     twr.addBox(-100, 113, -100, 14, 6, 14, Math.PI / 4, 0x30284a, 0);
-    addSolid(-100, -100, 30, 30, 110);
+    // the tower is rotated 45°: its AABB is 26·√2 ≈ 37 wide. The old 30x30
+    // solid undershot the corners, so a helicopter setting down near one
+    // stood on air and fell through "the roof". The crown gets its own cap.
+    addSolid(-100, -100, 37, 37, 110);
+    addSolid(-100, -100, 15, 15, 111.2);
     var twrTex = windowTexture('#0e1226', ['#a8e8ff', '#ffd0e8', '#ffe9a8'], 10, 9, 0.6);
     var twrMesh = new THREE.Mesh(twr.build(), new THREE.MeshLambertMaterial({ map: twrTex, emissive: 0xccccdd, emissiveMap: twrTex, vertexColors: true }));
     twrMesh.matrixAutoUpdate = false;
@@ -984,8 +1065,10 @@ GAME.city = (function () {
     crown.rotation.y = Math.PI / 4;
     scene.add(crown);
     var signB = new GeoBatch();
-    addSign(signB, 21, -100, 119, -100, 0, 26, 5);
-    addSign(signB, 21, -100, 119, -100, Math.PI, 26, 5);
+    // the two faces used to sit in the SAME plane — two double-sided quads
+    // fighting for depth is exactly the flicker the name board showed
+    addSign(signB, 21, -100, 119, -100.25, 0, 26, 5);
+    addSign(signB, 21, -100, 119, -99.75, Math.PI, 26, 5);
     var sm = new THREE.Mesh(signB.build(), city.signMesh.material);
     sm.matrixAutoUpdate = false;
     scene.add(sm);
@@ -1205,6 +1288,18 @@ GAME.city = (function () {
         if (lx < -466 || lx > 392 || Math.abs(lz) > 472) return false;
         if (city.isInWater(lx, lz)) return false;
       }
+      // and nothing tall in the air corridor: a wall two metres past the lip
+      // turns the jump into a face-plant that can never be credited
+      for (var t2 = 0.1; t2 <= 1.3; t2 += 0.06) {
+        var cx2 = x + ux * (len / 2 + range * t2);
+        var cz2 = z + uz * (len / 2 + range * t2);
+        var boxes = city.hash.query(cx2, cz2, 3);
+        for (var b2 = 0; b2 < boxes.length; b2++) {
+          var q2 = boxes[b2];
+          if (q2.h === undefined || q2.h < 3) continue;
+          if (cx2 > q2.minX - 2 && cx2 < q2.maxX + 2 && cz2 > q2.minZ - 2 && cz2 < q2.maxZ + 2) return false;
+        }
+      }
       return true;
     }
     for (var a = 0; a < anchors.length && out.length < TARGET; a++) {
@@ -1233,8 +1328,11 @@ GAME.city = (function () {
           var shape = SHAPES[out.length % SHAPES.length];
           var vergeOut = 11 + shape.w / 2;
           var bst = out.length % 3 === 2;
-          // verge beside a north-south road, launching along it
+          // verge beside a north-south road, launching along it. The airfield
+          // is off-limits to the filler: a random ramp beside the apron sat
+          // right where the plane parks. (The hand-placed runway jumps stay.)
           var vx = R[i2] + side * vergeOut, vz = d + jitter;
+          if (city.inAirport(vx, vz)) continue;
           if (offRoad(vx, vz) && ok(vx, vz)) {
             var vrot = side > 0 ? 0 : Math.PI, vok = false;
             for (var fv = 0; fv < 2; fv++) {
@@ -1245,6 +1343,7 @@ GAME.city = (function () {
           }
           // verge beside an east-west road
           var hx = d + jitter, hz = R[i2] + side * vergeOut;
+          if (city.inAirport(hx, hz)) continue;
           if (hx < 340 && offRoad(hx, hz) && ok(hx, hz)) {
             var hrot = side > 0 ? Math.PI / 2 : -Math.PI / 2, hok = false;
             for (var fh = 0; fh < 2; fh++) {
@@ -1313,9 +1412,14 @@ GAME.city = (function () {
       // back face
       tri(a1[0], a1[1], a1[2], b1[0], b1[1], b1[2], b1g[0], b1g[1], b1g[2], 0.20, 0.19, 0.23);
       tri(a1[0], a1[1], a1[2], b1g[0], b1g[1], b1g[2], a1g[0], a1g[1], a1g[2], 0.20, 0.19, 0.23);
-      // side walls
-      tri(a0[0], a0[1], a0[2], a1[0], a1[1], a1[2], a1g[0], a1g[1], a1g[2], 0.31, 0.30, 0.34);
-      tri(b0[0], b0[1], b0[2], b1g[0], b1g[1], b1g[2], b1[0], b1[1], b1[2], 0.31, 0.30, 0.34);
+      // side walls, tucked 2 cm inboard of the deck edge. Flush with it, a
+      // ramp parked against the boardwalk put its side in the exact plane of
+      // the boardwalk's raised lip and the two flickered — the audit found
+      // two ramps doing precisely that. The 2 cm eave is invisible.
+      var sa0 = P(-hw + 0.02, -hl, 0), sa1 = P(-hw + 0.02, hl, s.h), sa1g = P(-hw + 0.02, hl, 0);
+      var sb0 = P(hw - 0.02, -hl, 0), sb1 = P(hw - 0.02, hl, s.h), sb1g = P(hw - 0.02, hl, 0);
+      tri(sa0[0], sa0[1], sa0[2], sa1[0], sa1[1], sa1[2], sa1g[0], sa1g[1], sa1g[2], 0.31, 0.30, 0.34);
+      tri(sb0[0], sb0[1], sb0[2], sb1g[0], sb1g[1], sb1g[2], sb1[0], sb1[1], sb1[2], 0.31, 0.30, 0.34);
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({
@@ -1329,6 +1433,22 @@ GAME.city = (function () {
       var bc = P(0, hl + 1.1, 0);
       var across = Math.abs(Math.cos(s.rot)) > 0.5;
       addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, s.h * 0.62, 'building');
+      // the raked flanks are solid too. Every ramp is axis-aligned, so each
+      // side is three stepped boxes rising with the deck — walk or drive into
+      // the side and you hit a wall, while anyone ON the deck stands above the
+      // step beside them and riding up the low quarter still works for angled
+      // hits on the approach. Boxes run lengthways along the ramp (world axis
+      // depends on the rotation), one metre thick, flush with the deck edge.
+      for (var sd = -1; sd <= 1; sd += 2) {
+        for (var st = 0; st < 3; st++) {
+          var t0 = 0.25 + st * 0.25, t1 = t0 + 0.25;
+          var lzMid = -hl + s.len * (t0 + t1) / 2, lzLen = s.len * 0.25 + 0.2;
+          var wc = P(sd * (s.w / 2 + 0.5), lzMid, 0);
+          addSolid(wc[0], wc[2],
+            across ? 1.0 : lzLen, across ? lzLen : 1.0,
+            s.h * t1, 'prop', true);
+        }
+      }
     }
     var g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
