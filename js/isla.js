@@ -998,21 +998,31 @@ GAME.isla = (function () {
     // distinct tones now, and everything reads against everything.
     var WALL = 0xc4a97e, TRIM = 0xe3d3ac, PLINTH = 0x99805f, TERRACE = 0x8d7a5e;
 
-    // plinth and main block
+    // plinth and main block. The block's base starts 6 cm up: flush with the
+    // plinth's underside, the two coplanar bottoms peeked out and fought at
+    // the pad rim where the hillside blend dips below them
     b.addBox(O.x, y + 0.6, O.z, OBS.W + 6, 1.2, OBS.D + 6, 0, PLINTH, 0);
-    b.addBox(O.x, y + OBS.H / 2, O.z, OBS.W, OBS.H, OBS.D, 0, WALL, 0);
+    b.addBox(O.x, y + 0.06 + (OBS.H - 0.06) / 2, O.z, OBS.W, OBS.H - 0.06, OBS.D, 0, WALL, 0);
     city.addSolid(O.x, O.z, OBS.W, OBS.D, top);
-    // pilasters down the long faces, so it reads as a building and not a slab
+    // pilasters down the long faces, so it reads as a building and not a slab.
+    // Their backs sink 20 cm INTO the wall rather than resting on its face —
+    // a back flush with the facade shares the stair cheek walls' plane
+    // They also start at the block's raised base line and stop 5 cm shy of
+    // the roofline (the cornice hides the gap): full height put their tops in
+    // the roof plane and their feet in the plinth's underside plane
+    var pilH = OBS.H - 0.17, pilY = y + 0.12 + pilH / 2;
     for (var i = -3; i <= 3; i++) {
       var px = O.x + i * (OBS.W / 7.4);
-      b.addBox(px, y + OBS.H / 2, O.z + hd + 0.35, 1.6, OBS.H, 0.7, 0, TRIM, 0);
-      b.addBox(px, y + OBS.H / 2, O.z - hd - 0.35, 1.6, OBS.H, 0.7, 0, TRIM, 0);
+      b.addBox(px, pilY, O.z + hd + 0.25, 1.6, pilH, 0.9, 0, TRIM, 0);
+      b.addBox(px, pilY, O.z - hd - 0.25, 1.6, pilH, 0.9, 0, TRIM, 0);
     }
     // The cornice is a RING around the roof edge, not a slab across it. The
     // old slab lay 0.6m of stone over the whole terrace while the player
     // walked on the solid beneath — every visitor waded shin-deep in roof.
-    [[0, hd + 0.7, OBS.W + 2.4, 1.4], [0, -hd - 0.7, OBS.W + 2.4, 1.4],
-     [hw + 0.7, 0, 1.4, OBS.D], [-hw - 0.7, 0, 1.4, OBS.D]].forEach(function (c) {
+    // ...and it rides 4 cm off the facade: with its inner face IN the wall
+    // plane it fought the stair cheek walls' end faces
+    [[0, hd + 0.74, OBS.W + 2.4, 1.4], [0, -hd - 0.74, OBS.W + 2.4, 1.4],
+     [hw + 0.74, 0, 1.4, OBS.D], [-hw - 0.74, 0, 1.4, OBS.D]].forEach(function (c) {
       b.addBox(O.x + c[0], top - 0.3, O.z + c[1], c[2], 0.6, c[3], 0, TRIM, 0);
     });
     // and the terrace floor itself, a darker wash a hair proud of the block's
@@ -1040,7 +1050,8 @@ GAME.isla = (function () {
     // cheek walls either side of the flight, so you cannot walk off it
     for (var e2 = 0; e2 < 2; e2++) {
       var ex = sx + (e2 ? 1 : -1) * (OBS.STAIR_W / 2 + 0.5);
-      b.addBox(ex, y + OBS.H / 2 + 0.4, sz, 1, OBS.H + 0.8, OBS.STAIR_L, 0, PLINTH, 0);
+      // base lifted 6 cm like the block — flush, it shared the plinth's underside plane
+      b.addBox(ex, y + OBS.H / 2 + 0.43, sz, 1, OBS.H + 0.74, OBS.STAIR_L, 0, PLINTH, 0);
       city.addSolid(ex, sz, 1, OBS.STAIR_L, top + 0.9);
     }
 
@@ -1070,7 +1081,9 @@ GAME.isla = (function () {
     scene.add(dome);
     // two smaller domes on the wings, the way an observatory carries them
     [-1, 1].forEach(function (sgn) {
-      var wx = O.x + sgn * (hw - 4.5);
+      // half a metre inboard: at hw - 4.5 the pavilion's outer face landed
+      // exactly on the parapet's outer plane and the two fought
+      var wx = O.x + sgn * (hw - 5.05);
       b.addBox(wx, top + 2.2, O.z + 10, 9, 4, 9, 0, WALL, 0);
       city.addSolid(wx, O.z + 10, 9, 9, top + 4.2);
       var d2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 14, 9, 0, TAU, 0, Math.PI / 2),
@@ -1323,7 +1336,9 @@ GAME.isla = (function () {
       var ga = Math.atan2(gnx[0] - gp[0], gnx[1] - gp[1]);
       var gy2 = s.deckY(gp[0], gp[1]) || 0;
       gateBatch.addBox(gp[0], gy2 + 1.3, gp[1], s.half * 2 + 2, 2.6, 1.4, ga, 0xd8d0c0, 0);
-      gateBatch.addBox(gp[0], gy2 + 2.8, gp[1], s.half * 2 + 2, 0.5, 1.6, ga, 0xff4f4f, 0);
+      // the red rail is a nose shorter than the bar under it — equal widths
+      // put their end faces in one plane
+      gateBatch.addBox(gp[0], gy2 + 2.8, gp[1], s.half * 2 + 1.9, 0.5, 1.6, ga, 0xff4f4f, 0);
       var g1 = city.addSolid(gp[0], gp[1], Math.abs(Math.cos(ga)) * (s.half * 2 + 2) + 1.6,
         Math.abs(Math.sin(ga)) * (s.half * 2 + 2) + 1.6, gy2 + 3.0, 'gate', true);
       g1.gateH = gy2 + 2.6;

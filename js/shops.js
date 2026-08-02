@@ -539,7 +539,9 @@ GAME.shops = (function () {
         // a glass hall: full-width lit glazing, and the trade's own proof —
         // a machine on a turntable out front (spun in update())
         onFace(0.12, 0, gy + 2.3, S.w - 2, 4.2, 0.14, 0x9fd8e8);
-        onFace(0.2, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x8dffd8);
+        // the skirt strip stands clear of the glazing's planes — at 0.2 its
+        // inner face shared the glass's and the two banded strips flickered
+        onFace(0.3, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x8dffd8);
         var plX = fx - dir.x * 7 + px2.x * (S.w / 2 - 3);
         var plZ = fz - dir.z * 7 + px2.z * (S.w / 2 - 3);
         trims.addBox(plX, gy + 0.4, plZ, 4.4, 0.8, 4.4, 0, 0x8dffd8, 0);
@@ -551,8 +553,10 @@ GAME.shops = (function () {
           spinProps.push({ mesh: showCar, rate: 0.35 });
         }
       } else if (loc.kind === 'safehouse') {
-        // a home: upstairs window band and a lamp by the door
-        onFace(0.12, 0, gy + S.h - 2.2, S.w - 3, 1.6, 0.14, 0xffe9b0);
+        // a home: upstairs window band and a lamp by the door. The band stops
+        // below the sign board — at -2.2 the two shared planes AND a 0.4 m
+        // strip of facade, and the lit windows flickered against the board
+        onFace(0.12, 0, gy + S.h - 2.65, S.w - 3, 1.6, 0.14, 0xffe9b0);
         onFace(0.45, doorW / 2 + 0.8, gy + 3.4, 0.3, 0.5, 0.3, 0xffd890);
       }
       // the name in lights

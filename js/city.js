@@ -627,8 +627,10 @@ GAME.city = (function () {
       addSolid(H.x, H.z - 12, 60, 28, 18);
       batches.generic.addBox(H.x, 1.5, H.z - 12, 60.6, 3, 28.6, 0, 0xc05a6a, 0);      // base band
       // cornice as a RIM, not a slab — a slab across the roof re-buries
-      // anyone standing on the solid beneath it (the observatory lesson)
-      [[0, -14.15, 60.6, 0.9], [0, 14.15, 60.6, 0.9], [-30.15, 0, 0.9, 28.6], [30.15, 0, 0.9, 28.6]].forEach(function (c) {
+      // anyone standing on the solid beneath it (the observatory lesson).
+      // The short strips BUTT against the long ones instead of running the
+      // full depth — overlapped corners are two coplanar faces flickering
+      [[0, -14.15, 60.6, 0.9], [0, 14.15, 60.6, 0.9], [-30.15, 0, 0.9, 27.4], [30.15, 0, 0.9, 27.4]].forEach(function (c) {
         batches.generic.addBox(H.x + c[0], 18.35, H.z - 12 + c[1], c[2], 0.7, c[3], 0, 0xb8ccd8, 0);
       });
       batches.generic.addBox(H.x - 22, 20.4, H.z - 12, 10, 4, 10, 0, 0xc8dce8, 0);    // plant room
@@ -653,8 +655,11 @@ GAME.city = (function () {
     batches.downtown.addBox(HT.x, HT.h / 2, HT.z, 30, HT.h, 30, 0, 0xb8c4e8, 28);
     addSolid(HT.x, HT.z, 30, 30, HT.h);
     var roofY = HT.h + 0.06, padX = HT.x, padZ = HT.z;
-    // low parapet, scenery only — a wall solid up here would fight the skids
-    [[-14.4, 0, 1.2, 30], [14.4, 0, 1.2, 30], [0, -14.4, 30, 1.2], [0, 14.4, 30, 1.2]].forEach(function (pp) {
+    // low parapet, scenery only — a wall solid up here would fight the skids.
+    // Inset from the tower edge (outer faces shared the wall planes) and
+    // mitred at the corners (the bars used to overlap there, both faces
+    // fighting for the same pixels on approach from the air)
+    [[-14.3, 0, 1.2, 29.8], [14.3, 0, 1.2, 29.8], [0, -14.3, 27.4, 1.2], [0, 14.3, 27.4, 1.2]].forEach(function (pp) {
       batches.generic.addBox(HT.x + pp[0], HT.h + 0.5, HT.z + pp[1], pp[2], 1.0, pp[3], 0, 0x8a94b8, 0);
     });
     batches.ground.addGroundQuad(padX, roofY + 0.06, padZ, 16, 16, 0, 0x1a1a22);
@@ -673,7 +678,8 @@ GAME.city = (function () {
     batches.generic.addBox(P.police.x, 7, P.police.z + 10, 70, 14, 26, 0, 0x8a94c0, 28);
     addSolid(P.police.x, P.police.z + 10, 70, 26, 14);
     batches.generic.addBox(P.police.x, 1.4, P.police.z + 10, 70.6, 2.8, 26.6, 0, 0x2c3a6a, 0);   // base band
-    [[0, -13.15, 70.6, 0.9], [0, 13.15, 70.6, 0.9], [-35.15, 0, 0.9, 26.6], [35.15, 0, 0.9, 26.6]].forEach(function (c) {
+    // short cornice strips butt against the long ones — mitred, not overlapped
+    [[0, -13.15, 70.6, 0.9], [0, 13.15, 70.6, 0.9], [-35.15, 0, 0.9, 25.4], [35.15, 0, 0.9, 25.4]].forEach(function (c) {
       batches.generic.addBox(P.police.x + c[0], 14.35, P.police.z + 10 + c[1], c[2], 0.7, c[3], 0, 0x6a76a8, 0);
     });
     batches.generic.addBox(P.police.x, 4.9, P.police.z - 4.6, 16, 0.7, 4.4, 0, 0x2c3a6a, 0);      // portico
@@ -1406,9 +1412,14 @@ GAME.city = (function () {
       // back face
       tri(a1[0], a1[1], a1[2], b1[0], b1[1], b1[2], b1g[0], b1g[1], b1g[2], 0.20, 0.19, 0.23);
       tri(a1[0], a1[1], a1[2], b1g[0], b1g[1], b1g[2], a1g[0], a1g[1], a1g[2], 0.20, 0.19, 0.23);
-      // side walls
-      tri(a0[0], a0[1], a0[2], a1[0], a1[1], a1[2], a1g[0], a1g[1], a1g[2], 0.31, 0.30, 0.34);
-      tri(b0[0], b0[1], b0[2], b1g[0], b1g[1], b1g[2], b1[0], b1[1], b1[2], 0.31, 0.30, 0.34);
+      // side walls, tucked 2 cm inboard of the deck edge. Flush with it, a
+      // ramp parked against the boardwalk put its side in the exact plane of
+      // the boardwalk's raised lip and the two flickered — the audit found
+      // two ramps doing precisely that. The 2 cm eave is invisible.
+      var sa0 = P(-hw + 0.02, -hl, 0), sa1 = P(-hw + 0.02, hl, s.h), sa1g = P(-hw + 0.02, hl, 0);
+      var sb0 = P(hw - 0.02, -hl, 0), sb1 = P(hw - 0.02, hl, s.h), sb1g = P(hw - 0.02, hl, 0);
+      tri(sa0[0], sa0[1], sa0[2], sa1[0], sa1[1], sa1[2], sa1g[0], sa1g[1], sa1g[2], 0.31, 0.30, 0.34);
+      tri(sb0[0], sb0[1], sb0[2], sb1g[0], sb1g[1], sb1g[2], sb1[0], sb1[1], sb1[2], 0.31, 0.30, 0.34);
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({
