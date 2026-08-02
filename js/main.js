@@ -361,6 +361,9 @@
     // moment the camera is down among things it could clip. Hysteresis keeps
     // it from toggling on the boundary.
     var cam = GAME.cameraObj;
+    // the sky (domes, stars, moon) tracks the viewer so its rim can never be
+    // reached — horizon height stays at world level, hence y locked to 0
+    if (GAME.city.skyAnchor) GAME.city.skyAnchor.position.set(cam.position.x, 0, cam.position.z);
     var relH = cam.position.y - GAME.city.surfaceY(cam.position.x, cam.position.z, cam.position.y);
     var wantNear = relH > (cam.near > 0.2 ? 34 : 46) ? 2.0 : 0.1;
     if (wantNear !== cam.near) { cam.near = wantNear; cam.updateProjectionMatrix(); }

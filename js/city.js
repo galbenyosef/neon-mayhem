@@ -831,14 +831,23 @@ GAME.city = (function () {
       [0.55, '#5a92d8'], [1, '#2f63b0']
     ]);
     city.skyTextures = { night: nightTex, day: dayTex };
+    // The whole celestial set rides in one group that follows the camera.
+    // Built world-anchored, the dome circled the MAINLAND's origin — and Isla
+    // Verde's east coast reaches within 240 m of its rim, where the horizon
+    // band stood up out of the sea like a wall and the ocean plane carried on
+    // past it. A horizon you can drive to isn't a horizon; pinned to the
+    // viewer it is unreachable from every island, including future ones.
+    var celestial = new THREE.Group();
+    scene.add(celestial);
+    city.skyAnchor = celestial;
     // base dusk/night dome (tinted darker at deep night) with a day dome fading over it
     var sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 20, 14), new THREE.MeshBasicMaterial({ map: nightTex, side: THREE.BackSide, fog: false, depthWrite: false }));
     sky.renderOrder = -10;
-    scene.add(sky);
+    celestial.add(sky);
     city.sky = sky;
     var skyDay = new THREE.Mesh(new THREE.SphereGeometry(1390, 20, 14), new THREE.MeshBasicMaterial({ map: dayTex, side: THREE.BackSide, fog: false, depthWrite: false, transparent: true, opacity: 0 }));
     skyDay.renderOrder = -9;
-    scene.add(skyDay);
+    celestial.add(skyDay);
     city.skyDay = skyDay;
 
     var starPos = [];
@@ -850,18 +859,18 @@ GAME.city = (function () {
     var sg = new THREE.BufferGeometry();
     sg.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
     var stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 2.6, fog: false, sizeAttenuation: false }));
-    scene.add(stars);
+    celestial.add(stars);
     city.stars = stars;
 
     var moon = new THREE.Mesh(new THREE.CircleGeometry(60, 24), new THREE.MeshBasicMaterial({ color: 0xf0ead8, fog: false }));
     moon.position.set(1150, 520, -220);
     moon.lookAt(0, 0, 0);
-    scene.add(moon);
+    celestial.add(moon);
     city.moon = moon;
     var halo = new THREE.Mesh(new THREE.CircleGeometry(130, 24), new THREE.MeshBasicMaterial({ map: radialGlowTexture('rgba(220,225,255,0.5)'), transparent: true, blending: THREE.AdditiveBlending, fog: false, depthWrite: false }));
     halo.position.copy(moon.position).multiplyScalar(0.985);
     halo.lookAt(0, 0, 0);
-    scene.add(halo);
+    celestial.add(halo);
     city.moonHalo = halo;
   }
 

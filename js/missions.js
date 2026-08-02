@@ -388,6 +388,7 @@ GAME.missions = (function () {
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
+    if (active.targets[0]) faceToward(active.targets[0].x, active.targets[0].z);
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
@@ -754,6 +755,21 @@ GAME.missions = (function () {
     }
   }
 
+  // point the driver (and the camera) at the first objective, so a run never
+  // begins facing a wall you have to three-point-turn away from
+  function faceToward(x, z) {
+    var P = GAME.player;
+    if (P.inCar && P.car) {
+      P.car.heading = Math.atan2(x - P.car.pos.x, z - P.car.pos.z);
+      P.car.lat = 0;
+      GAME.cam.yaw = P.car.heading;
+    } else {
+      P.heading = Math.atan2(x - P.pos.x, z - P.pos.z);
+      GAME.cam.yaw = P.heading;
+    }
+    GAME.cam.freeT = 0;
+  }
+
   function start(def) {
     var P = GAME.player;
     GAME.track('mission-started-' + def.type);
@@ -763,6 +779,9 @@ GAME.missions = (function () {
       // a fresh set of drops every time you take the run
       stops: def.type === 'courier' ? rollCourierStops(def) : null
     };
+    // orient first, before rivals form up on the (new) heading
+    var first = def.type === 'race' ? def.cps[0] : active.stops ? active.stops[0] : null;
+    if (first) faceToward(first[0], first[1]);
     if (def.type === 'race') {
       for (var i = 0; i < 3; i++) {
         var off = (i + 1) * 5;

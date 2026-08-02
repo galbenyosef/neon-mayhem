@@ -354,15 +354,26 @@ GAME.peds = (function () {
             ped.speed = U.damp(ped.speed, 0, 9, dt);
             ped.punchT -= dt;
             if (chaseCar && tSpeed < 2.5) {
-              // hands on his own car: a beat of hammering, then the door
+              // hands on his own car: hammering first, a shouted warning at
+              // the door, and only then the yank. The clock restarts whenever
+              // possession changes, so time he spent banging while you were
+              // still climbing in can never mature into an instant ejection.
+              var mine = P.inCar && P.car === myCar;
+              var boarding = P.entering && P.entering.car === myCar;
+              if (mine !== ped.hadDriver) { ped.hadDriver = mine; ped.yankT = 0; ped.yankWarned = false; }
               ped.yankT = (ped.yankT || 0) + dt;
-              if (ped.yankT > 0.9) {
-                var mine = P.inCar && P.car === myCar;
-                var boarding = P.entering && P.entering.car === myCar;
+              if (mine && !ped.yankWarned && ped.yankT > 0.7) {
+                ped.yankWarned = true;
+                GAME.hud.message('He’s got the door handle — floor it or lose the seat.', 2);
+                GAME.audio.yelp();
+              }
+              if (ped.yankT > 1.7) {
                 if (mine) {
                   GAME.exitCar();
                   GAME.hud.message('He wants his ride back.', 2.5);
                   GAME.audio.yelp();
+                  ped.yankT = 0;
+                  ped.yankWarned = false;
                 } else if (!boarding) {
                   // owner slides back in and drives off, done with you
                   myCar.occupied = 'ai';

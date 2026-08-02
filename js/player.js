@@ -59,6 +59,9 @@ function loadSave() {
       if (s.currentWeapon && P.weapons[s.currentWeapon]) P.currentWeapon = s.currentWeapon;
     }
     if (GAME.prefs.timeMode && GAME.setTimeMode) GAME.setTimeMode(GAME.prefs.timeMode);
+    // the island decided its gates at build time, before this save existed in
+    // memory — re-judge now that the mission record is actually loaded
+    if (GAME.isla) GAME.isla.syncUnlock();
   } catch (e) { GAME.bests = {}; GAME.prefs = {}; }
 }
 GAME.save = function () {

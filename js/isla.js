@@ -1464,6 +1464,9 @@ GAME.isla = (function () {
       var g = gates[i];
       var cx = (g.minX + g.maxX) / 2, cz = (g.minZ + g.maxZ) / 2;
       if (U.dist2(px, pz, cx, cz) > 34 * 34) continue;
+      // belt and braces: if the record already qualifies, the barrier opens on
+      // the spot instead of demanding "0 more jobs" with a straight face
+      if (earned()) { checkUnlock(); return; }
       var p = unlockProgress();
       hintT = 6;
       GAME.hud.message('BRIDGE CLOSED — finish ' + (p.need - p.done) + ' more job' +
@@ -1487,6 +1490,7 @@ GAME.isla = (function () {
     laneNodes: laneNodes, spanNodes: spanNodes, pois: function () { return POI; }, tick: tick,
     bounds: function () { return C; },
     isOpen: function () { return open; }, setOpen: setOpen,
+    syncUnlock: function () { setOpen(earned()); },   // silent: for save-load resync, no fanfare
     checkUnlock: checkUnlock, required: REQUIRED, unlockProgress: unlockProgress,
     missionsDone: missionsDone, spans: function () { return SPANS; }
   };

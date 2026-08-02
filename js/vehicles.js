@@ -139,14 +139,14 @@ function buildBikeMesh(colorHex, trim) {
   b.addBox(0, 0.62, 0, 0.28, 0.34, 1.5, 0, colorHex, 0);       // fuel tank / frame
   b.addBox(0, 0.78, -0.55, 0.42, 0.14, 0.5, 0, 0x141824, 0);    // seat
   b.addBox(0, 0.98, 0.62, 0.5, 0.1, 0.1, 0, 0x101014, 0);       // handlebars
-  b.addBox(0, 0.7, 0.7, 0.16, 0.24, 0.24, 0, 0x0c0c10, 0);      // front cowl
+  b.addBox(0, 0.7, 0.7, 0.2, 0.24, 0.24, 0, 0x0c0c10, 0);       // front cowl — wider than the wheel so their side faces don't share a plane
   if (trim) {
     // the GT wears a full fairing, a tail cowl and racing stripes in its
     // trim color — reads as a different machine at a glance
     b.addBox(0, 0.56, 0.42, 0.4, 0.34, 0.6, 0, colorHex, 0);    // fairing
-    b.addBox(0, 0.6, 0.44, 0.44, 0.1, 0.62, 0, trim, 0);        // fairing stripe
+    b.addBox(0, 0.6, 0.455, 0.44, 0.1, 0.62, 0, trim, 0);       // fairing stripe — nosed past the tank so their front faces split
     b.addBox(0, 0.82, -0.86, 0.34, 0.16, 0.34, 0, colorHex, 0); // tail cowl
-    b.addBox(0, 0.815, 0, 0.32, 0.06, 1.56, 0, trim, 0);        // spine stripe
+    b.addBox(0, 0.8, 0, 0.32, 0.06, 1.56, 0, trim, 0);          // spine stripe — its top clears the seat's by 2 cm
     b.addBox(0, 0.9, 0.58, 0.34, 0.16, 0.1, 0, 0x141824, 0);    // screen
   }
   var wheel = new GeoBatch();
@@ -179,7 +179,9 @@ function buildHeliMesh(colorHex) {
   var g = new THREE.Group();
   var b = new GeoBatch();
   b.addBox(0, 1.2, -0.6, 2.2, 1.7, 3.6, 0, colorHex, 0);        // cabin
-  b.addBox(0, 1.5, 1.2, 1.7, 1.1, 1.4, 0, 0x141824, 0);         // canopy glass
+  // the canopy rides proud of the cabin roof — flush tops fight for depth
+  // (the airplane's cockpit learned this first)
+  b.addBox(0, 1.52, 1.2, 1.7, 1.1, 1.4, 0, 0x141824, 0);        // canopy glass
   b.addBox(0, 1.4, -3.4, 0.5, 0.5, 3.6, 0, colorHex, 0);        // tail boom
   b.addBox(0, 1.9, -5.1, 0.16, 1.1, 0.7, 0, colorHex, 0);       // tail fin
   b.addBox(-0.9, 0.2, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);   // left skid
@@ -191,8 +193,10 @@ function buildHeliMesh(colorHex) {
   g.add(body);
   // spinning main rotor
   var rg = new GeoBatch();
+  // the blades stack 2 cm apart at the hub, like real ones — crossing in the
+  // same plane, their top and bottom faces flickered where they met
   rg.addBox(0, 0, 0, 0.3, 0.06, 11, 0, 0x1a1a20, 0);
-  rg.addBox(0, 0, 0, 11, 0.06, 0.3, 0, 0x1a1a20, 0);
+  rg.addBox(0, 0.08, 0, 11, 0.06, 0.3, 0, 0x1a1a20, 0);
   var rotor = new THREE.Mesh(rg.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
   rotor.position.set(0, 2.3, -0.6);
   g.add(rotor);
@@ -223,7 +227,7 @@ function buildPlaneMesh(colors) {
   // the stripe stands clear of the wing on every face — flush tops shimmer
   b.addBox(0, 1.35, -0.4, 12.1, 0.36, 0.36, 0, accent, 0); // wing stripe
   b.addBox(0, 1.4, -4.4, 4.4, 0.22, 1.2, 0, body, 0);      // tailplane
-  b.addBox(0, 2.1, -4.4, 0.22, 1.6, 1.2, 0, accent, 0);    // vertical fin
+  b.addBox(0, 2.1, -4.4, 0.22, 1.6, 1.16, 0, accent, 0);   // vertical fin — a shade shorter than the tailplane so their edges don't share planes
   b.addBox(-0.55, 0.35, 1.0, 0.14, 0.7, 0.14, 0, 0x0c0c10, 0);
   b.addBox(0.55, 0.35, 1.0, 0.14, 0.7, 0.14, 0, 0x0c0c10, 0);
   b.addBox(0, 0.4, -3.5, 0.12, 0.5, 0.12, 0, 0x0c0c10, 0);
@@ -231,8 +235,9 @@ function buildPlaneMesh(colors) {
   g.add(mesh);
   // nose light + spinning prop
   var pg = new GeoBatch();
+  // same trick as the rotor: crossed blades sit 2 cm apart in depth
   pg.addBox(0, 0, 0, 0.24, 3.4, 0.14, 0, 0x1a1a20, 0);
-  pg.addBox(0, 0, 0, 3.4, 0.24, 0.14, 0, 0x1a1a20, 0);
+  pg.addBox(0, 0, 0.02, 3.4, 0.24, 0.14, 0, 0x1a1a20, 0);
   var prop = new THREE.Mesh(pg.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
   prop.position.set(0, 1.2, 4.7);
   g.add(prop);
@@ -282,10 +287,12 @@ function buildCarMesh(type, colorHex) {
   if (type === 'ambulance') {
     // tall box body + red cross panels
     b.addBox(0, 0.42 + s.bodyH / 2 + 0.5, -0.2, s.w, 1.0, s.l * 0.62, 0, colorHex, 0);
+    // the cross's two bars sit a centimetre apart in depth — sharing one
+    // plane, they fought where they crossed
     b.addBox(hw + 0.01, 1.3, -0.2, 0.05, 0.5, 0.16, 0, 0xd83040, 0);
-    b.addBox(hw + 0.01, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
+    b.addBox(hw + 0.02, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
     b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.5, 0.16, 0, 0xd83040, 0);
-    b.addBox(-hw - 0.01, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
+    b.addBox(-hw - 0.02, 1.3, -0.2, 0.05, 0.16, 0.5, 0, 0xd83040, 0);
   }
   if (type === 'icecream') {
     // A tall, square, upright van: one slab of a body from the windscreen to
@@ -300,9 +307,11 @@ function buildCarMesh(type, colorHex) {
     b.addBox(0, 1.9, hl - 0.5, s.w * 0.84, 0.86, 0.14, 0, 0x141824, 0);    // windscreen
     b.addBox(bhw - 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);   // cab windows
     b.addBox(-bhw + 0.02, 1.9, hl - 1.25, 0.1, 0.7, 1.0, 0, 0x141824, 0);
-    // the livery: a pink band and a blue pinstripe the length of the van
-    b.addBox(0, 1.28, -0.25, bw + 0.08, 0.34, s.l * 0.78, 0, 0xff7fb2, 0);
-    b.addBox(0, 1.02, -0.25, bw + 0.08, 0.1, s.l * 0.78, 0, 0x53c8ea, 0);
+    // the livery: a pink band and a blue pinstripe wrapped round the van.
+    // Wider AND longer than the body — with the same length their end faces
+    // shared the body's front and rear planes, and the tail flickered
+    b.addBox(0, 1.28, -0.25, bw + 0.08, 0.34, s.l * 0.78 + 0.06, 0, 0xff7fb2, 0);
+    b.addBox(0, 1.02, -0.25, bw + 0.08, 0.1, s.l * 0.78 + 0.06, 0, 0x53c8ea, 0);
     // serving hatch, awning and counter on the kerb side — the hatch sits
     // clear of the stripe band's face rather than in the same plane as it
     b.addBox(bhw + 0.07, 1.82, -0.5, 0.08, 0.9, 1.9, 0, 0x2a2230, 0);
@@ -326,10 +335,11 @@ function buildCarMesh(type, colorHex) {
   var cabZ = type === 'sports' ? -0.35 : type === 'van' ? -0.1
     : type === 'icecream' ? s.l * 0.28 : type === 'pickup' ? 0.35 : -0.15;
   if (s.buggy) {
-    // no cabin at all: a roll hoop over an open tub
+    // no cabin at all: a roll hoop over an open tub. The cross bar is wider
+    // than the posts — matching widths put their side faces in one plane
     b.addBox(0, 1.05, -0.5, 0.12, 1.2, 0.12, 0, 0x2a2a34, 0);
     b.addBox(0, 1.05, 0.5, 0.12, 1.2, 0.12, 0, 0x2a2a34, 0);
-    b.addBox(0, 1.6, 0, 0.12, 0.12, 1.1, 0, 0x2a2a34, 0);
+    b.addBox(0, 1.6, 0, 0.16, 0.12, 1.1, 0, 0x2a2a34, 0);
   }
   if (s.cabinH > 0) {
     b.addBox(0, 0.42 + s.bodyH / 2 + s.cabinH / 2 - 0.05, cabZ, s.w * 0.82, s.cabinH, cabL, 0, type === 'police' ? 0x20242e : 0x141824, 0);
@@ -341,7 +351,8 @@ function buildCarMesh(type, colorHex) {
     b.addBox(w[0], wy, w[1], 0.32, 0.64, 0.72, 0, 0x0c0c10, 0);
   });
   if (type === 'police') {
-    b.addBox(0, 0.42 + s.bodyH / 2, s.l * 0.28, s.w * 0.7, 0.1, 1.2, 0, 0x30405a, 0);
+    // a centimetre up: its underside used to share the cabin's bottom plane
+    b.addBox(0, 0.42 + s.bodyH / 2 + 0.01, s.l * 0.28, s.w * 0.7, 0.1, 1.2, 0, 0x30405a, 0);
   }
   var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
   g.add(body);
