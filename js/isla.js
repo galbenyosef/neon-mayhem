@@ -748,46 +748,84 @@ GAME.isla = (function () {
   // ---------- geometry ----------
   // the land as a polar mesh, so the coast is the mesh edge and the relief is
   // whatever groundY says — the roads are already cut into it
+  // land mesh resolution — module scope so the grass-over-road audit can
+  // replicate the exact triangles the land is made of
+  var LAND_RINGS = 52, LAND_SECT = 192;
   function buildLand(b) {
     // Fine enough that a road cutting always catches mesh vertices: at the
     // old 128x34 a ~20m coast cell could straddle a shallow 14m-wide cut
     // completely, and the grass roofed over the road — the north bridge
     // landed on a ring road nobody could see.
-    var RINGS = 52, SECT = 192;
+    var RINGS = LAND_RINGS, SECT = LAND_SECT;
     for (var s = 0; s < SECT; s++) {
       var a0 = s / SECT * TAU, a1 = (s + 1) / SECT * TAU;
       for (var r = 0; r < RINGS; r++) {
         var f0 = 1 - r / RINGS, f1 = 1 - (r + 1) / RINGS;
-        var p = [], pairs = [[a0, f0], [a1, f0], [a1, f1], [a0, f1]];
-        for (var k = 0; k < 4; k++) {
-          var q = ringPt(pairs[k][0], pairs[k][1]);
-          p.push([q[0], groundY(q[0], q[1]), q[1]]);
-        }
         var mid = ringPt((a0 + a1) / 2, (f0 + f1) / 2);
         var y = groundY(mid[0], mid[1]);
         var col = f0 > 0.965 ? 0x6a6048 : y > 16 ? 0x2a3526 : y > 6 ? 0x22301f : 0x1b2620;
-        b.addQuad(p[0], p[1], p[2], p[3], col, [0, 1, 0]);
+        // A cell whose corners all sit at groundY still ROOFS a road that
+        // crosses between them: the corners stand on the batter above the
+        // cut, and the straight triangles between them pass a metre over
+        // the carriageway. Cells near a road get subdivided so vertices
+        // land ON the road (where groundY IS the road) — the audit found
+        // grass over the deck on 17 of 19 segments before this.
+        var corner0 = ringPt(a0, f0), corner1 = ringPt(a1, f1);
+        var reach = Math.max(Math.abs(corner1[0] - corner0[0]), Math.abs(corner1[1] - corner0[1]));
+        var sub = onRoad(mid[0], mid[1], reach) ? 6 : 1;
+        for (var si = 0; si < sub; si++) {
+          for (var ri = 0; ri < sub; ri++) {
+            var aa0 = U.lerp(a0, a1, si / sub), aa1 = U.lerp(a0, a1, (si + 1) / sub);
+            var ff0 = U.lerp(f0, f1, ri / sub), ff1 = U.lerp(f0, f1, (ri + 1) / sub);
+            var p = [], pairs = [[aa0, ff0], [aa1, ff0], [aa1, ff1], [aa0, ff1]];
+            for (var k = 0; k < 4; k++) {
+              var q = ringPt(pairs[k][0], pairs[k][1]);
+              p.push([q[0], groundY(q[0], q[1]), q[1]]);
+            }
+            b.addQuad(p[0], p[1], p[2], p[3], col, [0, 1, 0]);
+          }
+        }
       }
     }
   }
 
+  // The deck rides ON groundY, not on segY: near junctions groundY blends
+  // every nearby road's height, the wheels and the land mesh both live on
+  // that blend, and a ribbon drawn at its own road's grade alone ended up a
+  // metre under the grass. Sampled densely (3 m along, 4 strips across) the
+  // deck hugs the same surface everything else uses; the 0.12 clearance
+  // covers the residual disagreement between the two tessellations.
+  var DECK_LIFT = 0.12;
   function buildRoads(b) {
     for (var i = 0; i < NET.length; i++) {
       var s = NET[i], half = s.w / 2;
-      var STEPS = Math.max(24, Math.round(s.len / 6));
+      var STEPS = Math.max(48, Math.round(s.len / 3));
+      var ACROSS = 4;
       for (var k = 0; k < STEPS; k++) {
         var t0 = k / STEPS, t1 = (k + 1) / STEPS;
         var p0 = segPointAt(s, t0), p1 = segPointAt(s, t1);
         var dx = p1[0] - p0[0], dz = p1[1] - p0[1];
         var l = Math.sqrt(dx * dx + dz * dz) || 1;
-        var nx = -dz / l * half, nz = dx / l * half;
-        var y0 = segY(s, t0) + 0.07, y1 = segY(s, t1) + 0.07;
-        b.addQuad([p0[0] - nx, y0, p0[1] - nz], [p1[0] - nx, y1, p1[1] - nz],
-          [p1[0] + nx, y1, p1[1] + nz], [p0[0] + nx, y0, p0[1] + nz], 0x100e16, [0, 1, 0]);
-        if (k % 2 === 0) {
-          var mx = -dz / l * 0.3, mz = dx / l * 0.3;
-          b.addQuad([p0[0] - mx, y0 + 0.02, p0[1] - mz], [p1[0] - mx, y1 + 0.02, p1[1] - mz],
-            [p1[0] + mx, y1 + 0.02, p1[1] + mz], [p0[0] + mx, y0 + 0.02, p0[1] + mz], 0xd8b84a, [0, 1, 0]);
+        var ux = -dz / l, uz = dx / l;
+        for (var a2 = 0; a2 < ACROSS; a2++) {
+          var o0 = -half + s.w * a2 / ACROSS, o1 = -half + s.w * (a2 + 1) / ACROSS;
+          var q00 = [p0[0] + ux * o0, 0, p0[1] + uz * o0];
+          var q10 = [p1[0] + ux * o0, 0, p1[1] + uz * o0];
+          var q11 = [p1[0] + ux * o1, 0, p1[1] + uz * o1];
+          var q01 = [p0[0] + ux * o1, 0, p0[1] + uz * o1];
+          q00[1] = groundY(q00[0], q00[2]) + DECK_LIFT;
+          q10[1] = groundY(q10[0], q10[2]) + DECK_LIFT;
+          q11[1] = groundY(q11[0], q11[2]) + DECK_LIFT;
+          q01[1] = groundY(q01[0], q01[2]) + DECK_LIFT;
+          b.addQuad(q00, q10, q11, q01, 0x100e16, [0, 1, 0]);
+        }
+        if ((k >> 1) % 2 === 0) {
+          var mx = ux * 0.3, mz = uz * 0.3;
+          var m00 = [p0[0] - mx, groundY(p0[0] - mx, p0[1] - mz) + DECK_LIFT + 0.02, p0[1] - mz];
+          var m10 = [p1[0] - mx, groundY(p1[0] - mx, p1[1] - mz) + DECK_LIFT + 0.02, p1[1] - mz];
+          var m11 = [p1[0] + mx, groundY(p1[0] + mx, p1[1] + mz) + DECK_LIFT + 0.02, p1[1] + mz];
+          var m01 = [p0[0] + mx, groundY(p0[0] + mx, p0[1] + mz) + DECK_LIFT + 0.02, p0[1] + mz];
+          b.addQuad(m00, m10, m11, m01, 0xd8b84a, [0, 1, 0]);
         }
       }
     }
@@ -1504,6 +1542,11 @@ GAME.isla = (function () {
 
   return {
     register: register, build: build, contains: contains, groundY: groundY,
+    // internals for the geometry audits (test-only): the land grid and the
+    // road ribbons, so a script can recompute exactly what was drawn
+    _terrain: function () {
+      return { ringPt: ringPt, RINGS: LAND_RINGS, SECT: LAND_SECT, NET: NET, segY: segY, segPointAt: segPointAt };
+    },
     onRoad: onRoad, nearestRoadPoint: nearestRoadPoint, districtName: districtName,
     laneNodes: laneNodes, spanNodes: spanNodes, pois: function () { return POI; }, tick: tick,
     bounds: function () { return C; },

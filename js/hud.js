@@ -340,6 +340,26 @@ GAME.hud = (function () {
     g.moveTo(0, 8); g.lineTo(6, -7); g.lineTo(0, -3); g.lineTo(-6, -7);
     g.closePath(); g.fill(); g.stroke();
     g.restore();
+    // compass rose — the big map is drawn north-up, and now it says so
+    var rcx = cv.width - 42, rcy = 42, RR = 24;
+    g.fillStyle = 'rgba(8,4,18,.78)';
+    g.beginPath(); g.arc(rcx, rcy, RR + 8, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,105,180,.8)'; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(rcx, rcy, RR + 8, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#ff5f8f';                 // the needle's north half
+    g.beginPath(); g.moveTo(rcx, rcy - RR + 10); g.lineTo(rcx - 4.5, rcy); g.lineTo(rcx + 4.5, rcy);
+    g.closePath(); g.fill();
+    g.fillStyle = 'rgba(230,240,255,.4)';    // and its tail
+    g.beginPath(); g.moveTo(rcx, rcy + RR - 10); g.lineTo(rcx - 4.5, rcy); g.lineTo(rcx + 4.5, rcy);
+    g.closePath(); g.fill();
+    g.font = '800 11px "Segoe UI", Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#9df3ff';
+    g.fillText('N', rcx, rcy - RR + 2);
+    g.fillStyle = 'rgba(207,230,255,.75)';
+    g.fillText('E', rcx + RR - 2, rcy);
+    g.fillText('S', rcx, rcy + RR - 1);
+    g.fillText('W', rcx - RR + 2, rcy);
   }
 
   function onMapClick(e) {
@@ -613,6 +633,17 @@ GAME.hud = (function () {
     g.moveTo(0, -8); g.lineTo(6, 6); g.lineTo(0, 2); g.lineTo(-6, 6);
     g.closePath(); g.fill(); g.stroke();
     g.restore();
+    // the radar is heading-up, so north moves — ride an N badge around the
+    // rim so there is always a sense of direction at a glance
+    var nx2 = 90 - 74 * Math.sin(h), ny2 = 90 + 74 * Math.cos(h);
+    g.fillStyle = 'rgba(8,4,18,.85)';
+    g.beginPath(); g.arc(nx2, ny2, 8, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,105,180,.8)'; g.lineWidth = 1.2;
+    g.beginPath(); g.arc(nx2, ny2, 8, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#ffd9f2';
+    g.font = '800 10px "Segoe UI", Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('N', nx2, ny2 + 0.5);
   }
 
   function updateCashText() {
