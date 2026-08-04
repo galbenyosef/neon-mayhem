@@ -713,6 +713,11 @@ GAME.city = (function () {
     // approach crosses. Laid as one long run it put a handrail straight across
     // the road onto the bridge.
     function crossed(z) {
+      // The beach's four doorways: the two piers and the two bridge
+      // approaches (those register as crossings). Everywhere else the rail
+      // runs unbroken — and SOLID, so these gaps are the only ground-level
+      // ways through for cars and walkers.
+      for (var pi2 = 0; pi2 < PIERS.length; pi2++) if (Math.abs(z - PIERS[pi2][0]) <= 8) return true;
       return city.crossings.length &&
         (city.crossingY(360, z) !== null || city.crossingY(371, z) !== null);
     }
@@ -724,7 +729,11 @@ GAME.city = (function () {
         var mid = (runZ + bz) / 2, span = bz - runZ;
         if (span > 4) {
           batches.wood.addBox(365, 0.15, mid, 10, 0.3, span, 0, 0x7a5a40, 0);
-          batches.wood.addBox(370.2, 1.45, mid, 0.24, 0.14, span - 1, 0, 0xb08a60, 0);
+          // hip height now, and real: the rail stops cars and pedestrians,
+          // while a standing jump (apex ~1.2 m) clears the 1.05 m top — on
+          // foot you can always vault onto the sand and back
+          batches.wood.addBox(370.2, 0.98, mid, 0.24, 0.14, span - 1, 0, 0xb08a60, 0);
+          addSolid(370.2, mid, 0.36, span - 1, 1.05, 'rail', true);
         }
         runZ = null;
       }
@@ -733,7 +742,7 @@ GAME.city = (function () {
       if ((z / 6 | 0) % 2 === 0 && !crossed(z)) batches.wood.addBox(365, 0.32, z, 10, 0.04, 3, 0, 0x6a4c34, 0);
     }
     for (var zr = -486; zr < 488; zr += 4) {
-      if (!crossed(zr)) batches.wood.addBox(370.2, 0.9, zr, 0.18, 1.2, 0.18, 0, 0x9a7a58, 0);
+      if (!crossed(zr)) batches.wood.addBox(370.2, 0.52, zr, 0.18, 1.04, 0.18, 0, 0x9a7a58, 0);
     }
 
     // sand strip built as segments following the shoreline
