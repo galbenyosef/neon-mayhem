@@ -242,10 +242,11 @@
   // nothing you could see and only the second reached the game. The lock
   // going away IS the Esc press: treat it as one.
   document.addEventListener('pointerlockchange', function () {
-    if (document.pointerLockElement) { GAME.expectedUnlock = false; return; }
-    // an unlock the game asked for (an overlay opening) is not an Esc press —
-    // only the browser's own unlock should read as one
-    if (GAME.expectedUnlock) { GAME.expectedUnlock = false; return; }
+    if (document.pointerLockElement) return;
+    // an unlock within a beat of the game releasing the lock itself (an
+    // overlay opening) is not the user's Esc — grants and exits resolve
+    // asynchronously, so our own release can arrive a tick displaced
+    if (GAME.releasePointerT && performance.now() - GAME.releasePointerT < 1500) return;
     if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen &&
       GAME.player.state === 'alive') GAME.togglePause();
   });

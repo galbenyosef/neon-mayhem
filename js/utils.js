@@ -312,11 +312,13 @@ GAME.initInput = function (canvas) {
 };
 
 // Overlays release the pointer lock through this wrapper so the unlock can
-// be told apart from the browser's own (the user pressing Esc): the flagged
-// release is expected and must not read as an Esc press. Only flag when a
-// lock is actually held — otherwise no event fires and the flag goes stale.
+// be told apart from the browser's own (the user pressing Esc). A one-shot
+// flag is not enough: lock grants and exits resolve asynchronously, so our
+// exit can land AFTER a still-pending grant, one event tick later. The
+// timestamp lets the unlock handler treat anything within a beat of a
+// deliberate release as the game's own doing.
 GAME.releasePointer = function () {
-  if (document.pointerLockElement) GAME.expectedUnlock = true;
+  GAME.releasePointerT = performance.now();
   if (document.exitPointerLock) document.exitPointerLock();
 };
 
