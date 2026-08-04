@@ -262,6 +262,7 @@ GAME.missions = (function () {
   function startIceCream() {
     var P = GAME.player;
     GAME.track('job-started-icecream');
+    clearIceServed();   // belt and braces: a fresh shift owes nobody history
     active = {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
@@ -674,7 +675,17 @@ GAME.missions = (function () {
   }
 
   // end an ongoing taxi/ambulance shift (clock off, totalled, or timed out)
+  // "One cone per person" only holds within a shift. The flag lives on peds
+  // that outlive the job — swept here so the next round starts with every
+  // pavement a fresh market, however the last one ended (clock-off, totalled,
+  // timed out, cut off by dispatch, or the driver getting wasted).
+  function clearIceServed() {
+    var peds = GAME.world.peds;
+    for (var i = 0; i < peds.length; i++) if (peds[i].iceServed) peds[i].iceServed = false;
+  }
+
   function endJob(reason) {
+    if (active.def.id === 'icecream') clearIceServed();
     var count = active.jobCount, earned = active.earned, lv = active.level;
     var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : 'fare';
     // send any waiting people home with the shift. Someone who only wandered
@@ -873,6 +884,7 @@ GAME.missions = (function () {
 
   function finish(win, reason) {
     var d = active.def;
+    if (d.id === 'icecream') clearIceServed();   // the wasted/failed path skips endJob
     var reward = active.reward || d.reward || 0;
     if (win) {
       var value = d.type === 'rampage' ? Math.floor(active.score) : Math.round(active.t * 10) / 10;
