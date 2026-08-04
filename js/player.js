@@ -367,6 +367,12 @@ function forceExitCar(silent) {
     var rp = GAME.resolveCircle(ex, ez, 0.45);
     P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
   }
+  // a hovering exit (under chute height) steps out at altitude — you drop
+  // the rest of the way on ordinary gravity rather than teleporting down
+  if (car.spec.heli || car.spec.plane) {
+    var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4);
+    if (feetY > P.pos.y + 0.3) { P.pos.y = feetY; P.airborne = true; }
+  }
   P.velY = 0;
   P.heading = car.heading;
   P.inCar = false;
@@ -644,8 +650,11 @@ function updateDriving(dt) {
   if (car.spec.heli || car.spec.plane) {
     GAME.track(car.spec.plane ? 'flew-plane' : 'flew-helicopter');
     if (wantsEnter()) {
-      var gy = GAME.city.groundY(car.pos.x, car.pos.z);
-      if (car.pos.y > gy + 3.5) {
+      // the chute is for real air, not for stepping off a landed aircraft.
+      // Measure to whatever is directly beneath — street OR rooftop — and
+      // only bail out with about three floors of open drop below the wheels.
+      var sy = GAME.city.surfaceY(car.pos.x, car.pos.z);
+      if (car.pos.y > sy + 9) {
         car.occupied = null; // the abandoned airframe is now ownerless (it will fall)
         GAME.aircraft.startParachute(car.pos.x, car.pos.y, car.pos.z, car.heading);
       } else forceExitCar();

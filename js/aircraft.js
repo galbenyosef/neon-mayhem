@@ -125,7 +125,10 @@ GAME.aircraft = (function () {
       return;
     }
 
-    car.speed = U.clamp((car.speed || 0) + thr * car.spec.accel * dt, 0, car.spec.maxSpeed);
+    // on the wheels the engine has to haul the airframe up to rotation
+    // speed — the takeoff run is real. Airborne, the throttle answers fully.
+    var acc = car.spec.accel * (onGround && thr > 0 ? 0.42 : 1);
+    car.speed = U.clamp((car.speed || 0) + thr * acc * dt, 0, car.spec.maxSpeed);
     car.speed *= Math.exp(-0.09 * dt);
 
     car.pitch = car.pitch || 0;
@@ -145,11 +148,17 @@ GAME.aircraft = (function () {
     var flying = car.speed >= car.spec.stall;
     var vy;
     if (onGround && (!flying || car.pitch <= 0.06)) {
-      vy = 0; car.pos.y = gy + car.spec.wheelH;
+      vy = 0; car.pos.y = gy + car.spec.wheelH; car.sinkV = 0;
     } else if (flying) {
-      vy = car.speed * Math.sin(car.pitch);
+      vy = car.speed * Math.sin(car.pitch); car.sinkV = 0;
     } else {
-      vy = -9; car.pitch = U.damp(car.pitch, -0.3, 3, dt); // stall — sinking
+      // stalled: the nose drops and the fall gathers real pace — and the
+      // dive trades that height for airspeed. Roll off a rooftop with no
+      // runway and the plane dips, the wings bite, and you pull up out of it.
+      car.sinkV = Math.min((car.sinkV || 0) + 20 * dt, 24);
+      vy = -car.sinkV;
+      car.pitch = U.damp(car.pitch, -0.75, 2.5, dt);
+      car.speed = Math.min(car.spec.maxSpeed, car.speed + 20 * Math.sin(-Math.min(car.pitch, 0)) * dt);
     }
     car.pos.y += vy * dt;
 

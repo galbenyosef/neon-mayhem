@@ -902,6 +902,7 @@ GAME.shops = (function () {
     clearPvObj();
     pv.key = '';
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
+    GAME.regainPointer();
   }
 
   function onKey(e) {

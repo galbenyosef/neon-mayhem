@@ -311,4 +311,21 @@ GAME.initInput = function (canvas) {
   window.addEventListener('wheel', function (e) { inp.wheel += e.deltaY > 0 ? 1 : -1; }, { passive: true });
 };
 
+// After an overlay hands the screen back to the game, ask for the pointer
+// lock right away — the closing key or click usually carries user activation
+// so the request lands and no extra click is needed. When it doesn't (Esc
+// carries none) the request is refused quietly and the next click into the
+// canvas acquires the lock as always — swallowed as aim, never fired.
+GAME.regainPointer = function () {
+  if (GAME.isTouch || !GAME.started) return;
+  if (GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen) return;
+  var cv = document.getElementById('game-canvas');
+  if (cv && cv.requestPointerLock) {
+    try {
+      var pr = cv.requestPointerLock();
+      if (pr && pr.catch) pr.catch(function () { });
+    } catch (e) { }
+  }
+};
+
 GAME.key = function (code) { return !!GAME.input.keys[code]; };

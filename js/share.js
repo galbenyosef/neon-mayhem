@@ -256,6 +256,7 @@ GAME.share = (function () {
     lastBlob = null;
     current = null;
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
+    GAME.regainPointer();
   }
 
   return { init: init, show: show, hide: hide, get isOpen() { return !!GAME.shareOpen; } };

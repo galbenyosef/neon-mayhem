@@ -659,20 +659,8 @@ GAME.hud = (function () {
       // the map is a mouse screen: hand the cursor back without touching
       // fullscreen (Esc would drop both, which is why we never make the
       // player reach for it)
-      if (open) {
-        if (document.exitPointerLock) document.exitPointerLock();
-      } else if (!GAME.isTouch && !GAME.paused && !GAME.shopOpen && !GAME.shareOpen) {
-        // the closing P/click carries user activation so this re-lock lands;
-        // when it doesn't (Esc carries none), the next click into the game
-        // acquires the lock as always — and is swallowed, not fired
-        var cv = document.getElementById('game-canvas');
-        if (cv && cv.requestPointerLock) {
-          try {
-            var pr = cv.requestPointerLock();
-            if (pr && pr.catch) pr.catch(function () { });
-          } catch (e) { }
-        }
-      }
+      if (open) { if (document.exitPointerLock) document.exitPointerLock(); }
+      else GAME.regainPointer();
       if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
       api.refreshFsBtn();
     },

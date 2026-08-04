@@ -269,6 +269,7 @@
     } else {
       GAME.audio.resume();
       GAME.maybeRestoreFullscreen();
+      GAME.regainPointer();
     }
     GAME.syncOverlayMusic();
   };
