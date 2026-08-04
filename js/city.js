@@ -161,7 +161,8 @@ GAME.city = (function () {
       var lz = dx * r.sin + dz * r.cos;      // up the ramp
       if (Math.abs(lx) > r.w / 2 || lz < -r.len / 2 || lz > r.len / 2) continue;
       var t = (lz + r.len / 2) / r.len;
-      return { idx: r.idx, y: r.h * t, slope: r.h / r.len, rot: r.rot, boost: r.boost };
+      // a ramp can sit on a roof: base lifts the whole wedge
+      return { idx: r.idx, y: (r.base || 0) + r.h * t, slope: r.h / r.len, rot: r.rot, boost: r.boost, cap: r.cap };
     }
     return null;
   };
@@ -746,6 +747,15 @@ GAME.city = (function () {
     for (var zr = -486; zr < 488; zr += 4) {
       if (!crossed(zr)) batches.wood.addBox(370.2, 0.52, zr, 0.18, 1.04, 0.18, 0, 0x9a7a58, 0);
     }
+    // Each pier's mouth gets a threshold apron: the boardwalk SLAB continues
+    // across the band to the deck. The crossed() gap exists for the RAILING —
+    // leaving the ground out with it showed sixteen metres of open sea
+    // between the road and the first plank of the pier.
+    PIERS.forEach(function (pp) {
+      batches.wood.addBox(365.1, 0.15, pp[0], 10.2, 0.3, 16, 0, 0x7a5a40, 0);
+      batches.wood.addBox(365, 0.32, pp[0] - 4, 10, 0.04, 3, 0, 0x6a4c34, 0);
+      batches.wood.addBox(365, 0.32, pp[0] + 4, 10, 0.04, 3, 0, 0x6a4c34, 0);
+    });
 
     // sand strip built as segments following the shoreline
     var sand = new GeoBatch();
@@ -778,7 +788,9 @@ GAME.city = (function () {
       // the deck begins past the boardwalk (which ends at x=370) — it used
       // to start at 362 and lay its planks across the footpath to the road
       var pz = p[0], x0 = 370.2, endX = p[1];
-      pier.addBox((x0 + endX) / 2, 0.5, pz, endX - x0, 0.5, 14, 0, 0x7a5a40, 0);
+      // top face at 0.5 — exactly where groundY puts feet and wheels on the
+      // pier (the old box topped out at 0.75 and everyone waded through it)
+      pier.addBox((x0 + endX) / 2, 0.375, pz, endX - x0, 0.25, 14, 0, 0x7a5a40, 0);
       for (var px = 376; px < endX; px += 12) {
         pier.addBox(px, -0.7, pz - 6, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
         pier.addBox(px, -0.7, pz + 6, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
@@ -913,6 +925,20 @@ GAME.city = (function () {
     city.dayMode = df > 0.7;
   };
   city.setDaytime = function (day) { city.applyTimeOfDay(day ? 1 : 0); };
+  // finishing EVERYTHING trades the rooftop tour helicopter for the TALON —
+  // the mainland helipad spot re-arms with the gunship
+  city.gunshipUnlocked = false;
+  city.unlockGunship = function () {
+    if (city.gunshipUnlocked) return;
+    city.gunshipUnlocked = true;
+    for (var i = 0; i < city.parkedSpots.length; i++) {
+      var sp = city.parkedSpots[i];
+      if (sp.vtype === 'helicopter' && sp.y !== undefined) {
+        sp.vtype = 'gunship';
+        if (sp.live && !sp.live.dead && sp.live !== GAME.player.car) { GAME.vehicles.removeCar(sp.live); sp.live = null; }
+      }
+    }
+  };
   // reward for finding every stunt jump: a monster truck waiting at the airport
   city.monsterSpot = null;
   city.unlockMonsterTruck = function () {
@@ -1231,7 +1257,6 @@ GAME.city = (function () {
       { x: -294, z: 308, rot: Math.PI / 2, h: 6.6, len: 22 },
       { x: -430, z: -170, rot: Math.PI, h: 5.6, len: 24 },      // riverside
       { x: 366, z: -230, rot: Math.PI, h: 5.0, len: 26 },       // boardwalk
-      { x: 366, z: 330, rot: 0, h: 5.0, len: 26 },              // beach, other way
       { x: -78, z: A.cz, rot: Math.PI / 2, h: 7.2, len: 32, boost: true }, // runway end -> over the fence
       { x: A.cx + 30, z: 462, rot: Math.PI / 2, h: 6.4, len: 30 }, // airport apron
       { x: A.cx - 90, z: 462, rot: -Math.PI / 2, h: 6.4, len: 30 },
@@ -1243,6 +1268,16 @@ GAME.city = (function () {
       { x: -168, z: -68, rot: Math.PI / 2, h: 4.2, len: 20 }
     ];
     var out = [], TARGET = 25;
+    // The chained jump (it used to be the second beach ramp): a boosted
+    // launcher aimed square at a strip building's west face, and the jump
+    // itself waiting ON the roof. Ride the launcher right and you land up
+    // there with speed for the second lip. Hand-placed against a building,
+    // so it skips the clearance checks that would (rightly) reject it.
+    var chainRoofY = city.surfaceY(2.2, 211.9);
+    if (chainRoofY > 6 && chainRoofY < 10) {
+      out.push({ x: -29.4, z: 211.9, rot: Math.PI / 2, w: 12, len: 26, h: chainRoofY + 0.4, boost: true, cap: 26 });
+      out.push({ x: 2.2, z: 211.9, rot: Math.PI / 2, w: 12, len: 22, h: 5.0, base: chainRoofY });
+    }
     // ramps come in four sizes so no two jumps feel the same; every third one
     // gets a booster strip that slams the throttle open as you ride up it
     var SHAPES = [
@@ -1389,9 +1424,10 @@ GAME.city = (function () {
     for (var i = 0; i < SPOTS.length; i++) {
       var s = SPOTS[i];
       var c = Math.cos(s.rot), sn = Math.sin(s.rot);
-      // world position of a local (across, along, up) point
+      // world position of a local (across, along, up) point — `base` lifts
+      // the whole wedge onto a roof when the spot calls for one
       function P(lx, lz, ly) {
-        return [s.x + lx * c + lz * sn, ly, s.z - lx * sn + lz * c];
+        return [s.x + lx * c + lz * sn, ly + (s.base || 0), s.z - lx * sn + lz * c];
       }
       var hw = s.w / 2, hl = s.len / 2;
       var a0 = P(-hw, -hl, 0), b0 = P(hw, -hl, 0);      // bottom lip
@@ -1436,7 +1472,7 @@ GAME.city = (function () {
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({
-        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h, boost: !!s.boost,
+        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h, base: s.base || 0, boost: !!s.boost, cap: s.cap,
         cos: c, sin: sn,
         minX: s.x - rad, maxX: s.x + rad, minZ: s.z - rad, maxZ: s.z + rad
       });
@@ -1445,7 +1481,7 @@ GAME.city = (function () {
       // off the top sails over while one approaching from behind is stopped.
       var bc = P(0, hl + 1.1, 0);
       var across = Math.abs(Math.cos(s.rot)) > 0.5;
-      addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, s.h * 0.62, 'building');
+      addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, (s.base || 0) + s.h * 0.62, 'building');
       // the raked flanks are solid too. Every ramp is axis-aligned, so each
       // side is three stepped boxes rising with the deck — walk or drive into
       // the side and you hit a wall, while anyone ON the deck stands above the
@@ -1464,7 +1500,7 @@ GAME.city = (function () {
           // coming at the flank from the ground, while the deck clears it.
           addSolid(wc[0], wc[2],
             across ? 1.0 : lzLen, across ? lzLen : 1.0,
-            Math.max(0.3, s.h * t0 - 0.35), 'prop', true);
+            (s.base || 0) + Math.max(0.3, s.h * t0 - 0.35), 'prop', true);
         }
       }
     }

@@ -130,22 +130,20 @@ GAME.police = (function () {
   }
 
   // ---------- the air unit ----------
-  // The chopper is the top of the response ladder: it lifts off only at 4-5
-  // stars — or as an escort over the channel when someone keeps nosing into
-  // restricted airspace, whatever their record on the ground says.
-  var airUnits = [], airStrikes = 0, airStrikeT = -99, escortT = 0;
+  // The chopper is the top of the response ladder: it lifts off at 4-5
+  // stars. Restricted airspace is not a warning ladder — press the line and
+  // it is an immediate 5-star response, birds up and firing.
+  var airUnits = [];
   function airspaceStrike() {
-    var now = GAME.time;
-    if (now - airStrikeT > 40) airStrikes = 0;   // old warnings expire
-    airStrikeT = now;
-    airStrikes++;
-    if (airStrikes === 3) GAME.hud.message('AIR UNIT dispatched — leave the restricted zone.', 3);
-    if (airStrikes >= 3) escortT = 40;           // keep pressing and it keeps shadowing
+    if (stars() < 5) {
+      setWanted(5);
+      GAME.hud.message('RESTRICTED AIRSPACE VIOLATION — air units scrambled.', 3);
+    } else setWanted(5);   // keep the heat pegged while the line is pressed
   }
   function spawnAirUnit() {
     var f = GAME.focus();
     var a = Math.random() * Math.PI * 2;
-    var h = GAME.vehicles.spawnCar('helicopter', f.x + Math.cos(a) * 170, f.z + Math.sin(a) * 170, 0, { color: 0x24365e });
+    var h = GAME.vehicles.spawnCar('helicopter', f.x + Math.cos(a) * 120, f.z + Math.sin(a) * 120, 0, { color: 0x24365e });
     if (!h) return;
     h.aiAir = true; h.isPolice = true;
     h.ai = { mode: 'air' };
@@ -156,8 +154,7 @@ GAME.police = (function () {
   }
   function updateAirUnits(dt, s) {
     var P = GAME.player;
-    if (escortT > 0) escortT -= dt;
-    var want = s >= 5 ? 2 : s >= 4 ? 1 : (escortT > 0 ? 1 : 0);
+    var want = s >= 5 ? 2 : s >= 4 ? 1 : 0;
     airUnits = airUnits.filter(function (h) { return !h.dead && GAME.world.cars.indexOf(h) >= 0; });
     if (airUnits.length < want && GAME.frame % 90 === 0) spawnAirUnit();
     var f = GAME.focus();
@@ -168,7 +165,7 @@ GAME.police = (function () {
       var dx = f.x - h.pos.x, dz = f.z - h.pos.z;
       var d = Math.sqrt(dx * dx + dz * dz) || 1;
       // hold station ~20m off the target; a spare or dismissed bird flies out
-      var spd = leaving ? 26 : U.clamp((d - 20) * 0.6, 0, 30);
+      var spd = leaving ? 26 : U.clamp((d - 20) * 0.8, 0, 38);
       var sgn = leaving ? -1 : 1;
       h.pos.x += sgn * (dx / d) * spd * dt;
       h.pos.z += sgn * (dz / d) * spd * dt;
@@ -180,21 +177,23 @@ GAME.police = (function () {
         if (d > 240) { GAME.vehicles.removeCar(h); airUnits.splice(i, 1); }
         continue;
       }
-      // only a 4-5 star bird opens fire; the airspace escort just shadows you
       if (s >= 4) {
         h.fireT = (h.fireT || 0) - dt;
-        if (d < 60 && h.fireT <= 0) {
-          h.fireT = 1.15;
+        if (d < 85 && h.fireT <= 0) {
+          h.fireT = 1.35;
           GAME.audio.gunshot('smg');
-          // a fast target is hard to hit from a hovering doorway
-          var mspd = P.inCar && P.car ? Math.abs(P.car.speed) : (P.moveSpeed || 0);
-          var hit = Math.random() < U.clamp(0.5 - mspd * 0.018, 0.1, 0.5);
+          // a fast target is hard to hit from a hovering doorway — and a
+          // runner on foot gets suppressing fire, not a firing squad (the
+          // sprint to a parked getaway plane must stay survivable)
+          var onFoot = !(P.inCar && P.car);
+          var mspd = onFoot ? (P.moveSpeed || 0) : Math.abs(P.car.speed);
+          var hit = Math.random() < U.clamp(0.5 - mspd * 0.018, 0.1, 0.5) * (onFoot ? 0.5 : 1);
           var ix = f.x + (Math.random() - 0.5) * (hit ? 1.2 : 8);
           var iz = f.z + (Math.random() - 0.5) * (hit ? 1.2 : 8);
           GAME.fx.spawn(ix, fy + 0.4, iz, { count: 6, color: 0xffe0a0, spread: 1.2, life: 0.3 });
           if (hit) {
             if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, 4, 'shot');
-            else GAME.playerDamage(4, 'shot');
+            else GAME.playerDamage(3, 'shot');
           }
         }
       }

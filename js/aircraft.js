@@ -88,7 +88,85 @@ GAME.aircraft = (function () {
 
     GAME.audio.engineState(true, 0.42 + Math.min(0.5, Math.abs(car.heliSpeed) / car.spec.maxSpeed * 0.4 + (up > 0 ? 0.15 : 0)), 'heli');
     car.mesh.rotation.set(fwd * -0.16, car.heading, -yaw * 0.18);
+    if (car.spec.gunship) updateGunship(car, dt, inp, T);
     warnAirframe(car);
+  }
+
+  // ---------- the TALON's arsenal ----------
+  // Chin gun rakes the ground ahead of the nose (hold fire), rockets thump
+  // out on the right hand (or the AIM button) and detonate where they land.
+  var rockets = [];
+  function hitAt(x, z, rad, dmg) {
+    var cars = GAME.world.cars, P = GAME.player;
+    for (var i = 0; i < cars.length; i++) {
+      var c = cars[i];
+      if (c.dead || (P.inCar && c === P.car)) continue;
+      if (U.dist2(c.pos.x, c.pos.z, x, z) < rad * rad) GAME.vehicles.damageCar(c, dmg, 'shot');
+    }
+    var peds = GAME.world.peds;
+    var pr = rad * 0.7;
+    for (var j = 0; j < peds.length; j++) {
+      var pd = peds[j];
+      if (pd.dead) continue;
+      if (U.dist2(pd.pos.x, pd.pos.z, x, z) < pr * pr) GAME.peds.damage(pd, dmg, true);
+    }
+  }
+  function updateGunship(car, dt, inp, T) {
+    car.mgT = (car.mgT || 0) - dt;
+    if ((inp.lmb || T.fire) && car.mgT <= 0) {
+      car.mgT = 0.09;
+      GAME.audio.gunshot('smg');
+      var fx2 = Math.sin(car.heading), fz2 = Math.cos(car.heading);
+      var alt = Math.max(0, car.pos.y - GAME.city.surfaceY(car.pos.x, car.pos.z));
+      var d = U.clamp(alt * 1.6 + 14, 16, 80);
+      var ix = car.pos.x + fx2 * d + (Math.random() - 0.5) * 2.6;
+      var iz = car.pos.z + fz2 * d + (Math.random() - 0.5) * 2.6;
+      var iy = GAME.city.surfaceY(ix, iz);
+      GAME.fx.spawn(ix, iy + 0.3, iz, { count: 4, color: 0xffe0a0, spread: 0.9, life: 0.25 });
+      hitAt(ix, iz, 3.2, 8);
+    }
+    car.rkT = (car.rkT || 0) - dt;
+    if ((inp.rmb || T.aim) && car.rkT <= 0) {
+      car.rkT = 1.2;
+      GAME.audio.gunshot('shotgun');
+      // the rocket dives at the same ground point the gun rakes — one aim
+      var fx3 = Math.sin(car.heading), fz3 = Math.cos(car.heading);
+      var mx2 = car.pos.x + fx3 * 3.2, my2 = car.pos.y - 0.5, mz2 = car.pos.z + fz3 * 3.2;
+      var alt2 = Math.max(0, car.pos.y - GAME.city.surfaceY(car.pos.x, car.pos.z));
+      var d2 = U.clamp(alt2 * 1.6 + 14, 16, 80);
+      var tx = car.pos.x + fx3 * d2, tz = car.pos.z + fz3 * d2;
+      var ty = GAME.city.surfaceY(tx, tz);
+      var ddx = tx - mx2, ddy = ty - my2, ddz = tz - mz2;
+      var dl = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) || 1;
+      rockets.push({ x: mx2, y: my2, z: mz2,
+        vx: ddx / dl * 55, vy: ddy / dl * 55, vz: ddz / dl * 55, t: 0, from: car });
+    }
+    for (var i = rockets.length - 1; i >= 0; i--) {
+      var r = rockets[i];
+      r.t += dt;
+      r.x += r.vx * dt; r.z += r.vz * dt; r.y += r.vy * dt;
+      r.vy -= 9 * dt;
+      GAME.fx.spawn(r.x, r.y, r.z, { count: 1, color: 0xffd080, spread: 0.12, life: 0.16 });
+      var sy = GAME.city.surfaceY(r.x, r.z);
+      var hitCar = null;
+      if (r.t > 0.15) {
+        var cars = GAME.world.cars;
+        for (var ci = 0; ci < cars.length; ci++) {
+          var cc = cars[ci];
+          if (cc === r.from || cc.dead) continue;
+          if (Math.abs(cc.pos.y - r.y) < 3 && U.dist2(cc.pos.x, cc.pos.z, r.x, r.z) < 9) { hitCar = cc; break; }
+        }
+      }
+      if (r.y <= sy + 0.2 || hitCar || r.t > 3.5) {
+        var ey = Math.max(r.y, sy + 0.6);
+        GAME.fx.spawn(r.x, ey, r.z, { count: 26, color: 0xff8030, spread: 4, vy: 4, life: 0.7, grav: 0.4 });
+        GAME.fx.flash(r.x, ey + 0.6, r.z, 8);
+        GAME.audio.crash(1);
+        GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.55);
+        hitAt(r.x, r.z, 7, 85);
+        rockets.splice(i, 1);
+      }
+    }
   }
 
   // arcade fixed-wing: throttle for speed, pitch to climb once past stall,
@@ -128,10 +206,23 @@ GAME.aircraft = (function () {
     }
 
     // on the wheels the engine has to haul the airframe up to rotation
-    // speed — the takeoff run is real. Airborne, the throttle answers fully.
-    var acc = car.spec.accel * (onGround && thr > 0 ? 0.42 : 1);
-    car.speed = U.clamp((car.speed || 0) + thr * acc * dt, 0, car.spec.maxSpeed);
+    // speed — the takeoff run is real. Stalled in the air the throttle is
+    // nearly useless (no airflow over the wings): recovery comes from the
+    // DIVE, so a rooftop departure genuinely drops before it climbs.
+    var wasFlying = (car.speed || 0) >= car.spec.stall;
+    var acc = car.spec.accel * (onGround && thr > 0 ? 0.42 : (!onGround && !wasFlying ? 0.28 : 1));
+    // and on the ground it can taxi backwards out of a corner
+    car.speed = U.clamp((car.speed || 0) + thr * acc * dt, onGround ? -7 : 0, car.spec.maxSpeed);
     car.speed *= Math.exp(-0.09 * dt);
+    // a booster strip slams a plane's throttle open too — pure speed, no
+    // stunt credit (planes never enter the jump scorer)
+    if (onGround) {
+      var rmp = GAME.city.rampAt(car.pos.x, car.pos.z);
+      if (rmp && rmp.boost) {
+        if (!car.boostPing) { car.boostPing = true; GAME.audio.pickup(); }
+        car.speed = Math.min(car.spec.maxSpeed, car.speed + 55 * dt);
+      } else car.boostPing = false;
+    }
 
     car.pitch = car.pitch || 0;
     car.roll = car.roll || 0;

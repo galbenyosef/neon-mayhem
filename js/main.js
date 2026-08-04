@@ -204,9 +204,12 @@
     GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
     GAME.enterFullscreen(); // same user gesture — desktop and touch alike
-    // the gesture that started the game is not gameplay input
+    // the gesture that started the game is not gameplay input — and neither
+    // is anything the browser synthesizes right behind it (ghost clicks on
+    // touch): open the same settle window the pointer lock uses
     GAME.input.keys = {};
     GAME.input.lmb = false; GAME.input.lmbPressed = false; GAME.input.rmb = false;
+    GAME.input.lockGraceT = performance.now();
     GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
@@ -338,6 +341,13 @@
     // slow autosave heartbeat: health and ammo drift without touching cash,
     // and the save should never be more than ten seconds behind the life
     if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
+    // the endgame watch: notices the last mission or jump landing, and keeps
+    // a completed player's pockets bottomless
+    if (GAME.frame % 300 === 150) GAME.missions.checkCompletion();
+    if (GAME.completeUnlimited && GAME.player.cash < 9999999) {
+      GAME.player.cash = 9999999;
+      GAME.hud.cashChanged();
+    }
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();

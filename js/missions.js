@@ -1306,9 +1306,44 @@ GAME.missions = (function () {
     }
   }
 
+  // ---------- full completion ----------
+  // Every mission (races, rampages, deliveries, the lot) and every stunt
+  // jump, both islands. Property is a pastime, not progress. The prize: the
+  // TALON gunship on the mainland helipad (and in the showroom), and money
+  // stops being a question.
+  function completionDone() {
+    var b = GAME.bests || {}, n = 0;
+    for (var i = 0; i < DEFS.length; i++) if (b[DEFS[i].id] !== undefined) n++;
+    return n >= DEFS.length && !!(GAME.stunts && GAME.stunts.complete);
+  }
+  function applyComplete() {
+    GAME.city.unlockGunship();
+    GAME.completeUnlimited = true;
+  }
+  function checkCompletion() {
+    if (GAME.prefs && GAME.prefs.gameComplete) { applyComplete(); return true; }
+    if (!completionDone()) return false;
+    GAME.prefs = GAME.prefs || {};
+    GAME.prefs.gameComplete = true;
+    GAME.save();
+    applyComplete();
+    GAME.track('game-complete');
+    GAME.audio.sting('win');
+    GAME.hud.dialog({
+      title: 'COSTA ROSA, COMPLETE',
+      body: 'Every mission, every race, every jump — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and money is no longer a question.',
+      ok: 'CARRY ON', cancel: false
+    });
+    return true;
+  }
+
   function checkRespray() {
     var P = GAME.player;
     if (!P.inCar || !P.car || resprayCooldown > 0 || P.state !== 'alive') return;
+    // the garage sprays what rolls IN it, not what flies OVER it — without
+    // the height check an airplane crossing above the block got resprayed
+    // mid-air, $100 lighter and suddenly clean
+    if (P.car.pos.y > GAME.city.groundY(P.car.pos.x, P.car.pos.z) + 3) return;
     var doors = GAME.city.pois.resprays;
     var near = false;
     for (var i = 0; i < doors.length; i++) {
@@ -1337,6 +1372,7 @@ GAME.missions = (function () {
 
   return {
     DEFS: DEFS,
+    checkCompletion: checkCompletion,
     get active() { return active; },
     // headless hooks, so the generators can be sampled without playing a shift
     testDropBand: function (lv) { var a = active; active = { level: lv, def: { id: 'taxifare' } }; var r = dropBand(); active = a; return r; },

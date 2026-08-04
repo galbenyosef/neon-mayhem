@@ -123,6 +123,8 @@ var VEHICLES = {
   // way onto one is to pay GRAN ROSA MOTORS for it
   superbike: { label: 'Cormorán GT', maxSpeed: 55, accel: 27, grip: 3.5, turn: 3.3, hp: 150, l: 2.3, w: 0.72, cabinH: 0.0, bodyH: 0.5, colors: [0x101018], bike: true, trim: 0x38e8ff },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
+  // the endgame bird: guns and rockets, unlocked by finishing everything
+  gunship: { label: 'Talon', maxSpeed: 42, accel: 12, grip: 4, turn: 2, hp: 420, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x3a4632, 0x2c3626, 0x46523a], heli: true, gunship: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
   airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
   // Isla Verde's own stock. The buggy is for the cove, the pickup for the
@@ -175,10 +177,18 @@ function buildBikeRider() {
   return r;
 }
 
-function buildHeliMesh(colorHex) {
+function buildHeliMesh(colorHex, gunship) {
   var g = new THREE.Group();
   var b = new GeoBatch();
   b.addBox(0, 1.2, -0.6, 2.2, 1.7, 3.6, 0, colorHex, 0);        // cabin
+  if (gunship) {
+    // chin gun, stub wings and rocket pods — it reads military at a glance
+    b.addBox(0, 0.62, 1.35, 0.26, 0.26, 1.1, 0, 0x161a12, 0);
+    for (var gs = -1; gs <= 1; gs += 2) {
+      b.addBox(gs * 1.85, 1.05, -0.9, 1.5, 0.16, 0.56, 0, 0x2c3626, 0);
+      b.addBox(gs * 2.45, 0.82, -0.9, 0.52, 0.5, 1.7, 0, 0x1f2a1a, 0);
+    }
+  }
   // the canopy rides proud of the cabin roof — flush tops fight for depth
   // (the airplane's cockpit learned this first)
   b.addBox(0, 1.52, 1.2, 1.7, 1.1, 1.4, 0, 0x141824, 0);        // canopy glass
@@ -278,7 +288,7 @@ function buildCarMesh(type, colorHex) {
   var s = VEHICLES[type];
   if (s.monster) return buildMonsterMesh(colorHex);
   if (s.plane) return buildPlaneMesh(s.colors);
-  if (s.heli) return buildHeliMesh(colorHex);
+  if (s.heli) return buildHeliMesh(colorHex, s.gunship);
   if (s.bike) return buildBikeMesh(colorHex, s.trim);
   var g = new THREE.Group();
   var b = new GeoBatch();
@@ -500,13 +510,21 @@ GAME.vehicles = (function () {
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
       car.onRampIdx = ramp ? ramp.idx : null;
       if (ramp && ramp.boost) {
-        if (!car.boostT && car === GAME.player.car && GAME.player.inCar) {
+        if (!car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
           GAME.audio.pickup();
           GAME.cameraShake = 0.35;
         }
-        car.boostT = 1.4;
-        car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
-      }
+        if (ramp.cap) {
+          // the chain launcher: it accelerates you TO its speed, never past
+          // it — the landing is a rooftop, and the rooftop is only so deep
+          car.capPing = true;
+          car.boostT = 0;
+          car.speed = car.speed < ramp.cap ? Math.min(ramp.cap, car.speed + 80 * dt) : ramp.cap;
+        } else {
+          car.boostT = 1.4;
+          car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
+        }
+      } else car.capPing = false;
       if (car.air) landStunt(car, 0);
     }
     car.mesh.rotation.y = car.heading;

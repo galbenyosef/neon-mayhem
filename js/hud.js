@@ -38,7 +38,10 @@ GAME.hud = (function () {
 
     el['press-enter'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('click', function () { GAME.startGame(); });
-    el['title-screen'].addEventListener('touchend', function () { GAME.startGame(); });
+    // preventDefault matters: without it the browser follows the touch with a
+    // synthetic mousedown ~300ms later — by then the title is hidden, the
+    // click lands on the canvas, and the game opened with a punch or a shot
+    el['title-screen'].addEventListener('touchend', function (e) { e.preventDefault(); GAME.startGame(); });
 
     // the in-game dialog's buttons; clicks must not fall through to whatever
     // screen is underneath (the pause screen resumes on any tap)
@@ -84,7 +87,6 @@ GAME.hud = (function () {
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
-    pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
     // the save travels: export downloads a file, import reads one back and
     // reloads into the imported life
     pauseBtn('pause-export', function () {
@@ -159,6 +161,12 @@ GAME.hud = (function () {
     el['bigmap'].addEventListener('click', onMapClick);
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
     el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
+    // like the pause screen: a click on the dark around the map closes it
+    ['click', 'touchend'].forEach(function (ev) {
+      el['map-screen'].addEventListener(ev, function (e) {
+        if (e.target === el['map-screen']) { e.preventDefault(); api.toggleMap(false); }
+      });
+    });
 
     // legend entries behave like a mixer's solo buttons: tap one to show ONLY
     // that marker family, tap again to show all. The choice persists.

@@ -214,7 +214,10 @@ GAME.shops = (function () {
       row('buggy', 'DUNE BUGGY', 'Made for sand and bad decisions.', 9000),
       row('limo', 'STRETCH LIMO', 'Arrive like you own the strip.', 18000),
       row('monster', 'SLEDGEHAMMER', 'The monster truck, no stunt jumps required.', 35000),
-      row('helicopter', 'PELICANO', islaOpen ? 'Your own bird, delivered outside.' : 'Import license pending — open the bridges first.', 60000, !islaOpen)
+      row('helicopter', 'PELICANO', islaOpen ? 'Your own bird, delivered outside.' : 'Import license pending — open the bridges first.', 60000, !islaOpen),
+      row('gunship', 'TALON', (GAME.prefs && GAME.prefs.gameComplete)
+        ? 'Army surplus. Guns live, rockets included.'
+        : 'Classified inventory — finish everything first.', 250000, !(GAME.prefs && GAME.prefs.gameComplete))
     ];
   }
   function bribeItems() {

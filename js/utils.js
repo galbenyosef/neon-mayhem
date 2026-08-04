@@ -288,8 +288,11 @@ GAME.initInput = function (canvas) {
     // the lock) squeezed off a round with whatever the save had loaded and
     // earned a wanted star before the player had done anything at all.
     var acquiring = GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas;
-    if (e.button === 0 && !acquiring) { inp.lmb = true; inp.lmbPressed = true; }
-    if (e.button === 2) inp.rmb = true;
+    // on touch devices the fire button is on the touch layer; mouse events
+    // reaching the canvas there are the browser's synthetic echoes of taps,
+    // and treating them as trigger pulls is how taps punched people
+    if (e.button === 0 && !acquiring && !GAME.isTouch) { inp.lmb = true; inp.lmbPressed = true; }
+    if (e.button === 2 && !GAME.isTouch) inp.rmb = true;
     // a click back into the game is a real gesture: if the browser threw us
     // out of fullscreen over an Esc on an overlay, this is where it comes back
     if (GAME.started && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
