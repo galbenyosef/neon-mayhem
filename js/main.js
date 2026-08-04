@@ -197,6 +197,9 @@
     GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
     GAME.enterFullscreen(); // same user gesture — desktop and touch alike
+    // the gesture that started the game is not gameplay input
+    GAME.input.keys = {};
+    GAME.input.lmb = false; GAME.input.lmbPressed = false; GAME.input.rmb = false;
     GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
@@ -240,6 +243,10 @@
   // going away IS the Esc press: treat it as one.
   document.addEventListener('pointerlockchange', function () {
     if (document.pointerLockElement) return;
+    // an unlock within a beat of the game releasing the lock itself (an
+    // overlay opening) is not the user's Esc — grants and exits resolve
+    // asynchronously, so our own release can arrive a tick displaced
+    if (GAME.releasePointerT && performance.now() - GAME.releasePointerT < 1500) return;
     if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen &&
       GAME.player.state === 'alive') GAME.togglePause();
   });
@@ -262,10 +269,11 @@
       GAME.audio.siren(0);
       // the context stays running: the title pads keep the pause screen warm
       // (the radio and engines are tick-driven, so they fall silent on their own)
-      if (document.exitPointerLock) document.exitPointerLock();
+      GAME.releasePointer();
     } else {
       GAME.audio.resume();
       GAME.maybeRestoreFullscreen();
+      GAME.regainPointer();
     }
     GAME.syncOverlayMusic();
   };

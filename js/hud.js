@@ -96,6 +96,17 @@ GAME.hud = (function () {
         'If you want to keep this life, press Cancel and use EXPORT SAVE first.\n\nImport and overwrite?')) return;
       $('save-file').click();
     });
+    pauseBtn('pause-reset', function () {
+      // a reset is the import warning with no way back — so it points at the
+      // way out first, then asks once more before burning it all down
+      if (!window.confirm(
+        'RESET erases EVERYTHING — cash, missions, stunt jumps, property, garage, your look. There is no undo.\n\n' +
+        'Want a backup? Press Cancel and use EXPORT SAVE first.\n\nErase all progress?')) return;
+      if (!window.confirm('Last chance: wipe the save and start Costa Rosa from nothing?')) return;
+      GAME.track('progress-reset');
+      try { localStorage.clear(); } catch (e) { }
+      location.reload();
+    });
     $('save-file').addEventListener('change', function () {
       var f = this.files && this.files[0];
       this.value = '';
@@ -129,14 +140,13 @@ GAME.hud = (function () {
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
     el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
 
-    // legend entries behave like a chart's: click one to hide that marker
-    // family on both maps, click again to bring it back. Choices persist.
-    (GAME.prefs && GAME.prefs.mapHidden || []).forEach(function (k) { mapHidden[k] = true; });
+    // legend entries behave like a mixer's solo buttons: tap one to show ONLY
+    // that marker family, tap again to show all. The choice persists.
+    mapSolo = (GAME.prefs && GAME.prefs.mapSolo) || null;
     refreshLegend();
   }
 
   // ---------- toggleable legend ----------
-  var mapHidden = {};
   var LEGEND = [
     ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'],
     ['#c86bff', 'S — Respray', 'respray'], ['#ff8aa8', 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
@@ -145,12 +155,19 @@ GAME.hud = (function () {
     ['#8de8b0', '$ Shops & property', 'shops'], ['#5dff9e', '⌂ Your safehouse', 'home'],
     ['#ff8aff', 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
   ];
-  function catVis(k) { return !mapHidden[k]; }
+  // Tap-to-SOLO, like muting a mixing desk: tap a legend and everything ELSE
+  // is struck — only that category (plus navigation) stays on the map. Tap it
+  // again (or tap another) to release/switch. Your destination and the active
+  // objective are never filtered: a route you just plotted must always show.
+  var mapSolo = null;
+  var NAV_ALWAYS = { dest: 1, objective: 1 };
+  function catVis(k) { return !!NAV_ALWAYS[k] || !mapSolo || mapSolo === k; }
   function pickupCat(t) { return t === 'health' ? 'health' : t === 'armor' ? 'armor' : 'weapon'; }
   function toggleCat(k) {
-    mapHidden[k] = !mapHidden[k];
+    if (NAV_ALWAYS[k]) return;            // navigation rows are labels, not filters
+    mapSolo = mapSolo === k ? null : k;
     GAME.prefs = GAME.prefs || {};
-    GAME.prefs.mapHidden = Object.keys(mapHidden).filter(function (k2) { return mapHidden[k2]; });
+    GAME.prefs.mapSolo = mapSolo;
     GAME.save();
     refreshLegend();
     if (GAME.mapOpen) drawBigMap();
@@ -158,7 +175,7 @@ GAME.hud = (function () {
   function refreshLegend() {
     var box = $('map-legend');
     box.innerHTML = LEGEND.map(function (e) {
-      return '<span class="lgd' + (mapHidden[e[2]] ? ' off' : '') + '" data-k="' + e[2] + '">' +
+      return '<span class="lgd' + (!catVis(e[2]) ? ' off' : '') + (mapSolo === e[2] ? ' sel' : '') + '" data-k="' + e[2] + '">' +
         '<i style="background:' + e[0] + '"></i>' + e[1] + '</span>';
     }).join('');
     for (var i = 0; i < box.children.length; i++) {
@@ -436,13 +453,9 @@ GAME.hud = (function () {
     var hp = GAME.city.helipad;
     g.strokeStyle = '#8de0ff'; g.lineWidth = 2;
     g.beginPath(); g.arc(mx(hp.x), my(hp.z), 5, 0, Math.PI * 2); g.stroke();
-    // POIs
-    g.fillStyle = '#ff8aa8';
-    GAME.city.pois.hospitals.forEach(function (H) { g.fillRect(mx(H.x) - 3, my(H.z) - 3, 6, 6); });
-    g.fillStyle = '#5aa0ff';
-    GAME.city.pois.stations.forEach(function (st) { g.fillRect(mx(st.x) - 3, my(st.z) - 3, 6, 6); });
-    g.fillStyle = '#c86bff';
-    GAME.city.pois.resprays.forEach(function (r) { g.fillRect(mx(r.door.x) - 3, my(r.door.z) - 3, 6, 6); });
+    // POI markers are NOT baked in here: the big map draws them live as
+    // legend-filterable badges, and squares burned into the base image sat
+    // underneath, immune to the legend's solo/strike
     // the landmasses name themselves, written on the sea below each one
     g.font = 'italic 700 17px "Segoe UI", Arial, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -549,6 +562,11 @@ GAME.hud = (function () {
       g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 / zoom;
       g.beginPath(); g.arc(lx, lz, 5.6 / zoom, 0, Math.PI * 2); g.stroke();
     }
+    // POI dots, live and legend-aware (they used to be baked into the base
+    // image, where the legend couldn't touch them)
+    if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (H2) { blip(H2.x, H2.z, '#ff8aa8', 3); });
+    if (catVis('police')) GAME.city.pois.stations.forEach(function (st2) { blip(st2.x, st2.z, '#5aa0ff', 3); });
+    if (catVis('respray')) GAME.city.pois.resprays.forEach(function (r2) { blip(r2.door.x, r2.door.z, '#c86bff', 3); });
     if (catVis('airport')) {
       landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
       landmark(GAME.city.helipad.x, GAME.city.helipad.z);
@@ -638,6 +656,11 @@ GAME.hud = (function () {
       // the sim loop halts while the map is open; silence the engine drone
       if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
       else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
+      // the map is a mouse screen: hand the cursor back without touching
+      // fullscreen (Esc would drop both, which is why we never make the
+      // player reach for it)
+      if (open) GAME.releasePointer();
+      else GAME.regainPointer();
       if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
       api.refreshFsBtn();
     },
@@ -739,6 +762,16 @@ GAME.hud = (function () {
       if (sj && GAME.stunts) {
         sj.textContent = 'STUNT JUMPS  ' + GAME.stunts.found + ' / ' + GAME.stunts.total +
           (GAME.stunts.complete ? '   ·   ALL FOUND' : '');
+      }
+      // missions alongside the jumps: distinct marked missions finished, and
+      // what the count is FOR while the bridges are still shut
+      var pm = $('pause-missions');
+      if (pm && GAME.missions) {
+        var defs = GAME.missions.DEFS, bests = GAME.bests || {}, done = 0;
+        for (var mi = 0; mi < defs.length; mi++) if (bests[defs[mi].id] !== undefined) done++;
+        var open = !GAME.isla || GAME.isla.isOpen();
+        pm.textContent = 'MISSIONS  ' + done + ' / ' + defs.length +
+          (open ? (done >= defs.length ? '   ·   ALL DONE' : '') : '   ·   4 OPEN THE BRIDGES');
       }
       api.refreshFsBtn();
     },

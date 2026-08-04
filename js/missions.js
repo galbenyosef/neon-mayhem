@@ -262,11 +262,12 @@ GAME.missions = (function () {
   function startIceCream() {
     var P = GAME.player;
     GAME.track('job-started-icecream');
+    clearIceServed();   // belt and braces: a fresh shift owes nobody history
     active = {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
-      targets: [], timeLeft: 120, chimeT: 0, pitch: null, pitchT: 0, routeCp: null
+      targets: [], timeLeft: 120, chimeT: 0, routeCp: null
     };
     setMarkersVisible(false);
     updateCp();
@@ -275,35 +276,14 @@ GAME.missions = (function () {
     GAME.audio.pickup();
   }
 
-  // Where the trade is: the middle of whichever knot of people on the pavement
-  // is worth driving to. Nobody is summoned and nobody is marked as waiting —
-  // that is a taxi fare, and this is a van with chimes on it.
-  function iceCreamPitch() {
-    var f = GAME.focus(), peds = GAME.world.peds;
-    var best = null, bestScore = 0;
-    for (var i = 0; i < peds.length; i++) {
-      var a = peds[i];
-      if (a.dead || a.isCop || a.jobPed) continue;
-      var d = U.dist(f.x, f.z, a.pos.x, a.pos.z);
-      if (d < 30 || d > 400) continue;
-      var n = 0;
-      for (var j = 0; j < peds.length; j++) {
-        var b = peds[j];
-        if (b.dead || b.isCop || b.jobPed) continue;
-        if (U.dist2(a.pos.x, a.pos.z, b.pos.x, b.pos.z) < 30 * 30) n++;
-      }
-      var score = n / (1 + d / 220);
-      if (score > bestScore) { bestScore = score; best = [Math.round(a.pos.x), Math.round(a.pos.z)]; }
-    }
-    return best;
-  }
-
   function iceCreamSale(tgt) {
     var i = active.targets.indexOf(tgt);
     if (i >= 0) active.targets.splice(i, 1);
     dropArrow(tgt);
-    // served, not spirited away: they walk off with it
-    if (tgt.ped && !tgt.ped.dead) { tgt.ped.jobPed = false; tgt.ped.state = 'walk'; }
+    // served, not spirited away: they walk off with it — and one cone is
+    // enough. Unflagged, the same person took a few steps, heard the chimes
+    // again and rejoined the queue forever.
+    if (tgt.ped && !tgt.ped.dead) { tgt.ped.jobPed = false; tgt.ped.state = 'walk'; tgt.ped.iceServed = true; }
     var pay = 30 + active.level * 12;
     GAME.addCash(pay);
     active.earned += pay;
@@ -330,27 +310,22 @@ GAME.missions = (function () {
     active.timeLeft -= dt;
     if (active.timeLeft <= 0) { endJob('out of time'); return; }
     var f = GAME.focus();
-    // the chimes, on a loop, because that is the whole job
+    // the chimes, on a loop, because that is the whole job. No marker, no
+    // route, no "crowd" pin — you roam, they hear you. The map pointing at a
+    // spot made it a delivery run, which it isn't.
     active.chimeT -= dt;
     if (active.chimeT <= 0) { active.chimeT = 3.4; GAME.audio.chime(); }
-    // point at the busiest pavement within reach, and keep re-pointing as the
-    // crowd moves and as you work through it
-    active.pitchT = (active.pitchT || 0) - dt;
-    if (active.pitchT <= 0 || !active.pitch) {
-      active.pitchT = 4;
-      var np = iceCreamPitch();
-      if (np) active.pitch = np;
-    }
     // Anyone on the pavement hears the chimes: stop the truck and whoever is
     // close enough wanders over to the hatch. That is the entire job — nobody
-    // is spawned waiting for you and nobody is flagging you down.
+    // is spawned waiting for you and nobody is flagging you down. One cone
+    // per person: the served walk away and stay away.
     replaceLostTargets();
     active.walkUpT = (active.walkUpT || 0) - dt;
     if (Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
       var peds = GAME.world.peds;
       for (var w = 0; w < peds.length; w++) {
         var pd = peds[w];
-        if (pd.dead || pd.isCop || pd.jobPed) continue;
+        if (pd.dead || pd.isCop || pd.jobPed || pd.iceServed) continue;
         if (U.dist2(f.x, f.z, pd.pos.x, pd.pos.z) > 24 * 24) continue;
         pd.jobPed = true;
         pd.state = 'wait';
@@ -361,11 +336,6 @@ GAME.missions = (function () {
     }
     stepBoarding(dt, f, P);
     updateArrows(dt);
-    active.routeT = (active.routeT || 0) - dt;
-    if (active.routeT <= 0) {
-      active.routeT = 1.0;
-      active.courierRoute = active.pitch ? roadRoute(f.x, f.z, active.pitch[0], active.pitch[1]) : null;
-    }
     // the sold/quota line was set once at the start of the round and never
     // again — it read as a frozen shift readout however much you sold
     if (GAME.frame % 12 === 0) GAME.hud.missionObjective(objectiveText());
@@ -388,7 +358,11 @@ GAME.missions = (function () {
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
-    if (active.targets[0]) faceToward(active.targets[0].x, active.targets[0].z);
+    // no auto-orient here: taxi and ambulance shifts start from a moving cab
+    // at whatever heading you were driving — spinning the car under the
+    // player mid-motion is course-correction nobody asked for. Marker
+    // missions (races, couriers) keep it: they begin from a standstill at a
+    // fixed start line.
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
@@ -684,8 +658,16 @@ GAME.missions = (function () {
         GAME.addCash(streak); active.earned += streak;
         msg += '  ·  STREAK +$' + streak;
       }
-      GAME.hud.message(msg, 4);
-      startRound();
+      // any stars at all and dispatch holds the next round: the drop you just
+      // made was the last call until you're clean (the shift stays alive)
+      if (GAME.police.wanted > 0) {
+        active.holdHeat = true;
+        msg += '   —   dispatch holds the next ' + (kind === 'ambulance' ? 'patients' : 'fares') + ' until the heat is off';
+        GAME.hud.message(msg, 4.5);
+      } else {
+        GAME.hud.message(msg, 4);
+        startRound();
+      }
     }
     active.routeCp = null;
     updateCp();
@@ -693,7 +675,17 @@ GAME.missions = (function () {
   }
 
   // end an ongoing taxi/ambulance shift (clock off, totalled, or timed out)
+  // "One cone per person" only holds within a shift. The flag lives on peds
+  // that outlive the job — swept here so the next round starts with every
+  // pavement a fresh market, however the last one ended (clock-off, totalled,
+  // timed out, cut off by dispatch, or the driver getting wasted).
+  function clearIceServed() {
+    var peds = GAME.world.peds;
+    for (var i = 0; i < peds.length; i++) if (peds[i].iceServed) peds[i].iceServed = false;
+  }
+
   function endJob(reason) {
+    if (active.def.id === 'icecream') clearIceServed();
     var count = active.jobCount, earned = active.earned, lv = active.level;
     var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : 'fare';
     // send any waiting people home with the shift. Someone who only wandered
@@ -851,7 +843,6 @@ GAME.missions = (function () {
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
     if (d.type === 'icecream') {
       return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
-        (active.pitch ? '  ·  crowd marked' : '  ·  find a crowd') +
         '  ·  $' + active.earned + ' taken';
     }
     if (d.type === 'taxifare' || d.type === 'ambulance') {
@@ -874,7 +865,7 @@ GAME.missions = (function () {
       var t = nearestTarget();
       return t ? [t.x, t.z] : null;
     }
-    if (d.type === 'icecream') return active.pitch || null;
+    if (d.type === 'icecream') return null;   // no destination: the chimes ARE the job
     return null;
   }
 
@@ -893,6 +884,7 @@ GAME.missions = (function () {
 
   function finish(win, reason) {
     var d = active.def;
+    if (d.id === 'icecream') clearIceServed();   // the wasted/failed path skips endJob
     var reward = active.reward || d.reward || 0;
     if (win) {
       var value = d.type === 'rampage' ? Math.floor(active.score) : Math.round(active.t * 10) / 10;
@@ -1249,13 +1241,55 @@ GAME.missions = (function () {
       active.timeLeft -= dt;
       if (active.timeLeft <= 0) { endJob('out of time'); return; }
       var f = GAME.focus(), tgt = currentCp();
+      var amb = d2.type === 'ambulance';
+      // --- the heat ladder for shifts. One or two stars: the run in progress
+      // plays out, but dispatch stops calling. Three: whoever is aboard bails
+      // at the kerb — the shift itself survives. Four or five: nobody works
+      // through a war zone; the shift ends on the spot, earnings kept.
+      var w = GAME.police.wanted;
+      if (w >= 4) { endJob('dispatch cut you off — too hot'); return; }
+      if (w >= 3 && active.aboard > 0) {
+        var nb = active.aboard;
+        for (var bi = 0; bi < nb; bi++) {
+          var bo = GAME.peds.spawnPed(f.x + (bi - nb / 2) * 1.4 + 2.2, f.z + 1.6);
+          if (bo) { bo.state = 'flee'; bo.fleeT = 4.5; bo.fleeX = f.x; bo.fleeZ = f.z; }
+        }
+        active.aboard = 0;
+        active.phase = 'pickup';
+        active.routeCp = null;
+        // if they were the last of the round, dispatch holds until you're clean
+        if (!active.targets.length) active.holdHeat = true;
+        updateCp();
+        GAME.hud.message(amb
+          ? 'Your patients scramble out — three stars is no stretcher run.'
+          : 'Your fare bails out — nobody rides through three stars.', 3.5);
+        GAME.hud.missionObjective(objectiveText());
+      }
+      // dispatch resumes the moment the heat is gone
+      if (active.holdHeat && w === 0) {
+        active.holdHeat = false;
+        startRound();
+        active.routeCp = null;
+        updateCp();
+        GAME.hud.message('Heat’s off — dispatch calls in new ' + (amb ? 'patients' : 'fares') + '.', 3);
+        GAME.hud.missionObjective(objectiveText());
+      }
       if (active.phase === 'pickup') {
         replaceLostTargets();
-        // stop on the marker and whoever is waiting will come to you
+        // stop on the marker and whoever is waiting will come to you — unless
+        // you're wearing three stars, in which case nobody gets in
         var near = nearestTarget();
         if (near && U.dist2(f.x, f.z, near.x, near.z) < 90 && Math.abs(P.car.speed) < 5 && !near.boarding) {
-          near.boarding = true;
-          GAME.hud.message(d2.type === 'ambulance' ? 'Patient is coming — hold still.' : 'Your fare is coming over.', 2);
+          if (w >= 3) {
+            active.noBoardHintT = (active.noBoardHintT || 0) - dt;
+            if (active.noBoardHintT <= 0) {
+              active.noBoardHintT = 5;
+              GAME.hud.message('Nobody gets in with three stars on you — lose the heat.', 2.5);
+            }
+          } else {
+            near.boarding = true;
+            GAME.hud.message(amb ? 'Patient is coming — hold still.' : 'Your fare is coming over.', 2);
+          }
         }
         stepBoarding(dt, f, P);
       } else if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) {

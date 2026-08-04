@@ -283,12 +283,17 @@ GAME.initInput = function (canvas) {
   window.addEventListener('blur', function () { inp.keys = {}; inp.lmb = false; inp.rmb = false; });
 
   canvas.addEventListener('mousedown', function (e) {
-    if (e.button === 0) { inp.lmb = true; inp.lmbPressed = true; }
+    // The click that ACQUIRES pointer lock is aim, not fire. Without this,
+    // the first click after the title screen (or after any overlay released
+    // the lock) squeezed off a round with whatever the save had loaded and
+    // earned a wanted star before the player had done anything at all.
+    var acquiring = GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas;
+    if (e.button === 0 && !acquiring) { inp.lmb = true; inp.lmbPressed = true; }
     if (e.button === 2) inp.rmb = true;
     // a click back into the game is a real gesture: if the browser threw us
     // out of fullscreen over an Esc on an overlay, this is where it comes back
     if (GAME.started && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
-    if (GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas) {
+    if (acquiring) {
       canvas.requestPointerLock && canvas.requestPointerLock();
     }
   });
@@ -304,6 +309,34 @@ GAME.initInput = function (canvas) {
     inp.pointerLocked = (document.pointerLockElement === canvas);
   });
   window.addEventListener('wheel', function (e) { inp.wheel += e.deltaY > 0 ? 1 : -1; }, { passive: true });
+};
+
+// Overlays release the pointer lock through this wrapper so the unlock can
+// be told apart from the browser's own (the user pressing Esc). A one-shot
+// flag is not enough: lock grants and exits resolve asynchronously, so our
+// exit can land AFTER a still-pending grant, one event tick later. The
+// timestamp lets the unlock handler treat anything within a beat of a
+// deliberate release as the game's own doing.
+GAME.releasePointer = function () {
+  GAME.releasePointerT = performance.now();
+  if (document.exitPointerLock) document.exitPointerLock();
+};
+
+// After an overlay hands the screen back to the game, ask for the pointer
+// lock right away — the closing key or click usually carries user activation
+// so the request lands and no extra click is needed. When it doesn't (Esc
+// carries none) the request is refused quietly and the next click into the
+// canvas acquires the lock as always — swallowed as aim, never fired.
+GAME.regainPointer = function () {
+  if (GAME.isTouch || !GAME.started) return;
+  if (GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen) return;
+  var cv = document.getElementById('game-canvas');
+  if (cv && cv.requestPointerLock) {
+    try {
+      var pr = cv.requestPointerLock();
+      if (pr && pr.catch) pr.catch(function () { });
+    } catch (e) { }
+  }
 };
 
 GAME.key = function (code) { return !!GAME.input.keys[code]; };

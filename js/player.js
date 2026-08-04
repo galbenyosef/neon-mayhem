@@ -367,6 +367,12 @@ function forceExitCar(silent) {
     var rp = GAME.resolveCircle(ex, ez, 0.45);
     P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
   }
+  // a hovering exit (under chute height) steps out at altitude — you drop
+  // the rest of the way on ordinary gravity rather than teleporting down
+  if (car.spec.heli || car.spec.plane) {
+    var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4);
+    if (feetY > P.pos.y + 0.3) { P.pos.y = feetY; P.airborne = true; }
+  }
   P.velY = 0;
   P.heading = car.heading;
   P.inCar = false;
@@ -438,9 +444,57 @@ function wantsEnter() {
   return fired;
 }
 
+// The roof height of a car at a point in its own frame — what your feet
+// stand on when you're up there. Bikes have nothing to stand on; aircraft
+// only support you over the fuselage/cabin (not the empty air by the tail).
+function carRoofY(c, lx, lz) {
+  var s = c.spec;
+  if (s.bike) return null;
+  if (s.icecream) return 2.62;
+  if (s.monster) return (Math.abs(lx) < 0.95 && lz > -1.4 && lz < 0.8) ? 3.1 : 2.32;
+  if (s.heli) return (lz > -2.4 && lz < 1.9) ? 2.07 : null;
+  if (s.plane) {
+    if (Math.abs(lx) < 0.78 && Math.abs(lz) < 4.5) return 1.97;      // fuselage
+    if (Math.abs(lx) < 6 && Math.abs(lz + 0.4) < 1.1) return 1.51;   // wing
+    return null;
+  }
+  var top = 0.42 + s.bodyH / 2;
+  // the cabin is a second step up, roughly amidships
+  if (s.cabinH > 0 && Math.abs(lx) < s.w * 0.41 && Math.abs(lz + 0.15) < s.l * 0.26)
+    top = 0.42 + s.bodyH / 2 + s.cabinH - 0.05;
+  return top;
+}
+// the LOWEST standable level, for deciding when someone is "above" the car
+function carBodyTop(c) {
+  var s = c.spec;
+  return s.icecream ? 2.6 : s.monster ? 2.3 : s.plane ? 1.4 : s.heli ? 1.9 : s.bike ? 1.0 : 0.42 + s.bodyH / 2;
+}
+
 function updateOnFoot(dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
   var aiming = GAME.combat.aiming;
+
+  // Riding: standing on a car means moving with it. Chase its transform from
+  // last frame's snapshot — position delta plus rotation about its center —
+  // before your own legs add anything.
+  if (P.roofCar) {
+    var rc = P.roofCar;
+    // a teleport or respawn can leave a stale ride reference — if the player
+    // is nowhere near the car any more, it isn't under their feet
+    if (rc.dead || GAME.world.cars.indexOf(rc) < 0 ||
+        U.dist2(P.pos.x, P.pos.z, rc.pos.x, rc.pos.z) > (rc.radius + 5) * (rc.radius + 5)) { P.roofCar = null; }
+    else {
+      var pr = P.roofPrev;
+      var dh2 = rc.heading - pr.h;
+      var ox = P.pos.x - pr.x, oz = P.pos.z - pr.z;
+      var cs2 = Math.cos(dh2), sn2 = Math.sin(dh2);
+      P.pos.x = rc.pos.x + ox * cs2 + oz * sn2;
+      P.pos.z = rc.pos.z + oz * cs2 - ox * sn2;
+      P.pos.y += rc.pos.y - pr.y;
+      P.heading += dh2;
+      P.roofPrev = { x: rc.pos.x, z: rc.pos.z, y: rc.pos.y, h: rc.heading };
+    }
+  }
   var mx = 0, mz = 0;
   if (GAME.key('KeyW')) mz += 1;
   if (GAME.key('KeyS')) mz -= 1;
@@ -470,10 +524,12 @@ function updateOnFoot(dt) {
   var nz = P.pos.z + Math.cos(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
   var rp = GAME.resolveCircle(nx, nz, 0.45, P.pos.y);
   nx = rp.x; nz = rp.z;
-  // solid cars
+  // solid cars — from the side. Above the body you're standing or sailing
+  // over it, and neither the push nor the run-over check applies up there.
   var cars = GAME.world.cars;
   for (var i = 0; i < cars.length; i++) {
     var c = cars[i];
+    if (P.pos.y - c.pos.y > carBodyTop(c) - 0.35) continue;
     var dx = nx - c.pos.x, dz = nz - c.pos.z;
     var d2 = dx * dx + dz * dz;
     var rr = c.radius + 0.4;
@@ -495,6 +551,23 @@ function updateOnFoot(dt) {
   if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
   var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
+  // ...and car roofs count as ground: come down inside a car's rectangle at
+  // roof height and you stand on it (and ride it, if it drives off)
+  var roofCar = null;
+  for (var rci = 0; rci < cars.length; rci++) {
+    var rcc = cars[rci];
+    if (rcc.dead) continue;
+    var rdx = P.pos.x - rcc.pos.x, rdz = P.pos.z - rcc.pos.z;
+    var rad = rcc.radius + 1;
+    if (rdx * rdx + rdz * rdz > rad * rad) continue;
+    var rsn = Math.sin(rcc.heading), rcs = Math.cos(rcc.heading);
+    var rlz = rdx * rsn + rdz * rcs, rlx = rdx * rcs - rdz * rsn;
+    if (Math.abs(rlx) > rcc.spec.w / 2 + 0.12 || Math.abs(rlz) > rcc.spec.l / 2 + 0.12) continue;
+    var rY = carRoofY(rcc, rlx, rlz);
+    if (rY === null) continue;
+    rY += rcc.pos.y;
+    if (P.pos.y >= rY - 0.5 && rY > surf) { surf = rY; roofCar = rcc; }
+  }
   // Space jumps when you're on your feet (running gives you a longer hop)
   var grounded = P.pos.y <= surf + 0.06;
   var wantJump = GAME.key('Space') || T.jump;
@@ -518,6 +591,16 @@ function updateOnFoot(dt) {
     }
   } else {
     P.pos.y = surf; P.velY = 0;
+  }
+  // grounded on a car: remember it (and snapshot its transform on first
+  // contact) so next frame's ride-follow moves you with it
+  if (!P.airborne && roofCar) {
+    if (P.roofCar !== roofCar) {
+      P.roofPrev = { x: roofCar.pos.x, z: roofCar.pos.z, y: roofCar.pos.y, h: roofCar.heading };
+    }
+    P.roofCar = roofCar;
+  } else {
+    P.roofCar = null;
   }
   P.mesh.rotation.y = P.heading;
 
@@ -567,8 +650,11 @@ function updateDriving(dt) {
   if (car.spec.heli || car.spec.plane) {
     GAME.track(car.spec.plane ? 'flew-plane' : 'flew-helicopter');
     if (wantsEnter()) {
-      var gy = GAME.city.groundY(car.pos.x, car.pos.z);
-      if (car.pos.y > gy + 3.5) {
+      // the chute is for real air, not for stepping off a landed aircraft.
+      // Measure to whatever is directly beneath — street OR rooftop — and
+      // only bail out with about three floors of open drop below the wheels.
+      var sy = GAME.city.surfaceY(car.pos.x, car.pos.z);
+      if (car.pos.y > sy + 9) {
         car.occupied = null; // the abandoned airframe is now ownerless (it will fall)
         GAME.aircraft.startParachute(car.pos.x, car.pos.y, car.pos.z, car.heading);
       } else forceExitCar();

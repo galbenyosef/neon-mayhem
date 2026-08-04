@@ -884,7 +884,7 @@ GAME.shops = (function () {
           : 'Click or W/S to select  ·  BUY (or Enter) asks before it charges  ·  Esc leave';
     el.screen.style.display = 'flex';
     GAME.shopOpen = true;
-    if (document.exitPointerLock) document.exitPointerLock();
+    GAME.releasePointer();
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
     GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0);
     render();
@@ -902,6 +902,7 @@ GAME.shops = (function () {
     clearPvObj();
     pv.key = '';
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
+    GAME.regainPointer();
   }
 
   function onKey(e) {
