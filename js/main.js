@@ -242,7 +242,10 @@
   // nothing you could see and only the second reached the game. The lock
   // going away IS the Esc press: treat it as one.
   document.addEventListener('pointerlockchange', function () {
-    if (document.pointerLockElement) return;
+    if (document.pointerLockElement) { GAME.expectedUnlock = false; return; }
+    // an unlock the game asked for (an overlay opening) is not an Esc press —
+    // only the browser's own unlock should read as one
+    if (GAME.expectedUnlock) { GAME.expectedUnlock = false; return; }
     if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen &&
       GAME.player.state === 'alive') GAME.togglePause();
   });
@@ -265,7 +268,7 @@
       GAME.audio.siren(0);
       // the context stays running: the title pads keep the pause screen warm
       // (the radio and engines are tick-driven, so they fall silent on their own)
-      if (document.exitPointerLock) document.exitPointerLock();
+      GAME.releasePointer();
     } else {
       GAME.audio.resume();
       GAME.maybeRestoreFullscreen();

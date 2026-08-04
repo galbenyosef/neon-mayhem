@@ -311,6 +311,15 @@ GAME.initInput = function (canvas) {
   window.addEventListener('wheel', function (e) { inp.wheel += e.deltaY > 0 ? 1 : -1; }, { passive: true });
 };
 
+// Overlays release the pointer lock through this wrapper so the unlock can
+// be told apart from the browser's own (the user pressing Esc): the flagged
+// release is expected and must not read as an Esc press. Only flag when a
+// lock is actually held — otherwise no event fires and the flag goes stale.
+GAME.releasePointer = function () {
+  if (document.pointerLockElement) GAME.expectedUnlock = true;
+  if (document.exitPointerLock) document.exitPointerLock();
+};
+
 // After an overlay hands the screen back to the game, ask for the pointer
 // lock right away — the closing key or click usually carries user activation
 // so the request lands and no extra click is needed. When it doesn't (Esc

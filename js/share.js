@@ -245,7 +245,7 @@ GAME.share = (function () {
     GAME.shareOpen = true;
     // hand the mouse back at once — with the pointer still locked, the card's
     // buttons could not be clicked and the browser swallowed the first Esc
-    if (document.exitPointerLock) document.exitPointerLock();
+    GAME.releasePointer();
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
     GAME.track('result-card-shown');
   }

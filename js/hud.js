@@ -659,7 +659,7 @@ GAME.hud = (function () {
       // the map is a mouse screen: hand the cursor back without touching
       // fullscreen (Esc would drop both, which is why we never make the
       // player reach for it)
-      if (open) { if (document.exitPointerLock) document.exitPointerLock(); }
+      if (open) GAME.releasePointer();
       else GAME.regainPointer();
       if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
       api.refreshFsBtn();
