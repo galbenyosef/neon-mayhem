@@ -688,8 +688,16 @@ GAME.missions = (function () {
         GAME.addCash(streak); active.earned += streak;
         msg += '  ·  STREAK +$' + streak;
       }
-      GAME.hud.message(msg, 4);
-      startRound();
+      // any stars at all and dispatch holds the next round: the drop you just
+      // made was the last call until you're clean (the shift stays alive)
+      if (GAME.police.wanted > 0) {
+        active.holdHeat = true;
+        msg += '   —   dispatch holds the next ' + (kind === 'ambulance' ? 'patients' : 'fares') + ' until the heat is off';
+        GAME.hud.message(msg, 4.5);
+      } else {
+        GAME.hud.message(msg, 4);
+        startRound();
+      }
     }
     active.routeCp = null;
     updateCp();
@@ -1253,13 +1261,55 @@ GAME.missions = (function () {
       active.timeLeft -= dt;
       if (active.timeLeft <= 0) { endJob('out of time'); return; }
       var f = GAME.focus(), tgt = currentCp();
+      var amb = d2.type === 'ambulance';
+      // --- the heat ladder for shifts. One or two stars: the run in progress
+      // plays out, but dispatch stops calling. Three: whoever is aboard bails
+      // at the kerb — the shift itself survives. Four or five: nobody works
+      // through a war zone; the shift ends on the spot, earnings kept.
+      var w = GAME.police.wanted;
+      if (w >= 4) { endJob('dispatch cut you off — too hot'); return; }
+      if (w >= 3 && active.aboard > 0) {
+        var nb = active.aboard;
+        for (var bi = 0; bi < nb; bi++) {
+          var bo = GAME.peds.spawnPed(f.x + (bi - nb / 2) * 1.4 + 2.2, f.z + 1.6);
+          if (bo) { bo.state = 'flee'; bo.fleeT = 4.5; bo.fleeX = f.x; bo.fleeZ = f.z; }
+        }
+        active.aboard = 0;
+        active.phase = 'pickup';
+        active.routeCp = null;
+        // if they were the last of the round, dispatch holds until you're clean
+        if (!active.targets.length) active.holdHeat = true;
+        updateCp();
+        GAME.hud.message(amb
+          ? 'Your patients scramble out — three stars is no stretcher run.'
+          : 'Your fare bails out — nobody rides through three stars.', 3.5);
+        GAME.hud.missionObjective(objectiveText());
+      }
+      // dispatch resumes the moment the heat is gone
+      if (active.holdHeat && w === 0) {
+        active.holdHeat = false;
+        startRound();
+        active.routeCp = null;
+        updateCp();
+        GAME.hud.message('Heat’s off — dispatch calls in new ' + (amb ? 'patients' : 'fares') + '.', 3);
+        GAME.hud.missionObjective(objectiveText());
+      }
       if (active.phase === 'pickup') {
         replaceLostTargets();
-        // stop on the marker and whoever is waiting will come to you
+        // stop on the marker and whoever is waiting will come to you — unless
+        // you're wearing three stars, in which case nobody gets in
         var near = nearestTarget();
         if (near && U.dist2(f.x, f.z, near.x, near.z) < 90 && Math.abs(P.car.speed) < 5 && !near.boarding) {
-          near.boarding = true;
-          GAME.hud.message(d2.type === 'ambulance' ? 'Patient is coming — hold still.' : 'Your fare is coming over.', 2);
+          if (w >= 3) {
+            active.noBoardHintT = (active.noBoardHintT || 0) - dt;
+            if (active.noBoardHintT <= 0) {
+              active.noBoardHintT = 5;
+              GAME.hud.message('Nobody gets in with three stars on you — lose the heat.', 2.5);
+            }
+          } else {
+            near.boarding = true;
+            GAME.hud.message(amb ? 'Patient is coming — hold still.' : 'Your fare is coming over.', 2);
+          }
         }
         stepBoarding(dt, f, P);
       } else if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) {
