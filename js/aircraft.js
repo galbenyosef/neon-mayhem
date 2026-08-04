@@ -14,6 +14,8 @@ GAME.aircraft = (function () {
     if (GAME.time - warnT < 4) return;
     warnT = GAME.time;
     GAME.hud.message('RESTRICTED AIRSPACE — turn back.', 2.5);
+    // keep pressing the line and an air unit comes out to shadow you
+    if (GAME.police.airspaceStrike) GAME.police.airspaceStrike();
   }
 
   // The airframe wears its damage out loud. Hard landings and wall grazes

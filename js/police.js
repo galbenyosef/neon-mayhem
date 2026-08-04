@@ -129,6 +129,78 @@ GAME.police = (function () {
     return GAME.world.cars.filter(function (c) { return c.isPolice && !c.dead && c.ai && (c.ai.mode === 'chase' || c.ai.mode === 'roadblock'); });
   }
 
+  // ---------- the air unit ----------
+  // The chopper is the top of the response ladder: it lifts off only at 4-5
+  // stars — or as an escort over the channel when someone keeps nosing into
+  // restricted airspace, whatever their record on the ground says.
+  var airUnits = [], airStrikes = 0, airStrikeT = -99, escortT = 0;
+  function airspaceStrike() {
+    var now = GAME.time;
+    if (now - airStrikeT > 40) airStrikes = 0;   // old warnings expire
+    airStrikeT = now;
+    airStrikes++;
+    if (airStrikes === 3) GAME.hud.message('AIR UNIT dispatched — leave the restricted zone.', 3);
+    if (airStrikes >= 3) escortT = 40;           // keep pressing and it keeps shadowing
+  }
+  function spawnAirUnit() {
+    var f = GAME.focus();
+    var a = Math.random() * Math.PI * 2;
+    var h = GAME.vehicles.spawnCar('helicopter', f.x + Math.cos(a) * 170, f.z + Math.sin(a) * 170, 0, { color: 0x24365e });
+    if (!h) return;
+    h.aiAir = true; h.isPolice = true;
+    h.ai = { mode: 'air' };
+    var P = GAME.player;
+    var fy = P.inCar && P.car ? P.car.pos.y : P.pos.y;
+    h.pos.y = Math.max(GAME.city.surfaceY(h.pos.x, h.pos.z), fy) + 34;
+    airUnits.push(h);
+  }
+  function updateAirUnits(dt, s) {
+    var P = GAME.player;
+    if (escortT > 0) escortT -= dt;
+    var want = s >= 5 ? 2 : s >= 4 ? 1 : (escortT > 0 ? 1 : 0);
+    airUnits = airUnits.filter(function (h) { return !h.dead && GAME.world.cars.indexOf(h) >= 0; });
+    if (airUnits.length < want && GAME.frame % 90 === 0) spawnAirUnit();
+    var f = GAME.focus();
+    var fy = P.inCar && P.car ? P.car.pos.y : P.pos.y;
+    for (var i = airUnits.length - 1; i >= 0; i--) {
+      var h = airUnits[i];
+      var leaving = i >= want;
+      var dx = f.x - h.pos.x, dz = f.z - h.pos.z;
+      var d = Math.sqrt(dx * dx + dz * dz) || 1;
+      // hold station ~20m off the target; a spare or dismissed bird flies out
+      var spd = leaving ? 26 : U.clamp((d - 20) * 0.6, 0, 30);
+      var sgn = leaving ? -1 : 1;
+      h.pos.x += sgn * (dx / d) * spd * dt;
+      h.pos.z += sgn * (dz / d) * spd * dt;
+      h.heading = Math.atan2(dx, dz);
+      var targetY = Math.max(GAME.city.surfaceY(h.pos.x, h.pos.z) + 22, fy + (leaving ? 42 : 16));
+      h.pos.y = U.damp(h.pos.y, targetY, 1.4, dt);
+      h.mesh.rotation.set(spd > 4 && !leaving ? -0.12 : 0, h.heading, 0);
+      if (leaving) {
+        if (d > 240) { GAME.vehicles.removeCar(h); airUnits.splice(i, 1); }
+        continue;
+      }
+      // only a 4-5 star bird opens fire; the airspace escort just shadows you
+      if (s >= 4) {
+        h.fireT = (h.fireT || 0) - dt;
+        if (d < 60 && h.fireT <= 0) {
+          h.fireT = 1.15;
+          GAME.audio.gunshot('smg');
+          // a fast target is hard to hit from a hovering doorway
+          var mspd = P.inCar && P.car ? Math.abs(P.car.speed) : (P.moveSpeed || 0);
+          var hit = Math.random() < U.clamp(0.5 - mspd * 0.018, 0.1, 0.5);
+          var ix = f.x + (Math.random() - 0.5) * (hit ? 1.2 : 8);
+          var iz = f.z + (Math.random() - 0.5) * (hit ? 1.2 : 8);
+          GAME.fx.spawn(ix, fy + 0.4, iz, { count: 6, color: 0xffe0a0, spread: 1.2, life: 0.3 });
+          if (hit) {
+            if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, 4, 'shot');
+            else GAME.playerDamage(4, 'shot');
+          }
+        }
+      }
+    }
+  }
+
   function spawnCruiser() {
     var P = GAME.player;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
@@ -369,6 +441,10 @@ GAME.police = (function () {
 
     if (P.state !== 'alive') { GAME.audio.siren(0); return; }
 
+    // the air unit runs even at zero stars — the airspace escort is not a
+    // wanted-level response
+    updateAirUnits(dt, s);
+
     if (s === 0) {
       GAME.audio.siren(0);
       if (heat > 0) heat = Math.max(0, heat - dt * 4);
@@ -444,6 +520,11 @@ GAME.police = (function () {
       if (U.dist2(active[v].pos.x, active[v].pos.z, px, pz) < 70 * 70 &&
         GAME.city.hash.segmentClear(active[v].pos.x, active[v].pos.z, px, pz)) { seen = true; break; }
     }
+    // the air unit's eyes work at altitude — a 4-5 star bird on your tail
+    // means climbing away no longer cools the heat
+    for (var av = 0; av < airUnits.length; av++) {
+      if (U.dist2(airUnits[av].pos.x, airUnits[av].pos.z, px, pz) < 90 * 90) { seen = true; break; }
+    }
     if (!seen && !flownOff) {
       for (var fc = 0; fc < peds.length; fc++) {
         var pd = peds[fc];
@@ -503,6 +584,8 @@ GAME.police = (function () {
     get heat() { return heat; },
     reportCrime: reportCrime,
     noteGunfire: noteGunfire,
+    airspaceStrike: airspaceStrike,
+    get airUnitCount() { return airUnits.length; },
     setWanted: setWanted,
     clearWanted: clearWanted,
     update: update

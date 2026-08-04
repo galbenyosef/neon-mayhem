@@ -45,8 +45,10 @@ GAME.city = (function () {
   // pier that used to sit there stepped down a block.
   var PIERS = [[250, 505], [-180, 470]];
   city.isOnPier = function (x, z) {
+    // the deck starts past the boardwalk (x=370); it used to claim from 356
+    // and swallow the footpath in front of it
     for (var i = 0; i < PIERS.length; i++) {
-      if (x > 356 && x < PIERS[i][1] && Math.abs(z - PIERS[i][0]) < 8) return true;
+      if (x > 370 && x < PIERS[i][1] && Math.abs(z - PIERS[i][0]) < 8) return true;
     }
     return false;
   };
@@ -773,14 +775,16 @@ GAME.city = (function () {
     // piers
     var pier = new GeoBatch();
     PIERS.forEach(function (p) {
-      var pz = p[0], endX = p[1];
-      pier.addBox((362 + endX) / 2, 0.5, pz, endX - 362, 0.5, 14, 0, 0x7a5a40, 0);
-      for (var px = 372; px < endX; px += 12) {
+      // the deck begins past the boardwalk (which ends at x=370) — it used
+      // to start at 362 and lay its planks across the footpath to the road
+      var pz = p[0], x0 = 370.2, endX = p[1];
+      pier.addBox((x0 + endX) / 2, 0.5, pz, endX - x0, 0.5, 14, 0, 0x7a5a40, 0);
+      for (var px = 376; px < endX; px += 12) {
         pier.addBox(px, -0.7, pz - 6, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
         pier.addBox(px, -0.7, pz + 6, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
       }
-      pier.addBox((362 + endX) / 2, 1.35, pz - 6.8, endX - 362, 0.12, 0.2, 0, 0xb08a60, 0);
-      pier.addBox((362 + endX) / 2, 1.35, pz + 6.8, endX - 362, 0.12, 0.2, 0, 0xb08a60, 0);
+      pier.addBox((x0 + endX) / 2, 1.35, pz - 6.8, endX - x0, 0.12, 0.2, 0, 0xb08a60, 0);
+      pier.addBox((x0 + endX) / 2, 1.35, pz + 6.8, endX - x0, 0.12, 0.2, 0, 0xb08a60, 0);
     });
     var pierMesh = new THREE.Mesh(pier.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     pierMesh.matrixAutoUpdate = false;
@@ -1453,9 +1457,14 @@ GAME.city = (function () {
           var t0 = 0.25 + st * 0.25, t1 = t0 + 0.25;
           var lzMid = -hl + s.len * (t0 + t1) / 2, lzLen = s.len * 0.25 + 0.2;
           var wc = P(sd * (s.w / 2 + 0.5), lzMid, 0);
+          // each step tops out just BELOW the deck at its own low end, not at
+          // its high end: capped at t1 the wall stood up to a quarter of the
+          // ramp's height above the deck beside it, and stepping (or steering)
+          // off the side hit solid air. Below-deck it still walls off anyone
+          // coming at the flank from the ground, while the deck clears it.
           addSolid(wc[0], wc[2],
             across ? 1.0 : lzLen, across ? lzLen : 1.0,
-            s.h * t1, 'prop', true);
+            Math.max(0.3, s.h * t0 - 0.35), 'prop', true);
         }
       }
     }

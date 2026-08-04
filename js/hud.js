@@ -40,6 +40,14 @@ GAME.hud = (function () {
     el['title-screen'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('touchend', function () { GAME.startGame(); });
 
+    // the in-game dialog's buttons; clicks must not fall through to whatever
+    // screen is underneath (the pause screen resumes on any tap)
+    ['click', 'touchend'].forEach(function (ev) {
+      $('game-modal').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); });
+      $('game-modal-ok').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); closeDialog(true); });
+      $('game-modal-cancel').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); closeDialog(false); });
+    });
+
     // pause: tap anywhere resumes; buttons stop the bubble
     el['pause-screen'].addEventListener('click', function () { if (GAME.paused) GAME.togglePause(); });
     el['pause-screen'].addEventListener('touchend', function (e) { e.preventDefault(); if (GAME.paused) GAME.togglePause(); });
@@ -91,21 +99,33 @@ GAME.hud = (function () {
     pauseBtn('pause-import', function () {
       // an import is an overwrite: make sure the player knows the life they
       // are living right now is about to be replaced, and offer the way out
-      if (!window.confirm(
-        'Importing a save REPLACES your current progress — cash, property, garage, look, everything.\n\n' +
-        'If you want to keep this life, press Cancel and use EXPORT SAVE first.\n\nImport and overwrite?')) return;
-      $('save-file').click();
+      dialog({
+        title: 'IMPORT SAVE',
+        body: 'Importing REPLACES your current progress — cash, property, garage, your look, everything.\nWant to keep this life? Cancel and use EXPORT SAVE first.',
+        ok: 'IMPORT & OVERWRITE', danger: true,
+        onOk: function () { $('save-file').click(); }
+      });
     });
     pauseBtn('pause-reset', function () {
       // a reset is the import warning with no way back — so it points at the
       // way out first, then asks once more before burning it all down
-      if (!window.confirm(
-        'RESET erases EVERYTHING — cash, missions, stunt jumps, property, garage, your look. There is no undo.\n\n' +
-        'Want a backup? Press Cancel and use EXPORT SAVE first.\n\nErase all progress?')) return;
-      if (!window.confirm('Last chance: wipe the save and start Costa Rosa from nothing?')) return;
-      GAME.track('progress-reset');
-      try { localStorage.clear(); } catch (e) { }
-      location.reload();
+      dialog({
+        title: 'RESET PROGRESS',
+        body: 'This erases EVERYTHING — cash, missions, stunt jumps, property, garage, your look. There is no undo.\nWant a backup? Cancel and use EXPORT SAVE first.',
+        ok: 'ERASE EVERYTHING', danger: true,
+        onOk: function () {
+          dialog({
+            title: 'LAST CHANCE',
+            body: 'Wipe the save and start Costa Rosa from nothing?',
+            ok: 'WIPE THE SAVE', danger: true,
+            onOk: function () {
+              GAME.track('progress-reset');
+              try { localStorage.clear(); } catch (e) { }
+              location.reload();
+            }
+          });
+        }
+      });
     });
     $('save-file').addEventListener('change', function () {
       var f = this.files && this.files[0];
@@ -115,7 +135,7 @@ GAME.hud = (function () {
       rd.onload = function () {
         var r = GAME.importSave(String(rd.result));
         if (r.ok) { GAME.track('save-imported'); location.reload(); }
-        else alert(r.why);
+        else dialog({ title: 'IMPORT FAILED', body: r.why, ok: 'OK', cancel: false });
       };
       rd.readAsText(f);
     });
@@ -645,9 +665,34 @@ GAME.hud = (function () {
     }
   }
 
+  // ---------- in-game dialog (the game never throws browser popups) ----------
+  var dlgOnOk = null;
+  function dialog(opts) {
+    dlgOnOk = opts.onOk || null;
+    $('game-modal-title').textContent = opts.title || '';
+    $('game-modal-body').textContent = opts.body || '';
+    var ok = $('game-modal-ok'), cancel = $('game-modal-cancel');
+    ok.textContent = opts.ok || 'CONFIRM';
+    ok.className = 'mbtn' + (opts.danger ? ' danger' : '');
+    cancel.style.display = opts.cancel === false ? 'none' : '';
+    $('game-modal').style.display = 'flex';
+  }
+  function closeDialog(confirmed) {
+    $('game-modal').style.display = 'none';
+    var fn = confirmed ? dlgOnOk : null;
+    dlgOnOk = null;
+    if (fn) fn();
+  }
+
   var api = {
     init: init,
     update: update,
+    dialog: dialog,
+    dialogOpen: function () { return !!$('game-modal') && $('game-modal').style.display === 'flex'; },
+    dialogKey: function (code) {
+      if (code === 'Enter' || code === 'KeyE') closeDialog(true);
+      else if (code === 'Escape') closeDialog(false);
+    },
     toggleMap: function (force) {
       if (!GAME.started) return;
       var open = force !== undefined ? force : !GAME.mapOpen;

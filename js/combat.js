@@ -250,11 +250,15 @@ GAME.combat = (function () {
 
     // drive-by: Q/E pick a side; LMB (or FIRE) alone fires toward the side you're
     // looking, matching the on-screen prompt "LMB — Fire (drive-by w/ SMG)"
+    // clicks in the instant after the pointer locks are still part of
+    // arriving — the tail of a double-click, not a trigger pull
+    var settling = !!inp.lockGraceT && performance.now() - inp.lockGraceT < 450;
+
     if (P.inCar) {
       var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       var left = GAME.key('KeyQ') || T.driveByL;
       var right = GAME.key('KeyE') || T.driveByR;
-      var fireBtn = inp.lmb || T.fire;
+      var fireBtn = (inp.lmb && !settling) || T.fire;
       if (hasSMG && (left || right || fireBtn)) {
         if (cooldown <= 0) {
           cooldown = WEAPONS.smg.rate;
@@ -272,8 +276,8 @@ GAME.combat = (function () {
     }
 
     // on-foot firing
-    var fireHeld = inp.lmb || T.fire;
-    var firePressed = inp.lmbPressed || T.firePressed;
+    var fireHeld = (inp.lmb && !settling) || T.fire;
+    var firePressed = (inp.lmbPressed && !settling) || T.firePressed;
     inp.lmbPressed = false; T.firePressed = false;
     var wantFire = wd.auto ? fireHeld : firePressed;
     if (wantFire && cooldown <= 0) {

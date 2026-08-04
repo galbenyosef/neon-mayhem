@@ -542,8 +542,10 @@ GAME.vehicles = (function () {
     var airT = car.air || 0;
     car.air = 0;
     var isPlayer = car === GAME.player.car && GAME.player.inCar;
-    if (isPlayer && airT > 0.45) {
-      var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
+    var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
+    // earned, not stumbled into: rolling off the side of a ramp (or crawling
+    // off the lip) is a fall — hang time alone doesn't pay, distance does
+    if (isPlayer && airT > 0.45 && dist > 7) {
       var spins = Math.floor(Math.abs(car.jumpSpin || 0) / (Math.PI * 2));
       var cash = Math.round(airT * 120 + dist * 6 + spins * 400);
       var label = spins > 0 ? (spins > 1 ? spins + 'x SPIN!' : '360 SPIN!')
@@ -931,7 +933,8 @@ GAME.vehicles = (function () {
       }
       if (car.spec.heli || car.spec.plane) {
         // aircraft are flown from player.js; abandoned airborne ones fall.
-        var powered = (car === P.car && P.inCar);
+        // The police air unit flies itself (police.js) and never falls.
+        var powered = (car === P.car && P.inCar) || !!car.aiAir;
         var restY = car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4;
         if (!powered) {
           // the surface, not the street: an abandoned or parked aircraft over

@@ -647,9 +647,17 @@ GAME.shops = (function () {
           : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
+      // the row only ever selects and previews. Money moves through the BUY
+      // chip alone — hover already selects, so a click-anywhere-to-buy meant
+      // the first click on a hovered row spent money while "just previewing".
       row.addEventListener('click', function () {
         if (sel !== i) { sel = i; render(); }
-        else openConfirm(it);
+      });
+      var chip = row.querySelector('.pr');
+      chip.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (sel !== i) { sel = i; render(); return; }
+        openConfirm(it);
       });
       row.addEventListener('mouseenter', function () { if (sel !== i) { sel = i; render(); } });
       el.items.appendChild(row);
@@ -981,6 +989,9 @@ GAME.shops = (function () {
     var out = [];
     for (var i = 0; i < locations.length; i++) {
       var loc = locations[i];
+      // the desk sergeant lives inside the police station — the P badge
+      // already marks it, and a $ stacked on top just clutters the map
+      if (loc.kind === 'bribe') continue;
       var home = loc.kind === 'safehouse' && owns(loc.sh.id);
       out.push({
         x: loc.at.x, z: loc.at.z,

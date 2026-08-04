@@ -307,6 +307,11 @@ GAME.initInput = function (canvas) {
   });
   document.addEventListener('pointerlockchange', function () {
     inp.pointerLocked = (document.pointerLockElement === canvas);
+    // the moment the lock lands, start a short grace: the double-click on
+    // load (or the reflexive click right after an overlay) arrives with the
+    // lock already held and used to squeeze off a round before the player
+    // had done anything on purpose
+    if (inp.pointerLocked) inp.lockGraceT = performance.now();
   });
   window.addEventListener('wheel', function (e) { inp.wheel += e.deltaY > 0 ? 1 : -1; }, { passive: true });
 };

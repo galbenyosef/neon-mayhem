@@ -57,6 +57,8 @@
     GAME.onKeyDown = function (code) {
       if (code === 'Enter' && !GAME.started) { GAME.startGame(); return; }
       if (!GAME.started) return;
+      // an open dialog owns the keys — Esc must cancel it, not unpause
+      if (GAME.hud.dialogOpen()) { GAME.hud.dialogKey(code); return; }
       // the result card closes on any of the keys a hand is likely to be on —
       // it never needed the mouse
       if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {
@@ -103,6 +105,10 @@
       document.documentElement.requestFullscreen()
         .then(function () {
           try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(function () { }); } catch (e) { }
+          // hold the keyboard lock on Esc while fullscreen: the press is then
+          // DELIVERED to the game (it pauses) instead of tearing fullscreen
+          // down. Holding Esc still force-exits — the browser's escape hatch.
+          try { navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape']).catch(function () { }); } catch (e) { }
         })
         .catch(function () { });
     } catch (e) { }
@@ -118,6 +124,7 @@
   };
   document.addEventListener('fullscreenchange', function () {
     if (document.fullscreenElement) { fsRestore = false; return; }
+    try { navigator.keyboard && navigator.keyboard.unlock && navigator.keyboard.unlock(); } catch (e) { }
     if (fsManual) { fsManual = false; return; }
     if (GAME.started) fsRestore = true;
   });
