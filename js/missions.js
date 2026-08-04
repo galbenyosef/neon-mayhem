@@ -266,7 +266,7 @@ GAME.missions = (function () {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
-      targets: [], timeLeft: 120, chimeT: 0, pitch: null, pitchT: 0, routeCp: null
+      targets: [], timeLeft: 120, chimeT: 0, routeCp: null
     };
     setMarkersVisible(false);
     updateCp();
@@ -275,35 +275,14 @@ GAME.missions = (function () {
     GAME.audio.pickup();
   }
 
-  // Where the trade is: the middle of whichever knot of people on the pavement
-  // is worth driving to. Nobody is summoned and nobody is marked as waiting —
-  // that is a taxi fare, and this is a van with chimes on it.
-  function iceCreamPitch() {
-    var f = GAME.focus(), peds = GAME.world.peds;
-    var best = null, bestScore = 0;
-    for (var i = 0; i < peds.length; i++) {
-      var a = peds[i];
-      if (a.dead || a.isCop || a.jobPed) continue;
-      var d = U.dist(f.x, f.z, a.pos.x, a.pos.z);
-      if (d < 30 || d > 400) continue;
-      var n = 0;
-      for (var j = 0; j < peds.length; j++) {
-        var b = peds[j];
-        if (b.dead || b.isCop || b.jobPed) continue;
-        if (U.dist2(a.pos.x, a.pos.z, b.pos.x, b.pos.z) < 30 * 30) n++;
-      }
-      var score = n / (1 + d / 220);
-      if (score > bestScore) { bestScore = score; best = [Math.round(a.pos.x), Math.round(a.pos.z)]; }
-    }
-    return best;
-  }
-
   function iceCreamSale(tgt) {
     var i = active.targets.indexOf(tgt);
     if (i >= 0) active.targets.splice(i, 1);
     dropArrow(tgt);
-    // served, not spirited away: they walk off with it
-    if (tgt.ped && !tgt.ped.dead) { tgt.ped.jobPed = false; tgt.ped.state = 'walk'; }
+    // served, not spirited away: they walk off with it — and one cone is
+    // enough. Unflagged, the same person took a few steps, heard the chimes
+    // again and rejoined the queue forever.
+    if (tgt.ped && !tgt.ped.dead) { tgt.ped.jobPed = false; tgt.ped.state = 'walk'; tgt.ped.iceServed = true; }
     var pay = 30 + active.level * 12;
     GAME.addCash(pay);
     active.earned += pay;
@@ -330,27 +309,22 @@ GAME.missions = (function () {
     active.timeLeft -= dt;
     if (active.timeLeft <= 0) { endJob('out of time'); return; }
     var f = GAME.focus();
-    // the chimes, on a loop, because that is the whole job
+    // the chimes, on a loop, because that is the whole job. No marker, no
+    // route, no "crowd" pin — you roam, they hear you. The map pointing at a
+    // spot made it a delivery run, which it isn't.
     active.chimeT -= dt;
     if (active.chimeT <= 0) { active.chimeT = 3.4; GAME.audio.chime(); }
-    // point at the busiest pavement within reach, and keep re-pointing as the
-    // crowd moves and as you work through it
-    active.pitchT = (active.pitchT || 0) - dt;
-    if (active.pitchT <= 0 || !active.pitch) {
-      active.pitchT = 4;
-      var np = iceCreamPitch();
-      if (np) active.pitch = np;
-    }
     // Anyone on the pavement hears the chimes: stop the truck and whoever is
     // close enough wanders over to the hatch. That is the entire job — nobody
-    // is spawned waiting for you and nobody is flagging you down.
+    // is spawned waiting for you and nobody is flagging you down. One cone
+    // per person: the served walk away and stay away.
     replaceLostTargets();
     active.walkUpT = (active.walkUpT || 0) - dt;
     if (Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
       var peds = GAME.world.peds;
       for (var w = 0; w < peds.length; w++) {
         var pd = peds[w];
-        if (pd.dead || pd.isCop || pd.jobPed) continue;
+        if (pd.dead || pd.isCop || pd.jobPed || pd.iceServed) continue;
         if (U.dist2(f.x, f.z, pd.pos.x, pd.pos.z) > 24 * 24) continue;
         pd.jobPed = true;
         pd.state = 'wait';
@@ -361,11 +335,6 @@ GAME.missions = (function () {
     }
     stepBoarding(dt, f, P);
     updateArrows(dt);
-    active.routeT = (active.routeT || 0) - dt;
-    if (active.routeT <= 0) {
-      active.routeT = 1.0;
-      active.courierRoute = active.pitch ? roadRoute(f.x, f.z, active.pitch[0], active.pitch[1]) : null;
-    }
     // the sold/quota line was set once at the start of the round and never
     // again — it read as a frozen shift readout however much you sold
     if (GAME.frame % 12 === 0) GAME.hud.missionObjective(objectiveText());
@@ -863,7 +832,6 @@ GAME.missions = (function () {
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
     if (d.type === 'icecream') {
       return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
-        (active.pitch ? '  ·  crowd marked' : '  ·  find a crowd') +
         '  ·  $' + active.earned + ' taken';
     }
     if (d.type === 'taxifare' || d.type === 'ambulance') {
@@ -886,7 +854,7 @@ GAME.missions = (function () {
       var t = nearestTarget();
       return t ? [t.x, t.z] : null;
     }
-    if (d.type === 'icecream') return active.pitch || null;
+    if (d.type === 'icecream') return null;   // no destination: the chimes ARE the job
     return null;
   }
 
