@@ -283,12 +283,17 @@ GAME.initInput = function (canvas) {
   window.addEventListener('blur', function () { inp.keys = {}; inp.lmb = false; inp.rmb = false; });
 
   canvas.addEventListener('mousedown', function (e) {
-    if (e.button === 0) { inp.lmb = true; inp.lmbPressed = true; }
+    // The click that ACQUIRES pointer lock is aim, not fire. Without this,
+    // the first click after the title screen (or after any overlay released
+    // the lock) squeezed off a round with whatever the save had loaded and
+    // earned a wanted star before the player had done anything at all.
+    var acquiring = GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas;
+    if (e.button === 0 && !acquiring) { inp.lmb = true; inp.lmbPressed = true; }
     if (e.button === 2) inp.rmb = true;
     // a click back into the game is a real gesture: if the browser threw us
     // out of fullscreen over an Esc on an overlay, this is where it comes back
     if (GAME.started && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
-    if (GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas) {
+    if (acquiring) {
       canvas.requestPointerLock && canvas.requestPointerLock();
     }
   });

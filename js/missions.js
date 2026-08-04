@@ -388,7 +388,11 @@ GAME.missions = (function () {
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
-    if (active.targets[0]) faceToward(active.targets[0].x, active.targets[0].z);
+    // no auto-orient here: taxi and ambulance shifts start from a moving cab
+    // at whatever heading you were driving — spinning the car under the
+    // player mid-motion is course-correction nobody asked for. Marker
+    // missions (races, couriers) keep it: they begin from a standstill at a
+    // fixed start line.
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());

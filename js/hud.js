@@ -96,6 +96,17 @@ GAME.hud = (function () {
         'If you want to keep this life, press Cancel and use EXPORT SAVE first.\n\nImport and overwrite?')) return;
       $('save-file').click();
     });
+    pauseBtn('pause-reset', function () {
+      // a reset is the import warning with no way back — so it points at the
+      // way out first, then asks once more before burning it all down
+      if (!window.confirm(
+        'RESET erases EVERYTHING — cash, missions, stunt jumps, property, garage, your look. There is no undo.\n\n' +
+        'Want a backup? Press Cancel and use EXPORT SAVE first.\n\nErase all progress?')) return;
+      if (!window.confirm('Last chance: wipe the save and start Costa Rosa from nothing?')) return;
+      GAME.track('progress-reset');
+      try { localStorage.clear(); } catch (e) { }
+      location.reload();
+    });
     $('save-file').addEventListener('change', function () {
       var f = this.files && this.files[0];
       this.value = '';
@@ -739,6 +750,16 @@ GAME.hud = (function () {
       if (sj && GAME.stunts) {
         sj.textContent = 'STUNT JUMPS  ' + GAME.stunts.found + ' / ' + GAME.stunts.total +
           (GAME.stunts.complete ? '   ·   ALL FOUND' : '');
+      }
+      // missions alongside the jumps: distinct marked missions finished, and
+      // what the count is FOR while the bridges are still shut
+      var pm = $('pause-missions');
+      if (pm && GAME.missions) {
+        var defs = GAME.missions.DEFS, bests = GAME.bests || {}, done = 0;
+        for (var mi = 0; mi < defs.length; mi++) if (bests[defs[mi].id] !== undefined) done++;
+        var open = !GAME.isla || GAME.isla.isOpen();
+        pm.textContent = 'MISSIONS  ' + done + ' / ' + defs.length +
+          (open ? (done >= defs.length ? '   ·   ALL DONE' : '') : '   ·   4 OPEN THE BRIDGES');
       }
       api.refreshFsBtn();
     },

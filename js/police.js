@@ -92,16 +92,29 @@ GAME.police = (function () {
   function clearWanted() { setWanted(0); }
 
   function clearCops() {
+    // Stand down, don't vanish: a cruiser deleted mid-frame in front of the
+    // player reads as a magic trick. Pursuers turn back into ordinary
+    // traffic and drive off; officers on foot holster up and walk away as
+    // civilians — the regular distance cleanup collects them all off-screen.
     var cars = GAME.world.cars;
     for (var i = cars.length - 1; i >= 0; i--) {
       var c = cars[i];
-      // leave parked/idle cruisers (and the one you're driving) in place
       var pursuing = c.ai && (c.ai.mode === 'chase' || c.ai.mode === 'roadblock');
-      if (c.isPolice && !c.dead && pursuing && c !== GAME.player.car) GAME.vehicles.removeCar(c);
+      if (c.isPolice && !c.dead && pursuing && c !== GAME.player.car) {
+        c.ai = { mode: 'traffic', desired: 11, laneX: 0, laneZ: 0 };
+      }
     }
     var peds = GAME.world.peds;
     for (var j = peds.length - 1; j >= 0; j--) {
-      if (peds[j].isCop && !peds[j].dead) GAME.peds.removePed(peds[j]);
+      var p = peds[j];
+      if (p.isCop && !p.dead) {
+        p.isCop = false;               // released from police.js's control
+        p.temper = 0;                  // and not looking for a rematch
+        p.aimPose = false;
+        p.state = 'flee';
+        p.fleeT = 8;
+        p.fleeX = GAME.player.pos.x; p.fleeZ = GAME.player.pos.z;
+      }
     }
     clearSpikes();
     pinTimer = 0;
