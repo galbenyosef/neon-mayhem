@@ -131,8 +131,9 @@ GAME.police = (function () {
 
   // ---------- the air unit ----------
   // The chopper is the top of the response ladder: it lifts off at 4-5
-  // stars. Restricted airspace is not a warning ladder — press the line and
-  // it is an immediate 5-star response, birds up and firing.
+  // stars. Restricted airspace runs a three-strike ladder (see aircraft.js):
+  // two warnings first, and the THIRD violation is the 5-star response,
+  // birds up and firing.
   var airUnits = [];
   function airspaceStrike() {
     if (stars() < 5) {
@@ -147,6 +148,26 @@ GAME.police = (function () {
     if (!h) return;
     h.aiAir = true; h.isPolice = true;
     h.ai = { mode: 'air' };
+    // "I was getting shot at but couldn't see police helicopters anywhere" —
+    // a near-black airframe hanging behind and above the player at night was
+    // invisible. The unit now announces itself the way a police bird does:
+    // a searchlight cone reaching down toward the target, and red/blue
+    // strobes. Both ride the mesh, so they move, blink and die with it.
+    var beam = new THREE.Mesh(
+      new THREE.ConeGeometry(7, 26, 12, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.15, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    beam.position.set(0, -12.6, 1.6);   // apex under the chin, cone reaching down
+    beam.rotation.x = -0.12;            // leant toward whatever the nose points at
+    h.mesh.add(beam);
+    var strobeR = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.5), new THREE.MeshBasicMaterial({ color: 0xff2030 }));
+    strobeR.position.set(-0.9, 2.3, -0.6);
+    var strobeB = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.5), new THREE.MeshBasicMaterial({ color: 0x2050ff }));
+    strobeB.position.set(0.9, 2.3, -0.6);
+    var strobeT = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), new THREE.MeshBasicMaterial({ color: 0xff2030 }));
+    strobeT.position.set(0, 1.9, -5.1);   // tail beacon
+    h.mesh.add(strobeR); h.mesh.add(strobeB); h.mesh.add(strobeT);
+    h.airLights = [strobeR, strobeB, strobeT];
     var P = GAME.player;
     var fy = P.inCar && P.car ? P.car.pos.y : P.pos.y;
     h.pos.y = Math.max(GAME.city.surfaceY(h.pos.x, h.pos.z), fy) + 34;
@@ -173,6 +194,13 @@ GAME.police = (function () {
       var targetY = Math.max(GAME.city.surfaceY(h.pos.x, h.pos.z) + 22, fy + (leaving ? 42 : 16));
       h.pos.y = U.damp(h.pos.y, targetY, 1.4, dt);
       h.mesh.rotation.set(spd > 4 && !leaving ? -0.12 : 0, h.heading, 0);
+      // strobes: the same two-phase flash the cruisers run
+      if (h.airLights) {
+        var phase = (GAME.time * 8 | 0) % 2 === 0;
+        h.airLights[0].visible = phase;
+        h.airLights[1].visible = !phase;
+        h.airLights[2].visible = phase;
+      }
       if (leaving) {
         if (d > 240) { GAME.vehicles.removeCar(h); airUnits.splice(i, 1); }
         continue;
@@ -190,6 +218,11 @@ GAME.police = (function () {
           var hit = Math.random() < U.clamp(0.5 - mspd * 0.018, 0.1, 0.5) * (onFoot ? 0.5 : 1);
           var ix = f.x + (Math.random() - 0.5) * (hit ? 1.2 : 8);
           var iz = f.z + (Math.random() - 0.5) * (hit ? 1.2 : 8);
+          // the fire visibly comes FROM the bird: muzzle flash at the door
+          // gun and a tracer down to the impact, so getting shot at is never
+          // a mystery even when the airframe itself is behind the camera
+          GAME.fx.flash(h.pos.x, h.pos.y - 0.6, h.pos.z, 1.2);
+          GAME.fx.tracer(h.pos.x, h.pos.y - 0.8, h.pos.z, ix, fy + 0.5, iz);
           GAME.fx.spawn(ix, fy + 0.4, iz, { count: 6, color: 0xffe0a0, spread: 1.2, life: 0.3 });
           if (hit) {
             if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, 4, 'shot');

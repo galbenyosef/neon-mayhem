@@ -123,7 +123,8 @@ var VEHICLES = {
   // way onto one is to pay GRAN ROSA MOTORS for it
   superbike: { label: 'Cormorán GT', maxSpeed: 55, accel: 27, grip: 3.5, turn: 3.3, hp: 150, l: 2.3, w: 0.72, cabinH: 0.0, bodyH: 0.5, colors: [0x101018], bike: true, trim: 0x38e8ff },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
-  // the endgame bird: guns and rockets, unlocked by finishing everything
+  // the big bird: guns and rockets — granted by finishing everything, or
+  // bought over the showroom counter by anyone with the money
   gunship: { label: 'Talon', maxSpeed: 42, accel: 12, grip: 4, turn: 2, hp: 420, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x3a4632, 0x2c3626, 0x46523a], heli: true, gunship: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
   airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
@@ -494,7 +495,24 @@ GAME.vehicles = (function () {
     var wasAirborne = (car.air || 0) > 0.05;
     var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
     if (car.pos.y > gy + stickTol) {
-      if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
+      if (!car.air) {
+        car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0;
+        // A stunt jump is EARNED at the lip: the launch only carries the
+        // ramp's credit if the car left over the TOP edge, roughly along the
+        // ramp's own direction, with real pace. Rolling off the SIDE of the
+        // deck (or crawling over the lip) is a fall, not a jump.
+        car.jumpRamp = null;
+        if (car.onRampIdx !== null && car.onRampIdx !== undefined) {
+          var jr = GAME.city.ramps[car.onRampIdx];
+          var jsp = U.len(car.vx || 0, car.vz || 0);
+          if (jr && jsp > 10) {
+            var jux = Math.sin(jr.rot), juz = Math.cos(jr.rot);
+            var jAlong = (car.pos.x - jr.x) * jux + (car.pos.z - jr.z) * juz;
+            var jDot = ((car.vx || 0) * jux + (car.vz || 0) * juz) / jsp;
+            if (jDot > 0.8 && jAlong > jr.len / 2 - 1.5) car.jumpRamp = car.onRampIdx;
+          }
+        }
+      }
       car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
       car.vy = (car.vy || 0) - 24 * dt;
       car.pos.y += car.vy * dt;
@@ -681,7 +699,8 @@ GAME.vehicles = (function () {
           var pc = GAME.player.car;
           if ((a === pc || b === pc) && rel > 6) {
             var other = a === pc ? b : a;
-            if (other.isPolice) GAME.police.reportCrime('hit_cop_car', pc.pos);
+            // a mission rival in a cruiser is a racer, not the law
+            if (other.isPolice && !other.mission) GAME.police.reportCrime('hit_cop_car', pc.pos);
             else if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
           }
         }
@@ -702,6 +721,21 @@ GAME.vehicles = (function () {
     car.hp -= amt;
     if (car.hp < car.spec.hp * 0.35 && car.stage < 1) car.stage = 1;
     if (car.hp < car.spec.hp * 0.14 && car.stage < 2) { car.stage = 2; car.fireFuse = 5.5; }
+    // The hull tells its driver out loud. Scraping uphill through the grass
+    // (or grinding a wall you can barely see) shreds hp with no single big
+    // crash, and the first the player knew was waking up in hospital — the
+    // fire fuse detonated a car they never realized was dying. Threshold
+    // crossings now announce themselves, the way the aircraft already do.
+    if (car === pc && GAME.player.inCar && !car.spec.heli && !car.spec.plane) {
+      if (car.stage >= 2 && car.stageWarn !== 2) {
+        car.stageWarn = 2;
+        GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
+        GAME.audio.sting('busted');
+      } else if (car.stage === 1 && !car.stageWarn) {
+        car.stageWarn = 1;
+        GAME.hud.message('Your ride is smoking — it won\'t take much more.', 3);
+      }
+    }
     if (car.hp <= 0) explodeCar(car, source, car.byPlayer);
   }
 

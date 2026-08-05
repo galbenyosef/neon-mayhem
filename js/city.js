@@ -754,8 +754,12 @@ GAME.city = (function () {
     // across the band to the deck. The crossed() gap exists for the RAILING —
     // leaving the ground out with it showed sixteen metres of open sea
     // between the road and the first plank of the pier.
+    // The apron runs 18 m, one metre off-centre to the south: the boardwalk
+    // runs are laid on a 2 m grid, and the run south of the mouth resumes at
+    // pz+10 while the old 16 m apron ended at pz+8 — a two-metre slot of
+    // MISSING TIMBER at every pier entry, open water showing through it.
     PIERS.forEach(function (pp) {
-      batches.wood.addBox(365.1, 0.15, pp[0], 10.2, 0.3, 16, 0, 0x7a5a40, 0);
+      batches.wood.addBox(365.1, 0.15, pp[0] + 1, 10.2, 0.3, 18, 0, 0x7a5a40, 0);
       batches.wood.addBox(365, 0.32, pp[0] - 4, 10, 0.04, 3, 0, 0x6a4c34, 0);
       batches.wood.addBox(365, 0.32, pp[0] + 4, 10, 0.04, 3, 0, 0x6a4c34, 0);
     });

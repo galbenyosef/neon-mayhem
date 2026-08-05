@@ -11,7 +11,7 @@ var WEAPON_ORDER = ['fist', 'pistol', 'smg', 'shotgun', 'rifle'];
 
 GAME.combat = (function () {
   var aiming = false, lockTarget = null, lockIdx = 0;
-  var cooldown = 0, aimToggle = false;
+  var cooldown = 0, aimToggle = false, aimYawRef = 0;
   var reticle = null;
 
   function initReticle() {
@@ -72,6 +72,7 @@ GAME.combat = (function () {
       var c = candidates();
       lockTarget = c.length ? c[0] : null;
       lockIdx = 0;
+      aimYawRef = GAME.cam.yaw;
     } else {
       lockTarget = null;
     }
@@ -160,7 +161,7 @@ GAME.combat = (function () {
         } else if (res.hit.kind === 'car') {
           GAME.vehicles.damageCar(res.hit.obj, wd.damage * 0.8, 'gun');
           GAME.fx.spawn(hx, 0.8, hz, { count: 3, color: 0xffe0a0, spread: 2, life: 0.3 });
-          if (res.hit.obj.isPolice) GAME.police.reportCrime('hit_cop_car', P.pos);
+          if (res.hit.obj.isPolice && !res.hit.obj.mission) GAME.police.reportCrime('hit_cop_car', P.pos);
           else if (res.hit.obj.ai && res.hit.obj.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);
         } else {
           GAME.fx.spawn(hx, m.y, hz, { count: 3, color: 0xccccdd, spread: 1.5, life: 0.25 });
@@ -219,9 +220,18 @@ GAME.combat = (function () {
     setAiming(aimHeld && !P.inCar);
 
     if (aiming) {
-      if (GAME.keyPressed('KeyQ')) cycleTarget(-1);
-      if (GAME.keyPressed('KeyE')) cycleTarget(1);
-      if (inp.wheel !== 0) { cycleTarget(inp.wheel > 0 ? 1 : -1); inp.wheel = 0; }
+      if (GAME.keyPressed('KeyQ')) { cycleTarget(-1); aimYawRef = GAME.cam.yaw; }
+      if (GAME.keyPressed('KeyE')) { cycleTarget(1); aimYawRef = GAME.cam.yaw; }
+      if (inp.wheel !== 0) { cycleTarget(inp.wheel > 0 ? 1 : -1); inp.wheel = 0; aimYawRef = GAME.cam.yaw; }
+      // The cursor picks the target: swing the camera while locked and the
+      // lock re-acquires whatever the hand now points at, instead of staying
+      // glued to the first thing it grabbed. A manual Q/E/wheel pick holds
+      // until the camera genuinely moves again.
+      if (Math.abs(U.wrapPI(GAME.cam.yaw - aimYawRef)) > 0.055) {
+        aimYawRef = GAME.cam.yaw;
+        var cams = candidates();
+        if (cams.length) lockTarget = cams[0];
+      }
       var keep = lockRange() + 8;
       if (lockTarget && (lockTarget.dead || U.dist2(lockTarget.pos.x, lockTarget.pos.z, P.pos.x, P.pos.z) > keep * keep)) {
         var c = candidates();
@@ -452,7 +462,10 @@ GAME.combat = (function () {
       else giveWeapon(p.type, p.type === 'pistol' ? 24 : p.type === 'smg' ? 50 : p.type === 'rifle' ? 20 : 10);
       GAME.audio.pickup();
       GAME.hud.message(label, 1.2);
-      if (p.fixed) { p.taken = true; p.respawnT = 45; p.mesh.visible = false; }
+      // Off the street means off the street: a fixed pickup stays gone for a
+      // full in-game day (one whole day/night cycle). The old 45 seconds made
+      // every gun rack an infinite free-ammo glitch and the shops pointless.
+      if (p.fixed) { p.taken = true; p.respawnT = GAME.DAY_SECONDS || 150; p.mesh.visible = false; }
       else { GAME.scene.remove(p.mesh); disposeTree(p.mesh); ps.splice(i, 1); }
     }
   }

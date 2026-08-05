@@ -517,7 +517,12 @@ function updateOnFoot(dt) {
     if (!aiming) P.heading = U.angleLerp(P.heading, moveH, Math.min(1, dt * 10));
     P.moveH = moveH;
   }
-  if (aiming) P.heading = GAME.cam.yaw;
+  if (aiming) {
+    // locked on, the whole body squares up to the TARGET — the hand points
+    // where the bullets will actually go, not wherever the camera drifted
+    var lockT = GAME.combat.lockTarget;
+    P.heading = lockT ? Math.atan2(lockT.pos.x - P.pos.x, lockT.pos.z - P.pos.z) : GAME.cam.yaw;
+  }
 
   var h = (mag > 0.05) ? P.moveH : P.heading;
   var nx = P.pos.x + Math.sin(h) * P.moveSpeed * dt * (mag > 0.05 ? 1 : 0);
@@ -625,7 +630,17 @@ function updateOnFoot(dt) {
     j.torso.rotation.y = -0.35 * ext;
   } else if (aiming && P.currentWeapon !== 'fist') {
     j.torso.rotation.y = 0;
-    j.armR.rotation.x = -Math.PI / 2 + GAME.cam.pitch * 0.5;
+    // the arm follows the lock in elevation too — raised at a rooftop
+    // target, dropped at someone below, level otherwise
+    var armT = GAME.combat.lockTarget;
+    if (armT) {
+      var adx = armT.pos.x - P.pos.x, adz = armT.pos.z - P.pos.z;
+      var ad = Math.sqrt(adx * adx + adz * adz) || 1;
+      var aimUp = Math.atan2((armT.pos.y + 1.1) - (P.pos.y + 1.35), ad);
+      j.armR.rotation.x = -Math.PI / 2 - U.clamp(aimUp, -0.7, 0.7);
+    } else {
+      j.armR.rotation.x = -Math.PI / 2 + GAME.cam.pitch * 0.5;
+    }
     j.armL.rotation.x = -s * 0.4;
   } else {
     j.torso.rotation.y = 0;

@@ -1008,11 +1008,26 @@ GAME.isla = (function () {
     ring.position.set(POI.helipad.x, y + 0.04, POI.helipad.z);
     scene.add(ring);
 
-    // cove beach: a pale apron where the east coast dips in
-    y = groundY(POI.cove.x, POI.cove.z);
-    b.addQuad([POI.cove.x - 30, y + 0.05, POI.cove.z - 34], [POI.cove.x + 26, y + 0.05, POI.cove.z - 34],
-      [POI.cove.x + 26, y + 0.05, POI.cove.z + 34], [POI.cove.x - 30, y + 0.05, POI.cove.z + 34],
-      0xd8c496, [0, 1, 0]);
+    // Cove beach: a sandy apron where the east coast dips in. Drawn as a grid
+    // of cells that each sit on groundY — the old single flat quad took one
+    // height for the whole apron, and on the sloping coast it read as a big
+    // WHITE sheet cutting through the hillside: pale mainland-sand tones
+    // saturate to pure white under the stacked daylight lights. The tones
+    // here sit near the coast ring's, so the apron reads as sand in any
+    // light. Cells outside the coast are skipped, so the sand ends where
+    // the island does.
+    var coveShades = [0x8f7f58, 0x8a7a54, 0x877750, 0x8d7c55];
+    for (var cvx = 0; cvx < 8; cvx++) {
+      for (var cvz = 0; cvz < 8; cvz++) {
+        var cx0 = POI.cove.x - 30 + cvx * 7, cz0 = POI.cove.z - 34 + cvz * 8.5;
+        if (!contains(cx0 + 3.5, cz0 + 4.25)) continue;
+        b.addQuad([cx0, groundY(cx0, cz0) + 0.06, cz0],
+          [cx0 + 7, groundY(cx0 + 7, cz0) + 0.06, cz0],
+          [cx0 + 7, groundY(cx0 + 7, cz0 + 8.5) + 0.06, cz0 + 8.5],
+          [cx0, groundY(cx0, cz0 + 8.5) + 0.06, cz0 + 8.5],
+          coveShades[(cvx * 7 + cvz * 13) % 4], [0, 1, 0]);
+      }
+    }
 
     [POI.police, POI.hospital, POI.factory, POI.lighthouse, POI.marina,
       POI.container, POI.observatory, POI.helipad, POI.cove].forEach(function (P) {

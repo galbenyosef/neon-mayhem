@@ -161,6 +161,8 @@
   // df = 0.5 - 0.5*cos(2*pi*phase).
   // phase 0.63 -> df~0.85 sunny afternoon; 0.75 -> sunset; 1.0 -> night.
   var CYCLE = 150, START_PHASE = 0.63;
+  // one full in-game day in real seconds — pickups' respawn clock keys off it
+  GAME.DAY_SECONDS = CYCLE;
   GAME.dayPhase = START_PHASE;
   // 'auto' runs the cycle; 'day' / 'night' pin the clock where you want it
   GAME.timeMode = 'auto';
@@ -282,7 +284,14 @@
       GAME.releasePointer();
     } else {
       GAME.audio.resume();
-      GAME.maybeRestoreFullscreen();
+      // On touch the resume tap is a real gesture and play means fullscreen,
+      // full stop — the same promise starting the game makes. Restoring only
+      // when we recorded losing it (fsRestore) missed every path where the
+      // exit was manual or the earlier request failed, which is why the game
+      // "sometimes" came back windowed on mobile. Desktop keeps the nuance:
+      // a windowed desktop player chose to be windowed.
+      if (GAME.isTouch) GAME.enterFullscreen();
+      else GAME.maybeRestoreFullscreen();
       GAME.regainPointer();
     }
     GAME.syncOverlayMusic();

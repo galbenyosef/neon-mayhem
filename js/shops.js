@@ -201,11 +201,13 @@ GAME.shops = (function () {
     }
     return [{ id: 'buy', name: 'BUY ' + s.name, ds: s.tag + '  You’ll wake up here, gear intact.', price: s.price }];
   }
+  // Money is the only gate: every machine is on the floor from day one.
+  // Progression used to hold back the helicopter (bridges) and the gunship
+  // (full completion), but a showroom that refuses your cash isn't a shop.
   function showroomItems() {
-    var islaOpen = !GAME.isla || GAME.isla.isOpen();
-    function row(id, name, ds, price, off) {
+    function row(id, name, ds, price) {
       var inGarage = garage().indexOf(id) >= 0;
-      return { id: id, name: name, price: price, off: off,
+      return { id: id, name: name, price: price,
         owned: inGarage, ds: inGarage ? 'In your garage — a fresh one always waits at home.' : ds };
     }
     return [
@@ -214,10 +216,8 @@ GAME.shops = (function () {
       row('buggy', 'DUNE BUGGY', 'Made for sand and bad decisions.', 9000),
       row('limo', 'STRETCH LIMO', 'Arrive like you own the strip.', 18000),
       row('monster', 'SLEDGEHAMMER', 'The monster truck, no stunt jumps required.', 35000),
-      row('helicopter', 'PELICANO', islaOpen ? 'Your own bird, delivered outside.' : 'Import license pending — open the bridges first.', 60000, !islaOpen),
-      row('gunship', 'TALON', (GAME.prefs && GAME.prefs.gameComplete)
-        ? 'Army surplus. Guns live, rockets included.'
-        : 'Classified inventory — finish everything first.', 250000, !(GAME.prefs && GAME.prefs.gameComplete))
+      row('helicopter', 'PELICANO', 'Your own bird, delivered outside.', 60000),
+      row('gunship', 'TALON', 'Army surplus. Guns live, rockets included.', 250000)
     ];
   }
   function bribeItems() {
@@ -356,6 +356,12 @@ GAME.shops = (function () {
     GAME.track('bribe-paid');
     note(GAME.police.wanted > 0 ? 'One star quietly shredded.' : 'The file is empty. What file?');
   }
+  // The wheel is seen to spin before it pays. The outcome is decided up
+  // front, but the counter ticks through the segments — fast, then slowing
+  // like a real wheel — and only then is the result revealed and the payout
+  // made. Closing the shop mid-spin can't eat a win: the payout runs on its
+  // own timer whether anyone is watching or not.
+  var spinning = false;
   function spinWheel(bet) {
     var r = Math.random(), mult, label;
     if (r < 0.60) { mult = 0; label = 'THE GULL EATS IT.'; }
@@ -363,10 +369,31 @@ GAME.shops = (function () {
     else if (r < 0.95) { mult = 3; label = 'TRIPLE!'; }
     else { mult = 5; label = 'JACKPOT!'; }
     var win = Math.round(bet * mult);
-    if (win > 0) { GAME.addCash(win); GAME.audio.sting('win'); }
-    else GAME.audio.crash(0.2);
-    GAME.track(win > 0 ? 'casino-win' : 'casino-loss');
-    note(label + (win > 0 ? '  +$' + win.toLocaleString() : '') + '  (stake included)');
+    var SEGS = ['🐦 GULL', '× 1.5', '🐦 GULL', '× 3', '🐦 GULL', '× 1.5', '★ JACKPOT ★', '🐦 GULL'];
+    spinning = true;
+    var step = 0, steps = 14 + Math.floor(Math.random() * 5);
+    function tick(delay) {
+      setTimeout(function () {
+        var inCasino = openShop && openShop.kind === 'casino';
+        if (step < steps) {
+          if (inCasino) note('THE WHEEL SPINS…   ▸ ' + SEGS[step % SEGS.length]);
+          GAME.audio.cashTick();
+          step++;
+          // each click takes longer than the last — the wheel is running down
+          tick(55 + Math.pow(step / steps, 2) * 300);
+        } else {
+          spinning = false;
+          if (win > 0) { GAME.addCash(win); GAME.audio.sting('win'); }
+          else GAME.audio.crash(0.2);
+          GAME.track(win > 0 ? 'casino-win' : 'casino-loss');
+          if (inCasino) {
+            note(label + (win > 0 ? '  +$' + win.toLocaleString() : '') + '  (stake included)');
+            render();
+          }
+        }
+      }, delay);
+    }
+    tick(140);
   }
 
   // ---------- shop registry ----------
@@ -837,13 +864,15 @@ GAME.shops = (function () {
   }
   function renderPreview() {
     if (!pv.on || !pv.renderer || !pv.obj || !GAME.shopOpen) return;
-    pv.obj.rotation.y += 0.016;
+    // the chip stack whirls while the wheel is going
+    pv.obj.rotation.y += spinning && openShop && openShop.kind === 'casino' ? 0.14 : 0.016;
     pv.renderer.render(pv.scene, pv.cam);
   }
   // the purchase gate. The card names the thing and its price; only CONFIRM
   // (or Enter while it's up) actually spends money, in every shop alike.
   function openConfirm(it) {
     if (!openShop || !it || it.owned || it.off) return;
+    if (spinning) { note('The wheel is still spinning…'); return; }
     var P = GAME.player;
     if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); return; }
     pendingBuy = it.id;
@@ -864,6 +893,7 @@ GAME.shops = (function () {
 
   function buy(id) {
     if (!openShop) return false;
+    if (spinning) { note('The wheel is still spinning…'); return false; }
     var list = items(openShop), it = null;
     for (var i = 0; i < list.length; i++) if (list[i].id === id) { it = list[i]; break; }
     if (!it || it.owned || it.off) { render(); return false; }

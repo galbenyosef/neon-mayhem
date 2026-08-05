@@ -4,18 +4,23 @@ GAME.aircraft = (function () {
 
   // While the bridges are shut the channel is restricted airspace: you can fly
   // out over the water and see the far shore, and that is as far as you get.
-  var CLOSED_X = 560, warnT = 0;
+  var CLOSED_X = 560, warnT = 0, warnCount = 0;
   function airLimit() {
     if (GAME.isla && GAME.isla.isOpen()) return { maxX: 1560, minZ: -600, maxZ: 600 };
     return { maxX: CLOSED_X, minZ: -524, maxZ: 524 };
   }
+  // Three strikes, not one: pressing the line gets a warning, pressing it
+  // again gets a final warning, and only the THIRD violation scrambles the
+  // air units. Stay clear for half a minute and the count forgives itself.
   function warnAirspace(x, lim) {
     if (x < lim.maxX - 1 || lim.maxX > CLOSED_X) return;
     if (GAME.time - warnT < 4) return;
+    if (GAME.time - warnT > 30) warnCount = 0;   // stayed clear: the log is wiped
     warnT = GAME.time;
-    GAME.hud.message('RESTRICTED AIRSPACE — turn back.', 2.5);
-    // keep pressing the line and an air unit comes out to shadow you
-    if (GAME.police.airspaceStrike) GAME.police.airspaceStrike();
+    warnCount++;
+    if (warnCount === 1) GAME.hud.message('RESTRICTED AIRSPACE — turn back.', 2.5);
+    else if (warnCount === 2) GAME.hud.message('RESTRICTED AIRSPACE — FINAL WARNING. Turn back NOW.', 2.5);
+    else if (GAME.police.airspaceStrike) GAME.police.airspaceStrike();
   }
 
   // The airframe wears its damage out loud. Hard landings and wall grazes
@@ -210,7 +215,7 @@ GAME.aircraft = (function () {
     // nearly useless (no airflow over the wings): recovery comes from the
     // DIVE, so a rooftop departure genuinely drops before it climbs.
     var wasFlying = (car.speed || 0) >= car.spec.stall;
-    var acc = car.spec.accel * (onGround && thr > 0 ? 0.42 : (!onGround && !wasFlying ? 0.28 : 1));
+    var acc = car.spec.accel * (onGround && thr > 0 ? 0.42 : (!onGround && !wasFlying ? 0.15 : 1));
     // and on the ground it can taxi backwards out of a corner
     car.speed = U.clamp((car.speed || 0) + thr * acc * dt, onGround ? -7 : 0, car.spec.maxSpeed);
     car.speed *= Math.exp(-0.09 * dt);
@@ -238,20 +243,28 @@ GAME.aircraft = (function () {
     var yawEff = Math.min(1, car.speed / 22);
     car.heading += yawIn * 1.15 * yawEff * dt;
 
-    var flying = car.speed >= car.spec.stall;
+    // Once stalled, the wings don't bite again at rotation speed: recovery
+    // needs a genuine dive to well past stall. Without the hysteresis a
+    // rooftop "takeoff" off two metres of gravel barely dipped — the dive
+    // term handed the speed back almost before the fall had begun.
+    if (onGround) car.stalled = false;
+    var flying = car.speed >= car.spec.stall * (car.stalled ? 1.25 : 1);
     var vy;
     if (onGround && (!flying || car.pitch <= 0.06)) {
       vy = 0; car.pos.y = gy + car.spec.wheelH; car.sinkV = 0;
     } else if (flying) {
+      car.stalled = false;
       vy = car.speed * Math.sin(car.pitch); car.sinkV = 0;
     } else {
       // stalled: the nose drops and the fall gathers real pace — and the
       // dive trades that height for airspeed. Roll off a rooftop with no
-      // runway and the plane dips, the wings bite, and you pull up out of it.
-      car.sinkV = Math.min((car.sinkV || 0) + 20 * dt, 24);
+      // runway and the plane genuinely DIVES: it takes a proper drop for the
+      // wings to bite, so a low roof is a crash and a tower is a recovery.
+      car.stalled = true;
+      car.sinkV = Math.min((car.sinkV || 0) + 20 * dt, 26);
       vy = -car.sinkV;
-      car.pitch = U.damp(car.pitch, -0.75, 2.5, dt);
-      car.speed = Math.min(car.spec.maxSpeed, car.speed + 20 * Math.sin(-Math.min(car.pitch, 0)) * dt);
+      car.pitch = U.damp(car.pitch, -0.85, 3, dt);
+      car.speed = Math.min(car.spec.maxSpeed, car.speed + 14 * Math.sin(-Math.min(car.pitch, 0)) * dt);
     }
     car.pos.y += vy * dt;
 
