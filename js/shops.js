@@ -53,17 +53,25 @@ GAME.shops = (function () {
     { id: 'cyan', name: 'Electric Cyan', hex: 0x38c8e8 }
   ];
 
-  // the same skin palette the crowd draws from — but the player's tone is
-  // rolled once and saved, so "you" look like you every session, and the
-  // changing-room mannequin can be an honest mirror
-  var SKINS = [0xeac8a8, 0xc89878, 0x8a6848, 0x6a4c34, 0xf0d8c0];
+  // The same skin palette the crowd draws from, named for the barber's
+  // counter. The player's default is FIXED — the fair tone, every browser,
+  // every fresh save. It used to be rolled once per save, which read as
+  // "my character changes between machines". A tone bought at the barber
+  // (skinPicked) is a choice, and choices stick.
+  var SKINTONES = [
+    { id: 'fair', name: 'Fair', hex: 0xeac8a8 },
+    { id: 'porcelain', name: 'Porcelain', hex: 0xf0d8c0 },
+    { id: 'tan', name: 'Tan', hex: 0xc89878 },
+    { id: 'bronze', name: 'Bronze', hex: 0x8a6848 },
+    { id: 'deep', name: 'Deep', hex: 0x6a4c34 }
+  ];
+  var DEFAULT_SKIN = 0xeac8a8;
   function outfit() {
     GAME.prefs = GAME.prefs || {};
     if (!GAME.prefs.outfit) GAME.prefs.outfit = { shirt: 'white', pants: 'teal', hairStyle: 'crew', hairColor: 'black' };
-    if (!GAME.prefs.outfit.skin) {
-      GAME.prefs.outfit.skin = SKINS[Math.floor(Math.random() * SKINS.length)];
-      GAME.save();
-    }
+    // rolled tones from old saves were never a choice — the default wins
+    // until the barber has actually been paid for a different one
+    if (!GAME.prefs.outfit.skinPicked || !GAME.prefs.outfit.skin) GAME.prefs.outfit.skin = DEFAULT_SKIN;
     if (GAME.prefs.outfit.hairStyle === 'flat') GAME.prefs.outfit.hairStyle = 'flattop'; // old save id
     return GAME.prefs.outfit;
   }
@@ -183,14 +191,18 @@ GAME.shops = (function () {
     return rows;
   }
   function barberItems() {
-    // cuts first, then dye — and the dye rows say HAIR COLOR out loud, because
-    // an unlabeled color swatch next to a head reads as something it isn't
+    // cuts first, then dye, then complexion — and every row names its trade
+    // out loud, because an unlabeled color swatch next to a head reads as
+    // something it isn't
     var o = outfit(), rows = [];
     HAIRSTYLES.forEach(function (s) {
       rows.push({ id: 'style_' + s.id, name: 'CUT · ' + s.name, price: 150, owned: o.hairStyle === s.id, ds: o.hairStyle === s.id ? 'Your current cut.' : '' });
     });
     HAIRCOLORS.forEach(function (s) {
       rows.push({ id: 'color_' + s.id, name: 'HAIR COLOR · ' + s.name, price: 100, sw: s.hex, owned: o.hairColor === s.id, ds: o.hairColor === s.id ? 'Your current color.' : '' });
+    });
+    SKINTONES.forEach(function (s) {
+      rows.push({ id: 'skin_' + s.id, name: 'SKIN TONE · ' + s.name, price: 100, sw: s.hex, owned: o.skin === s.hex, ds: o.skin === s.hex ? 'Your tone.' : '' });
     });
     return rows;
   }
@@ -257,9 +269,11 @@ GAME.shops = (function () {
   function buyBarber(id) {
     var o = outfit();
     if (id.indexOf('style_') === 0) o.hairStyle = id.slice(6);
+    else if (id.indexOf('skin_') === 0) { o.skin = byId(SKINTONES, id.slice(5)).hex; o.skinPicked = true; }
     else o.hairColor = id.slice(6);
     applyOutfit(); GAME.save();
-    note(o.hairStyle === 'buzz' ? 'Clean down to the skin.' : 'Fresh off the chair.');
+    note(id.indexOf('skin_') === 0 ? 'New tone, same you.'
+      : o.hairStyle === 'buzz' ? 'Clean down to the skin.' : 'Fresh off the chair.');
   }
   function buySafehouse(loc, id) {
     var P = GAME.player;
@@ -733,6 +747,7 @@ GAME.shops = (function () {
       else if (it.id.indexOf('pants_') === 0) o.pants = it.id.slice(6);
       else if (it.id.indexOf('style_') === 0) o.hairStyle = it.id.slice(6);
       else if (it.id.indexOf('color_') === 0) o.hairColor = it.id.slice(6);
+      else if (it.id.indexOf('skin_') === 0) o.skin = byId(SKINTONES, it.id.slice(5)).hex;
     }
     return o;
   }
@@ -842,7 +857,7 @@ GAME.shops = (function () {
       // hovered row swapped in — this is exactly how you'd walk out
       var o = previewOutfit(it);
       var pkey = 'ped:' + o.shirt + '/' + o.pants + '/' + o.hairStyle + '/' + o.hairColor + '/' + o.skin;
-      if (tag) tag.textContent = 'YOU · wearing ' + it.name.replace(/^(SHIRT|PANTS|CUT|HAIR COLOR) · /, '');
+      if (tag) tag.textContent = 'YOU · wearing ' + it.name.replace(/^(SHIRT|PANTS|CUT|HAIR COLOR|SKIN TONE) · /, '');
       if (pkey === pv.key) return;
       pv.key = pkey;
       clearPvObj();
@@ -1051,6 +1066,6 @@ GAME.shops = (function () {
     get current() { return openShop; },
     get selected() { return openShop ? items(openShop)[sel] : null; },
     locations: function () { return locations; },
-    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS }
+    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS, SKINTONES: SKINTONES }
   };
 })();
