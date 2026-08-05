@@ -382,7 +382,9 @@ GAME.shops = (function () {
       // the dealership sits on the southern arterial with room for a glass
       // hall and a forecourt — it used to squat at the airport's entry gate
       { id: 'showroom0', kind: 'showroom', name: 'GRAN ROSA MOTORS', tag: 'Special orders, delivered outside', at: clearSpot(90, 378), forecourt: { x: 64, z: 384 }, heading: Math.PI / 2, color: 0x8dffd8 },
-      { id: 'casino0', kind: 'casino', name: 'THE LUCKY GULL', tag: 'A wheel, a bird, your wallet', at: clearSpot(448, 250), color: 0xffe14f }
+      // the casino stands on its own terrace off the pier's south rail —
+      // planted mid-deck it was a wall across the way to the ferris wheel
+      { id: 'casino0', kind: 'casino', name: 'THE LUCKY GULL', tag: 'A wheel, a bird, your wallet', at: { x: 452, z: 255.3 }, face: { x: 0, z: 1 }, color: 0xffe14f }
     ];
     // a bribe desk at every station, both sides of the channel
     stations.forEach(function (st, i) {
@@ -483,7 +485,9 @@ GAME.shops = (function () {
         var mx = loc.at.x + cands[si][0], mz = loc.at.z + cands[si][1];
         var rp = GAME.city.nearestRoadPoint(mx, mz);
         var dx = mx - rp.x, dz = mz - rp.z;
-        var dir = Math.abs(dx) >= Math.abs(dz) ? { x: Math.sign(dx) || 1, z: 0 } : { x: 0, z: Math.sign(dz) || 1 };
+        // a shop can dictate which way it faces (the pier casino must face
+        // the walkway, not the distant beach road)
+        var dir = loc.face || (Math.abs(dx) >= Math.abs(dz) ? { x: Math.sign(dx) || 1, z: 0 } : { x: 0, z: Math.sign(dz) || 1 });
         // the mat itself must be standable and off the carriageway
         if (GAME.city.isInWater(mx, mz) && !GAME.city.isOnPier(mx, mz)) continue;
         if (GAME.city.rampAt(mx, mz)) continue;

@@ -45,6 +45,9 @@ GAME.city = (function () {
   // pier that used to sit there stepped down a block.
   var PIERS = [[250, 505], [-180, 470]];
   city.isOnPier = function (x, z) {
+    // the casino's terrace pad, hung off the south side of the wheel pier —
+    // the casino used to stand square on the walkway and block the wheel
+    if (x > 442 && x < 462 && z > 250 && z < 270.5) return true;
     // the deck starts past the boardwalk (x=370); it used to claim from 356
     // and swallow the footpath in front of it
     for (var i = 0; i < PIERS.length; i++) {
@@ -796,12 +799,24 @@ GAME.city = (function () {
         pier.addBox(px, -0.7, pz + 6, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
       }
       pier.addBox((x0 + endX) / 2, 1.35, pz - 6.8, endX - x0, 0.12, 0.2, 0, 0xb08a60, 0);
-      pier.addBox((x0 + endX) / 2, 1.35, pz + 6.8, endX - x0, 0.12, 0.2, 0, 0xb08a60, 0);
+      if (pz === 250) {
+        // the casino terrace: a pad off the south rail, the rail parted
+        // around its mouth so the walkway to the wheel stays clear
+        pier.addBox(452, 0.375, 263.6, 20, 0.25, 13.2, 0, 0x7a5a40, 0);
+        pier.addBox(446, -0.7, 268.5, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
+        pier.addBox(458, -0.7, 268.5, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
+        pier.addBox((x0 + 442) / 2, 1.35, pz + 6.8, 442 - x0, 0.12, 0.2, 0, 0xb08a60, 0);
+        pier.addBox((462 + endX) / 2, 1.35, pz + 6.8, endX - 462, 0.12, 0.2, 0, 0xb08a60, 0);
+      } else {
+        pier.addBox((x0 + endX) / 2, 1.35, pz + 6.8, endX - x0, 0.12, 0.2, 0, 0xb08a60, 0);
+      }
     });
     var pierMesh = new THREE.Mesh(pier.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     pierMesh.matrixAutoUpdate = false;
     scene.add(pierMesh);
-    addSign(batches.signs, 22, 380, 5.5, 243, -Math.PI / 2, 20, 4);
+    // the pier's name board arches OVER the mouth now — it used to hang low
+    // across the north half of the walk like a wall
+    addSign(batches.signs, 22, 380, 7.9, 250, -Math.PI / 2, 18, 3.2);
     addSign(batches.signs, 23, 470, 7, -173, -Math.PI / 2, 14, 3.5);
 
     // ocean surrounds the island
@@ -957,7 +972,13 @@ GAME.city = (function () {
     }
     // nothing gets planted where a bridge runs — a palm through the deck is
     // as wrong as a building on it
-    var palms = city.palmSpots.filter(function (q) { return !city.nearCrossing(q.x, q.z, 9); });
+    // nothing gets planted on a pier's walkway either — a palm mid-deck was
+    // a tree trunk square in the path to the ferris wheel
+    var palms = city.palmSpots.filter(function (q) {
+      if (city.nearCrossing(q.x, q.z, 9)) return false;
+      if (q.x > 366 && (Math.abs(q.z - 250) < 10 || Math.abs(q.z + 180) < 10)) return false;
+      return true;
+    });
     var trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 6.4, 5);
     trunkGeo.translate(0, 3.2, 0);
     var trunkMesh = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: 0x6a4c34 }), palms.length);
