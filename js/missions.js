@@ -87,10 +87,12 @@ GAME.missions = (function () {
       cps: [[50, 50], [150, -50], [50, -250], [-50, -350], [-150, -250], [-150, -50], [-50, 50]]
     },
     // courier drops are generated fresh each run (see rollCourierStops)
-    // courier clocks are meant to be beaten narrowly, not strolled through
-    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 76, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 110, legMax: 240 },
-    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 88, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 120, legMax: 260 },
-    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 80, start: { x: 364, z: 104 }, drops: 4, legMin: 100, legMax: 220 },
+    // courier clocks are meant to be beaten narrowly, not strolled through.
+    // Legs run at 3x their old length — a delivery is a drive across town,
+    // not a hop round the block — and the clocks scaled with them.
+    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 228, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 330, legMax: 720 },
+    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 264, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 360, legMax: 780 },
+    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 240, start: { x: 364, z: 104 }, drops: 4, legMin: 300, legMax: 660 },
     { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 60, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
     { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 60, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
     { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
@@ -99,7 +101,7 @@ GAME.missions = (function () {
     // Coordinates come from the island itself once it has registered.
     { id: 'race3', type: 'race', name: 'ALTA VERDE CLIMB', reward: 750, isla: 'climb', start: null, cps: null },
     { id: 'race4', type: 'race', name: 'MIRADOR RUN', reward: 800, isla: 'mirador', start: null, cps: null },
-    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 94, isla: 'port', start: null, drops: 4, legMin: 110, legMax: 240 },
+    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 282, isla: 'port', start: null, drops: 4, legMin: 330, legMax: 720 },
     { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 60, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
   ];
 
@@ -354,7 +356,9 @@ GAME.missions = (function () {
       // an ambulance fills up before running to the hospital; a cab takes one fare
       capacity: kind === 'ambulance' ? 3 : 1,
       level: 1, targets: [], aboard: 0,
-      timeLeft: kind === 'ambulance' ? 92 : 80,
+      // calls come in at 3x the distance now, so the shift clock starts
+      // (and refills — see completeFare) to match
+      timeLeft: kind === 'ambulance' ? 170 : 150,
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
@@ -394,22 +398,24 @@ GAME.missions = (function () {
   }
 
   // how far out this level's calls are: ramps with the level and then plateaus.
-  // A cab works a wider band so fares aren't all short hops.
+  // Ambulance calls run at 3x — the hospital is the fixed drop-off, so the
+  // pickups ARE the distance. Cab pickups sit halfway out (the fare's ride is
+  // where the cab's distance lives — see dropBand).
   function targetBand() {
     var kind = active.def.id, lv = active.level;
-    var minR = kind === 'ambulance' ? Math.min(55 + (lv - 1) * 22, 210) : Math.min(80 + (lv - 1) * 20, 230);
-    var maxR = kind === 'ambulance' ? Math.min(minR + 95, 330) : Math.min(minR + 170, 400);
+    var minR = kind === 'ambulance' ? Math.min(165 + (lv - 1) * 66, 560) : Math.min(120 + (lv - 1) * 30, 345);
+    var maxR = kind === 'ambulance' ? Math.min(minR + 285, 800) : Math.min(minR + 255, 600);
     return [minR, maxR];
   }
 
-  // Where a fare wants to go. It was a fixed 90–210 m band, so every ride was
-  // the same two blocks whatever else changed — the band opens up with the
-  // level, and each individual fare draws its own leg inside it, so a shift is
-  // a mix of short hops and long runs rather than one distance repeated.
+  // Where a fare wants to go — at 3x the old band, a fare is a run across the
+  // map, not the same two blocks. The band opens up with the level, and each
+  // individual fare draws its own leg inside it, so a shift is a mix of long
+  // runs and longer ones rather than one distance repeated.
   function dropBand() {
     var lv = active.level;
-    var minR = Math.min(70 + (lv - 1) * 45, 320);
-    var maxR = Math.min(minR + 180 + (lv - 1) * 60, 900);
+    var minR = Math.min(210 + (lv - 1) * 135, 640);
+    var maxR = Math.min(minR + 540 + (lv - 1) * 180, 1100);
     // each fare picks its own slice of that band
     var lo = U.randRange(Math.random, minR, minR + (maxR - minR) * 0.62);
     return [lo, U.randRange(Math.random, lo + 45, maxR)];
@@ -641,8 +647,9 @@ GAME.missions = (function () {
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
     var msg = word + '! +$' + fare;
-    // each fare buys less slack than it used to; the shift stays under pressure
-    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 36 : 38) + n * 9, 150);
+    // each fare buys enough clock for the next long call and no more; the
+    // shift stays under pressure at the new 3x distances
+    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 85 : 90) + n * 12, 280);
 
     if (active.targets.length) {
       // still people waiting on this level — go back out for them
@@ -775,11 +782,15 @@ GAME.missions = (function () {
     var first = def.type === 'race' ? def.cps[0] : active.stops ? active.stops[0] : null;
     if (first) faceToward(first[0], first[1]);
     if (def.type === 'race') {
+      // The field races what YOU race: turn up on a bike and the rivals are
+      // on bikes, turn up in a limo and it's a limo race. Rivals in sports
+      // cars against a player's motorcycle decided the race at the start line.
+      var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
       for (var i = 0; i < 3; i++) {
         var off = (i + 1) * 5;
         var rx = def.start.x - Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
         var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-        var car = GAME.vehicles.spawnCar('sports', rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
+        var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
         car.cpIndex = 0;
         // rivals shrug off scrapes — a race should be decided on the road, not by
         // one of them cooking off against a lamp post
@@ -1306,9 +1317,44 @@ GAME.missions = (function () {
     }
   }
 
+  // ---------- full completion ----------
+  // Every mission (races, rampages, deliveries, the lot) and every stunt
+  // jump, both islands. Property is a pastime, not progress. The prize: the
+  // TALON gunship on the mainland helipad (and in the showroom), and money
+  // stops being a question.
+  function completionDone() {
+    var b = GAME.bests || {}, n = 0;
+    for (var i = 0; i < DEFS.length; i++) if (b[DEFS[i].id] !== undefined) n++;
+    return n >= DEFS.length && !!(GAME.stunts && GAME.stunts.complete);
+  }
+  function applyComplete() {
+    GAME.city.unlockGunship();
+    GAME.completeUnlimited = true;
+  }
+  function checkCompletion() {
+    if (GAME.prefs && GAME.prefs.gameComplete) { applyComplete(); return true; }
+    if (!completionDone()) return false;
+    GAME.prefs = GAME.prefs || {};
+    GAME.prefs.gameComplete = true;
+    GAME.save();
+    applyComplete();
+    GAME.track('game-complete');
+    GAME.audio.sting('win');
+    GAME.hud.dialog({
+      title: 'COSTA ROSA, COMPLETE',
+      body: 'Every mission, every race, every jump — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and money is no longer a question.',
+      ok: 'CARRY ON', cancel: false
+    });
+    return true;
+  }
+
   function checkRespray() {
     var P = GAME.player;
     if (!P.inCar || !P.car || resprayCooldown > 0 || P.state !== 'alive') return;
+    // the garage sprays what rolls IN it, not what flies OVER it — without
+    // the height check an airplane crossing above the block got resprayed
+    // mid-air, $100 lighter and suddenly clean
+    if (P.car.pos.y > GAME.city.groundY(P.car.pos.x, P.car.pos.z) + 3) return;
     var doors = GAME.city.pois.resprays;
     var near = false;
     for (var i = 0; i < doors.length; i++) {
@@ -1324,7 +1370,7 @@ GAME.missions = (function () {
     GAME.police.clearWanted();
     // works for any driven vehicle, motorcycles included: full repair + fresh paint
     var car = P.car;
-    car.hp = car.spec.hp; car.stage = 0; car.spiked = false; car.fireFuse = 0;
+    car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0; car.spiked = false; car.fireFuse = 0;
     if (car.mesh.userData.bodyMesh) {
       car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ vertexColors: true });
     }
@@ -1337,6 +1383,7 @@ GAME.missions = (function () {
 
   return {
     DEFS: DEFS,
+    checkCompletion: checkCompletion,
     get active() { return active; },
     // headless hooks, so the generators can be sampled without playing a shift
     testDropBand: function (lv) { var a = active; active = { level: lv, def: { id: 'taxifare' } }; var r = dropBand(); active = a; return r; },

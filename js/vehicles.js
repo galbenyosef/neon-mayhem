@@ -123,6 +123,9 @@ var VEHICLES = {
   // way onto one is to pay GRAN ROSA MOTORS for it
   superbike: { label: 'Cormorán GT', maxSpeed: 55, accel: 27, grip: 3.5, turn: 3.3, hp: 150, l: 2.3, w: 0.72, cabinH: 0.0, bodyH: 0.5, colors: [0x101018], bike: true, trim: 0x38e8ff },
   helicopter: { label: 'Pelicano', maxSpeed: 34, accel: 12, grip: 4, turn: 2, hp: 130, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x2a2e3a, 0xf0f0f0, 0xff2f7a], heli: true },
+  // the big bird: guns and rockets — granted by finishing everything, or
+  // bought over the showroom counter by anyone with the money
+  gunship: { label: 'Talon', maxSpeed: 42, accel: 12, grip: 4, turn: 2, hp: 420, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x3a4632, 0x2c3626, 0x46523a], heli: true, gunship: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
   airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
   // Isla Verde's own stock. The buggy is for the cove, the pickup for the
@@ -175,10 +178,18 @@ function buildBikeRider() {
   return r;
 }
 
-function buildHeliMesh(colorHex) {
+function buildHeliMesh(colorHex, gunship) {
   var g = new THREE.Group();
   var b = new GeoBatch();
   b.addBox(0, 1.2, -0.6, 2.2, 1.7, 3.6, 0, colorHex, 0);        // cabin
+  if (gunship) {
+    // chin gun, stub wings and rocket pods — it reads military at a glance
+    b.addBox(0, 0.62, 1.35, 0.26, 0.26, 1.1, 0, 0x161a12, 0);
+    for (var gs = -1; gs <= 1; gs += 2) {
+      b.addBox(gs * 1.85, 1.05, -0.9, 1.5, 0.16, 0.56, 0, 0x2c3626, 0);
+      b.addBox(gs * 2.45, 0.82, -0.9, 0.52, 0.5, 1.7, 0, 0x1f2a1a, 0);
+    }
+  }
   // the canopy rides proud of the cabin roof — flush tops fight for depth
   // (the airplane's cockpit learned this first)
   b.addBox(0, 1.52, 1.2, 1.7, 1.1, 1.4, 0, 0x141824, 0);        // canopy glass
@@ -278,7 +289,7 @@ function buildCarMesh(type, colorHex) {
   var s = VEHICLES[type];
   if (s.monster) return buildMonsterMesh(colorHex);
   if (s.plane) return buildPlaneMesh(s.colors);
-  if (s.heli) return buildHeliMesh(colorHex);
+  if (s.heli) return buildHeliMesh(colorHex, s.gunship);
   if (s.bike) return buildBikeMesh(colorHex, s.trim);
   var g = new THREE.Group();
   var b = new GeoBatch();
@@ -484,7 +495,24 @@ GAME.vehicles = (function () {
     var wasAirborne = (car.air || 0) > 0.05;
     var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
     if (car.pos.y > gy + stickTol) {
-      if (!car.air) { car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0; car.jumpRamp = car.onRampIdx; }
+      if (!car.air) {
+        car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0;
+        // A stunt jump is EARNED at the lip: the launch only carries the
+        // ramp's credit if the car left over the TOP edge, roughly along the
+        // ramp's own direction, with real pace. Rolling off the SIDE of the
+        // deck (or crawling over the lip) is a fall, not a jump.
+        car.jumpRamp = null;
+        if (car.onRampIdx !== null && car.onRampIdx !== undefined) {
+          var jr = GAME.city.ramps[car.onRampIdx];
+          var jsp = U.len(car.vx || 0, car.vz || 0);
+          if (jr && jsp > 10) {
+            var jux = Math.sin(jr.rot), juz = Math.cos(jr.rot);
+            var jAlong = (car.pos.x - jr.x) * jux + (car.pos.z - jr.z) * juz;
+            var jDot = ((car.vx || 0) * jux + (car.vz || 0) * juz) / jsp;
+            if (jDot > 0.8 && jAlong > jr.len / 2 - 1.5) car.jumpRamp = car.onRampIdx;
+          }
+        }
+      }
       car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
       car.vy = (car.vy || 0) - 24 * dt;
       car.pos.y += car.vy * dt;
@@ -500,13 +528,21 @@ GAME.vehicles = (function () {
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
       car.onRampIdx = ramp ? ramp.idx : null;
       if (ramp && ramp.boost) {
-        if (!car.boostT && car === GAME.player.car && GAME.player.inCar) {
+        if (!car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
           GAME.audio.pickup();
           GAME.cameraShake = 0.35;
         }
-        car.boostT = 1.4;
-        car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
-      }
+        if (ramp.cap) {
+          // the chain launcher: it accelerates you TO its speed, never past
+          // it — the landing is a rooftop, and the rooftop is only so deep
+          car.capPing = true;
+          car.boostT = 0;
+          car.speed = car.speed < ramp.cap ? Math.min(ramp.cap, car.speed + 80 * dt) : ramp.cap;
+        } else {
+          car.boostT = 1.4;
+          car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
+        }
+      } else car.capPing = false;
       if (car.air) landStunt(car, 0);
     }
     car.mesh.rotation.y = car.heading;
@@ -542,8 +578,10 @@ GAME.vehicles = (function () {
     var airT = car.air || 0;
     car.air = 0;
     var isPlayer = car === GAME.player.car && GAME.player.inCar;
-    if (isPlayer && airT > 0.45) {
-      var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
+    var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
+    // earned, not stumbled into: rolling off the side of a ramp (or crawling
+    // off the lip) is a fall — hang time alone doesn't pay, distance does
+    if (isPlayer && airT > 0.45 && dist > 7) {
       var spins = Math.floor(Math.abs(car.jumpSpin || 0) / (Math.PI * 2));
       var cash = Math.round(airT * 120 + dist * 6 + spins * 400);
       var label = spins > 0 ? (spins > 1 ? spins + 'x SPIN!' : '360 SPIN!')
@@ -661,7 +699,8 @@ GAME.vehicles = (function () {
           var pc = GAME.player.car;
           if ((a === pc || b === pc) && rel > 6) {
             var other = a === pc ? b : a;
-            if (other.isPolice) GAME.police.reportCrime('hit_cop_car', pc.pos);
+            // a mission rival in a cruiser is a racer, not the law
+            if (other.isPolice && !other.mission) GAME.police.reportCrime('hit_cop_car', pc.pos);
             else if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
           }
         }
@@ -682,6 +721,21 @@ GAME.vehicles = (function () {
     car.hp -= amt;
     if (car.hp < car.spec.hp * 0.35 && car.stage < 1) car.stage = 1;
     if (car.hp < car.spec.hp * 0.14 && car.stage < 2) { car.stage = 2; car.fireFuse = 5.5; }
+    // The hull tells its driver out loud. Scraping uphill through the grass
+    // (or grinding a wall you can barely see) shreds hp with no single big
+    // crash, and the first the player knew was waking up in hospital — the
+    // fire fuse detonated a car they never realized was dying. Threshold
+    // crossings now announce themselves, the way the aircraft already do.
+    if (car === pc && GAME.player.inCar && !car.spec.heli && !car.spec.plane) {
+      if (car.stage >= 2 && car.stageWarn !== 2) {
+        car.stageWarn = 2;
+        GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
+        GAME.audio.sting('busted');
+      } else if (car.stage === 1 && !car.stageWarn) {
+        car.stageWarn = 1;
+        GAME.hud.message('Your ride is smoking — it won\'t take much more.', 3);
+      }
+    }
     if (car.hp <= 0) explodeCar(car, source, car.byPlayer);
   }
 
@@ -931,7 +985,8 @@ GAME.vehicles = (function () {
       }
       if (car.spec.heli || car.spec.plane) {
         // aircraft are flown from player.js; abandoned airborne ones fall.
-        var powered = (car === P.car && P.inCar);
+        // The police air unit flies itself (police.js) and never falls.
+        var powered = (car === P.car && P.inCar) || !!car.aiAir;
         var restY = car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4;
         if (!powered) {
           // the surface, not the street: an abandoned or parked aircraft over

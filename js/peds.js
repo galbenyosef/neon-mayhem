@@ -433,6 +433,25 @@ GAME.peds = (function () {
         ped.mesh.rotation.y = ped.heading;
       }
       var rp2 = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
+      // walking into a palm tree forever is not a plan: when the legs move
+      // but the body doesn't, sidestep and pick a new line. (Job peds are
+      // steered by their mission every frame; leave them to it.)
+      if (!ped.jobPed && ped.speed > 0.3 && ped.state !== 'dive') {
+        var bdx = rp2.x - ped.prevX2, bdz = rp2.z - ped.prevZ2;
+        if (ped.prevX2 !== undefined && bdx * bdx + bdz * bdz < Math.pow(ped.speed * dt * 0.25, 2)) {
+          ped.stuckT = (ped.stuckT || 0) + dt;
+          if (ped.stuckT > 1.1) {
+            ped.stuckT = 0;
+            var sside = Math.random() < 0.5 ? 1 : -1;
+            if (ped.state === 'walk') {
+              ped.wpX = ped.pos.x + Math.sin(ped.heading + sside * Math.PI / 2) * 7;
+              ped.wpZ = ped.pos.z + Math.cos(ped.heading + sside * Math.PI / 2) * 7;
+              ped.wpT = 3;
+            } else ped.heading += sside * (1.1 + Math.random() * 0.8);
+          }
+        } else ped.stuckT = 0;
+      }
+      ped.prevX2 = rp2.x; ped.prevZ2 = rp2.z;
       ped.pos.x = rp2.x; ped.pos.z = rp2.z;
       // A stopped vehicle is solid: nobody walks through a parked truck. Fast
       // cars are left alone — the run-over check below is what handles those,

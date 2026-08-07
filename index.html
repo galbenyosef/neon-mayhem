@@ -151,10 +151,20 @@
   #pause-screen { position:fixed; inset:0; z-index:35; display:none; align-items:center; justify-content:safe center; flex-direction:column;
     background:rgba(8,4,18,.82); overflow-y:auto; padding:14px 0; }
   #pause-screen h2 { font-size:clamp(24px,7vh,44px); font-weight:900; font-style:italic; color:#9df3ff; letter-spacing:5px; text-shadow:0 0 16px rgba(60,220,255,.8); margin:0 0 14px; flex-shrink:0; }
+  /* the pause menu should FIT an ordinary phone; the scrollbar stays only as
+     the escape hatch for genuinely tiny screens */
+  #pause-screen .mbtn { margin:8px 5px 0; padding:7px 16px; font-size:13px; }
+  @media (max-height:740px), (max-width:480px) {
+    #pause-screen h2 { margin:0 0 6px; }
+    #pause-screen .mbtn { margin:5px 3px 0; padding:6px 11px; font-size:12px; }
+    #pause-controls { font-size:11.5px !important; line-height:1.5 !important; }
+    #pause-stunts, #pause-missions { font-size:12px; }
+  }
   @media (max-height:460px) {
-    #pause-screen h2 { margin:0 0 4px; }
+    #pause-screen h2 { margin:0 0 4px; font-size:clamp(18px,6vh,30px); }
     #pause-controls { display:none; }   /* the controls card is on the title screen and under H */
     #pause-stunts { margin-top:2px; font-size:12px; }
+    #pause-screen .mbtn { margin:4px 3px 0; padding:4px 9px; font-size:11.5px; }
   }
 
   #fs-btn { position:fixed; right:14px; bottom:14px; z-index:65; width:36px; height:36px; border-radius:8px;
@@ -246,6 +256,17 @@
   #shop-confirm-hint { color:#9fd8ff; font-size:11.5px; margin-top:10px; letter-spacing:1px; }
   #shop-hint { color:#cfe6ff; font-size:12.5px; margin-top:6px; }
 
+  /* in-game dialog — the game never throws browser popups */
+  #game-modal { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+    background:rgba(5,2,12,.72); font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+  #game-modal-card { background:rgba(16,8,30,.97); border:1px solid rgba(255,150,210,.65); border-radius:14px;
+    padding:20px 26px; text-align:center; max-width:min(88vw,440px); box-shadow:0 12px 44px rgba(0,0,0,.6); }
+  #game-modal-title { color:#ffe8f6; font-weight:900; font-size:19px; letter-spacing:1px; }
+  #game-modal-body { color:#cfe6ff; font-size:13.5px; line-height:1.55; margin-top:10px; white-space:pre-line; }
+  #game-modal-hint { color:#9fd8ff; font-size:11.5px; margin-top:10px; letter-spacing:1px; }
+  #game-modal .mbtn.danger { background:rgba(255,80,80,.18); border-color:rgba(255,120,120,.65); color:#ffd9d9; }
+  #game-modal .mbtn.danger:active { background:rgba(255,80,80,.45); }
+
   #fade-layer { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; z-index:25; transition:opacity .5s; }
   #crt-layer { position:fixed; inset:0; pointer-events:none; z-index:20; display:none;
     background:repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px);
@@ -318,16 +339,27 @@
     <span class="mbtn" id="pause-sfx">💥 SFX: ON</span>
     <span class="mbtn" id="pause-crt">📺 CRT</span>
     <span class="mbtn" id="pause-day">🕓 TIME: AUTO</span>
-    <span class="mbtn" id="pause-fs">⛶ FULLSCREEN</span>
     <span class="mbtn" id="pause-export">💾 EXPORT SAVE</span>
     <span class="mbtn" id="pause-import">📂 IMPORT SAVE</span>
     <span class="mbtn" id="pause-reset">🗑 RESET PROGRESS</span>
     <span class="mbtn" id="pause-exit">EXIT TO TITLE</span>
   </div>
   <input type="file" id="save-file" accept=".json,application/json" style="display:none">
-  <div style="margin-top:12px;color:#8dffd8;font-weight:700;">ESC or tap anywhere — resume</div>
-  <div style="margin-top:8px;font-size:12px;"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
+  <div style="margin-top:9px;color:#8dffd8;font-weight:700;font-size:13px;">ESC or tap anywhere — resume</div>
+  <div style="margin-top:5px;font-size:11.5px;"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
     style="color:#9fd8ff;" onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
+</div>
+
+<div id="game-modal">
+  <div id="game-modal-card">
+    <div id="game-modal-title"></div>
+    <div id="game-modal-body"></div>
+    <div>
+      <span class="mbtn" id="game-modal-ok">CONFIRM</span>
+      <span class="mbtn" id="game-modal-cancel">CANCEL</span>
+    </div>
+    <div id="game-modal-hint">Enter — confirm &nbsp;·&nbsp; Esc — cancel</div>
+  </div>
 </div>
 
 <div id="fs-btn" title="Fullscreen">⛶</div>
@@ -354,7 +386,7 @@
   <div id="map-title">COSTA ROSA</div>
   <canvas id="bigmap" width="560" height="560"></canvas>
   <div id="map-legend"></div>
-  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; click a legend entry to hide / show those markers &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
+  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; tap a legend entry to show only that family, tap again for all &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
   <div><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
 </div>
 

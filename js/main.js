@@ -57,6 +57,8 @@
     GAME.onKeyDown = function (code) {
       if (code === 'Enter' && !GAME.started) { GAME.startGame(); return; }
       if (!GAME.started) return;
+      // an open dialog owns the keys — Esc must cancel it, not unpause
+      if (GAME.hud.dialogOpen()) { GAME.hud.dialogKey(code); return; }
       // the result card closes on any of the keys a hand is likely to be on —
       // it never needed the mouse
       if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {
@@ -103,6 +105,10 @@
       document.documentElement.requestFullscreen()
         .then(function () {
           try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(function () { }); } catch (e) { }
+          // hold the keyboard lock on Esc while fullscreen: the press is then
+          // DELIVERED to the game (it pauses) instead of tearing fullscreen
+          // down. Holding Esc still force-exits — the browser's escape hatch.
+          try { navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape']).catch(function () { }); } catch (e) { }
         })
         .catch(function () { });
     } catch (e) { }
@@ -118,6 +124,7 @@
   };
   document.addEventListener('fullscreenchange', function () {
     if (document.fullscreenElement) { fsRestore = false; return; }
+    try { navigator.keyboard && navigator.keyboard.unlock && navigator.keyboard.unlock(); } catch (e) { }
     if (fsManual) { fsManual = false; return; }
     if (GAME.started) fsRestore = true;
   });
@@ -154,6 +161,8 @@
   // df = 0.5 - 0.5*cos(2*pi*phase).
   // phase 0.63 -> df~0.85 sunny afternoon; 0.75 -> sunset; 1.0 -> night.
   var CYCLE = 150, START_PHASE = 0.63;
+  // one full in-game day in real seconds — pickups' respawn clock keys off it
+  GAME.DAY_SECONDS = CYCLE;
   GAME.dayPhase = START_PHASE;
   // 'auto' runs the cycle; 'day' / 'night' pin the clock where you want it
   GAME.timeMode = 'auto';
@@ -197,9 +206,12 @@
     GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
     GAME.enterFullscreen(); // same user gesture — desktop and touch alike
-    // the gesture that started the game is not gameplay input
+    // the gesture that started the game is not gameplay input — and neither
+    // is anything the browser synthesizes right behind it (ghost clicks on
+    // touch): open the same settle window the pointer lock uses
     GAME.input.keys = {};
     GAME.input.lmb = false; GAME.input.lmbPressed = false; GAME.input.rmb = false;
+    GAME.input.lockGraceT = performance.now();
     GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
@@ -272,7 +284,14 @@
       GAME.releasePointer();
     } else {
       GAME.audio.resume();
-      GAME.maybeRestoreFullscreen();
+      // On touch the resume tap is a real gesture and play means fullscreen,
+      // full stop — the same promise starting the game makes. Restoring only
+      // when we recorded losing it (fsRestore) missed every path where the
+      // exit was manual or the earlier request failed, which is why the game
+      // "sometimes" came back windowed on mobile. Desktop keeps the nuance:
+      // a windowed desktop player chose to be windowed.
+      if (GAME.isTouch) GAME.enterFullscreen();
+      else GAME.maybeRestoreFullscreen();
       GAME.regainPointer();
     }
     GAME.syncOverlayMusic();
@@ -331,6 +350,13 @@
     // slow autosave heartbeat: health and ammo drift without touching cash,
     // and the save should never be more than ten seconds behind the life
     if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
+    // the endgame watch: notices the last mission or jump landing, and keeps
+    // a completed player's pockets bottomless
+    if (GAME.frame % 300 === 150) GAME.missions.checkCompletion();
+    if (GAME.completeUnlimited && GAME.player.cash < 9999999) {
+      GAME.player.cash = 9999999;
+      GAME.hud.cashChanged();
+    }
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();

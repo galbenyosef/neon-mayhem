@@ -288,8 +288,11 @@ GAME.initInput = function (canvas) {
     // the lock) squeezed off a round with whatever the save had loaded and
     // earned a wanted star before the player had done anything at all.
     var acquiring = GAME.started && !GAME.isTouch && !inp.pointerLocked && document.pointerLockElement !== canvas;
-    if (e.button === 0 && !acquiring) { inp.lmb = true; inp.lmbPressed = true; }
-    if (e.button === 2) inp.rmb = true;
+    // on touch devices the fire button is on the touch layer; mouse events
+    // reaching the canvas there are the browser's synthetic echoes of taps,
+    // and treating them as trigger pulls is how taps punched people
+    if (e.button === 0 && !acquiring && !GAME.isTouch) { inp.lmb = true; inp.lmbPressed = true; }
+    if (e.button === 2 && !GAME.isTouch) inp.rmb = true;
     // a click back into the game is a real gesture: if the browser threw us
     // out of fullscreen over an Esc on an overlay, this is where it comes back
     if (GAME.started && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
@@ -307,6 +310,11 @@ GAME.initInput = function (canvas) {
   });
   document.addEventListener('pointerlockchange', function () {
     inp.pointerLocked = (document.pointerLockElement === canvas);
+    // the moment the lock lands, start a short grace: the double-click on
+    // load (or the reflexive click right after an overlay) arrives with the
+    // lock already held and used to squeeze off a round before the player
+    // had done anything on purpose
+    if (inp.pointerLocked) inp.lockGraceT = performance.now();
   });
   window.addEventListener('wheel', function (e) { inp.wheel += e.deltaY > 0 ? 1 : -1; }, { passive: true });
 };

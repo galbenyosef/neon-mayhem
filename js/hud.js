@@ -38,7 +38,18 @@ GAME.hud = (function () {
 
     el['press-enter'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('click', function () { GAME.startGame(); });
-    el['title-screen'].addEventListener('touchend', function () { GAME.startGame(); });
+    // preventDefault matters: without it the browser follows the touch with a
+    // synthetic mousedown ~300ms later — by then the title is hidden, the
+    // click lands on the canvas, and the game opened with a punch or a shot
+    el['title-screen'].addEventListener('touchend', function (e) { e.preventDefault(); GAME.startGame(); });
+
+    // the in-game dialog's buttons; clicks must not fall through to whatever
+    // screen is underneath (the pause screen resumes on any tap)
+    ['click', 'touchend'].forEach(function (ev) {
+      $('game-modal').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); });
+      $('game-modal-ok').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); closeDialog(true); });
+      $('game-modal-cancel').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); closeDialog(false); });
+    });
 
     // pause: tap anywhere resumes; buttons stop the bubble
     el['pause-screen'].addEventListener('click', function () { if (GAME.paused) GAME.togglePause(); });
@@ -76,7 +87,6 @@ GAME.hud = (function () {
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
-    pauseBtn('pause-fs', function () { GAME.toggleFullscreen(); });
     // the save travels: export downloads a file, import reads one back and
     // reloads into the imported life
     pauseBtn('pause-export', function () {
@@ -91,21 +101,33 @@ GAME.hud = (function () {
     pauseBtn('pause-import', function () {
       // an import is an overwrite: make sure the player knows the life they
       // are living right now is about to be replaced, and offer the way out
-      if (!window.confirm(
-        'Importing a save REPLACES your current progress — cash, property, garage, look, everything.\n\n' +
-        'If you want to keep this life, press Cancel and use EXPORT SAVE first.\n\nImport and overwrite?')) return;
-      $('save-file').click();
+      dialog({
+        title: 'IMPORT SAVE',
+        body: 'Importing REPLACES your current progress — cash, property, garage, your look, everything.\nWant to keep this life? Cancel and use EXPORT SAVE first.',
+        ok: 'IMPORT & OVERWRITE', danger: true,
+        onOk: function () { $('save-file').click(); }
+      });
     });
     pauseBtn('pause-reset', function () {
       // a reset is the import warning with no way back — so it points at the
       // way out first, then asks once more before burning it all down
-      if (!window.confirm(
-        'RESET erases EVERYTHING — cash, missions, stunt jumps, property, garage, your look. There is no undo.\n\n' +
-        'Want a backup? Press Cancel and use EXPORT SAVE first.\n\nErase all progress?')) return;
-      if (!window.confirm('Last chance: wipe the save and start Costa Rosa from nothing?')) return;
-      GAME.track('progress-reset');
-      try { localStorage.clear(); } catch (e) { }
-      location.reload();
+      dialog({
+        title: 'RESET PROGRESS',
+        body: 'This erases EVERYTHING — cash, missions, stunt jumps, property, garage, your look. There is no undo.\nWant a backup? Cancel and use EXPORT SAVE first.',
+        ok: 'ERASE EVERYTHING', danger: true,
+        onOk: function () {
+          dialog({
+            title: 'LAST CHANCE',
+            body: 'Wipe the save and start Costa Rosa from nothing?',
+            ok: 'WIPE THE SAVE', danger: true,
+            onOk: function () {
+              GAME.track('progress-reset');
+              try { localStorage.clear(); } catch (e) { }
+              location.reload();
+            }
+          });
+        }
+      });
     });
     $('save-file').addEventListener('change', function () {
       var f = this.files && this.files[0];
@@ -115,7 +137,7 @@ GAME.hud = (function () {
       rd.onload = function () {
         var r = GAME.importSave(String(rd.result));
         if (r.ok) { GAME.track('save-imported'); location.reload(); }
-        else alert(r.why);
+        else dialog({ title: 'IMPORT FAILED', body: r.why, ok: 'OK', cancel: false });
       };
       rd.readAsText(f);
     });
@@ -139,6 +161,12 @@ GAME.hud = (function () {
     el['bigmap'].addEventListener('click', onMapClick);
     el['map-clear'].addEventListener('click', function () { GAME.nav.clear(); drawBigMap(); });
     el['map-close'].addEventListener('click', function () { api.toggleMap(false); });
+    // like the pause screen: a click on the dark around the map closes it
+    ['click', 'touchend'].forEach(function (ev) {
+      el['map-screen'].addEventListener(ev, function (e) {
+        if (e.target === el['map-screen']) { e.preventDefault(); api.toggleMap(false); }
+      });
+    });
 
     // legend entries behave like a mixer's solo buttons: tap one to show ONLY
     // that marker family, tap again to show all. The choice persists.
@@ -320,6 +348,26 @@ GAME.hud = (function () {
     g.moveTo(0, 8); g.lineTo(6, -7); g.lineTo(0, -3); g.lineTo(-6, -7);
     g.closePath(); g.fill(); g.stroke();
     g.restore();
+    // compass rose — the big map is drawn north-up, and now it says so
+    var rcx = cv.width - 42, rcy = 42, RR = 24;
+    g.fillStyle = 'rgba(8,4,18,.78)';
+    g.beginPath(); g.arc(rcx, rcy, RR + 8, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,105,180,.8)'; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(rcx, rcy, RR + 8, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#ff5f8f';                 // the needle's north half
+    g.beginPath(); g.moveTo(rcx, rcy - RR + 10); g.lineTo(rcx - 4.5, rcy); g.lineTo(rcx + 4.5, rcy);
+    g.closePath(); g.fill();
+    g.fillStyle = 'rgba(230,240,255,.4)';    // and its tail
+    g.beginPath(); g.moveTo(rcx, rcy + RR - 10); g.lineTo(rcx - 4.5, rcy); g.lineTo(rcx + 4.5, rcy);
+    g.closePath(); g.fill();
+    g.font = '800 11px "Segoe UI", Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#9df3ff';
+    g.fillText('N', rcx, rcy - RR + 2);
+    g.fillStyle = 'rgba(207,230,255,.75)';
+    g.fillText('E', rcx + RR - 2, rcy);
+    g.fillText('S', rcx, rcy + RR - 1);
+    g.fillText('W', rcx - RR + 2, rcy);
   }
 
   function onMapClick(e) {
@@ -593,6 +641,17 @@ GAME.hud = (function () {
     g.moveTo(0, -8); g.lineTo(6, 6); g.lineTo(0, 2); g.lineTo(-6, 6);
     g.closePath(); g.fill(); g.stroke();
     g.restore();
+    // the radar is heading-up, so north moves — ride an N badge around the
+    // rim so there is always a sense of direction at a glance
+    var nx2 = 90 - 74 * Math.sin(h), ny2 = 90 + 74 * Math.cos(h);
+    g.fillStyle = 'rgba(8,4,18,.85)';
+    g.beginPath(); g.arc(nx2, ny2, 8, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,105,180,.8)'; g.lineWidth = 1.2;
+    g.beginPath(); g.arc(nx2, ny2, 8, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#ffd9f2';
+    g.font = '800 10px "Segoe UI", Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('N', nx2, ny2 + 0.5);
   }
 
   function updateCashText() {
@@ -645,9 +704,34 @@ GAME.hud = (function () {
     }
   }
 
+  // ---------- in-game dialog (the game never throws browser popups) ----------
+  var dlgOnOk = null;
+  function dialog(opts) {
+    dlgOnOk = opts.onOk || null;
+    $('game-modal-title').textContent = opts.title || '';
+    $('game-modal-body').textContent = opts.body || '';
+    var ok = $('game-modal-ok'), cancel = $('game-modal-cancel');
+    ok.textContent = opts.ok || 'CONFIRM';
+    ok.className = 'mbtn' + (opts.danger ? ' danger' : '');
+    cancel.style.display = opts.cancel === false ? 'none' : '';
+    $('game-modal').style.display = 'flex';
+  }
+  function closeDialog(confirmed) {
+    $('game-modal').style.display = 'none';
+    var fn = confirmed ? dlgOnOk : null;
+    dlgOnOk = null;
+    if (fn) fn();
+  }
+
   var api = {
     init: init,
     update: update,
+    dialog: dialog,
+    dialogOpen: function () { return !!$('game-modal') && $('game-modal').style.display === 'flex'; },
+    dialogKey: function (code) {
+      if (code === 'Enter' || code === 'KeyE') closeDialog(true);
+      else if (code === 'Escape') closeDialog(false);
+    },
     toggleMap: function (force) {
       if (!GAME.started) return;
       var open = force !== undefined ? force : !GAME.mapOpen;

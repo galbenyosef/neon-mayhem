@@ -53,17 +53,25 @@ GAME.shops = (function () {
     { id: 'cyan', name: 'Electric Cyan', hex: 0x38c8e8 }
   ];
 
-  // the same skin palette the crowd draws from — but the player's tone is
-  // rolled once and saved, so "you" look like you every session, and the
-  // changing-room mannequin can be an honest mirror
-  var SKINS = [0xeac8a8, 0xc89878, 0x8a6848, 0x6a4c34, 0xf0d8c0];
+  // The same skin palette the crowd draws from, named for the barber's
+  // counter. The player's default is FIXED — the fair tone, every browser,
+  // every fresh save. It used to be rolled once per save, which read as
+  // "my character changes between machines". A tone bought at the barber
+  // (skinPicked) is a choice, and choices stick.
+  var SKINTONES = [
+    { id: 'fair', name: 'Fair', hex: 0xeac8a8 },
+    { id: 'porcelain', name: 'Porcelain', hex: 0xf0d8c0 },
+    { id: 'tan', name: 'Tan', hex: 0xc89878 },
+    { id: 'bronze', name: 'Bronze', hex: 0x8a6848 },
+    { id: 'deep', name: 'Deep', hex: 0x6a4c34 }
+  ];
+  var DEFAULT_SKIN = 0xeac8a8;
   function outfit() {
     GAME.prefs = GAME.prefs || {};
     if (!GAME.prefs.outfit) GAME.prefs.outfit = { shirt: 'white', pants: 'teal', hairStyle: 'crew', hairColor: 'black' };
-    if (!GAME.prefs.outfit.skin) {
-      GAME.prefs.outfit.skin = SKINS[Math.floor(Math.random() * SKINS.length)];
-      GAME.save();
-    }
+    // rolled tones from old saves were never a choice — the default wins
+    // until the barber has actually been paid for a different one
+    if (!GAME.prefs.outfit.skinPicked || !GAME.prefs.outfit.skin) GAME.prefs.outfit.skin = DEFAULT_SKIN;
     if (GAME.prefs.outfit.hairStyle === 'flat') GAME.prefs.outfit.hairStyle = 'flattop'; // old save id
     return GAME.prefs.outfit;
   }
@@ -183,14 +191,18 @@ GAME.shops = (function () {
     return rows;
   }
   function barberItems() {
-    // cuts first, then dye — and the dye rows say HAIR COLOR out loud, because
-    // an unlabeled color swatch next to a head reads as something it isn't
+    // cuts first, then dye, then complexion — and every row names its trade
+    // out loud, because an unlabeled color swatch next to a head reads as
+    // something it isn't
     var o = outfit(), rows = [];
     HAIRSTYLES.forEach(function (s) {
       rows.push({ id: 'style_' + s.id, name: 'CUT · ' + s.name, price: 150, owned: o.hairStyle === s.id, ds: o.hairStyle === s.id ? 'Your current cut.' : '' });
     });
     HAIRCOLORS.forEach(function (s) {
       rows.push({ id: 'color_' + s.id, name: 'HAIR COLOR · ' + s.name, price: 100, sw: s.hex, owned: o.hairColor === s.id, ds: o.hairColor === s.id ? 'Your current color.' : '' });
+    });
+    SKINTONES.forEach(function (s) {
+      rows.push({ id: 'skin_' + s.id, name: 'SKIN TONE · ' + s.name, price: 100, sw: s.hex, owned: o.skin === s.hex, ds: o.skin === s.hex ? 'Your tone.' : '' });
     });
     return rows;
   }
@@ -201,11 +213,13 @@ GAME.shops = (function () {
     }
     return [{ id: 'buy', name: 'BUY ' + s.name, ds: s.tag + '  You’ll wake up here, gear intact.', price: s.price }];
   }
+  // Money is the only gate: every machine is on the floor from day one.
+  // Progression used to hold back the helicopter (bridges) and the gunship
+  // (full completion), but a showroom that refuses your cash isn't a shop.
   function showroomItems() {
-    var islaOpen = !GAME.isla || GAME.isla.isOpen();
-    function row(id, name, ds, price, off) {
+    function row(id, name, ds, price) {
       var inGarage = garage().indexOf(id) >= 0;
-      return { id: id, name: name, price: price, off: off,
+      return { id: id, name: name, price: price,
         owned: inGarage, ds: inGarage ? 'In your garage — a fresh one always waits at home.' : ds };
     }
     return [
@@ -214,7 +228,8 @@ GAME.shops = (function () {
       row('buggy', 'DUNE BUGGY', 'Made for sand and bad decisions.', 9000),
       row('limo', 'STRETCH LIMO', 'Arrive like you own the strip.', 18000),
       row('monster', 'SLEDGEHAMMER', 'The monster truck, no stunt jumps required.', 35000),
-      row('helicopter', 'PELICANO', islaOpen ? 'Your own bird, delivered outside.' : 'Import license pending — open the bridges first.', 60000, !islaOpen)
+      row('helicopter', 'PELICANO', 'Your own bird, delivered outside.', 60000),
+      row('gunship', 'TALON', 'Army surplus. Guns live, rockets included.', 250000)
     ];
   }
   function bribeItems() {
@@ -254,9 +269,11 @@ GAME.shops = (function () {
   function buyBarber(id) {
     var o = outfit();
     if (id.indexOf('style_') === 0) o.hairStyle = id.slice(6);
+    else if (id.indexOf('skin_') === 0) { o.skin = byId(SKINTONES, id.slice(5)).hex; o.skinPicked = true; }
     else o.hairColor = id.slice(6);
     applyOutfit(); GAME.save();
-    note(o.hairStyle === 'buzz' ? 'Clean down to the skin.' : 'Fresh off the chair.');
+    note(id.indexOf('skin_') === 0 ? 'New tone, same you.'
+      : o.hairStyle === 'buzz' ? 'Clean down to the skin.' : 'Fresh off the chair.');
   }
   function buySafehouse(loc, id) {
     var P = GAME.player;
@@ -353,6 +370,12 @@ GAME.shops = (function () {
     GAME.track('bribe-paid');
     note(GAME.police.wanted > 0 ? 'One star quietly shredded.' : 'The file is empty. What file?');
   }
+  // The wheel is seen to spin before it pays. The outcome is decided up
+  // front, but the counter ticks through the segments — fast, then slowing
+  // like a real wheel — and only then is the result revealed and the payout
+  // made. Closing the shop mid-spin can't eat a win: the payout runs on its
+  // own timer whether anyone is watching or not.
+  var spinning = false;
   function spinWheel(bet) {
     var r = Math.random(), mult, label;
     if (r < 0.60) { mult = 0; label = 'THE GULL EATS IT.'; }
@@ -360,10 +383,31 @@ GAME.shops = (function () {
     else if (r < 0.95) { mult = 3; label = 'TRIPLE!'; }
     else { mult = 5; label = 'JACKPOT!'; }
     var win = Math.round(bet * mult);
-    if (win > 0) { GAME.addCash(win); GAME.audio.sting('win'); }
-    else GAME.audio.crash(0.2);
-    GAME.track(win > 0 ? 'casino-win' : 'casino-loss');
-    note(label + (win > 0 ? '  +$' + win.toLocaleString() : '') + '  (stake included)');
+    var SEGS = ['🐦 GULL', '× 1.5', '🐦 GULL', '× 3', '🐦 GULL', '× 1.5', '★ JACKPOT ★', '🐦 GULL'];
+    spinning = true;
+    var step = 0, steps = 14 + Math.floor(Math.random() * 5);
+    function tick(delay) {
+      setTimeout(function () {
+        var inCasino = openShop && openShop.kind === 'casino';
+        if (step < steps) {
+          if (inCasino) note('THE WHEEL SPINS…   ▸ ' + SEGS[step % SEGS.length]);
+          GAME.audio.cashTick();
+          step++;
+          // each click takes longer than the last — the wheel is running down
+          tick(55 + Math.pow(step / steps, 2) * 300);
+        } else {
+          spinning = false;
+          if (win > 0) { GAME.addCash(win); GAME.audio.sting('win'); }
+          else GAME.audio.crash(0.2);
+          GAME.track(win > 0 ? 'casino-win' : 'casino-loss');
+          if (inCasino) {
+            note(label + (win > 0 ? '  +$' + win.toLocaleString() : '') + '  (stake included)');
+            render();
+          }
+        }
+      }, delay);
+    }
+    tick(140);
   }
 
   // ---------- shop registry ----------
@@ -379,7 +423,9 @@ GAME.shops = (function () {
       // the dealership sits on the southern arterial with room for a glass
       // hall and a forecourt — it used to squat at the airport's entry gate
       { id: 'showroom0', kind: 'showroom', name: 'GRAN ROSA MOTORS', tag: 'Special orders, delivered outside', at: clearSpot(90, 378), forecourt: { x: 64, z: 384 }, heading: Math.PI / 2, color: 0x8dffd8 },
-      { id: 'casino0', kind: 'casino', name: 'THE LUCKY GULL', tag: 'A wheel, a bird, your wallet', at: clearSpot(448, 250), color: 0xffe14f }
+      // the casino stands on its own terrace off the pier's south rail —
+      // planted mid-deck it was a wall across the way to the ferris wheel
+      { id: 'casino0', kind: 'casino', name: 'THE LUCKY GULL', tag: 'A wheel, a bird, your wallet', at: { x: 452, z: 255.3 }, face: { x: 0, z: 1 }, color: 0xffe14f }
     ];
     // a bribe desk at every station, both sides of the channel
     stations.forEach(function (st, i) {
@@ -480,7 +526,9 @@ GAME.shops = (function () {
         var mx = loc.at.x + cands[si][0], mz = loc.at.z + cands[si][1];
         var rp = GAME.city.nearestRoadPoint(mx, mz);
         var dx = mx - rp.x, dz = mz - rp.z;
-        var dir = Math.abs(dx) >= Math.abs(dz) ? { x: Math.sign(dx) || 1, z: 0 } : { x: 0, z: Math.sign(dz) || 1 };
+        // a shop can dictate which way it faces (the pier casino must face
+        // the walkway, not the distant beach road)
+        var dir = loc.face || (Math.abs(dx) >= Math.abs(dz) ? { x: Math.sign(dx) || 1, z: 0 } : { x: 0, z: Math.sign(dz) || 1 });
         // the mat itself must be standable and off the carriageway
         if (GAME.city.isInWater(mx, mz) && !GAME.city.isOnPier(mx, mz)) continue;
         if (GAME.city.rampAt(mx, mz)) continue;
@@ -647,9 +695,17 @@ GAME.shops = (function () {
           : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
+      // the row only ever selects and previews. Money moves through the BUY
+      // chip alone — hover already selects, so a click-anywhere-to-buy meant
+      // the first click on a hovered row spent money while "just previewing".
       row.addEventListener('click', function () {
         if (sel !== i) { sel = i; render(); }
-        else openConfirm(it);
+      });
+      var chip = row.querySelector('.pr');
+      chip.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (sel !== i) { sel = i; render(); return; }
+        openConfirm(it);
       });
       row.addEventListener('mouseenter', function () { if (sel !== i) { sel = i; render(); } });
       el.items.appendChild(row);
@@ -691,6 +747,7 @@ GAME.shops = (function () {
       else if (it.id.indexOf('pants_') === 0) o.pants = it.id.slice(6);
       else if (it.id.indexOf('style_') === 0) o.hairStyle = it.id.slice(6);
       else if (it.id.indexOf('color_') === 0) o.hairColor = it.id.slice(6);
+      else if (it.id.indexOf('skin_') === 0) o.skin = byId(SKINTONES, it.id.slice(5)).hex;
     }
     return o;
   }
@@ -800,7 +857,7 @@ GAME.shops = (function () {
       // hovered row swapped in — this is exactly how you'd walk out
       var o = previewOutfit(it);
       var pkey = 'ped:' + o.shirt + '/' + o.pants + '/' + o.hairStyle + '/' + o.hairColor + '/' + o.skin;
-      if (tag) tag.textContent = 'YOU · wearing ' + it.name.replace(/^(SHIRT|PANTS|CUT|HAIR COLOR) · /, '');
+      if (tag) tag.textContent = 'YOU · wearing ' + it.name.replace(/^(SHIRT|PANTS|CUT|HAIR COLOR|SKIN TONE) · /, '');
       if (pkey === pv.key) return;
       pv.key = pkey;
       clearPvObj();
@@ -822,13 +879,15 @@ GAME.shops = (function () {
   }
   function renderPreview() {
     if (!pv.on || !pv.renderer || !pv.obj || !GAME.shopOpen) return;
-    pv.obj.rotation.y += 0.016;
+    // the chip stack whirls while the wheel is going
+    pv.obj.rotation.y += spinning && openShop && openShop.kind === 'casino' ? 0.14 : 0.016;
     pv.renderer.render(pv.scene, pv.cam);
   }
   // the purchase gate. The card names the thing and its price; only CONFIRM
   // (or Enter while it's up) actually spends money, in every shop alike.
   function openConfirm(it) {
     if (!openShop || !it || it.owned || it.off) return;
+    if (spinning) { note('The wheel is still spinning…'); return; }
     var P = GAME.player;
     if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); return; }
     pendingBuy = it.id;
@@ -849,6 +908,7 @@ GAME.shops = (function () {
 
   function buy(id) {
     if (!openShop) return false;
+    if (spinning) { note('The wheel is still spinning…'); return false; }
     var list = items(openShop), it = null;
     for (var i = 0; i < list.length; i++) if (list[i].id === id) { it = list[i]; break; }
     if (!it || it.owned || it.off) { render(); return false; }
@@ -981,6 +1041,9 @@ GAME.shops = (function () {
     var out = [];
     for (var i = 0; i < locations.length; i++) {
       var loc = locations[i];
+      // the desk sergeant lives inside the police station — the P badge
+      // already marks it, and a $ stacked on top just clutters the map
+      if (loc.kind === 'bribe') continue;
       var home = loc.kind === 'safehouse' && owns(loc.sh.id);
       out.push({
         x: loc.at.x, z: loc.at.z,
@@ -1003,6 +1066,6 @@ GAME.shops = (function () {
     get current() { return openShop; },
     get selected() { return openShop ? items(openShop)[sel] : null; },
     locations: function () { return locations; },
-    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS }
+    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS, SKINTONES: SKINTONES }
   };
 })();
