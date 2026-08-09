@@ -158,6 +158,18 @@ GAME.shops = (function () {
           var q = boxes[b];
           if (px > q.minX - 1.6 && px < q.maxX + 1.6 && pz > q.minZ - 1.6 && pz < q.maxZ + 1.6) { hit = true; break; }
         }
+        if (hit) continue;
+        // ...and never on top of a parked vehicle. The spot hunt vetted
+        // water, roads and walls but not CARS, so a second showroom
+        // purchase was delivered squarely onto the first — a helicopter
+        // set down on the dune buggy bought a minute earlier.
+        var cars = GAME.world.cars, gy = GAME.city.groundY(px, pz);
+        for (var ci = 0; ci < cars.length; ci++) {
+          var cc = cars[ci];
+          if (cc.dead) continue;
+          if (Math.abs(cc.pos.y - gy) > 5) continue;   // a car on a roof doesn't block the street
+          if (U.dist2(px, pz, cc.pos.x, cc.pos.z) < 6.5 * 6.5) { hit = true; break; }
+        }
         if (!hit) return { x: px, z: pz };
       }
     }
@@ -323,8 +335,25 @@ GAME.shops = (function () {
   }
   function refreshGarageSpots() {
     var base = homeBase();
+    // A wider grid than the old 5 x 6 m: the parked spawner keeps ~7.7 m
+    // clear around a spot, so five-metre neighbours BLOCKED each other —
+    // half the fleet never appeared, and what did appear crowded one pile.
+    // Spots are also kept clear of each other after the spiral hunt moves
+    // them, for the same reason.
+    var placedNow = [];
     garage().forEach(function (type, i) {
-      var s = clearSpot(base.x + 6 + (i % 3) * 5, base.z + 6 + Math.floor(i / 3) * 6);
+      var seedX = base.x + 6 + (i % 3) * 9, seedZ = base.z + 6 + Math.floor(i / 3) * 10;
+      var s = clearSpot(seedX, seedZ);
+      for (var t = 0; t < 3; t++) {
+        var clash = false;
+        for (var p = 0; p < placedNow.length; p++) {
+          if (U.dist2(placedNow[p].x, placedNow[p].z, s.x, s.z) < 8 * 8) { clash = true; break; }
+        }
+        if (!clash) break;
+        seedX += 9;
+        s = clearSpot(seedX, seedZ);
+      }
+      placedNow.push(s);
       var g = garageSpots[type];
       if (!g) {
         g = { x: s.x, z: s.z, heading: base.heading, vtype: type, owned: true };
