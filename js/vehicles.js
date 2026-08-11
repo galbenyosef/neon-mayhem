@@ -915,19 +915,27 @@ GAME.vehicles = (function () {
       // spot — no distance floor, larger spawn range, and exempt from the parked cap
       var special = sp.police || sp.vtype;
       if (!special && GAME.city.inAirport(sp.x, sp.z)) continue; // no random cars on the airfield
-      // don't park a twin of the special vehicle the player is currently driving
-      // (e.g. a second ambulance sitting in the bay you just took yours from)
-      if (sp.vtype && !sp.live && P.inCar && P.car && P.car.type === sp.vtype) continue;
+      // don't park a twin of the special vehicle the player is currently
+      // driving — or is halfway through the door of. The spot is freed the
+      // moment boarding starts, and during the walk-to-the-seat beat the
+      // player still counts as on foot; the helipad used to restock ITSELF
+      // in that half-second, dropping a second helicopter on the first.
+      var pcar = (P.inCar && P.car) || (P.entering && P.entering.car) || null;
+      if (sp.vtype && !sp.live && pcar && pcar.type === sp.vtype) continue;
       var minD = special ? 0 : 40 * 40;
       var range = special ? 210 : 140;
       var despawnR = special ? 260 : 190;
       if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
+        // The check is height-aware — street traffic far below a rooftop pad
+        // must not block it — but it has to measure against the spot's OWN
+        // level. A spot with no explicit y (its height IS the terrain, like
+        // the Alta Verde helipad on its summit) used to compare against sea
+        // level, so nothing actually standing on it ever counted as blocking.
+        var spY = sp.y !== undefined ? sp.y : GAME.city.groundY(sp.x, sp.z);
         for (var c = 0; c < world.cars.length; c++) {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60 &&
-            Math.abs(world.cars[c].pos.y - (sp.y || 0)) < 6) { clear = false; break; }
-          // the check is height-aware: street traffic 72m below the tower's
-          // helipad must not block the helicopter from appearing on it
+            Math.abs(world.cars[c].pos.y - spY) < 6) { clear = false; break; }
         }
         if (!clear) continue;
         var types = sp.isla ? ['sedan', 'buggy', 'pickup', 'van', 'limo', 'sports']
