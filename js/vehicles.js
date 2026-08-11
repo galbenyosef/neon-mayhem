@@ -736,7 +736,23 @@ GAME.vehicles = (function () {
         GAME.hud.message('Your ride is smoking — it won\'t take much more.', 3);
       }
     }
-    if (car.hp <= 0) explodeCar(car, source, car.byPlayer);
+    if (car.hp <= 0) {
+      // The ride the player is sitting in never detonates out of nowhere: a
+      // killing blow leaves it at a sliver, IN FLAMES, and the explosion a
+      // breath later is what kills — visibly — instead of a ledger hitting
+      // zero mid-smoke. (One last chance to bail, the way the fire stage
+      // always promised.) Everyone else's cars still go up on the spot.
+      if (car === pc && GAME.player.inCar) {
+        car.hp = 1;
+        car.fireFuse = car.stage >= 2 && car.fireFuse > 0 ? Math.min(car.fireFuse, 1.2) : 1.2;
+        car.stage = 2;
+        if (car.stageWarn !== 2 && !car.spec.heli && !car.spec.plane) {
+          car.stageWarn = 2;
+          GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
+          GAME.audio.sting('busted');
+        }
+      } else explodeCar(car, source, car.byPlayer);
+    }
   }
 
   function explodeCar(car, source, byPlayerIn) {

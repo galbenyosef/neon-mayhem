@@ -156,17 +156,27 @@ GAME.playerWasted = function (cause) {
   GAME.track('wasted');
   GAME.timeScale = 0.35;
   killLoopingAudio();
-  GAME.audio.sting('wasted');
   // the card tells the truth about THIS death: a bed only counts on the
   // island you went down on — and if you own one elsewhere, say why it
   // didn't help, so the rule teaches itself
   var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
   var ownsElsewhere = !home && GAME.shops && GAME.shops.ownsAny();
-  GAME.hud.showBig('wasted', home
+  var body = home
     ? 'You wake up at your place. Cash and weapons intact.'
     : ownsElsewhere
       ? 'You wake up at the local hospital — your bed is on the other island. Weapons gone, cash intact.'
-      : 'You wake up at the hospital. Weapons gone, cash intact.');
+      : 'You wake up at the hospital. Weapons gone, cash intact.';
+  // An explosion death gets its beat: the banner used to slam on in the very
+  // frame the blast spawned, so dying in a burning car read as "I suddenly
+  // died" — the fireball was behind the card. Let the slow-mo blast play,
+  // THEN call it.
+  var delay = cause === 'explosion' ? 900 : 0;
+  var show = function () {
+    if (P.state !== 'wasted' || P.respawnQueued) return;
+    GAME.audio.sting('wasted');
+    GAME.hud.showBig('wasted', body);
+  };
+  if (delay) setTimeout(show, delay); else show();
   GAME.missions.failActive('You got wasted.');
 };
 
