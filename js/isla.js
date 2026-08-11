@@ -1425,8 +1425,9 @@ GAME.isla = (function () {
     // cruisers outside the island station, an ambulance at the island hospital
     city.parkedSpots.push({ x: POI.police.x - 20, z: POI.police.z - 6, heading: 0, police: true });
     city.parkedSpots.push({ x: POI.police.x + 20, z: POI.police.z - 6, heading: 0, police: true });
-    // the helicopter, which now lives only up here
-    city.parkedSpots.push({ x: POI.helipad.x, z: POI.helipad.z, heading: Math.PI, vtype: 'helicopter' });
+    // the helicopter on the summit pad — visible from across the island, so
+    // it exists at long range like the mainland tower's find
+    city.parkedSpots.push({ x: POI.helipad.x, z: POI.helipad.z, heading: Math.PI, vtype: 'helicopter', range: 420, despawn: 480 });
     // a buggy on the cove, a pickup at the villas, a limo at the resort
     city.parkedSpots.push({ x: POI.cove.x - 12, z: POI.cove.z + 6, heading: Math.PI, vtype: 'buggy' });
     city.parkedSpots.push({ x: tx(900), z: tz(-282), heading: 0, vtype: 'pickup' });

@@ -677,7 +677,10 @@ GAME.city = (function () {
       batches.marks.addGroundQuad(padX + q[0], roofY + 0.1, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
     });
     city.roofHelipad = { x: padX, z: padZ, y: roofY };
-    city.parkedSpots.push({ x: padX, z: padZ, y: roofY, heading: Math.PI / 2, vtype: 'helicopter' });
+    // the find has to be findable: the tower shows from half the map, so the
+    // helicopter on it exists at long range instead of popping in at 210 m —
+    // an empty pad seen from the strip read as "there is no helicopter"
+    city.parkedSpots.push({ x: padX, z: padZ, y: roofY, heading: Math.PI / 2, vtype: 'helicopter', range: 420, despawn: 480 });
 
     // police station (Costa Rosa's; the island builds its own): navy base
     // band, a columned portico, blue lamps flanking the door, flag mast

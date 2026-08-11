@@ -915,16 +915,21 @@ GAME.vehicles = (function () {
       // spot — no distance floor, larger spawn range, and exempt from the parked cap
       var special = sp.police || sp.vtype;
       if (!special && GAME.city.inAirport(sp.x, sp.z)) continue; // no random cars on the airfield
-      // don't park a twin of the special vehicle the player is currently
-      // driving — or is halfway through the door of. The spot is freed the
-      // moment boarding starts, and during the walk-to-the-seat beat the
-      // player still counts as on foot; the helipad used to restock ITSELF
-      // in that half-second, dropping a second helicopter on the first.
+      // Don't restock the spot the player's CURRENT vehicle was taken from —
+      // or is halfway through the door of (the spot is freed the moment
+      // boarding starts, and during the walk-to-the-seat beat the player
+      // still counts as on foot; the helipad used to restock itself in that
+      // half-second, dropping a second helicopter on the first). Matching by
+      // TYPE was too broad: flying your own bought helicopter past the tower
+      // pad kept the tower's find hidden the whole time.
       var pcar = (P.inCar && P.car) || (P.entering && P.entering.car) || null;
-      if (sp.vtype && !sp.live && pcar && pcar.type === sp.vtype) continue;
+      if (sp.vtype && !sp.live && pcar && pcar.fromSpot === sp) continue;
       var minD = special ? 0 : 40 * 40;
-      var range = special ? 210 : 140;
-      var despawnR = special ? 260 : 190;
+      // a spot can ask to exist at longer range: the helipad finds sit on
+      // towers and summits you can see from half the map, and an empty pad
+      // at that distance reads as "there is no helicopter in this game"
+      var range = sp.range || (special ? 210 : 140);
+      var despawnR = sp.despawn || (special ? 260 : 190);
       if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
         // The check is height-aware — street traffic far below a rooftop pad
@@ -945,6 +950,9 @@ GAME.vehicles = (function () {
         var head = special ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
         if (sp.y !== undefined) car.pos.y = sp.y;   // a spot up on a roof
+        // remember the origin for the restock guard: parkedSpot is unbound
+        // the moment the player boards, but where it CAME from doesn't change
+        car.fromSpot = sp;
         sp.live = car;
         live++;
       } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && !sp.live.dead) {
