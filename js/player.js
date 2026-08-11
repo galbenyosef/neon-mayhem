@@ -504,8 +504,12 @@ function updateOnFoot(dt) {
   if (T.active) { mx += T.stickX; mz += -T.stickY; }
   var mag = Math.min(1, U.len(mx, mz));
   if (P.carHurtCd > 0) P.carHurtCd -= dt;
-  // run: Shift on desktop, RUN toggle or full stick deflection on touch
-  var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run || (T.active && mag > 0.85)) && !aiming;
+  // Run is a CHOICE: Shift on desktop, the RUN toggle on touch. Full stick
+  // deflection used to count as sprinting too, which meant nobody ever
+  // walked — a pinned stick is simply how you move on a phone, and on any
+  // desktop whose browser reports touch (most precision touchpads do) the
+  // layer enables and a held W read as a pinned stick.
+  var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run) && !aiming;
   var target = mag * (aiming ? 2.0 : run ? 7.5 : 2.8);   // sprint is 1.25x the old 6.0
   P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
 
