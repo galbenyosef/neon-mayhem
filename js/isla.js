@@ -446,11 +446,25 @@ GAME.isla = (function () {
   }
 
   var touched = [];
+  // Build-time memo. Constructing the island samples groundY hundreds of
+  // thousands of times, and every interior corner is asked for up to four
+  // times (shared between neighbouring quads) — nearly half the game's boot
+  // was spent recomputing identical answers. During build() the results are
+  // cached at 1 cm quantization (mesh-only precision); gameplay queries stay
+  // uncached — they're few, and wheels never land on the same spot twice.
+  var buildCache = null;
+  function groundY(x, z) {
+    if (!buildCache) return groundYRaw(x, z);
+    var k = Math.round(x * 100) * 2000000 + Math.round(z * 100) + 1000000;
+    var v = buildCache.get(k);
+    if (v === undefined) { v = groundYRaw(x, z); buildCache.set(k, v); }
+    return v;
+  }
   // The island's ground: terrain with the roads cut into it. Every road within
   // reach contributes by weight rather than the nearest one winning outright —
   // picking a winner puts a cliff along the line midway between two roads at
   // different heights, which is exactly where junctions are.
-  function groundY(x, z) {
+  function groundYRaw(x, z) {
     var list = cellAt(x, z);
     var base = terrainY(x, z) * coastDamp(x, z);
     if (!list) return base;
@@ -1487,6 +1501,7 @@ GAME.isla = (function () {
       strip: new GeoBatch(), downtown: new GeoBatch(), signs: new GeoBatch(),
       glow: new GeoBatch()
     };
+    buildCache = new Map();   // see groundY: the build asks the same corners over and over
     buildLand(batches.plain);
     buildRoads(batches.plain);
     buildLandmarks(batches, scene);
@@ -1495,6 +1510,7 @@ GAME.isla = (function () {
     buildLights(batches.plain, batches.glow);
     buildSpans(batches, scene);
     buildSpots(rng);
+    buildCache = null;        // gameplay queries run uncached
 
     function addMesh(batch, mat) {
       var m = new THREE.Mesh(batch.build(), mat);

@@ -363,7 +363,13 @@
     GAME.hud.update(dt);
   };
 
-  var STEP = 1 / 60;
+  // Catch-up is capped at TWO sim ticks per rendered frame. The old cap of
+  // five meant a machine that fell behind (an integrated GPU with other tabs
+  // open) paid up to 5x the sim cost per frame exactly when it could least
+  // afford it — a spiral that read as sluggishness everywhere. Two keeps the
+  // sim realtime all the way down to 30 fps and sheds work below that
+  // (fractionally slower motion) instead of digging the hole deeper.
+  var STEP = 1 / 60, MAX_TICKS = 2;
   function loop(now) {
     requestAnimationFrame(loop);
     var real = Math.min(0.1, (now - lastT) / 1000);
@@ -371,21 +377,21 @@
     if (!GAME.started) {
       accumulator += real;
       var g0 = 0;
-      while (accumulator >= STEP && g0 < 5) {
+      while (accumulator >= STEP && g0 < MAX_TICKS) {
         GAME.tickAttract(STEP);
         accumulator -= STEP;
         g0++;
       }
-      if (g0 === 5) accumulator = 0;
+      if (g0 === MAX_TICKS) accumulator = 0;
     } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
       accumulator += real * GAME.timeScale;
       var guard = 0;
-      while (accumulator >= STEP && guard < 5) {
+      while (accumulator >= STEP && guard < MAX_TICKS) {
         GAME.tick(STEP);
         accumulator -= STEP;
         guard++;
       }
-      if (guard === 5) accumulator = 0;
+      if (guard === MAX_TICKS) accumulator = 0;
     }
     // From altitude the road layers sat closer together than the depth buffer
     // could tell apart (0.03m of separation against ~0.2m of precision at half
