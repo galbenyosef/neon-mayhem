@@ -5,6 +5,7 @@ GAME.touch = (function () {
   var footBtns = [], carBtns = [];
   var btns = {};
   var enabled = false;
+  var lastCarRef = null;   // the vehicle (or null) the flags were last cleared for
 
   function detect() {
     if ('ontouchstart' in window) return true;
@@ -100,7 +101,11 @@ GAME.touch = (function () {
     btns.driveby = mkBtn('FIRE', 232, 30, 68, { flag: 'driveByAuto' });
     btns.job = mkBtn('JOB', 116, 200, 54, { press: function () { T.job = true; } });
     btns.radio = mkBtn('♪', 200, 200, 50, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } });
-    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job);
+    // the TALON's arsenal: chin gun and rockets, shown only in the gunship
+    // (they drive the same fire/aim flags the gunship reads in aircraft.js)
+    btns.gsGun = mkBtn('GUN', 232, 30, 68, { flag: 'fire' });
+    btns.gsRkt = mkBtn('RKT', 232, 112, 62, { flag: 'aim' });
+    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt);
 
     // the radar moves to the top-left on touch: the bottom-left corner is the
     // virtual stick's zone, and the two were fighting for the same thumb
@@ -220,6 +225,16 @@ GAME.touch = (function () {
     }
     var inCar = P.inCar;
 
+    // stepping into or out of any vehicle drops the aim/fire flags: the foot
+    // AIM toggle must not fire the TALON's rockets on boarding, and a held
+    // RKT must not leave you stuck aiming when you step out
+    var carNow = inCar ? P.car : null;
+    if (carNow !== lastCarRef) {
+      lastCarRef = carNow;
+      T.aim = false; T.fire = false;
+      if (btns.aim) btns.aim.style.background = '';
+    }
+
     if (!inCar) {
       show(btns.fire, true);
       show(btns.run, true);
@@ -237,6 +252,7 @@ GAME.touch = (function () {
     } else {
       var heli = P.car && P.car.spec.heli;
       var plane = P.car && P.car.spec.plane;
+      var gunship = !!(P.car && P.car.spec.gunship);
       var air = heli || plane;
       show(btns.gas, true); show(btns.brake, true); show(btns.exit, true);
       // aircraft repurpose GAS/BRAKE; hide ground-only buttons
@@ -247,9 +263,11 @@ GAME.touch = (function () {
       var hasSMG = !air && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       show(btns.driveby, hasSMG);
       show(btns.job, !air && !!GAME.jobAvailable);
+      // the gunship gets its own trigger pair — before this, the TALON had
+      // no way to fire on touch at all (FIRE/AIM live in the foot cluster)
+      show(btns.gsGun, gunship);
+      show(btns.gsRkt, gunship);
       for (var f = 0; f < footBtns.length; f++) footBtns[f].style.display = 'none';
-      // leaving foot-aim behind when you get in
-      if (T.aim) { T.aim = false; if (btns.aim) btns.aim.style.background = ''; }
     }
 
     // drive-by auto-aims at the nearest side

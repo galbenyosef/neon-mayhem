@@ -11,7 +11,7 @@ var WEAPON_ORDER = ['fist', 'pistol', 'smg', 'shotgun', 'rifle'];
 
 GAME.combat = (function () {
   var aiming = false, lockTarget = null, lockIdx = 0;
-  var cooldown = 0, aimToggle = false, aimYawRef = 0;
+  var cooldown = 0, aimToggle = false, aimYawRef = 0, rmbWas = false;
   var reticle = null;
 
   function initReticle() {
@@ -202,7 +202,7 @@ GAME.combat = (function () {
   function update(dt) {
     var P = GAME.player, inp = GAME.input, T = inp.touch;
     cooldown -= dt;
-    if (P.state !== 'alive' || P.entering) { setAiming(false); inp.lmbPressed = false; return; }
+    if (P.state !== 'alive' || P.entering) { setAiming(false); aimToggle = false; inp.lmbPressed = false; return; }
 
     // weapon select
     for (var i = 0; i < WEAPON_ORDER.length; i++) {
@@ -216,6 +216,14 @@ GAME.combat = (function () {
     }
 
     if (GAME.keyPressed('Tab')) aimToggle = !aimToggle;
+    // A Tab-latched aim must never outlive the moment: releasing RMB ends
+    // aiming (latch included), and boarding a vehicle clears it. A stale
+    // latch used to survive car rides and hospital visits, after which RMB
+    // read as completely broken — aim was already stuck on, so holding or
+    // releasing the button changed nothing.
+    if (rmbWas && !inp.rmb) aimToggle = false;
+    rmbWas = inp.rmb;
+    if (P.inCar) aimToggle = false;
     var aimHeld = inp.rmb || aimToggle || T.aim;
     setAiming(aimHeld && !P.inCar);
 
@@ -265,7 +273,11 @@ GAME.combat = (function () {
     var settling = !!inp.lockGraceT && performance.now() - inp.lockGraceT < 450;
 
     if (P.inCar) {
-      var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
+      // no drive-by from an aircraft: the TALON's own weapons read LMB/FIRE,
+      // and the SMG going off alongside the chin gun was a double trigger —
+      // every burst of gunship fire also burned drive-by ammo sideways
+      var airCar = P.car && (P.car.spec.heli || P.car.spec.plane);
+      var hasSMG = !airCar && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       var left = GAME.key('KeyQ') || T.driveByL;
       var right = GAME.key('KeyE') || T.driveByR;
       var fireBtn = (inp.lmb && !settling) || T.fire;

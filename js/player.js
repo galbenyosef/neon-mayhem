@@ -341,7 +341,8 @@ function stepEnter(dt) {
     GAME.hud.message(car.spec.label, 1.6);
     // the radio comes on tuned to whatever the last driver left it on
     if (!car.spec.heli && !car.spec.plane) GAME.hud.radioPopup(GAME.audio.radio.randomStation());
-    if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
+    if (car.spec.gunship) GAME.hud.message('TALON — Space up · Shift down · WASD fly · LMB/GUN chin gun · RMB/RKT rockets · F to exit', 5);
+    else if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
     else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
     else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
     else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
