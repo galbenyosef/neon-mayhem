@@ -730,12 +730,16 @@ GAME.vehicles = (function () {
     // crash, and the first the player knew was waking up in hospital — the
     // fire fuse detonated a car they never realized was dying. Threshold
     // crossings now announce themselves, the way the aircraft already do.
-    if (car === pc && GAME.player.inCar && !car.spec.heli && !car.spec.plane) {
+    if (car === pc && GAME.player.inCar) {
+      // The fire is news for every hull, aircraft included: the airframe
+      // warnings say "damaged", never "burning", so a fuse lit under a
+      // landed heli used to burn in silence — and the blast a second after
+      // stepping out was a death nobody saw coming.
       if (car.stage >= 2 && car.stageWarn !== 2) {
         car.stageWarn = 2;
         GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
         GAME.audio.sting('busted');
-      } else if (car.stage === 1 && !car.stageWarn) {
+      } else if (car.stage === 1 && !car.stageWarn && !car.spec.heli && !car.spec.plane) {
         car.stageWarn = 1;
         GAME.hud.message('Your ride is smoking — it won\'t take much more.', 3);
       }
@@ -750,7 +754,7 @@ GAME.vehicles = (function () {
         car.hp = 1;
         car.fireFuse = car.stage >= 2 && car.fireFuse > 0 ? Math.min(car.fireFuse, 1.2) : 1.2;
         car.stage = 2;
-        if (car.stageWarn !== 2 && !car.spec.heli && !car.spec.plane) {
+        if (car.stageWarn !== 2) {
           car.stageWarn = 2;
           GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
           GAME.audio.sting('busted');
@@ -781,7 +785,11 @@ GAME.vehicles = (function () {
       // altitude counts: a wreck going up underneath you shouldn't catch you
       // while you're hanging off a parachute or standing on a roof
       var dy = Math.abs(p.pos.y - car.pos.y);
-      if (U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z) < 64 && dy < 7) GAME.playerDamage(55, 'explosion');
+      var dd = U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z);
+      // the blast fades with distance: standing over it is nearly fatal, and
+      // every step away is worth something — a flat 55 made "walked clear of
+      // the wreck" and "stood in the fireball" the same wound
+      if (dd < 64 && dy < 7) GAME.playerDamage(Math.round(75 - Math.sqrt(dd) * 6.8), 'explosion');
     }
     if (p.car === car) GAME.playerDamage(200, 'explosion');
     world.peds.forEach(function (ped) {

@@ -364,6 +364,10 @@ function forceExitCar(silent) {
   var P = GAME.player;
   if (!P.inCar) return;
   var car = P.car;
+  // bailing out of a burning ride resets the fuse to scramble length: the
+  // killing blow keeps its short cinematic fuse while you're aboard, but
+  // once you're out the door the blast should be a thing you can outwalk
+  if (car.fireFuse > 0 && !car.dead) car.fireFuse = Math.max(car.fireFuse, 2.5);
   car.controls = { throttle: 0, steer: 0, handbrake: false };
   car.occupied = null;
   var side = car.heading - Math.PI / 2;
