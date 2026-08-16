@@ -1,7 +1,7 @@
 GAME.hud = (function () {
   var el = {};
   var shownCash = 0, targetCash = 0;
-  var msgT = 0, zoneT = 0, lastZone = '';
+  var msgT = 0, countT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
   var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 560;
   var MAP_W = 1020, MAP_H = 560;   // world -520..1520 by -560..560, at 0.5 px/m
@@ -15,7 +15,7 @@ GAME.hud = (function () {
 
   function init() {
     ['minimap', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
-      'msg-line', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
+      'msg-line', 'count-big', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
       'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
       .forEach(function (id) { el[id] = $(id); });
@@ -689,6 +689,7 @@ GAME.hud = (function () {
       } else vl.style.display = 'none';
     }
     if (msgT > 0) { msgT -= dt; if (msgT <= 0) el['msg-line'].style.opacity = 0; }
+    if (countT > 0) { countT -= dt; if (countT <= 0) el['count-big'].style.opacity = 0; }
     if (radioT > 0) { radioT -= dt; if (radioT <= 0) el['radio-popup'].style.opacity = 0; }
     zoneT -= dt;
     if (zoneT <= 0) {
@@ -772,6 +773,16 @@ GAME.hud = (function () {
       el['msg-line'].style.opacity = 1;
       msgT = dur || 2.5;
     },
+    // the huge centre numeral for mission countdowns. Callers repeat it every
+    // frame while the count runs; it lets go of the screen on its own once
+    // they stop (which is how "GO!" gets its moment and then clears itself)
+    bigCount: function (text) {
+      var e = el['count-big'];
+      text = String(text);
+      if (e.textContent !== text) e.textContent = text;
+      e.style.opacity = 1;
+      countT = 0.8;
+    },
     radioPopup: function (name) {
       el['radio-popup'].textContent = '♪ ' + name;
       el['radio-popup'].style.opacity = 1;
@@ -835,6 +846,9 @@ GAME.hud = (function () {
         }
       }, 550);
     },
+    // the raw dimmer, for rituals that keep their own time (mission starts
+    // count the blackout in game ticks, so pausing pauses it)
+    fadeSet: function (v) { el['fade-layer'].style.opacity = v; },
     hideTitle: function () {
       el['title-screen'].style.display = 'none';
       document.getElementById('hud').style.display = 'block';

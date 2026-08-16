@@ -786,48 +786,63 @@ GAME.missions = (function () {
     GAME.track('mission-started-' + def.type);
     active = {
       def: def, t: 0, cpIndex: 0, score: 0,
-      timeLeft: def.time || 0, racers: [], state: 'countdown', countdown: def.type === 'race' ? 3.2 : 0,
+      timeLeft: def.time || 0, racers: [], state: 'fade', countdown: 3,
       // a fresh set of drops every time you take the run
       stops: def.type === 'courier' ? rollCourierStops(def) : null
     };
-    // orient first, before rivals form up on the (new) heading
+    // races and couriers line you up on the first objective — but the
+    // about-face happens behind a fade to black, because watching your own
+    // car spun to a new heading read as the game grabbing the wheel. Then
+    // everyone waits out the countdown; nothing starts until GO. The blackout
+    // runs on game time, not a timer: pausing holds it, and a throttled tab
+    // can't leave a mission stranded half-started.
     var first = def.type === 'race' ? def.cps[0] : active.stops ? active.stops[0] : null;
-    if (first) faceToward(first[0], first[1]);
-    if (def.type === 'race') {
-      // The field races what YOU race: turn up on a bike and the rivals are
-      // on bikes, turn up in a limo and it's a limo race. Rivals in sports
-      // cars against a player's motorcycle decided the race at the start line.
-      var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
-      for (var i = 0; i < 3; i++) {
-        var off = (i + 1) * 5;
-        var rx = def.start.x - Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-        var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-        var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
-        car.cpIndex = 0;
-        // rivals shrug off scrapes — a race should be decided on the road, not by
-        // one of them cooking off against a lamp post
-        car.hp = car.spec.hp * 5;
-        active.racers.push(car);
+    function arm() {
+      if (def.type === 'race' && (!P.inCar || !P.car)) {
+        // stepped out of the car during the blackout: scratch the start
+        cleanup();
+        GAME.hud.message('Race scratched — you left your ride.', 2.5);
+        return;
       }
-      GAME.hud.message('3...', 1);
-      setTimeout(function () { if (active) GAME.hud.message('2...', 1); }, 1000);
-      setTimeout(function () { if (active) GAME.hud.message('1...', 1); }, 2000);
-      setTimeout(function () { if (active) { GAME.hud.message('GO!', 1); } }, 3000);
-    } else if (def.type === 'rampage') {
-      // the rampage arsenal is on loan — remember it so it can be reclaimed at the
-      // end (otherwise the marker is a free-ammo dispenser on repeat)
-      active.grantWeapon = def.weapon;
-      active.grantAmmo = def.ammo;
-      active.grantHad = !!(P.weapons[def.weapon] && P.weapons[def.weapon].have);
-      GAME.combat.giveWeapon(def.weapon, def.ammo);
-      active.state = 'run';
-      active.topupT = 0;
-      spawnRampageTargets(14, 6);
-      GAME.hud.message('Cause $' + def.target + ' of mayhem! Wreck cars and crowds.', 3.5);
-    } else {
-      active.state = 'run';
-      GAME.hud.message('First delivery is marked. Go!', 3);
+      if (first) faceToward(first[0], first[1]);
+      if (def.type === 'race') {
+        // The field races what YOU race: turn up on a bike and the rivals are
+        // on bikes, turn up in a limo and it's a limo race. Rivals in sports
+        // cars against a player's motorcycle decided the race at the start line.
+        var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
+        for (var i = 0; i < 3; i++) {
+          var off = (i + 1) * 5;
+          var rx = def.start.x - Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
+          car.cpIndex = 0;
+          // rivals shrug off scrapes — a race should be decided on the road, not by
+          // one of them cooking off against a lamp post
+          car.hp = car.spec.hp * 5;
+          active.racers.push(car);
+        }
+      } else if (def.type === 'rampage') {
+        // the arsenal arrives on GO, and on loan — what was granted is
+        // remembered so it can be reclaimed at the end (otherwise the marker
+        // is a free-ammo dispenser on repeat), and a start that never reaches
+        // GO grants nothing, so there is nothing to claw back
+        active.goSetup = function () {
+          active.grantWeapon = def.weapon;
+          active.grantAmmo = def.ammo;
+          active.grantHad = !!(P.weapons[def.weapon] && P.weapons[def.weapon].have);
+          GAME.combat.giveWeapon(def.weapon, def.ammo);
+          active.topupT = 0;
+          spawnRampageTargets(14, 6);
+          GAME.hud.message('Cause $' + def.target + ' of mayhem! Wreck cars and crowds.', 3.5);
+        };
+      } else {
+        active.goSetup = function () { GAME.hud.message('First delivery is marked.', 3); };
+      }
+      active.state = 'countdown';
+      GAME.hud.missionObjective(objectiveText());
     }
+    if (first) { active.arm = arm; active.fadeT = 0.55; GAME.hud.fadeSet(1); }
+    else arm();
     setMarkersVisible(false);
     GAME.hud.missionStart(def.name, objectiveText());
     GAME.audio.pickup();
@@ -988,6 +1003,7 @@ GAME.missions = (function () {
     active = null;
     cpMarker.visible = false;
     setMarkersVisible(true);
+    GAME.hud.fadeSet(0);   // a start that dies mid-blackout takes the black with it
     GAME.hud.missionEnd();
     GAME.save();
   }
@@ -1176,11 +1192,32 @@ GAME.missions = (function () {
     // active mission
     var d2 = active.def;
     active.t += dt;
-    if (active.state === 'countdown') {
-      active.countdown -= dt;
+    if (active.state === 'fade' || active.state === 'countdown') {
+      // held on the line: the car sits, the rivals sit, no mission clock runs
       if (P.car) { P.car.controls.throttle = 0; P.car.speed *= 0.9; }
       for (var r0 = 0; r0 < active.racers.length; r0++) active.racers[r0].controls = { throttle: 0, steer: 0, handbrake: true };
-      if (active.countdown <= 0) { active.state = 'run'; active.t = 0; }
+      if (active.state === 'fade') {
+        active.fadeT -= dt;
+        if (active.fadeT <= 0) {
+          GAME.hud.fadeSet(0);
+          var armFn = active.arm; active.arm = null;
+          if (armFn) armFn();   // may scratch the start, which clears `active`
+        }
+        return;
+      }
+      if (active.state === 'countdown') {
+        active.countdown -= dt;
+        if (active.countdown <= 0) {
+          active.state = 'run'; active.t = 0;
+          GAME.hud.bigCount('GO!');
+          GAME.audio.pickup();
+          if (active.goSetup) { active.goSetup(); active.goSetup = null; }
+        } else {
+          var num = Math.max(1, Math.ceil(active.countdown));
+          if (num !== active.lastNum) { active.lastNum = num; GAME.audio.cashTick(); }
+          GAME.hud.bigCount(num);
+        }
+      }
       return;
     }
 
@@ -1408,14 +1445,14 @@ GAME.missions = (function () {
     notifyChaos: notifyChaos,
     objectiveText: objectiveText,
     getRoutePoints: function () {
-      if (!active || active.state === 'countdown') return null;
+      if (!active || active.state === 'fade' || active.state === 'countdown') return null;
       if (active.def.type === 'race') return active.raceRoute || active.def.cps.slice(active.cpIndex);
       if (active.courierRoute) return active.courierRoute; // courier / taxi / ambulance
       return null;
     },
     // the immediate target marker (checkpoint / stop / pickup / drop-off)
     getObjectivePoint: function () {
-      if (!active || active.state === 'countdown') return null;
+      if (!active || active.state === 'fade' || active.state === 'countdown') return null;
       return currentCp();
     },
     getBlips: function () {
