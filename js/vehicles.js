@@ -661,7 +661,7 @@ GAME.vehicles = (function () {
         car.hitCd = 0.25;
         damageCar(car, Math.min(32, impact * 1.5), 'wall');
         GAME.audio.crash(impact / 18);
-        GAME.fx.spawn(car.pos.x + nx, 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
+        GAME.fx.spawn(car.pos.x + nx, car.pos.y + 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
         if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
         // riders get thrown off in a hard wall hit
         if (car.spec.bike && car === GAME.player.car && GAME.player.onBike && impact > 9) {
@@ -698,7 +698,7 @@ GAME.vehicles = (function () {
           var dmg = Math.min(26, rel * 1.3);
           damageCar(a, dmg * 0.6, b); damageCar(b, dmg * 0.6, a);
           GAME.audio.crash(rel / 20);
-          GAME.fx.spawn((a.pos.x + b.pos.x) / 2, 0.8, (a.pos.z + b.pos.z) / 2, { count: 6, color: 0xffe0a0, spread: 3, life: 0.35 });
+          GAME.fx.spawn((a.pos.x + b.pos.x) / 2, (a.pos.y + b.pos.y) / 2 + 0.8, (a.pos.z + b.pos.z) / 2, { count: 6, color: 0xffe0a0, spread: 3, life: 0.35 });
           if (a === GAME.player.car || b === GAME.player.car) GAME.cameraShake = Math.min(1, rel / 18);
           var pc = GAME.player.car;
           if ((a === pc || b === pc) && rel > 6) {
@@ -765,9 +765,11 @@ GAME.vehicles = (function () {
     // player-caused if this blast (or the damage that led to it) traces to the player
     var byPlayer = !!(byPlayerIn || car.byPlayer);
     GAME.audio.explosion();
-    GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 9);
-    GAME.fx.spawn(car.pos.x, 1.2, car.pos.z, { count: 30, color: 0xff9030, spread: 7, vy: 5, life: 1.1, grav: -3 });
-    GAME.fx.spawn(car.pos.x, 1.5, car.pos.z, { count: 20, color: 0x333333, spread: 4, vy: 4, life: 1.6, grav: -0.5 });
+    // the blast happens where the CAR is — at world height 1.5 a car
+    // exploding on a bridge deck flashed under the roadway, unseen
+    GAME.fx.flash(car.pos.x, car.pos.y + 1.5, car.pos.z, 9);
+    GAME.fx.spawn(car.pos.x, car.pos.y + 1.2, car.pos.z, { count: 30, color: 0xff9030, spread: 7, vy: 5, life: 1.1, grav: -3 });
+    GAME.fx.spawn(car.pos.x, car.pos.y + 1.5, car.pos.z, { count: 20, color: 0x333333, spread: 4, vy: 4, life: 1.6, grav: -0.5 });
     var oldMat = car.mesh.userData.bodyMesh.material;
     car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
     if (oldMat && oldMat.dispose) oldMat.dispose();
@@ -1003,16 +1005,32 @@ GAME.vehicles = (function () {
       if (car.dead) {
         if (!car.deadT) car.deadT = 0;
         car.deadT += dt;
-        GAME.fx.spawn(car.pos.x, 1.2, car.pos.z, { count: 1, color: 0x222222, spread: 0.5, vy: 1.5, life: 1.4, grav: 0.2 });
+        GAME.fx.spawn(car.pos.x, car.pos.y + 1.2, car.pos.z, { count: 1, color: 0x222222, spread: 0.5, vy: 1.5, life: 1.4, grav: 0.2 });
         if (car.deadT > 14 && car !== P.car) { removeCar(car); continue; }
         continue;
       }
       if (car.stage >= 1) {
         car.smokeT -= dt;
         if (car.smokeT <= 0) {
-          car.smokeT = 0.12;
-          var col = car.stage >= 2 ? 0xff7020 : 0x555560;
-          GAME.fx.spawn(car.pos.x + fwdX(car) * 1.4, 1.0, car.pos.z + fwdZ(car) * 1.4, { count: 2, color: col, spread: 0.6, vy: 2, life: 0.8, grav: 0.5 });
+          // Burning reads like burning, wherever the car is. The emitter
+          // used to sit at WORLD height 1 m — a taxi cooking off on a bridge
+          // deck pushed its smoke and flames out nine metres BELOW the road,
+          // so the first visible sign of the fire was the detonation. And a
+          // stage-2 "fire" was two faint dots: it's a real blaze now —
+          // flames at the engine, black smoke rolling off, a flickering glow.
+          var bnY = car.pos.y + 1.0;
+          var bnX = car.pos.x + fwdX(car) * 1.4, bnZ = car.pos.z + fwdZ(car) * 1.4;
+          if (car.stage >= 2) {
+            car.smokeT = 0.09;
+            GAME.fx.spawn(bnX, bnY, bnZ, { count: 3, color: 0xff7020, spread: 0.8, vy: 2.6, life: 0.35, grav: 1.5 });
+            GAME.fx.spawn(bnX, bnY + 0.4, bnZ, { count: 2, color: 0xffc040, spread: 0.5, vy: 3.2, life: 0.25, grav: 1.5 });
+            GAME.fx.spawn(bnX, bnY + 0.8, bnZ, { count: 2, color: 0x2a2a2e, spread: 0.7, vy: 2.4, life: 1.3, grav: 0.6 });
+            car.fireGlowT = (car.fireGlowT || 0) - 0.09;
+            if (car.fireGlowT <= 0) { car.fireGlowT = 0.4; GAME.fx.flash(bnX, bnY + 0.4, bnZ, 1.6); }
+          } else {
+            car.smokeT = 0.12;
+            GAME.fx.spawn(bnX, bnY, bnZ, { count: 3, color: 0x555560, spread: 0.7, vy: 2.2, life: 1.0, grav: 0.5 });
+          }
         }
         if (car.stage >= 2) {
           car.fireFuse -= dt;
