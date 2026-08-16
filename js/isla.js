@@ -1043,6 +1043,28 @@ GAME.isla = (function () {
       }
     }
 
+    // VERDE MOTORS — the island's respray garage, on the port flat facing the
+    // town grid's western avenue. Same three-walls-and-roof as the mainland
+    // shops, mouth open to the street; the door point sits 12 m off the
+    // road's centreline so a car just driving past is never $100 lighter for
+    // it. Without one of these, every set of island stars meant a bridge run
+    // home to lose the heat.
+    (function () {
+      var G = { x: 920, z: 170 };
+      var gy = groundY(G.x, G.z);
+      b.addBox(G.x, gy + 4, G.z - 7, 24, 8, 2, 0, 0x585068, 0);
+      b.addBox(G.x, gy + 4, G.z + 7, 24, 8, 2, 0, 0x585068, 0);
+      b.addBox(G.x + 11, gy + 4, G.z, 2, 8, 12, 0, 0x585068, 0);
+      b.addBox(G.x, gy + 8.5, G.z, 26, 1.4, 17, 0, 0x484058, 0);
+      city.addSolid(G.x, G.z - 7, 24, 2, gy + 8);
+      city.addSolid(G.x, G.z + 7, 24, 2, gy + 8);
+      city.addSolid(G.x + 11, G.z, 2, 12, gy + 8);
+      city.addSign(sg, 18, G.x - 12.6, gy + 6.4, G.z, -Math.PI / 2, 12, 3);   // RESPRAY, over the mouth
+      city.addSign(sg, 31, G.x, gy + 6.6, G.z - 8.1, Math.PI, 13, 2.4);      // the house name, on the street corner face
+      reserve(G.x, G.z, 26);
+      city.pois.resprays.push({ x: G.x, z: G.z, door: { x: G.x - 14, z: G.z }, isla: true });
+    })();
+
     [POI.police, POI.hospital, POI.factory, POI.lighthouse, POI.marina,
       POI.container, POI.observatory, POI.helipad, POI.cove].forEach(function (P) {
       reserve(P.x, P.z, 42);
