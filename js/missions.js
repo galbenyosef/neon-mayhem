@@ -87,22 +87,24 @@ GAME.missions = (function () {
       cps: [[50, 50], [150, -50], [50, -250], [-50, -350], [-150, -250], [-150, -50], [-50, 50]]
     },
     // courier drops are generated fresh each run (see rollCourierStops)
-    // courier clocks are meant to be beaten narrowly, not strolled through.
-    // Legs run at 3x their old length — a delivery is a drive across town,
-    // not a hop round the block — and the clocks scaled with them.
-    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 228, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 330, legMax: 720 },
-    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 264, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 360, legMax: 780 },
-    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 240, start: { x: 364, z: 104 }, drops: 4, legMin: 300, legMax: 660 },
-    { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 60, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
-    { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 60, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
-    { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
+    // Courier clocks are set from the stopwatch, not from generosity: the
+    // sampled routes run 2.3-2.9 km and the race rivals prove ~22 m/s is what
+    // "competitive" means on these streets, so each clock is that drive plus
+    // a fifth for traffic and corners. A flat-out clean run beats them
+    // narrowly; a stroll does not finish.
+    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 130, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 330, legMax: 720 },
+    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 130, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 360, legMax: 780 },
+    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 115, start: { x: 364, z: 104 }, drops: 4, legMin: 300, legMax: 660 },
+    { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 30, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
+    { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 30, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
+    { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 30, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
     // Isla Verde's own work, and it stays over here — every checkpoint, drop
     // and target is on the island, so nothing ever asks you to cross mid-run.
     // Coordinates come from the island itself once it has registered.
     { id: 'race3', type: 'race', name: 'ALTA VERDE CLIMB', reward: 750, isla: 'climb', start: null, cps: null },
     { id: 'race4', type: 'race', name: 'MIRADOR RUN', reward: 800, isla: 'mirador', start: null, cps: null },
-    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 282, isla: 'port', start: null, drops: 4, legMin: 330, legMax: 720 },
-    { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 60, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
+    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 180, isla: 'port', start: null, drops: 4, legMin: 330, legMax: 720 },
+    { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 30, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
   ];
 
   // Island mission anchors, resolved after the island registers. A race's
@@ -279,7 +281,7 @@ GAME.missions = (function () {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
-      targets: [], timeLeft: 120, chimeT: 0, routeCp: null
+      targets: [], timeLeft: 60, chimeT: 0, routeCp: null
     };
     setMarkersVisible(false);
     updateCp();
@@ -305,8 +307,8 @@ GAME.missions = (function () {
       active.level++;
       active.sales = 0;
       active.quota += 2;
-      active.timeLeft += 55;
-      GAME.hud.message('ROUND ' + active.level + ' — +55s, sell ' + active.quota + '  ·  +$' + pay, 3.4);
+      active.timeLeft += 30;
+      GAME.hud.message('ROUND ' + active.level + ' — +30s, sell ' + active.quota + '  ·  +$' + pay, 3.4);
       GAME.audio.sting('win');
     } else {
       GAME.hud.message('Sold — +$' + pay + '  ·  ' + active.sales + ' / ' + active.quota, 2);
@@ -366,9 +368,9 @@ GAME.missions = (function () {
       // an ambulance fills up before running to the hospital; a cab takes one fare
       capacity: kind === 'ambulance' ? 3 : 1,
       level: 1, targets: [], aboard: 0,
-      // calls come in at 3x the distance now, so the shift clock starts
-      // (and refills — see completeFare) to match
-      timeLeft: kind === 'ambulance' ? 170 : 150,
+      // the opening clock covers the first call and a breath, no more — the
+      // shift is earned fare by fare (see completeFare)
+      timeLeft: kind === 'ambulance' ? 85 : 75,
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
@@ -659,9 +661,13 @@ GAME.missions = (function () {
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
     var msg = word + '! +$' + fare;
-    // each fare buys enough clock for the next long call and no more; the
-    // shift stays under pressure at the new 3x distances
-    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 85 : 90) + n * 12, 280);
+    // Each fare buys the next call and small change — measured, not guessed:
+    // a fare's legs route 0.8-1.4 km, which is 40-60 s at the pace the race
+    // rivals set, plus the kerbside pickup. The refill sits a shade above
+    // that, so a clean shift survives on its own speed and a sloppy one
+    // bleeds out; the low bank cap keeps even a hot streak on the clock.
+    active.timeLeft = Math.min(active.timeLeft + 55 + n * (kind === 'ambulance' ? 16 : 8),
+      kind === 'ambulance' ? 160 : 150);
 
     if (active.targets.length) {
       // still people waiting on this level — go back out for them
