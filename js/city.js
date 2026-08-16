@@ -1296,15 +1296,140 @@ GAME.city = (function () {
       { x: -168, z: -68, rot: Math.PI / 2, h: 4.2, len: 20 }
     ];
     var out = [], TARGET = 25;
-    // The chained jump (it used to be the second beach ramp): a boosted
-    // launcher aimed square at a strip building's west face, and the jump
-    // itself waiting ON the roof. Ride the launcher right and you land up
-    // there with speed for the second lip. Hand-placed against a building,
-    // so it skips the clearance checks that would (rightly) reject it.
-    var chainRoofY = city.surfaceY(2.2, 211.9);
-    if (chainRoofY > 6 && chainRoofY < 10) {
-      out.push({ x: -29.4, z: 211.9, rot: Math.PI / 2, w: 12, len: 26, h: chainRoofY + 0.4, boost: true, cap: 26 });
-      out.push({ x: 2.2, z: 211.9, rot: Math.PI / 2, w: 12, len: 22, h: 5.0, base: chainRoofY });
+    // Footprint-vs-carriageway clearance, 2 m margin. The old test looked
+    // only at a ramp's CENTER against the gridlines, so a 34 m deck placed
+    // beside a cross-street could stick nine metres of its base into the
+    // traffic lanes — a jump ramp parked in the middle of the road.
+    function roadClearRect(x, z, rot, w, len) {
+      var alongX = Math.abs(Math.sin(rot)) > 0.5;
+      var hx = (alongX ? len : w) / 2 + 2, hz = (alongX ? w : len) / 2 + 2;
+      for (var i = 0; i < R.length; i++) {
+        if (x + hx > R[i] - ROAD_HALF && x - hx < R[i] + ROAD_HALF) return false;
+        if (z + hz > R[i] - ROAD_HALF && z - hz < R[i] + ROAD_HALF) return false;
+      }
+      return true;
+    }
+    // The chained jump, staged like it means it: a boosted launcher a real
+    // gap back from a DEEP flat roof, so you land ON the roof with room to
+    // drive, and a second lip at the far parapet drops you back onto the
+    // street beyond. The host is found, not assumed: the deepest low roof
+    // that gives the launcher a legal pad, a clear flight in, a long
+    // rooftop run and an open landing. Capped at 26 m/s on an (h+0.4)-high
+    // deck, touchdown falls ~2.17*(h+0.4) past the lip; the gap is sized to
+    // put that five metres onto the roof.
+    function placeChain() {
+      var hosts = [];
+      var all = city.hash.all;
+      for (var i = 0; i < all.length; i++) {
+        var B = all[i];
+        if (B.tag !== 'building' || B.h === undefined || B.h < 7 || B.h > 11.5) continue;
+        var bdx = B.maxX - B.minX, bdz = B.maxZ - B.minZ;
+        if (Math.max(bdx, bdz) < 44 || Math.min(bdx, bdz) < 14) continue;
+        var bcx = (B.minX + B.maxX) / 2, bcz = (B.minZ + B.maxZ) / 2;
+        if (bcx < -450 || bcx > 340 || Math.abs(bcz) > 470) continue;
+        hosts.push(B);
+      }
+      hosts.sort(function (a, b) {
+        return Math.max(b.maxX - b.minX, b.maxZ - b.minZ) - Math.max(a.maxX - a.minX, a.maxZ - a.minZ);
+      });
+      for (var h2 = 0; h2 < hosts.length; h2++) {
+        var HB = hosts[h2];
+        var roofY2 = HB.h;
+        var axisX = (HB.maxX - HB.minX) >= (HB.maxZ - HB.minZ);
+        var lo = axisX ? HB.minX : HB.minZ, hiF = axisX ? HB.maxX : HB.maxZ;
+        var across = axisX ? (HB.minZ + HB.maxZ) / 2 : (HB.minX + HB.maxX) / 2;
+        // The cap is solved, not fixed: a faster launcher throws a longer,
+        // flatter arc, which lets the pad sit on the FAR side of a road
+        // hugging the building — you fly the whole street on the way up.
+        // vy at the lip equals cap*(h/26); drag bleeds ~20% of the throw in
+        // the air, so the drag-free touchdown distance is aimed twelve
+        // metres past the wall to actually set down a few metres onto it.
+        var CAPS = [26, 29, 32, 34, 36, 38];
+        for (var ci2 = 0; ci2 < CAPS.length; ci2++) {
+        var cap2 = CAPS[ci2];
+        var hL = roofY2 + 0.5;
+        var vyL = cap2 * hL / 26;
+        var dTouch = cap2 * (vyL + Math.sqrt(vyL * vyL + 48 * (hL - roofY2))) / 24;
+        var G = dTouch - 12;
+        for (var ds = 0; ds < 2; ds++) {
+          var sgn = ds === 0 ? 1 : -1;
+          var near = sgn > 0 ? lo : hiF, far = sgn > 0 ? hiF : lo;
+          var lipA = near - sgn * G;
+          var launchA = lipA - sgn * 13;                 // launcher centre (len 26)
+          var lx = axisX ? launchA : across, lz = axisX ? across : launchA;
+          var rot = axisX ? (sgn > 0 ? Math.PI / 2 : -Math.PI / 2) : (sgn > 0 ? 0 : Math.PI);
+          if (lx < -460 || lx > 386 || Math.abs(lz) > 470) continue;
+          if (city.isInWater(lx, lz) || city.inAirport(lx, lz)) continue;
+          if (!roadClearRect(lx, lz, rot, 12, 26)) continue;
+          // the launcher pad itself must stand on open ground
+          var pad = city.hash.query(lx, lz, 20), blocked = false;
+          var phx = (axisX ? 26 : 12) / 2 + 1.5, phz = (axisX ? 12 : 26) / 2 + 1.5;
+          for (var pb = 0; pb < pad.length; pb++) {
+            var q2 = pad[pb];
+            if (lx + phx > q2.minX && lx - phx < q2.maxX && lz + phz > q2.minZ && lz - phz < q2.maxZ) { blocked = true; break; }
+          }
+          if (blocked) continue;
+          // a capped booster hauls any entry speed up to its cap on the deck
+          // itself, so it needs a mouthful of approach, not a runway: 20 m
+          var app = true;
+          for (var as2 = 2; as2 <= 20 && app; as2 += 3) {
+            var aA = launchA - sgn * (13 + as2);
+            for (var aw2 = -1; aw2 <= 1 && app; aw2++) {
+              var apx = axisX ? aA : across + aw2 * 6;
+              var apz = axisX ? across + aw2 * 6 : aA;
+              var ab2 = city.hash.query(apx, apz, 2.5);
+              for (var ai2 = 0; ai2 < ab2.length; ai2++) {
+                var q3 = ab2[ai2];
+                if (apx > q3.minX - 1.5 && apx < q3.maxX + 1.5 && apz > q3.minZ - 1.5 && apz < q3.maxZ + 1.5) { app = false; break; }
+              }
+            }
+          }
+          if (!app) continue;
+          // clear flight in (nothing near roof height between lip and wall),
+          // and an open landing past the far parapet — street is fair game,
+          // towers are not, and neither is the sea
+          var ok2 = true;
+          for (var t2 = 2; t2 < G - 2 && ok2; t2 += 4) {
+            var sx2 = (axisX ? lipA + sgn * t2 : across), sz2 = (axisX ? across : lipA + sgn * t2);
+            var fb = city.hash.query(sx2, sz2, 7);
+            for (var fi = 0; fi < fb.length; fi++) {
+              if (fb[fi] !== HB && fb[fi].h !== undefined && fb[fi].h > roofY2 - 2) { ok2 = false; break; }
+            }
+          }
+          if (!ok2) continue;
+          // The drop is metered too: ramp2 is a capped strip (22 m/s), so
+          // the landing falls a known ~30 m past the parapet. The corridor
+          // check covers that plus margin; thin posts (lamps) don't count —
+          // only real massing closes a landing zone.
+          for (var t3 = 4; t3 <= 40 && ok2; t3 += 4) {
+            var lx2 = (axisX ? far + sgn * t3 : across), lz2 = (axisX ? across : far + sgn * t3);
+            if (lx2 < -466 || lx2 > 392 || Math.abs(lz2) > 472 || city.isInWater(lx2, lz2)) { ok2 = false; break; }
+            var lb = city.hash.query(lx2, lz2, 7);
+            for (var li = 0; li < lb.length; li++) {
+              var lbb = lb[li];
+              if (lbb === HB || lbb.h === undefined || lbb.h <= 4) continue;
+              if (Math.min(lbb.maxX - lbb.minX, lbb.maxZ - lbb.minZ) < 3) continue;   // a post, not a wall
+              ok2 = false; break;
+            }
+          }
+          if (!ok2) continue;
+          // launcher over the roofline, and the second lip at the far edge
+          out.push({ x: lx, z: lz, rot: rot, w: 12, len: 26, h: hL, boost: true, cap: cap2 });
+          var c2a = far - sgn * (0.5 + 8);               // ramp2 centre (len 16), lip at the edge
+          out.push({ x: axisX ? c2a : across, z: axisX ? across : c2a, rot: rot, w: 12, len: 16, h: 4.6, base: roofY2, boost: true, cap: 22 });
+          return true;
+        }
+        }
+      }
+      return false;
+    }
+    if (!placeChain()) {
+      // fallback: the old hand-placed pair against the strip building
+      var chainRoofY = city.surfaceY(2.2, 211.9);
+      if (chainRoofY > 6 && chainRoofY < 10) {
+        out.push({ x: -29.4, z: 211.9, rot: Math.PI / 2, w: 12, len: 26, h: chainRoofY + 0.4, boost: true, cap: 26 });
+        out.push({ x: 2.2, z: 211.9, rot: Math.PI / 2, w: 12, len: 22, h: 5.0, base: chainRoofY });
+      }
     }
     // ramps come in four sizes so no two jumps feel the same; every third one
     // gets a booster strip that slams the throttle open as you ride up it
@@ -1387,7 +1512,8 @@ GAME.city = (function () {
         // keep the hand-placed direction if it lands, else fire it the other way
         var arot = an.rot, aok = false;
         for (var f = 0; f < 2; f++) {
-          if (landingOk(an.x, an.z, arot, an.h, an.len, abst) && approachClear(an.x, an.z, arot, 12, an.len)) { aok = true; break; }
+          if (roadClearRect(an.x, an.z, arot, 12, an.len) &&
+            landingOk(an.x, an.z, arot, an.h, an.len, abst) && approachClear(an.x, an.z, arot, 12, an.len)) { aok = true; break; }
           arot += Math.PI;
         }
         if (!aok) continue;
@@ -1412,7 +1538,8 @@ GAME.city = (function () {
           if (offRoad(vx, vz) && ok(vx, vz)) {
             var vrot = side > 0 ? 0 : Math.PI, vok = false;
             for (var fv = 0; fv < 2; fv++) {
-              if (landingOk(vx, vz, vrot, shape.h, shape.len, bst) && approachClear(vx, vz, vrot, shape.w, shape.len)) { vok = true; break; }
+              if (roadClearRect(vx, vz, vrot, shape.w, shape.len) &&
+                landingOk(vx, vz, vrot, shape.h, shape.len, bst) && approachClear(vx, vz, vrot, shape.w, shape.len)) { vok = true; break; }
               vrot += Math.PI;
             }
             if (vok) { out.push(varyRamp(vx, vz, vrot, out.length)); continue; }
@@ -1423,7 +1550,8 @@ GAME.city = (function () {
           if (hx < 340 && offRoad(hx, hz) && ok(hx, hz)) {
             var hrot = side > 0 ? Math.PI / 2 : -Math.PI / 2, hok = false;
             for (var fh = 0; fh < 2; fh++) {
-              if (landingOk(hx, hz, hrot, shape.h, shape.len, bst) && approachClear(hx, hz, hrot, shape.w, shape.len)) { hok = true; break; }
+              if (roadClearRect(hx, hz, hrot, shape.w, shape.len) &&
+                landingOk(hx, hz, hrot, shape.h, shape.len, bst) && approachClear(hx, hz, hrot, shape.w, shape.len)) { hok = true; break; }
               hrot += Math.PI;
             }
             if (!hok) continue;

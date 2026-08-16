@@ -616,8 +616,12 @@ GAME.vehicles = (function () {
     var afx = Math.abs(fx), afz = Math.abs(fz);
     for (var bi = 0; bi < boxes.length; bi++) {
       var b = boxes[bi];
-      // jumped clear of it — don't clip a car that's sailing over a fence
-      if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
+      // Jumped clear of it — or STANDING ON it. A car parked on a roof sits
+      // at exactly the box's top, and the old `top < y - 0.3` test still
+      // counted the building as a wall — the collider shoved any car that
+      // landed on a roof straight off the edge, which is why the rooftop leg
+      // of the chain jump never held. Same rule the on-foot check uses.
+      if (b.h !== undefined && b.h <= car.pos.y + 0.3) continue;
       // and don't clip a car driving under one: a bridge parapet belongs to
       // the deck it stands on, not to the road it crosses over
       if (b.minY !== undefined && car.pos.y < b.minY - 1) continue;
