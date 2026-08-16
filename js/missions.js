@@ -194,6 +194,13 @@ GAME.missions = (function () {
   // closer than the radius asked for, which made every fare a short hop.
   function randomRoadPoint(fromX, fromZ, minR, maxR) {
     var best = null, bestErr = 1e18;
+    // '' means over water — which includes a BRIDGE DECK. A crossing connects
+    // two landmasses, so a run started mid-bridge may be sent to either side.
+    // Comparing every candidate against '' used to reject them all, and the
+    // fallback then returned the caller's own position: a taxi shift started
+    // on a bridge kept declaring the driver to be the pickup, and the ped it
+    // spawned at their feet promptly vanished — "your fare is gone", forever.
+    var fromIsle = GAME.city.islandIdAt(fromX, fromZ);
     for (var t = 0; t < 60; t++) {
       var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, minR, maxR);
       var rp = GAME.city.nearestRoadPoint(fromX + Math.cos(a) * r, fromZ + Math.sin(a) * r);
@@ -202,7 +209,7 @@ GAME.missions = (function () {
       if (GAME.city.isInWater(rp.x, rp.z)) continue;
       // stay on the landmass you started on: a courier leg that crosses the
       // channel is not a delivery run, it is a swim
-      if (GAME.city.islandIdAt(rp.x, rp.z) !== GAME.city.islandIdAt(fromX, fromZ)) continue;
+      if (fromIsle && GAME.city.islandIdAt(rp.x, rp.z) !== fromIsle) continue;
       // nudge onto the sidewalk edge, clear of the driving lanes
       var sgn = Math.random() < 0.5 ? 1 : -1;
       var off = rp.axis === 'net' ? [Math.cos(rp.heading) * 9 * sgn, -Math.sin(rp.heading) * 9 * sgn]
@@ -214,7 +221,10 @@ GAME.missions = (function () {
       var err = d < minR ? minR - d : d - maxR;
       if (err < bestErr) { bestErr = err; best = [px, pz]; }
     }
-    return best || [Math.round(fromX), Math.round(fromZ)];
+    if (best) return best;
+    // last resort: a real road point, never the caller's own position
+    var fb = GAME.city.nearestRoadPoint(fromX, fromZ);
+    return [Math.round(fb.x), Math.round(fb.z)];
   }
 
   // a route that stays on the streets: road-graph nodes, then in along the
@@ -594,8 +604,10 @@ GAME.missions = (function () {
     var hs = GAME.city.pois.hospitals, best = null, bd = 1e18;
     var here = GAME.city.islandIdAt(f.x, f.z);
     for (var hi = 0; hi < hs.length; hi++) {
-      // the run stays on this landmass — a shift never sends you over a bridge
-      if (GAME.city.islandIdAt(hs[hi].x, hs[hi].z) !== here) continue;
+      // the run stays on this landmass — a shift never sends you over a
+      // bridge. Mid-crossing ('' — the deck is over water) either side's
+      // hospital is fair: the bridge leads to both.
+      if (here && GAME.city.islandIdAt(hs[hi].x, hs[hi].z) !== here) continue;
       var dd = U.dist2(f.x, f.z, hs[hi].x, hs[hi].z);
       if (dd < bd) { bd = dd; best = hs[hi]; }
     }
