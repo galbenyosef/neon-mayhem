@@ -1477,6 +1477,44 @@ GAME.isla = (function () {
         nodes[i].nb.push(nodes[k]); nodes[k].nb.push(nodes[i]);
       }
     }
+    // The proximity rule stitches junctions, but it cannot reach a road that
+    // never comes near another: the promenade runs a full block off the
+    // street grid, and the hill spur dies out short of the ring road. A
+    // stranded road strands the router — ask it for a path into a piece it
+    // cannot reach and it answers with a straight line through the
+    // buildings. So: flood the graph, and while more than one piece remains,
+    // join the closest pair of nodes between the largest piece and the rest.
+    // The seam lands on the shortest real gap, which is where you would
+    // actually drive across.
+    for (;;) {
+      var comps = [];
+      for (i = 0; i < nodes.length; i++) nodes[i].comp = -1;
+      for (i = 0; i < nodes.length; i++) {
+        if (nodes[i].comp >= 0) continue;
+        var stack = [nodes[i]], mem = [];
+        nodes[i].comp = comps.length;
+        while (stack.length) {
+          var nd2 = stack.pop(); mem.push(nd2);
+          for (k = 0; k < nd2.nb.length; k++) {
+            if (nd2.nb[k].comp < 0) { nd2.nb[k].comp = comps.length; stack.push(nd2.nb[k]); }
+          }
+        }
+        comps.push(mem);
+      }
+      if (comps.length <= 1) break;
+      comps.sort(function (a, b) { return b.length - a.length; });
+      var main = comps[0], bp = null, bq = null, bd = 1e18;
+      for (i = 1; i < comps.length; i++) {
+        for (k = 0; k < comps[i].length; k++) {
+          for (var m = 0; m < main.length; m++) {
+            var dd = U.dist2(comps[i][k].x, comps[i][k].z, main[m].x, main[m].z);
+            if (dd < bd) { bd = dd; bp = comps[i][k]; bq = main[m]; }
+          }
+        }
+      }
+      bp.nb.push(bq); bq.nb.push(bp);
+    }
+    for (i = 0; i < nodes.length; i++) delete nodes[i].comp;
     return nodes;
   }
   // where each bridge meets the mainland and the island, so the two graphs join
