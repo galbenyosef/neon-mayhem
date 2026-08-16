@@ -568,6 +568,9 @@ function updateOnFoot(dt) {
     }
   }
   P.pos.x = nx; P.pos.z = nz;
+  // the closed channel's line stops walkers too — parachuting onto the
+  // bridge deck past the barrier used to leave a free stroll to the island
+  if (GAME.aircraft) GAME.aircraft.enforceAirspace(P.pos);
   if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
   var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
@@ -696,6 +699,9 @@ function updateDriving(dt) {
     if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
     return;
   }
+  // ground vehicles answer to the closed channel's line too (a truck that
+  // hopped the barrier onto the bridge deck is not a loophole)
+  if (GAME.aircraft) GAME.aircraft.enforceAirspace(car.pos);
   var c = car.controls;
   if (GAME.autopilot) {
     if (!car.ai || car.ai.mode !== 'traffic') car.ai = { mode: 'traffic', desired: 13, laneX: 0, laneZ: 0 };

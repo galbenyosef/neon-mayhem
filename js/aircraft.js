@@ -22,6 +22,17 @@ GAME.aircraft = (function () {
     else if (warnCount === 2) GAME.hud.message('RESTRICTED AIRSPACE — FINAL WARNING. Turn back NOW.', 2.5);
     else if (GAME.police.airspaceStrike) GAME.police.airspaceStrike();
   }
+  // The restriction starts at SEA LEVEL, not at altitude. The barrier gate
+  // and the aircraft clamp used to be the only teeth the closed channel had:
+  // parachute down onto the bridge deck past the gate and nothing stopped a
+  // stroll to the island. Now the line at x=560 stops ANYTHING — a walker on
+  // the deck, a car that hopped the gate, a drifting canopy — with the same
+  // clamp and the same three-strike ladder the aircraft get.
+  function enforceAirspace(pos) {
+    var lim = airLimit();
+    if (pos.x > lim.maxX) pos.x = lim.maxX;
+    warnAirspace(pos.x, lim);
+  }
 
   // The airframe wears its damage out loud. Hard landings and wall grazes
   // chip aircraft hp silently, and the first anyone knew was the explosion
@@ -363,6 +374,8 @@ GAME.aircraft = (function () {
     P.pos.x += wx * 6.5 * dt;
     P.pos.z += wz * 6.5 * dt;
     P.pos.y -= 4.5 * dt;
+    // a canopy is still traffic in the restricted zone — no drifting across
+    enforceAirspace(P.pos);
     if (mx || mz) P.heading = U.angleLerp(P.heading, Math.atan2(wx, wz), Math.min(1, dt * 5));
 
     // land on whatever's below — street or a rooftop
@@ -411,6 +424,7 @@ GAME.aircraft = (function () {
     updatePlane: updatePlane,
     startParachute: startParachute,
     updateParachute: updateParachute,
+    enforceAirspace: enforceAirspace,
     get parachuting() { return GAME.player.parachuting; }
   };
 })();
