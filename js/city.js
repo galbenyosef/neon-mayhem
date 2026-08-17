@@ -363,7 +363,9 @@ GAME.city = (function () {
     // storefronts — the shops are real buildings with their names in lights
     // (slots consumed by js/shops.js; keep this order in sync with SIGN_SLOT there)
     'ROSA HARDWARE', 'VERDE HARDWARE', 'THREADS', 'CORTES CUTS',
-    'GRAN ROSA MOTORS', 'THE LUCKY GULL', 'DOCKSIDE FLAT', 'STRIP CONDO', 'MARINA VILLA'];
+    'GRAN ROSA MOTORS', 'THE LUCKY GULL', 'DOCKSIDE FLAT', 'STRIP CONDO', 'MARINA VILLA',
+    // civic lettering for the landmark dressing (43, 44)
+    'EMERGENCY', 'DEPARTURES'];
   var SIGN_COLORS = ['#ff4fa3', '#38e8ff', '#ffe14f', '#7dff6a', '#ff8a3d', '#c86bff', '#ff5d5d', '#59ffc8'];
   function signAtlas() {
     var cv = document.createElement('canvas');
@@ -380,7 +382,8 @@ GAME.city = (function () {
     for (var i = 0; i < SIGN_TEXTS.length; i++) {
       var col = i % 2, row = Math.floor(i / 2);
       var x = col * 512, y = row * ROW;
-      var color = SIGN_TEXTS[i] === 'HOSPITAL' ? '#ff6a6a' : SIGN_TEXTS[i] === 'POLICE' ? '#5aa0ff' : SIGN_COLORS[i % SIGN_COLORS.length];
+      var color = SIGN_TEXTS[i] === 'HOSPITAL' || SIGN_TEXTS[i] === 'EMERGENCY' ? '#ff6a6a'
+        : SIGN_TEXTS[i] === 'POLICE' ? '#5aa0ff' : SIGN_COLORS[i % SIGN_COLORS.length];
       g.save();
       g.font = 'italic 900 ' + FONT + 'px "Segoe UI", Arial, sans-serif';
       g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -404,6 +407,23 @@ GAME.city = (function () {
     g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(cv);
   }
+  city.glowTexture = radialGlowTexture;
+
+  // ---------- kinetic props ----------
+  // Single live meshes for the handful of things that turn, blink or breathe.
+  // Everything else stays in the static batches; these are the exceptions
+  // that make a landmark read as switched on.
+  city.kinetics = [];
+  function kmesh(w, h, d, color, x, y, z, k, matOpts) {
+    var mo = { color: color };
+    if (matOpts) for (var mk in matOpts) mo[mk] = matOpts[mk];
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial(mo));
+    m.position.set(x, y, z);
+    city.scene.add(m);
+    if (k) { k.m = m; city.kinetics.push(k); }
+    return m;
+  }
+  city.kmesh = kmesh;
 
   // ---------- build ----------
   city.pois.stations.push(city.pois.police);
@@ -624,9 +644,13 @@ GAME.city = (function () {
 
   function buildPOIs(batches, atlas) {
     var P = city.pois;
-    // hospitals (the island builds its own; this is Costa Rosa's). Dressed
-    // like the institution it is, not a white shoebox: banded facade, an
-    // emergency canopy on columns, and a red cross you can read from the air.
+    // soft pools of light under the civic glow — one additive mesh for all of
+    // them, tinted per quad, so a lantern or a canopy lights its pavement
+    var pools = new GeoBatch();
+    // hospitals (the island builds its own; this is Costa Rosa's). The
+    // universal read, per the vision: white slab, a red cross TOWER you can
+    // see down the avenue, a red-underlit EMERGENCY canopy you can drive
+    // beneath, and cool lit window bands. Not a white shoebox.
     P.hospitals.forEach(function (H) {
       if (H.isla) return;
       batches.generic.addBox(H.x, 9, H.z - 12, 60, 18, 28, 0, 0xd8e8f0, 28);
@@ -640,17 +664,35 @@ GAME.city = (function () {
         batches.generic.addBox(H.x + c[0], 18.35, H.z - 12 + c[1], c[2], 0.7, c[3], 0, 0xb8ccd8, 0);
       });
       batches.generic.addBox(H.x - 22, 20.4, H.z - 12, 10, 4, 10, 0, 0xc8dce8, 0);    // plant room
-      // emergency canopy over the entrance
-      batches.generic.addBox(H.x, 4.6, H.z + 4.4, 20, 0.7, 6, 0, 0xc05a6a, 0);
-      [-8, 8].forEach(function (cx2) {
-        batches.generic.addBox(H.x + cx2, 2.3, H.z + 6.6, 0.7, 4.6, 0.7, 0, 0xe8f0f4, 0);
+      // the cross tower: an ivory fin on the front corner, taller than the
+      // roof, wearing a red cross on three faces — the thing you steer by
+      batches.generic.addBox(H.x + 26, 13, H.z + 1, 4, 26, 4, 0, 0xe6f0f6, 0);
+      addSolid(H.x + 26, H.z + 1, 4, 4, 26);
+      [[0, 2.15, 0], [-2.15, 0.9, Math.PI / 2], [2.15, 0.9, Math.PI / 2]].forEach(function (cf) {
+        batches.marks.addBox(H.x + 26 + cf[0], 19.5, H.z + 1 + cf[1], cf[2] ? 0.28 : 1.5, 10, cf[2] ? 1.5 : 0.28, 0, 0xe23a4a, 0);
+        batches.marks.addBox(H.x + 26 + cf[0], 21.6, H.z + 1 + cf[1], cf[2] ? 0.26 : 5, 1.7, cf[2] ? 5 : 0.26, 0, 0xe23a4a, 0);
       });
-      // the cross, proud of the facade and again flat on the roof
-      batches.marks.addBox(H.x + 20, 12.5, H.z + 2.35, 1.6, 6, 0.3, 0, 0xe23a4a, 0);
-      batches.marks.addBox(H.x + 20, 12.5, H.z + 2.35, 4.8, 1.8, 0.28, 0, 0xe23a4a, 0);
+      // lit ward bands across the facade, cool white — a hospital never sleeps
+      [7, 10.5, 14].forEach(function (wy) {
+        batches.marks.addBox(H.x - 4, wy, H.z + 2.07, 46, 0.8, 0.12, 0, 0xcfe8f4, 0);
+      });
+      // the EMERGENCY canopy: drive-through height, red glow underneath,
+      // the word itself on the fascia, and a red wash on the bay beneath
+      batches.generic.addBox(H.x, 5.3, H.z + 5.4, 22, 0.8, 7, 0, 0xe8f0f4, 0);
+      batches.marks.addBox(H.x, 4.82, H.z + 5.4, 21, 0.18, 6.2, 0, 0xe23a4a, 0);
+      [[-9.5, 3.2], [9.5, 3.2], [-9.5, 7.6], [9.5, 7.6]].forEach(function (cc) {
+        batches.generic.addBox(H.x + cc[0], 2.45, H.z + cc[1], 0.7, 4.9, 0.7, 0, 0xe8f0f4, 0);
+      });
+      addSign(batches.signs, 43, H.x, 5.35, H.z + 9.05, 0, 16, 1.7);
+      pools.addGroundQuad(H.x, 0.1, H.z + 5.4, 24, 10, 0, 0x8a1622);
+      batches.marks.addGroundQuad(H.x - 8, 0.09, H.z + 5.4, 0.5, 6, 0, 0xe8e8ec);
+      batches.marks.addGroundQuad(H.x + 8, 0.09, H.z + 5.4, 0.5, 6, 0, 0xe8e8ec);
+      // roof cross, for the air
       batches.marks.addGroundQuad(H.x, 18.08, H.z - 12, 2.2, 8, 0, 0xe23a4a);
       batches.marks.addGroundQuad(H.x, 18.08, H.z - 12, 8, 2.2, 0, 0xe23a4a);
-      addSign(batches.signs, 19, H.x, 14, H.z + 2.3, 0, 30, 5);
+      addSign(batches.signs, 19, H.x - 6, 15.2, H.z + 2.3, 0, 26, 4.4);
+      // the beacon over the cross tower, blinking ambulance-red
+      kmesh(0.7, 0.7, 0.7, 0xff3b4e, H.x + 26, 26.8, H.z + 1, { blink: 1.6, duty: 0.55 });
     });
     // The find: a helipad crowning a downtown tower, with a helicopter on it.
     // It shows on no map — the way onto it is out of the sky, a parachute off
@@ -672,18 +714,37 @@ GAME.city = (function () {
     batches.marks.addGroundQuad(padX - 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
     batches.marks.addGroundQuad(padX + 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
     batches.marks.addGroundQuad(padX, roofY + 0.12, padZ, 3.6, 1, 0, 0xf0d020);
-    // corner ring segments, drawn as four bars so it reads from the air
+    // the pad ring breathes now — four bars in their own little mesh, pulsing
+    // so the pad can be found from the air the way the vision asks
+    var ringB = new GeoBatch();
     [[-6.6, 0, 1.2, 13.6], [6.6, 0, 1.2, 13.6], [0, -6.6, 13.6, 1.2], [0, 6.6, 13.6, 1.2]].forEach(function (q) {
-      batches.marks.addGroundQuad(padX + q[0], roofY + 0.1, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
+      ringB.addGroundQuad(padX + q[0], roofY + 0.1, padZ + q[1], q[2], q[3], 0, 0x3ac8e0);
     });
+    var ringMesh = new THREE.Mesh(ringB.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }));
+    ringMesh.matrixAutoUpdate = false;
+    city.scene.add(ringMesh);
+    city.kinetics.push({ m: ringMesh, pulse: 2.1, lo: 0.35, hi: 0.95 });
+    // the corporate crown: a lit band under the parapet, and aircraft-warning
+    // reds on the corners blinking in alternating pairs — the downtown
+    // silhouette is the one with the moving lights
+    [[0, -14.9, 29.4, 0.5], [0, 14.9, 29.4, 0.5], [-14.9, 0, 0.5, 28.6], [14.9, 0, 0.5, 28.6]].forEach(function (cb) {
+      batches.marks.addBox(HT.x + cb[0], HT.h - 1.6, HT.z + cb[1], cb[2], 0.7, cb[3], 0, 0x8fb4ff, 0);
+    });
+    [[-14.2, -14.2, 0], [14.2, 14.2, 0], [-14.2, 14.2, 0.7], [14.2, -14.2, 0.7]].forEach(function (bc) {
+      kmesh(0.55, 0.55, 0.55, 0xff2f3e, HT.x + bc[0], HT.h + 1.55, HT.z + bc[1], { blink: 1.4, duty: 0.5, phase: bc[2] });
+    });
+    addSign(batches.signs, 21, HT.x, HT.h - 5.5, HT.z - 15.1, Math.PI, 22, 3.2);
+    addSign(batches.signs, 21, HT.x, HT.h - 5.5, HT.z + 15.1, 0, 22, 3.2);
     city.roofHelipad = { x: padX, z: padZ, y: roofY };
     // the find has to be findable: the tower shows from half the map, so the
     // helicopter on it exists at long range instead of popping in at 210 m —
     // an empty pad seen from the strip read as "there is no helicopter"
     city.parkedSpots.push({ x: padX, z: padZ, y: roofY, heading: Math.PI / 2, vtype: 'helicopter', range: 420, despawn: 480 });
 
-    // police station (Costa Rosa's; the island builds its own): navy base
-    // band, a columned portico, blue lamps flanking the door, flag mast
+    // police station (Costa Rosa's; the island builds its own): a navy deco
+    // fortress, per the vision — raised steps to the portico, twin glowing
+    // blue lantern globes (the oldest cop-shop signal there is), a pulsing
+    // blue parapet band like a lightbar at rest, and the badge on the face
     batches.generic.addBox(P.police.x, 7, P.police.z + 10, 70, 14, 26, 0, 0x8a94c0, 28);
     addSolid(P.police.x, P.police.z + 10, 70, 26, 14);
     batches.generic.addBox(P.police.x, 1.4, P.police.z + 10, 70.6, 2.8, 26.6, 0, 0x2c3a6a, 0);   // base band
@@ -695,14 +756,37 @@ GAME.city = (function () {
     [-6, 6].forEach(function (cx3) {
       batches.generic.addBox(P.police.x + cx3, 2.45, P.police.z - 6.2, 0.8, 4.9, 0.8, 0, 0xc8d0e8, 0);
     });
-    // blue lamps either side of the door (basic material: they read at night)
-    [-8.6, 8.6].forEach(function (cx4) {
-      batches.marks.addBox(P.police.x + cx4, 4.2, P.police.z - 3.2, 0.6, 0.9, 0.6, 0, 0x4da3ff, 0);
+    // steps up to the doors
+    batches.generic.addBox(P.police.x, 0.18, P.police.z - 6.9, 16, 0.36, 1.6, 0, 0x9aa4c4, 0);
+    batches.generic.addBox(P.police.x, 0.5, P.police.z - 5.8, 14.5, 0.32, 1.3, 0, 0x9aa4c4, 0);
+    // lantern globes on posts flanking the steps, with light on the pavement
+    [-5.6, 5.6].forEach(function (lx) {
+      batches.generic.addBox(P.police.x + lx, 1.5, P.police.z - 8.4, 0.35, 3.0, 0.35, 0, 0x3a4472, 0);
+      batches.marks.addBox(P.police.x + lx, 3.3, P.police.z - 8.4, 0.8, 0.9, 0.8, 0, 0x66b4ff, 0);
+      pools.addGroundQuad(P.police.x + lx, 0.1, P.police.z - 8.4, 9, 9, 0, 0x1c4a9a);
     });
+    // cool light over the doors
+    batches.marks.addBox(P.police.x, 5.65, P.police.z - 3.1, 14, 0.35, 0.16, 0, 0xbcd7ff, 0);
+    // the badge: shield and star over the portico
+    batches.marks.addBox(P.police.x, 9.2, P.police.z - 3.12, 3.0, 3.4, 0.2, 0, 0x2456c8, 0);
+    batches.marks.addBox(P.police.x, 9.2, P.police.z - 3.2, 2.0, 2.3, 0.14, 0, 0xdce8ff, 0);
+    batches.marks.addBox(P.police.x, 9.2, P.police.z - 3.3, 0.8, 0.8, 0.1, 0, 0x2456c8, 0);
+    // parapet band, breathing slow blue — its own mesh so it can pulse
+    var pbB = new GeoBatch();
+    [[0, -13.05, 69.8, 0.45], [0, 13.05, 69.8, 0.45], [-34.9, 0, 0.45, 25.2], [34.9, 0, 0.45, 25.2]].forEach(function (pb) {
+      pbB.addBox(P.police.x + pb[0], 13.75, P.police.z + 10 + pb[1], pb[2], 0.5, pb[3], 0, 0x3a78e8, 0);
+    });
+    var pbMesh = new THREE.Mesh(pbB.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }));
+    pbMesh.matrixAutoUpdate = false;
+    city.scene.add(pbMesh);
+    city.kinetics.push({ m: pbMesh, pulse: 1.5, lo: 0.4, hi: 0.95 });
     batches.generic.addBox(P.police.x + 28, 9, P.police.z - 2, 0.4, 18, 0.4, 0, 0xb8c0d8, 0);     // mast
     batches.marks.addBox(P.police.x + 29.2, 16.5, P.police.z - 2, 2.4, 1.4, 0.1, 0, 0x4da3ff, 0); // pennant
-    addSign(batches.signs, 20, P.police.x, 11, P.police.z - 3.3, Math.PI, 26, 4.5);
-    // respray garages: three walls + roof, opening faces west toward a road
+    addSign(batches.signs, 20, P.police.x, 11.6, P.police.z - 3.3, Math.PI, 26, 4.5);
+    // respray garages: three walls + roof, opening faces west toward a road —
+    // grease with a neon wink, per the vision: a spray gun dripping neon on
+    // the fascia, a fan of paint chips, tires and a barrel at the mouth, and
+    // work-lamp warmth inside instead of showroom white
     P.resprays.forEach(function (G) {
       batches.generic.addBox(G.x, 4, G.z - 7, 24, 8, 2, 0, 0x585068, 0);
       batches.generic.addBox(G.x, 4, G.z + 7, 24, 8, 2, 0, 0x585068, 0);
@@ -711,9 +795,54 @@ GAME.city = (function () {
       addSolid(G.x, G.z - 7, 24, 2, 8, 'building');
       addSolid(G.x, G.z + 7, 24, 2, 8, 'building');
       addSolid(G.x + 11, G.z, 2, 12, 8, 'building');
-      addSign(batches.signs, 18, G.x - 12.6, 6.4, G.z, -Math.PI / 2, 12, 3);
+      city.dressRespray(batches.generic, batches.marks, pools, G.x, G.z, 0);
+      addSign(batches.signs, 18, G.x - 12.6, 6.7, G.z, -Math.PI / 2, 10, 2.5);
     });
+    // DEPARTURES over the terminal doors, and an amber band along its face —
+    // the airport's own buildings are dressed in buildAirport; the lettering
+    // lives here because this is where the sign batch is
+    var A2 = city.airport;
+    addSign(batches.signs, 44, A2.cx + 30, 7.6, A2.cz + 36.1, 0, 24, 2.4);
+    batches.marks.addBox(A2.cx + 30, 9.3, A2.cz + 36.08, 60, 0.5, 0.14, 0, 0xffb44a, 0);
+    var poolsMesh = new THREE.Mesh(pools.build(), new THREE.MeshBasicMaterial({
+      vertexColors: true, map: radialGlowTexture('rgba(255,255,255,0.6)'),
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    poolsMesh.matrixAutoUpdate = false;
+    city.scene.add(poolsMesh);
   }
+
+  // the respray trade dress, shared by every garage in the city (the island
+  // calls this too): neon spray gun with drips that actually drip, paint
+  // chips across the roof edge, tires and a barrel, a warm lamp inside.
+  // The mouth faces -x; gy lifts everything onto island terrain.
+  city.dressRespray = function (b, marks, pools, gx, gz, gy) {
+    // backboard and the gun in neon: body, grip, nozzle, and a pink fan
+    marks.addBox(gx - 13.25, gy + 10.3, gz, 0.2, 2.6, 4.2, 0, 0x14101f, 0);
+    marks.addBox(gx - 13.4, gy + 10.7, gz + 0.3, 0.22, 0.8, 1.7, 0, 0x38e8ff, 0);   // body
+    marks.addBox(gx - 13.4, gy + 9.9, gz + 0.9, 0.2, 1.0, 0.5, 0, 0x38e8ff, 0);     // grip
+    marks.addBox(gx - 13.4, gy + 10.7, gz - 0.8, 0.2, 0.34, 0.5, 0, 0x38e8ff, 0);   // nozzle
+    [[-1.5, 0.5], [-1.75, 0.0], [-1.5, -0.5]].forEach(function (sp) {
+      marks.addBox(gx - 13.4, gy + 10.7 + sp[1], gz - 0.8 + sp[0], 0.18, 0.26, 0.26, 0, 0xff4fa3, 0);
+    });
+    // the drips, blinking down the board in sequence
+    [0, 1, 2].forEach(function (di) {
+      city.kmesh(0.26, 0.3, 0.26, 0xff4fa3, gx - 13.42, gy + 9.6 - di * 0.55, gz - 2.05,
+        { blink: 1.8, duty: 0.34, phase: 1.8 - di * 0.6 });
+    });
+    // paint chips along the roof edge over the mouth
+    [0xff4fa3, 0x38e8ff, 0xffe14f, 0x7dff6a, 0xc86bff, 0xff8a3d].forEach(function (chip, ci) {
+      marks.addBox(gx - 13.06, gy + 8.5, gz - 4.0 + ci * 1.6, 0.14, 0.8, 0.9, 0, chip, 0);
+    });
+    // tires one side of the mouth, a barrel the other
+    [0, 1, 2].forEach(function (ti) {
+      b.addBox(gx - 12.6, gy + 0.28 + ti * 0.56, gz - 9.3, 1.5, 0.52, 1.5, ti * 0.5, 0x1a1a20, 0);
+    });
+    b.addBox(gx - 12.6, gy + 0.7, gz + 9.2, 0.95, 1.4, 0.95, 0, 0xd8862e, 0);
+    // work-lamp warmth on the back wall, and its wash on the floor
+    marks.addBox(gx + 9.85, gy + 5.4, gz, 0.16, 0.9, 7, 0, 0xffd890, 0);
+    pools.addGroundQuad(gx + 2, gy + 0.12, gz, 16, 12, 0, 0x6a4a16);
+  };
 
   var containerData = [];
 
@@ -1210,15 +1339,40 @@ GAME.city = (function () {
     }
     // apron pad
     b.addGroundQuad(A.apron.x, 0.05, A.apron.z, 34, 34, 0, 0x1a1a22);
+    // threshold end lights: green where you land, red where you must not
+    for (var te = -4; te <= 4; te += 2) {
+      marks.addGroundQuad(A.minX + 2, 0.07, A.cz + te * 1.4, 1.2, 1.0, 0, 0x38e878);
+      marks.addGroundQuad(A.maxX - 2, 0.07, A.cz + te * 1.4, 1.2, 1.0, 0, 0xe23a4a);
+    }
     var rw = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     rw.matrixAutoUpdate = false; scene.add(rw);
-    var mk = new THREE.Mesh(marks.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
-    mk.matrixAutoUpdate = false; scene.add(mk);
-    // terminal building + control tower, south of the runway
+    // terminal building + control tower, south of the runway — jet-age, per
+    // the vision: a green-glazed cab you can read from the runway, a rotating
+    // beacon above it, and a windsock on the apron
     var tb = new GeoBatch();
     tb.addBox(A.cx + 30, 5, A.cz + 28, 84, 10, 16, 0, 0x8a94b0, 28);
     tb.addBox(A.cx + 40, 12, A.cz + 26, 8, 24, 8, 0, 0x9aa8c8, 0); // tower
     tb.addBox(A.cx + 40, 25, A.cz + 26, 11, 4, 11, 0, 0x141824, 0); // tower cab
+    tb.addBox(A.apron.x + 20, 3, A.apron.z - 14, 0.3, 6, 0.3, 0, 0xd0d4dc, 0);  // windsock pole
+    var mk = new THREE.Mesh(marks.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    mk.matrixAutoUpdate = false; scene.add(mk);
+    // cab glazing, lit controller-green on all four faces
+    var cabB = new GeoBatch();
+    [[0, 5.35, 10.6, 0.3], [0, -5.35, 10.6, 0.3], [5.35, 0, 0.3, 10.0], [-5.35, 0, 0.3, 10.0]].forEach(function (cg) {
+      cabB.addBox(A.cx + 40 + cg[0], 25.1, A.cz + 26 + cg[1], cg[2], 1.6, cg[3], 0, 0x8fffc8, 0);
+    });
+    var cabMesh = new THREE.Mesh(cabB.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
+    cabMesh.matrixAutoUpdate = false; scene.add(cabMesh);
+    city.kinetics.push({ m: cabMesh, pulse: 1.1, lo: 0.55, hi: 1.0 });
+    // the beacon: a bright bar sweeping over the cab
+    city.kmesh(2.6, 0.22, 0.22, 0xf4f8ff, A.cx + 40, 27.5, A.cz + 26, { spin: 3.4 });
+    // windsock: three fading orange segments, stiff in the sea breeze
+    var wsB = new GeoBatch();
+    [[0.0, 1.3, 0.7, 0xff7a2e], [1.2, 1.0, 0.55, 0xff9a52], [2.2, 0.8, 0.4, 0xffc088]].forEach(function (ws) {
+      wsB.addBox(A.apron.x + 20.9 + ws[0], 5.7, A.apron.z - 14, ws[1], ws[2], ws[2], 0, ws[3], 0);
+    });
+    var wsMesh = new THREE.Mesh(wsB.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    wsMesh.matrixAutoUpdate = false; scene.add(wsMesh);
     var tbm = new THREE.Mesh(tb.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     tbm.matrixAutoUpdate = false; scene.add(tbm);
     addSolid(A.cx + 30, A.cz + 28, 84, 16, 10);
@@ -1788,6 +1942,16 @@ GAME.city = (function () {
     if (city.signMesh) {
       var pulse = 0.9 + 0.1 * Math.sin(t * 2.3);
       city.signMesh.material.color.setScalar(pulse);
+    }
+    // the kinetic props: everything on the skyline that turns, blinks or
+    // breathes. Landmarks move and filler stands still — that one rule is
+    // most of what makes a landmark read as alive.
+    for (var ki = 0; ki < city.kinetics.length; ki++) {
+      var K = city.kinetics[ki];
+      if (K.spin) K.m.rotation.y += dt * K.spin;
+      if (K.spinZ) K.m.rotation.z += dt * K.spinZ;
+      if (K.blink) K.m.visible = ((t + (K.phase || 0)) % K.blink) < K.blink * (K.duty || 0.5);
+      if (K.pulse) K.m.material.opacity = K.lo + (K.hi - K.lo) * (0.5 + 0.5 * Math.sin(t * K.pulse + (K.phase || 0)));
     }
   };
 
