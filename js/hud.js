@@ -947,6 +947,10 @@ GAME.nav = (function () {
         }
       }
     }
+    // an unreached goal is no route at all: the degraded walk-back used to
+    // hand back a single far-end stub, and the map drew the player-to-stub
+    // connector as a confident schematic line straight across the water
+    if (!(key(goal) in prev)) return [];
     var out = [], cur = goal;
     while (cur) { out.unshift({ x: cur.x, z: cur.z }); cur = prev[key(cur)]; }
     return out;
@@ -962,7 +966,8 @@ GAME.nav = (function () {
     var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
     dest.rx = rp.x; dest.rz = rp.z;
     path = roadPath(px, pz, rp.x, rp.z);
-    path.push({ x: rp.x, z: rp.z });
+    // no route, no line — the destination marker alone tells the story
+    if (path.length) path.push({ x: rp.x, z: rp.z });
   }
 
   return {
