@@ -1,10 +1,6 @@
 # NEON MAYHEM
 
-> ⚠️ **Active development.** This is an evolving, work-in-progress project — features, balance, controls and the map change frequently, and you may hit rough edges or bugs. Feedback and issues are welcome.
-
-A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Auto: Vice City (2002). Everything in the project is original work — the sentence you just read is the only place the original game is named.
-
-Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the police, race, deliver, rampage — or just drive the beachfront boulevard at night with the radio on. Costa Rosa is two islands: **Isla Rosa**, the neon mainland where you start, and — once you've finished enough work to open the two bridges — **Isla Verde**, a hillier island across the channel with its own port, its own hill roads, and its own trouble.
+**Costa Rosa, 1986.** Two islands, one channel, no loading screens. Steal a ride, outrun the heat, run a taxi shift till the clock bleeds you, buy a condo with the takings, and sleep off the stars while the sun jumps eight hours. Or just cruise the beachfront at night with the radio on.
 
 <p align="center">
   <img src="media/social-card.png" alt="Neon Mayhem — a night drive down a neon-lit boulevard in Costa Rosa, 1986" width="600">
@@ -14,34 +10,48 @@ Cruise the neon-soaked streets of **Costa Rosa, 1986**: steal cars, outrun the p
   <b><a href="https://pranshuparmar.github.io/neon-mayhem/">▶ PLAY NOW — free, in your browser</a></b>
 </p>
 
-📱 On phones and tablets, touch controls appear automatically: a floating virtual stick on the left, a context-sensitive action cluster on the right, and a radar + PAUSE button along the top-left. Tap the radar to open the full map. Sound (with separate music and SFX switches), CRT filter, time of day and fullscreen live in the pause menu. Starting the game enters fullscreen and asks you to rotate to landscape.
+A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Auto: Vice City (2002). Everything in the project is original work — the sentence you just read is the only place the original game is named. No build step, no server, no accounts, no ads. Progress saves to `localStorage` and the whole thing runs offline.
 
-**Play it locally:** serve this folder from any static host (GitHub Pages works as-is) or a local static server:
+## The city
 
-```
-python3 -m http.server 8000
-# open http://localhost:8000
-```
+- **Isla Rosa**, the neon mainland — a ~1 km² seeded city, identical on every visit: the Ocean Strip with its shops and casino pier, Centro Alto's towers, Puerto Viejo's harbor, Las Colinas — plus a curving beach, boardwalk, piers, a spinning ferris wheel, an airport, and an animated ocean under a full day/night cycle with a **live 24-hour clock** on the HUD.
+- **Isla Verde**, locked across the channel — close enough to leave a silhouette in the fog, far enough to keep its secrets. Finish four jobs and the two bridges (and the airspace over them) open. Over there the land *rises*: two hills, a switchback to a lookout, a resort road, a coastal ring — curves, not a grid — with bungalows on the slopes and the island's only skyline down by the port.
+- **Landmarks that read like landmarks:** the casino is a pier palace with a sunburst marquee and roving searchlights, the hospitals wear glowing cross towers and EMERGENCY canopies, the police stations hang blue lanterns, the lighthouse sweeps a real rotating beam, the observatory wears a copper dome — and the marina glitters with string lights down every jetty.
+- The world is alive around you: jackable traffic, pedestrians, parked cars, all simulated in a bubble that follows the player. Crossing a bridge changes the traffic stock around you as well as the scenery.
 
-No build step, no server code, no accounts, no ads. Progress (cash + best runs) is saved in `localStorage` only. The only network request the game ever makes is an anonymous visit count (see [Analytics](#analytics)), and it is skipped entirely when you run it locally or offline.
+## Drive, fly, fall
 
-## Features
+- Arcade driving with handbrake drifts across a garage's worth of machines: cars, vans, taxis, ambulances, cruisers, a motorcycle and superbike, a dune buggy, a stretch limo, an ice-cream truck, a monster truck — all with 3-stage damage (smoke → fire → boom) and honest fire warnings before anything explodes.
+- A **helicopter** and a **light plane**, flyable with loops and barrel rolls. The plane's takeoff run is real — about 66 meters of engine haul before the nose comes up, so you'll want the actual runway — and a stalled airframe recovers by *diving*, not throttling. Bail out of either mid-air and a **parachute** opens.
+- **25 hidden stunt jumps** on roadside ramps, a third of them boosted. Air time, distance and spins all pay. Find all 25 for $50,000, the full arsenal with unlimited ammo, and a monster truck that jumps on command.
 
-- ~1 km² seeded procedural city — Ocean Strip, Centro Alto, Puerto Viejo, Las Colinas — identical on every visit
-- **A second island, locked at first.** Isla Verde sits 300 m east across the channel: close enough that fog leaves a silhouette from the beach, far enough that you cannot see what it holds. Two bridges and the airspace over the channel open together once you have four jobs behind you. Over there the land actually rises — two hills, a switchback climbing hairpin to hairpin to a lookout, a sweeping resort road, a coastal ring and a promenade, all curves rather than a grid. What is built on a plot follows the ground under it: bungalows and villas on the hills, walk-up apartments on the lower slopes, and the island's only skyline down on the flat by the port
-- Isla Verde landmarks worth finding: an ice cream factory with a truck parked out front and a round to drive, a container port and marina, a lighthouse, a cove beach — and the world's only helipad, moved to the Alta Verde summit at the top of the switchback, so there is no helicopter anywhere until the bridges open
-- **The Mirador observatory**, on the far hill: a terraced building with a flight of steps you can walk up. The first floor is open — the terrace, its parapet, and the rotunda standing in the middle of it — and at the far end of it, the only scoped rifle in the world
-- Curving beach coastline, boardwalk, piers, a spinning ferris wheel, and an animated ocean under an automatic day/night cycle (starts on a bright late afternoon, slides into sunset and then night within the first minute, then the sun rises again and it loops)
-- Jackable traffic, pedestrians, parked cars — all simulated in a spawn bubble around the player
-- Arcade driving with handbrake drifts; cars, a motorcycle, van, taxi, ambulance and police cruiser, all with 3-stage damage (smoke → fire → boom). Isla Verde runs its own stock — a dune buggy, a 4x4 pickup, a resort limo and the ice cream truck — so crossing a bridge changes the traffic around you as well as the scenery
-- **25 unique stunt jumps** hidden around the city on roadside construction ramps in four sizes, a third of them fitted with a booster strip that slams the throttle open on the way up — clear one to log it (air time, distance and spins all pay out, and you can land on a low roof or sail clean over it). Find every one for a $50,000 payout, the full arsenal with unlimited ammo (kept through the hospital and the cells), and a monster truck that jumps on command
-- Flyable helicopter and airplane — loops and barrel rolls included — with an airport on the mainland, the helipad on the far island, and a parachute when you bail out mid-air
-- Lock-on shooting (aim assist, target cycling — people and vehicles) with fists, pistol, SMG (drive-bys!), shotgun — and a scoped rifle that exists in exactly one place in the world
-- 0–5 star wanted system: pursuing cruisers that open fire, foot pursuits (officers get out and shoot), roadblocks, spike strips — and a respray garage that repairs the car and clears the heat
-- Arcade missions — street races against rival drivers (live position), timed couriers with freshly generated drops each run, rampages — plus continuous taxi, paramedic and ice cream shifts that level up: more people (each marked by a floating arrow), further out, and fares whose destinations open out as the shift goes on rather than repeating the same short hop. The ice cream round works the other way — nobody is waiting for you, the chimes do it: pull up where there are people on the pavement and they come to the hatch. Isla Verde carries four missions of its own, and they stay on the island — nothing ever asks you to cross mid-run
-- Finish something worth finishing — a race, a shift, all 25 jumps — and a shareable result card is drawn for it: save it, copy it, or send it straight to your phone's share sheet
-- 3 procedurally generated radio stations, all audio synthesized at runtime with the Web Audio API — and slow synth pads over the title screen once you've touched a key
-- Touch controls for phones/tablets (landscape), minimap, CRT filter toggle
+## The law
+
+- A 0–5 star wanted system that escalates from pursuing cruisers to foot pursuits, roadblocks, spike strips and visible air units — searchlight, strobes, tracer and all.
+- Four **respray garages** (three mainland, VERDE MOTORS on the island) repair the car and clear the heat for $100.
+- Or see the **desk sergeant**: losing the top star of a deep warrant costs more than shaking off a fender-bender ($150 a star at one star, $750 at five), and CLEAN SLATE wipes the whole ladder for exactly the sum of its steps. No discounts, no traps.
+
+## Work
+
+- **Street races** against rivals who drive what *you* drive, **timed couriers** with fresh drops every run, and **rampages** — each opening with a fade-out and a big 3-2-1 countdown before you're let loose.
+- Continuous **taxi, paramedic and ice-cream shifts** that level up: more people, further out, marked by floating arrows. The clocks are tuned as a high-score run, not a loop you can hold forever — early fares bank a little, the mid-shift breaks even, the deep shift bleeds. The ice-cream round works backwards: nobody waits for you, the chimes pull them to the hatch.
+- Isla Verde carries four missions of its own, and they stay on the island — nothing asks you to cross mid-run.
+- Finish something worth finishing and a shareable **result card** is drawn for it — save it, copy it, or send it to your phone's share sheet.
+
+## Money, property, style
+
+- **GRAN ROSA MOTORS** — a glass showroom with display cars on spotlit pads and a rotating totem. Every vehicle is on the floor from day one, helicopter and TALON gunship included; money is the only gate. Every purchase is a deed: **a fresh copy of your fleet waits at the showroom and at every property you own.**
+- **Three properties** — a dockside flat, a strip condo, a marina villa across the channel. Own one and you wake up at home after a hospital-grade night, gear intact. **SLEEP IT OFF** actually sleeps: eight hours cross the clock, the sky moves, the law forgets you, and your health comes back.
+- **THE LUCKY GULL** casino on the pier — three stakes, a wheel that really spins, and a gull that usually wins.
+- **THREADS** and **CORTES CUTS** — shirts, pants, cuts, hair colors and skin tones, previewed on a mirror that shows *you*, exactly as you stand, before a dollar moves.
+- **ROSA HARDWARE** (and VERDE HARDWARE across the channel) sells armor, medkits and iron — and street weapon racks restock only once per in-game day, so the counter matters.
+
+## The feel
+
+- 3 procedurally generated radio stations — every note synthesized at runtime with the Web Audio API, with slow synth pads over the title screen.
+- The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
+- A heading-up radar minimap; a full map (`P`) with legend, POI badges, pickups and street-following mission routes — click anywhere to set a destination.
+- CRT filter, separate music/SFX switches, and a day/night pin if you want the city permanently at golden hour or midnight (a night's sleep politely overrules it).
 
 ## Controls
 
@@ -54,42 +64,35 @@ No build step, no server code, no accounts, no ads. Progress (cash + best runs) 
 | Q / E | Cycle lock target | Drive-by left/right (barrel roll in a plane) |
 | Space | Jump | Handbrake |
 | F | Enter / jack car | Exit car |
+| J | — | Start the shift a working vehicle offers |
 | 1–5 | Weapon select | — |
 | , / . | — | Radio station |
 | Shift | Sprint | — |
 
-`P` map & destination routing · `M` mute · `T` CRT filter · `H` hide control hints · `R` respawn/skip · `Esc` pause · `⛶` fullscreen
+`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Esc` pause · `⛶` fullscreen
 
-The pause menu also holds separate **MUSIC** and **SFX** switches (remembered between sessions) and a **TIME** toggle — `AUTO` (default) runs the day/night cycle, or pin it to `DAY` / `NIGHT`.
+**In the air:** helicopter — climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Plane — `W` to roll down the runway, `Space` to rotate once you're fast, `Q/E` to barrel-roll, and pull hard enough on the elevator for a full loop. `F` bails out with a parachute.
 
-The minimap is a heading-up radar that rotates with you — tap it to open the full map. The full map (`P`) shows a labelled legend, POI badges (H hospital, P police, S respray), weapon/health/armour pickups, and mission routes drawn along the streets — click anywhere to set a destination.
+📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape.
 
-**Touch controls** follow the classic console-port layout: a floating stick under the left thumb (move / steer, full deflection sprints on foot), and a context-sensitive action cluster under the right thumb. Buttons appear only when they apply — ENTER near a car, AIM with a gun drawn, weapon-switch with more than one weapon, drive-by only when you're carrying the SMG. Driving is an explicit GAS / BRAKE / handbrake with an EXIT and radio switch. The radar sits top-left (clear of the stick's thumb zone) with PAUSE beside it, and sound, CRT filter, time of day and fullscreen live in the pause menu.
+## Run it locally
 
-**Take to the sky:** a helicopter waits on the beach helipad (yellow **H**, south end of the sand). Climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. There's also an **airport** with a runway along the southern edge of the island (the ✈ on the map) — a light plane is parked on the apron: `W` to throttle up the runway, `Space` to rotate and climb once you're fast, `A/D` to turn, `Shift` to dive, `Q/E` to barrel-roll — pull hard enough on the elevator and you can fly a full loop. Bail out of either aircraft with `F` while airborne and a **parachute** opens — steer your descent with `WASD` and glide down.
+Serve the folder from any static host (GitHub Pages works as-is):
 
-The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
+```
+python3 -m http.server 8000
+# open http://localhost:8000
+```
+
+The only network request the game ever makes is an anonymous visit count (see [Analytics](#analytics)), skipped entirely when you run it locally or offline.
 
 ## Tech
 
-Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. The world is a list of landmasses rather than one: every water test, height lookup, spawner and route asks the list, so Costa Rosa's grid and Isla Verde's curves are the same thing to everything above them. Island roads are polylines with a grading solver — sample the terrain, relax along each road and across every junction, then cap the grade — so a road laid down later is drivable by construction rather than by hand-tuning. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, and a spawn/despawn bubble keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test` for headless verification.
+Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. The world is a *list of landmasses*: every water test, height lookup, spawner and route asks the list, so Costa Rosa's grid and Isla Verde's curves are the same thing to everything above them. Island roads are polylines with a grading solver — sample the terrain, relax along each road and across every junction, cap the grade — so a road laid down later is drivable by construction rather than hand-tuning. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, a spawn/despawn bubble, and a z-fight-audited ground stack keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test`, and every change ships only after headless verification through it.
 
 ## Analytics
 
-The published site counts visits and a handful of anonymous events — session
-started, a mission or shift finished, a stunt jump found, all 25 found, wanted
-level reached, aircraft flown, the bridges opened, Isla Verde first reached,
-result card saved or shared — via
-[GoatCounter](https://www.goatcounter.com/): cookieless, no identifier stored in
-the browser, and nothing about you kept. `js/analytics.js` is a thin wrapper
-that silently no-ops when the counter is blocked or unavailable, so the game
-never depends on it, and each event counts at most once per page load — the
-interesting figures are per-visit ratios (started vs finished), not repeat
-presses.
-
-It is skipped entirely on `file://`, `localhost` and LAN addresses, so a local
-or offline copy makes no network request at all and local play stays out of the
-numbers. Nothing about this appears in the game itself.
+The published site counts visits and a handful of anonymous events — session started, a mission or shift finished, a stunt jump found, all 25 found, wanted level reached, aircraft flown, the bridges opened, Isla Verde first reached, result card saved or shared — via [GoatCounter](https://www.goatcounter.com/): cookieless, no identifier stored in the browser, and nothing about you kept. `js/analytics.js` is a thin wrapper that silently no-ops when the counter is blocked or unavailable, so the game never depends on it. It is skipped entirely on `file://`, `localhost` and LAN addresses — a local or offline copy makes no network request at all.
 
 ## Disclaimer
 
