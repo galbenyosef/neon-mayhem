@@ -524,7 +524,7 @@ function updateOnFoot(dt) {
   // desktop whose browser reports touch (most precision touchpads do) the
   // layer enables and a held W read as a pinned stick.
   var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run) && !aiming;
-  var target = mag * (aiming ? 2.0 : run ? 7.5 : 2.8);   // sprint is 1.25x the old 6.0
+  var target = mag * (aiming ? 2.0 : run ? 7.5 : 4.2);   // sprint is 1.25x the old 6.0; the 2.8 walk read as slow motion
   P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
 
   if (mag > 0.05) {
