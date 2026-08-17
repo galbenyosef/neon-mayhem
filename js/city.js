@@ -914,12 +914,39 @@ GAME.city = (function () {
     var sand = new GeoBatch();
     var sandShades = [0xd8c496, 0xd0bc8e, 0xdcc89c, 0xccb888];
     var sIdx = 0;
+    // The two channel bridges leave the strip at z -350 and z 150 and cross
+    // the whole beach at deck height before they climb. The sand carpet must
+    // part around those corridors: laid straight through, the anti-flicker
+    // height tiers sat ON TOP of the flat approach — the road sunk in sand.
+    var BRIDGE_CUTS = [[-359, -341], [141, 159]];
+    function bandSegs(z0, z1) {
+      var segs = [[z0, z1]];
+      for (var bc = 0; bc < BRIDGE_CUTS.length; bc++) {
+        var cut = BRIDGE_CUTS[bc], next = [];
+        for (var sg = 0; sg < segs.length; sg++) {
+          var a = segs[sg][0], b2 = segs[sg][1];
+          if (cut[1] <= a || cut[0] >= b2) { next.push([a, b2]); continue; }
+          if (cut[0] > a) next.push([a, cut[0]]);
+          if (cut[1] < b2) next.push([cut[1], b2]);
+        }
+        segs = next;
+      }
+      return segs;
+    }
     for (var sz = -500; sz < 500; sz += 20) {
       var mid = sz + 10;
       var w = city.shoreline(mid) + 6 - SAND_X0;
-      sand.addGroundQuad(SAND_X0 + w / 2, 0.06 + (sIdx % 2) * 0.06, mid, w, 20.5, 0, U.pick(rng, sandShades));
-      // darker wet band at the waterline
-      sand.addGroundQuad(SAND_X0 + w - 4, 0.2, mid, 9, 20.5, 0, 0xb0a078);
+      // one shade draw per strip, split or not — the rng stream feeds every
+      // placement after this loop, and an extra draw would reshuffle the city
+      var shade = U.pick(rng, sandShades);
+      var segs = bandSegs(sz - 0.25, sz + 20.25);
+      for (var sg2 = 0; sg2 < segs.length; sg2++) {
+        var za = segs[sg2][0], zb = segs[sg2][1];
+        if (zb - za < 0.6) continue;
+        sand.addGroundQuad(SAND_X0 + w / 2, 0.06 + (sIdx % 2) * 0.06, (za + zb) / 2, w, zb - za, 0, shade);
+        // darker wet band at the waterline
+        sand.addGroundQuad(SAND_X0 + w - 4, 0.2, (za + zb) / 2, 9, zb - za, 0, 0xb0a078);
+      }
       sIdx++;
     }
     // Narrow sand fringes along the island's other shores. Each family of
