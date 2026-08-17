@@ -385,8 +385,11 @@
     <b>1–5</b> weapons &nbsp;·&nbsp; <b>, / .</b> radio &nbsp;·&nbsp; <b>J</b> taxi / paramedic / ice cream job &nbsp;·&nbsp; <b>P</b> map &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>T</b> CRT &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause
   </div>
   <div id="title-footer">Fan-made tribute. Not affiliated with Rockstar Games or Take-Two Interactive. No original game assets used.
-    &nbsp;·&nbsp; <a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
-      style="color:#9df3ff;pointer-events:auto;">github.com/pranshuparmar/neon-mayhem</a></div>
+    &nbsp;·&nbsp; <!-- the whole title screen is a start button, so the link must
+      stop its events short of it — same pattern as the pause screen's link -->
+    <a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
+      style="color:#9df3ff;pointer-events:auto;" onclick="event.stopPropagation()"
+      ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
 </div>
 
 <div id="controls-bar"></div>
