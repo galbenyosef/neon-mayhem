@@ -1,4 +1,4 @@
-GAME.world = { cars: [], peds: [], pickups: [], markers: [] };
+GAME.world = { cars: [], peds: [], pickups: [] };
 
 // pooled particle + tracer effects
 GAME.fx = (function () {
@@ -47,7 +47,6 @@ GAME.fx = (function () {
       p.vz = (Math.random() - 0.5) * sp + (o.vz || 0);
       p.grav = o.grav !== undefined ? o.grav : -2;
       p.color = o.color !== undefined ? o.color : 0xff8040;
-      p.idx = pCursor;
     }
   }
   function tracer(x0, y0, z0, x1, y1, z1) {
