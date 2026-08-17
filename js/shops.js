@@ -249,9 +249,17 @@ GAME.shops = (function () {
   }
   function bribeItems() {
     var w = GAME.police.wanted;
+    // rank pricing: the sergeant charges by how hot you are. Losing the top
+    // star of a five-star manhunt is dearer work than shaking off a fender-
+    // bender — $150 a star at one star, $750 at five. CLEAN SLATE is the
+    // whole ladder summed (no discount, no trap: singles total the same),
+    // and it steps aside when one star is all the books hold — two rows
+    // selling the identical favor at the identical price read as a bug.
+    var ww = Math.max(1, w);
     return [
-      { id: 'star', name: 'LOSE ONE STAR', ds: w > 0 ? 'The sergeant looks away.' : 'You’re clean already.', price: 300, off: w <= 0 },
-      { id: 'slate', name: 'CLEAN SLATE', ds: w > 0 ? 'All ' + w + ' star' + (w > 1 ? 's' : '') + ', forgotten.' : 'Nothing on the books.', price: 300 * Math.max(1, w), off: w <= 0 }
+      { id: 'star', name: 'LOSE ONE STAR', ds: w > 0 ? 'The sergeant looks away.' : 'You’re clean already.', price: 150 * ww, off: w <= 0 },
+      { id: 'slate', name: 'CLEAN SLATE', price: 75 * ww * (ww + 1), off: w <= 1,
+        ds: w > 1 ? 'All ' + w + ' stars, forgotten.' : w === 1 ? 'One star on the books — just lose it.' : 'Nothing on the books.' }
     ];
   }
   function casinoItems() {
