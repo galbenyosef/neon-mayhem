@@ -221,6 +221,19 @@ function respawnAfterScreen() {
     GAME.hud.hideBig();
     GAME.timeScale = 1;
     if (P.inCar) forceExitCar(true);
+    // Dying mid walk-to-the-door must cancel the entry: the pending
+    // P.entering used to sit frozen through the death screen, resume on the
+    // first living frame, and seat you in the car — waking you up in the
+    // ride you'd pressed F on instead of at the hospital.
+    if (P.entering) {
+      var ecar = P.entering.car;
+      if (ecar && !ecar.dead && ecar.occupied === 'player') {
+        ecar.occupied = null;
+        ecar.controls = { throttle: 0, steer: 0, handbrake: true };
+      }
+      P.entering = null;
+      resetRiderPose();
+    }
     P.health = 100;
     if (kind === 'busted') {
       GAME.addCash(-(P.pendingFine || 0));
