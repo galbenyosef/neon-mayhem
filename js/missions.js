@@ -1359,7 +1359,12 @@ GAME.missions = (function () {
           }
         }
         stepBoarding(dt, f, P);
-      } else if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) {
+      } else if (tgt && active.aboard > 0 && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) {
+        // aboard > 0 is load-bearing: when dispatch holds the next round for
+        // heat, the phase stays 'dropoff' with an empty cab — without the
+        // guard, idling on the drop-off re-completed the "delivery" every
+        // tick, and a 3-fare shift compounded to level 143 and a million
+        // dollars in level bonuses before the driver's foot left the brake
         completeFare(d2.type, f, tgt);
       }
       updateArrows(dt);
