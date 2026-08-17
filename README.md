@@ -15,7 +15,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 ## The city
 
 - **Isla Rosa**, the neon mainland — a ~1 km² seeded city, identical on every visit: the Ocean Strip with its shops and casino pier, Centro Alto's towers, Puerto Viejo's harbor, Las Colinas — plus a curving beach, boardwalk, piers, a spinning ferris wheel, an airport, and an animated ocean under a full day/night cycle with a **live 24-hour clock** on the HUD.
-- **Isla Verde**, locked across the channel — close enough to leave a silhouette in the fog, far enough to keep its secrets. Finish four jobs and the two bridges (and the airspace over them) open. Over there the land *rises*: two hills, a switchback to a lookout, a resort road, a coastal ring — curves, not a grid — with bungalows on the slopes and the island's only skyline down by the port.
+- **Isla Verde**, locked across the channel — close enough to leave a silhouette in the fog, far enough to keep its secrets. Beat four marked missions — or find every stunt jump — and the two bridges (and the airspace over them) open. Over there the land *rises*: two hills, a switchback to a lookout, a resort road, a coastal ring — curves, not a grid — with bungalows on the slopes and the island's only skyline down by the port.
 - **Landmarks that read like landmarks:** the casino is a pier palace with a sunburst marquee and roving searchlights, the hospitals wear glowing cross towers and EMERGENCY canopies, the police stations hang blue lanterns, the lighthouse sweeps a real rotating beam, the observatory wears a copper dome — and the marina glitters with string lights down every jetty.
 - The world is alive around you: jackable traffic, pedestrians, parked cars, all simulated in a bubble that follows the player. Crossing a bridge changes the traffic stock around you as well as the scenery.
 
@@ -92,7 +92,7 @@ Plain non-module scripts sharing globals, loaded in dependency order — runs fr
 
 ## Analytics
 
-The published site counts visits and a handful of anonymous events — session started, a mission or shift finished, a stunt jump found, all 25 found, wanted level reached, aircraft flown, the bridges opened, Isla Verde first reached, result card saved or shared — via [GoatCounter](https://www.goatcounter.com/): cookieless, no identifier stored in the browser, and nothing about you kept. `js/analytics.js` is a thin wrapper that silently no-ops when the counter is blocked or unavailable, so the game never depends on it. It is skipped entirely on `file://`, `localhost` and LAN addresses — a local or offline copy makes no network request at all.
+The published site counts visits and a handful of anonymous events — things like a session started, a mission or shift finished, a stunt jump found, a wanted level reached, aircraft flown, the bridges opened, a shop purchase made, a result card saved or shared — via [GoatCounter](https://www.goatcounter.com/): cookieless, no identifier stored in the browser, and nothing about you kept. `js/analytics.js` is a thin wrapper that silently no-ops when the counter is blocked or unavailable, so the game never depends on it. It is skipped entirely on `file://`, `localhost` and LAN addresses — a local or offline copy makes no network request at all.
 
 ## Disclaimer
 
