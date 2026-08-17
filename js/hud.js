@@ -32,10 +32,24 @@ GAME.hud = (function () {
     buildMapBuffer();
     targetCash = shownCash = GAME.player.cash;
     updateCashText();
+    // The trophy shelf, in plain words: how many marked missions have a
+    // personal best on file, out of how many exist — "Best runs saved: 7"
+    // answered a question nobody asked. While the channel is still closed,
+    // the same count doubles as the road to the island, so say that too.
     var bests = GAME.bests || {};
-    var keys = Object.keys(bests);
-    if (keys.length) el['title-best'].textContent = 'Best runs saved: ' + keys.length + '  ·  Cash: $' + GAME.player.cash;
-    else if (GAME.player.cash !== 250) el['title-best'].textContent = 'Cash: $' + GAME.player.cash;
+    var defs = (GAME.missions && GAME.missions.DEFS) || [];
+    var beaten = 0;
+    for (var di = 0; di < defs.length; di++) if (bests[defs[di].id] !== undefined) beaten++;
+    if (beaten) {
+      var bl = 'Missions beaten: ' + beaten + ' of ' + defs.length;
+      if (GAME.isla && !GAME.isla.isOpen()) {
+        var need = GAME.isla.required || 4;
+        bl += '  ·  ' + Math.min(beaten, need) + ' of ' + need + ' toward the bridges';
+      }
+      el['title-best'].textContent = bl + '  ·  Cash: $' + GAME.player.cash;
+    } else if (GAME.player.cash !== 250) {
+      el['title-best'].textContent = 'Cash: $' + GAME.player.cash;
+    }
 
     el['press-enter'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('click', function () { GAME.startGame(); });
