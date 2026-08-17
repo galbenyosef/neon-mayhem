@@ -497,12 +497,19 @@ GAME.shops = (function () {
       dress: { w: 13, d: 8, h: 5.5, wall: 0xf0c8dc },
       barber: { w: 10, d: 7, h: 5, wall: 0xbcd8f0 },
       showroom: { w: 26, d: 15, h: 7.5, wall: 0x3c4258 },
-      casino: { w: 9, d: 8, h: 5.5, wall: 0xe8c86a },
+      casino: { w: 18, d: 12, h: 7, wall: 0xe8c86a },
       safehouse: { w: 10, d: 8, h: 9, wall: 0xc8bca8 }
     };
     var walls = new GeoBatch();      // window-textured shells
     var trims = new GeoBatch();      // doors, awnings, roof lips (unlit color)
     var signs = new GeoBatch();
+    var pools = new GeoBatch();      // additive light on the pavement
+    // a single live mesh for anything that turns, blinks or breathes
+    function neonBox(w, h, d, color, mat) {
+      var mo = { color: color };
+      if (mat) for (var mm in mat) mo[mm] = mat[mm];
+      return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial(mo));
+    }
     // ramps were placed before the shops existed, and their placement vetted
     // an empty air corridor past the lip — don't build a wall into it now
     function corridorClear(cx, cz, sx, sz) {
@@ -592,35 +599,117 @@ GAME.shops = (function () {
       onFace(0.55, 0, gy + 3.15, S.w - 1.2, 0.16, 1.1, loc.color);
       // ---- per-trade dressing ----
       if (loc.kind === 'dress') {
-        // lit display windows flanking the door, a dressed dummy in each
+        // lit display windows flanking the door, a dressed dummy in each,
+        // and a pink script-line breathing under the name — boutique, not box
         [-1, 1].forEach(function (sside) {
           var off = sside * (doorW / 2 + 2.4);
           onFace(0.12, off, gy + 1.7, 3.2, 2.6, 0.14, 0xfff4e0);
           onFace(0.3, off, gy + 1.15, 0.5, 0.9, 0.3, sside < 0 ? 0xf78ab8 : 0x8fd0f0);
           onFace(0.3, off, gy + 1.85, 0.34, 0.34, 0.3, 0xeac8a8);
         });
+        var vst = neonBox(dir.x !== 0 ? 0.16 : S.w - 3.5, 0.22, dir.x !== 0 ? S.w - 3.5 : 0.16, 0xff8fd0, { transparent: true, opacity: 0.9 });
+        vst.position.set(fx - dir.x * 0.2, gy + S.h - 1.9, fz - dir.z * 0.2);
+        scene.add(vst);
+        GAME.city.kinetics.push({ m: vst, pulse: 1.9, lo: 0.45, hi: 1.0 });
       } else if (loc.kind === 'barber') {
-        // the pole: red-white-blue courses, standing proud beside the door
+        // the pole TURNS now — offset courses on a spinning column read as
+        // the classic spiral — and the checkerboard floor spills out the door
+        var bpx = fx - dir.x * 0.6 + px2.x * (doorW / 2 + 1.1);
+        var bpz = fz - dir.z * 0.6 + px2.z * (doorW / 2 + 1.1);
+        var poleG = new THREE.Group();
         for (var pb = 0; pb < 6; pb++) {
-          onFace(0.6, doorW / 2 + 1.1, gy + 1.1 + pb * 0.34, 0.34, 0.34, 0.34,
-            pb % 3 === 0 ? 0xe23a3a : pb % 3 === 1 ? 0xf2f2f2 : 0x3a6ae2);
+          var pc = neonBox(0.4, 0.34, 0.4, pb % 3 === 0 ? 0xe23a3a : pb % 3 === 1 ? 0xf2f2f2 : 0x3a6ae2);
+          pc.position.set(Math.cos(pb * 2.1) * 0.1, 0.95 + pb * 0.34, Math.sin(pb * 2.1) * 0.1);
+          poleG.add(pc);
         }
+        poleG.position.set(bpx, gy, bpz);
+        scene.add(poleG);
+        GAME.city.kinetics.push({ m: poleG, spin: 2.6 });
         onFace(0.12, -(doorW / 2 + 1.9), gy + 1.8, 2.4, 2.2, 0.14, 0xfff4e0);
+        for (var ck = 0; ck < 8; ck++) {
+          var ckc = (ck % 4) - 1.5, ckr = Math.floor(ck / 4);
+          trims.addGroundQuad(fx - dir.x * (0.75 + ckr * 0.9) + px2.x * ckc * 0.9, gy + 0.07,
+            fz - dir.z * (0.75 + ckr * 0.9) + px2.z * ckc * 0.9, 0.86, 0.86, 0,
+            (ckc + ckr) % 2 ? 0x16161c : 0xe8e8ec);
+        }
       } else if (loc.kind === 'hardware') {
-        // roller door beside the entrance and a steel band over the front
+        // pawn-shop menace, per the vision: a barred lit window, ammo crates
+        // by the door, sodium spill, and an OPEN sign that can't quite die
         onFace(0.1, doorW / 2 + 2.6, gy + 1.6, 4.0, 3.2, 0.16, 0x585c66);
         onFace(0.14, 0, gy + S.h - 1.9, S.w - 1.0, 0.5, 0.2, 0x585c66);
+        onFace(0.12, -(doorW / 2 + 2.1), gy + 1.8, 2.8, 2.2, 0.14, 0xffe9b8);
+        [-0.85, 0, 0.85].forEach(function (bx) {
+          onFace(0.22, -(doorW / 2 + 2.1) + bx, gy + 1.8, 0.16, 2.4, 0.1, 0x241a2e);
+        });
+        var crx = fx - dir.x * 1.4 + px2.x * (S.w / 2 - 1.3);
+        var crz = fz - dir.z * 1.4 + px2.z * (S.w / 2 - 1.3);
+        trims.addBox(crx, gy + 0.5, crz, 1.05, 1.0, 1.05, 0.3, 0x8a6a3a, 0);
+        trims.addBox(crx + 0.2, gy + 1.3, crz - 0.1, 0.85, 0.6, 0.85, 0.8, 0x6a5a4a, 0);
+        var open = neonBox(1.5, 0.7, 0.14, 0xff4a3a);
+        open.position.set(fx - dir.x * 0.22 + px2.x * (doorW / 2 + 1.3), gy + 3.0, fz - dir.z * 0.22 + px2.z * (doorW / 2 + 1.3));
+        scene.add(open);
+        GAME.city.kinetics.push({ m: open, blink: 1.15, duty: 0.78 });
+        pools.addGroundQuad(fx - dir.x * 2.2, gy + 0.1, fz - dir.z * 2.2, 12, 9, 0, 0x6a4210);
       } else if (loc.kind === 'casino') {
-        // the gull's wheel over the door, wedge-striped in gold and night
+        // THE LUCKY GULL, palace edition: a second tier and a dark crown over
+        // the gold hall, a deco sunburst stacked over the doors, the gull's
+        // wheel actually turning, bulbs down every lip, a red carpet to the
+        // mat and two searchlights sweeping the sky off the roof
+        var t2w = 12, t2d = 8, t2h = 3.6;
+        var t2x = placed.cx + dir.x * 1.5, t2z = placed.cz + dir.z * 1.5;
+        walls.addBox(t2x, gy + S.h + t2h / 2 - 0.1, t2z, dir.x !== 0 ? t2d : t2w, t2h, dir.x !== 0 ? t2w : t2d, 0, S.wall, 28);
+        GAME.city.addSolid(t2x, t2z, dir.x !== 0 ? t2d : t2w, dir.x !== 0 ? t2w : t2d, gy + S.h + t2h - 0.1);
+        trims.addBox(t2x, gy + S.h + t2h + 0.7, t2z, 6, 1.5, 4.5, 0, 0x241a36, 0);
+        // gold lips on both tiers, and a row of warm bulbs under the first
+        onFace(0.2, 0, gy + S.h - 0.28, S.w - 0.6, 0.4, 0.24, 0xffd24a);
+        var t2fx = t2x - dir.x * (t2d / 2), t2fz = t2z - dir.z * (t2d / 2);
+        trims.addBox(t2fx - dir.x * 0.12, gy + S.h + t2h - 0.28, t2fz - dir.z * 0.12,
+          dir.x !== 0 ? 0.24 : t2w - 0.6, 0.4, dir.x !== 0 ? t2w - 0.6 : 0.24, 0, 0xffd24a, 0);
+        for (var bl = 0; bl < 9; bl++) {
+          onFace(0.24, (bl - 4) * (S.w - 2.6) / 8, gy + S.h - 0.85, 0.28, 0.28, 0.2, 0xfff0b8);
+        }
+        // the sunburst: gold and pink courses stepping wider over the doors
+        for (var sb = 0; sb < 5; sb++) {
+          onFace(0.16 + sb * 0.012, 0, gy + 3.45 + sb * 0.42, 3.4 + sb * 1.45, 0.34, 0.14, sb % 2 ? 0xff4fa3 : 0xffd24a);
+        }
+        onFace(0.11, 0, gy + 3.12, doorW + 0.9, 0.28, 0.2, 0xffd24a);   // gilt door head
+        // the gull's wheel, turning over the crown
+        var wheelG = new THREE.Group();
         for (var cs = 0; cs < 8; cs++) {
           var ca = cs / 8 * Math.PI * 2;
-          onFace(0.25, Math.cos(ca) * 1.5, gy + S.h + 1.5 + Math.sin(ca) * 1.5, 0.8, 0.8, 0.3,
-            cs % 2 ? 0xffe14f : 0x241a36);
+          var wb2 = neonBox(0.8, 0.8, 0.24, cs % 2 ? 0xffe14f : 0xff4fa3);
+          wb2.position.set(Math.cos(ca) * 1.6, Math.sin(ca) * 1.6, 0);
+          wheelG.add(wb2);
         }
+        wheelG.add(neonBox(0.7, 0.7, 0.26, 0xfff6d8));
+        wheelG.position.set(t2fx - dir.x * 0.5, gy + S.h + t2h + 2.1, t2fz - dir.z * 0.5);
+        scene.add(wheelG);
+        GAME.city.kinetics.push({ m: wheelG, spinZ: 0.8 });
+        // searchlights: tilted beams on the second-tier corners, sweeping slow
+        [-1, 1].forEach(function (sside) {
+          var slx = t2x + px2.x * sside * (t2w / 2 - 1.4), slz = t2z + px2.z * sside * (t2w / 2 - 1.4);
+          trims.addBox(slx, gy + S.h + t2h + 0.4, slz, 0.8, 0.8, 0.8, 0, 0x3a3040, 0);
+          var sl = new THREE.Group();
+          var tilt = new THREE.Group();
+          tilt.rotation.z = 0.4;
+          var beam = neonBox(0.6, 26, 0.6, 0xfff2c8, { transparent: true, opacity: 0.22, depthWrite: false });
+          beam.position.y = 13;
+          tilt.add(beam);
+          sl.add(tilt);
+          sl.position.set(slx, gy + S.h + t2h + 0.8, slz);
+          scene.add(sl);
+          GAME.city.kinetics.push({ m: sl, spin: 0.5 + sside * 0.13 });
+        });
+        // the red carpet, rolled from the doors to the mat, edged in gold
+        trims.addGroundQuad(fx - dir.x * 2.8, gy + 0.09, fz - dir.z * 2.8, dir.x !== 0 ? 5.6 : 2.2, dir.x !== 0 ? 2.2 : 5.6, 0, 0x9a1626);
+        pools.addGroundQuad(fx - dir.x * 3, gy + 0.11, fz - dir.z * 3, 16, 12, 0, 0x7a5a12);
       } else if (loc.kind === 'showroom') {
-        // a glass hall: full-width lit glazing, and the trade's own proof —
-        // a machine on a turntable out front (spun in update())
-        onFace(0.12, 0, gy + 2.3, S.w - 2, 4.2, 0.14, 0x9fd8e8);
+        // the glass jewel box: glazing you can SEE THROUGH to lit machines on
+        // the showroom floor, a chrome band breathing along the roofline,
+        // pennants across the forecourt and a rotating totem out by the road
+        var glz = neonBox(dir.x !== 0 ? 0.14 : S.w - 2, 4.2, dir.x !== 0 ? S.w - 2 : 0.14, 0x9fd8e8, { transparent: true, opacity: 0.32 });
+        glz.position.set(fx - dir.x * 0.12, gy + 2.3, fz - dir.z * 0.12);
+        scene.add(glz);
         // the skirt strip stands clear of the glazing's planes — at 0.2 its
         // inner face shared the glass's and the two banded strips flickered.
         // And it is muted on purpose: painted the marker's own mint it read
@@ -628,6 +717,47 @@ GAME.shops = (function () {
         // entry highlight were the width of the building. The doormat ring
         // at the door is the entry; the skirt is just plinth.
         onFace(0.3, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x2a544c);
+        // the hall glows from within: lit ceiling, a bright back wall to
+        // silhouette the stock, a pale floor and a spot under each machine
+        trims.addBox(placed.cx, gy + S.h - 0.8, placed.cz, dir.x !== 0 ? 9 : S.w - 5, 0.3, dir.x !== 0 ? S.w - 5 : 9, 0, 0xfff2dc, 0);
+        trims.addBox(placed.cx + dir.x * (S.d / 2 - 1.2), gy + 2.6, placed.cz + dir.z * (S.d / 2 - 1.2),
+          dir.x !== 0 ? 0.2 : S.w - 4, 3.4, dir.x !== 0 ? S.w - 4 : 0.2, 0, 0xffe9cc, 0);
+        trims.addGroundQuad(placed.cx, gy + 0.06, placed.cz, dir.x !== 0 ? 11 : S.w - 4, dir.x !== 0 ? S.w - 4 : 11, 0, 0x686874);
+        [-5.5, 5.5].forEach(function (alo, ai) {
+          var icx = placed.cx + px2.x * alo + dir.x * 1.0, icz = placed.cz + px2.z * alo + dir.z * 1.0;
+          trims.addGroundQuad(icx, gy + 0.08, icz, 5.4, 3.6, 0, 0xd8d0c2);
+          var icar = GAME.vehicles.buildMesh(ai ? 'sports' : 'sedan');
+          if (icar) {
+            icar.position.set(icx, gy + 0.1, icz);
+            icar.rotation.y = Math.atan2(dir.x, dir.z) + (ai ? 0.5 : -0.4);
+            scene.add(icar);
+          }
+        });
+        // chrome band, breathing
+        var chase = neonBox(dir.x !== 0 ? 0.2 : S.w - 0.8, 0.35, dir.x !== 0 ? S.w - 0.8 : 0.2, 0xf0f6ff, { transparent: true, opacity: 0.9 });
+        chase.position.set(fx - dir.x * 0.34, gy + S.h - 0.35, fz - dir.z * 0.34);
+        scene.add(chase);
+        GAME.city.kinetics.push({ m: chase, pulse: 2.6, lo: 0.45, hi: 1.0 });
+        // the totem: a pole by the road, the mint machine turning on top
+        var ttx = fx - dir.x * 9 + px2.x * (S.w / 2 + 3.5), ttz = fz - dir.z * 9 + px2.z * (S.w / 2 + 3.5);
+        trims.addBox(ttx, gy + 4.5, ttz, 0.5, 9, 0.5, 0, 0x3a3f52, 0);
+        GAME.city.addSolid(ttx, ttz, 0.7, 0.7, gy + 9, 'prop', true);
+        var head = new THREE.Group();
+        head.add(neonBox(3.6, 2.4, 0.24, 0x141020));
+        var sil = neonBox(2.4, 0.62, 0.3, 0x8dffd8); sil.position.y = -0.5; head.add(sil);
+        var silc = neonBox(1.2, 0.5, 0.3, 0x8dffd8); silc.position.set(0.15, 0.05, 0); head.add(silc);
+        var hring = neonBox(3.9, 0.18, 0.28, 0xff4fa3); hring.position.y = 1.0; head.add(hring);
+        head.position.set(ttx, gy + 10.3, ttz);
+        scene.add(head);
+        GAME.city.kinetics.push({ m: head, spin: 1.1 });
+        // pennants strung from the facade corner to the totem
+        var pcx = fx + px2.x * (S.w / 2 - 1), pcz = fz + px2.z * (S.w / 2 - 1);
+        for (var pf = 0; pf <= 6; pf++) {
+          var pt = pf / 6;
+          trims.addBox(U.lerp(pcx, ttx, pt), gy + 5.6 - Math.sin(pt * Math.PI) * 0.5, U.lerp(pcz, ttz, pt),
+            0.34, 0.42, 0.1, Math.atan2(ttx - pcx, ttz - pcz), [0x8dffd8, 0xff4fa3, 0xffe14f][pf % 3], 0);
+        }
+        pools.addGroundQuad(placed.cx - dir.x * (S.d / 2 + 3), gy + 0.1, placed.cz - dir.z * (S.d / 2 + 3), 22, 10, 0, 0x2e5a50);
         var plX = fx - dir.x * 7 + px2.x * (S.w / 2 - 3);
         var plZ = fz - dir.z * 7 + px2.z * (S.w / 2 - 3);
         trims.addBox(plX, gy + 0.4, plZ, 4.4, 0.8, 4.4, 0, 0x8dffd8, 0);
@@ -644,6 +774,10 @@ GAME.shops = (function () {
         // strip of facade, and the lit windows flickered against the board
         onFace(0.12, 0, gy + S.h - 2.65, S.w - 3, 1.6, 0.14, 0xffe9b0);
         onFace(0.45, doorW / 2 + 0.8, gy + 3.4, 0.3, 0.5, 0.3, 0xffd890);
+        // the porch lamp actually lights the porch — domestic warmth, the
+        // only light temperature in the city that says "lived in"
+        pools.addGroundQuad(fx - dir.x * 1.4 + px2.x * (doorW / 2 + 0.8), gy + 0.1,
+          fz - dir.z * 1.4 + px2.z * (doorW / 2 + 0.8), 7, 7, 0, 0x7a5a20);
       }
       // the name in lights
       var slot = SIGN_SLOT[loc.id];
@@ -664,6 +798,12 @@ GAME.shops = (function () {
     var signMesh = new THREE.Mesh(signs.build(), GAME.city.signMesh.material);
     signMesh.matrixAutoUpdate = false;
     scene.add(signMesh);
+    var poolsMesh = new THREE.Mesh(pools.build(), new THREE.MeshBasicMaterial({
+      vertexColors: true, map: GAME.city.glowTexture('rgba(255,255,255,0.6)'),
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    poolsMesh.matrixAutoUpdate = false;
+    scene.add(poolsMesh);
   }
 
   // one instanced-ish batch of glowing doormats, pulsing in update()

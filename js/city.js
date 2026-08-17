@@ -46,8 +46,9 @@ GAME.city = (function () {
   var PIERS = [[250, 505], [-180, 470]];
   city.isOnPier = function (x, z) {
     // the casino's terrace pad, hung off the south side of the wheel pier —
-    // the casino used to stand square on the walkway and block the wheel
-    if (x > 442 && x < 462 && z > 250 && z < 270.5) return true;
+    // the casino used to stand square on the walkway and block the wheel.
+    // Grown for the palace: a pier casino deserves more deck than a hut.
+    if (x > 438 && x < 466 && z > 250 && z < 277) return true;
     // the deck starts past the boardwalk (x=370); it used to claim from 356
     // and swallow the footpath in front of it
     for (var i = 0; i < PIERS.length; i++) {
@@ -937,10 +938,12 @@ GAME.city = (function () {
       pier.addBox((x0 + endX) / 2, 1.35, pz - 6.8, endX - x0, 0.12, 0.2, 0, 0xb08a60, 0);
       if (pz === 250) {
         // the casino terrace: a pad off the south rail, the rail parted
-        // around its mouth so the walkway to the wheel stays clear
-        pier.addBox(452, 0.375, 263.6, 20, 0.25, 13.2, 0, 0x7a5a40, 0);
-        pier.addBox(446, -0.7, 268.5, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
-        pier.addBox(458, -0.7, 268.5, 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
+        // around its mouth so the walkway to the wheel stays clear. Sized
+        // for the palace now, with a double row of piles under the weight.
+        pier.addBox(452, 0.375, 266.5, 27, 0.25, 19, 0, 0x7a5a40, 0);
+        [[443.5, 268.5], [452, 272.5], [460.5, 268.5], [443.5, 274.8], [460.5, 274.8]].forEach(function (cp) {
+          pier.addBox(cp[0], -0.7, cp[1], 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
+        });
         pier.addBox((x0 + 442) / 2, 1.35, pz + 6.8, 442 - x0, 0.12, 0.2, 0, 0xb08a60, 0);
         pier.addBox((462 + endX) / 2, 1.35, pz + 6.8, endX - 462, 0.12, 0.2, 0, 0xb08a60, 0);
       } else {
