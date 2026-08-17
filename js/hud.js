@@ -910,7 +910,12 @@ GAME.nav = (function () {
 
   function key(n) { return n.id; }
 
-  // BFS along the road-node graph; returns [{x,z}...] start->goal
+  // Dijkstra over edge length along the road-node graph; [{x,z}...] start->goal.
+  // Hop-count BFS minimized the wrong thing once the island joined: its lane
+  // links run ~34 m against the mainland's ~100 m blocks, so "fewest edges"
+  // biased routes onto fewer-but-longer mainland legs. Metres win now. The
+  // graph is a few hundred nodes and this runs at most every 1.5 s, so the
+  // heapless closest-first scan is comfortably inside budget.
   function roadPath(x0, z0, x1, z1) {
     var start = GAME.city.nearestNode(x0, z0);
     var goal = GAME.city.nearestNode(x1, z1);
@@ -919,16 +924,27 @@ GAME.nav = (function () {
     // off the graph, so a cross-channel destination degrades to a stub at
     // the far end instead of a confident line through the police barrier
     var gated = GAME.isla && !GAME.isla.isOpen();
-    var prev = {}, q = [start];
-    prev[key(start)] = null;
-    while (q.length) {
-      var n = q.shift();
+    var dist = {}, prev = {}, done = {}, open = [start];
+    dist[key(start)] = 0; prev[key(start)] = null;
+    while (open.length) {
+      var bi = 0;
+      for (var i = 1; i < open.length; i++) if (dist[key(open[i])] < dist[key(open[bi])]) bi = i;
+      var n = open.splice(bi, 1)[0];
+      var nk = key(n);
+      if (done[nk]) continue;
+      done[nk] = true;
       if (n === goal) break;
       var nbs = GAME.city.neighbors(n);
-      for (var i = 0; i < nbs.length; i++) {
-        if (gated && nbs[i].span) continue;
-        var k = key(nbs[i]);
-        if (!(k in prev)) { prev[k] = n; q.push(nbs[i]); }
+      for (var j = 0; j < nbs.length; j++) {
+        var b = nbs[j];
+        if (gated && b.span) continue;
+        var bk = key(b);
+        if (done[bk]) continue;
+        var d = dist[nk] + U.dist(n.x, n.z, b.x, b.z);
+        if (dist[bk] === undefined || d < dist[bk]) {
+          dist[bk] = d; prev[bk] = n;
+          open.push(b);
+        }
       }
     }
     var out = [], cur = goal;
