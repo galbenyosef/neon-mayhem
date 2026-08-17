@@ -6,6 +6,7 @@
 GAME.shops = (function () {
   var el = {}, openShop = null, sel = 0, pendingBuy = null, locations = [], markerMesh = null, markerData = [];
   var leftSince = {};   // reopen only after you step off the mat
+  var lastWX = null, lastWZ = null;   // where the walk-in scan last saw the player
   var spinProps = [];   // slow turntables: the showroom's display car, etc.
 
   // sign-atlas slots for the storefront names — indexes into city.js SIGN_TEXTS,
@@ -221,7 +222,9 @@ GAME.shops = (function () {
   function safehouseItems(loc) {
     var s = loc.sh;
     if (owns(s.id)) {
-      return [{ id: 'rest', name: 'REST', ds: 'Your place. Sleep it off — health restored.', price: 0 }];
+      // your own bed is not merchandise: no price tag, no FREE, no BUY chip —
+      // "the condo, FREE" read as a purchase you were about to make
+      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Your place. Health restored.', price: 0, noPrice: true, chip: 'REST' }];
     }
     return [{ id: 'buy', name: 'BUY ' + s.name, ds: s.tag + '  You’ll wake up here, gear intact.', price: s.price }];
   }
@@ -918,7 +921,20 @@ GAME.shops = (function () {
     if (!openShop) return;
     var P = GAME.player, list = items(openShop);
     el.title.textContent = openShop.name;
+    // the boot-time tag goes stale the moment a safehouse changes hands, and
+    // the hint with it — buying your condo mid-visit must not leave a footer
+    // still promising a BUY that no longer exists. Both live here in render.
+    if (openShop.kind === 'safehouse') openShop.tag = owns(openShop.sh.id) ? 'Yours' : 'For sale';
     el.tag.textContent = openShop.tag || '';
+    var hint = $('shop-hint');
+    if (hint) hint.textContent =
+      openShop.kind === 'dress' || openShop.kind === 'barber'
+        ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY asks before it charges  ·  Esc leave'
+        : openShop.kind === 'showroom'
+          ? 'Click or W/S to put it on the turntable  ·  BUY asks before it charges  ·  Esc leave'
+          : openShop.kind === 'safehouse' && owns(openShop.sh.id)
+            ? 'Your place — Enter to sleep it off, nothing to buy here  ·  Esc leave'
+            : 'Click or W/S to select  ·  BUY (or Enter) asks before it charges  ·  Esc leave';
     el.cash.textContent = '$' + P.cash.toLocaleString();
     el.items.innerHTML = '';
     sel = Math.max(0, Math.min(sel, list.length - 1));
@@ -933,9 +949,12 @@ GAME.shops = (function () {
       // click) opens a confirmation card — nothing is ever bought without
       // answering it. Re-visiting a row can only ever re-preview it.
       var armed = i === sel && buyable;
+      // noPrice rows are actions, not goods (sleeping in your own bed):
+      // never print FREE or a BUY chip on them — that read as a purchase
       var priceCell = it.owned ? 'YOURS'
-        : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
-          : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
+        : it.noPrice ? (armed ? (it.chip || 'GO') : '')
+          : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
+            : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
       // the row only ever selects and previews. Money moves through the BUY
@@ -1131,6 +1150,9 @@ GAME.shops = (function () {
   function openConfirm(it) {
     if (!openShop || !it || it.owned || it.off) return;
     if (spinning) { note('The wheel is still spinning…'); return; }
+    // no money moves on a noPrice action, so the gate would only ask
+    // "buy this? Free" — the exact wording the condo bug shipped. Act directly.
+    if (it.noPrice) { buy(it.id); return; }
     var P = GAME.player;
     if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); return; }
     pendingBuy = it.id;
@@ -1186,13 +1208,6 @@ GAME.shops = (function () {
     }
     cancelConfirm();
     note('');
-    var hint = $('shop-hint');
-    if (hint) hint.textContent =
-      loc.kind === 'dress' || loc.kind === 'barber'
-        ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY asks before it charges  ·  Esc leave'
-        : loc.kind === 'showroom'
-          ? 'Click or W/S to put it on the turntable  ·  BUY asks before it charges  ·  Esc leave'
-          : 'Click or W/S to select  ·  BUY (or Enter) asks before it charges  ·  Esc leave';
     el.screen.style.display = 'flex';
     GAME.shopOpen = true;
     GAME.releasePointer();
@@ -1259,6 +1274,12 @@ GAME.shops = (function () {
     }
     for (var sp = 0; sp < spinProps.length; sp++) spinProps[sp].mesh.rotation.y += dt * spinProps[sp].rate;
     if (GAME.shopOpen || !GAME.started || P.state !== 'alive') return;
+    // a walk-in must be WALKED in. Feet cover under a metre per tick, so a
+    // multi-metre move between scans is a teleport — waking up at your own
+    // condo, a mission repositioning you, a loaded save — and any mat you
+    // land on stays shut until you step off and come back meaning it
+    var jumped = lastWX !== null && U.dist2(P.pos.x, P.pos.z, lastWX, lastWZ) > 12 * 12;
+    lastWX = P.pos.x; lastWZ = P.pos.z;
     var unlocked = !GAME.isla || GAME.isla.isOpen();
     for (var k = 0; k < locations.length; k++) {
       var loc = locations[k];
@@ -1267,6 +1288,7 @@ GAME.shops = (function () {
       if (d2 > 5.5 * 5.5) { leftSince[loc.id] = true; continue; }
       if (P.inCar || d2 > 2.6 * 2.6) continue;
       if (leftSince[loc.id] === false) continue;   // still standing where it closed
+      if (leftSince[loc.id] === undefined || jumped) { leftSince[loc.id] = false; continue; }
       open(loc);
       return;
     }
