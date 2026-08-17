@@ -622,8 +622,12 @@ GAME.shops = (function () {
         // a machine on a turntable out front (spun in update())
         onFace(0.12, 0, gy + 2.3, S.w - 2, 4.2, 0.14, 0x9fd8e8);
         // the skirt strip stands clear of the glazing's planes — at 0.2 its
-        // inner face shared the glass's and the two banded strips flickered
-        onFace(0.3, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x8dffd8);
+        // inner face shared the glass's and the two banded strips flickered.
+        // And it is muted on purpose: painted the marker's own mint it read
+        // as one enormous glowing doormat across the whole front, as if the
+        // entry highlight were the width of the building. The doormat ring
+        // at the door is the entry; the skirt is just plinth.
+        onFace(0.3, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x2a544c);
         var plX = fx - dir.x * 7 + px2.x * (S.w / 2 - 3);
         var plZ = fz - dir.z * 7 + px2.z * (S.w / 2 - 3);
         trims.addBox(plX, gy + 0.4, plZ, 4.4, 0.8, 4.4, 0, 0x8dffd8, 0);
