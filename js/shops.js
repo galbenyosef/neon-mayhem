@@ -492,13 +492,17 @@ GAME.shops = (function () {
     // Each trade gets its own building, sized and dressed for what it sells —
     // not one grey hut with different labels. Walls are tinted per kind so the
     // row of shops reads at a glance against the city's plain blocks.
+    // Proportions are part of the read: a palace must out-bulk a bungalow,
+    // and a shop must hold the street wall against 7-18 m neighbours. The
+    // first sizes were hut-scale — a 5.5 m THREADS read as a kiosk beside
+    // the apartment rows, and the "palace" barely cleared a villa.
     var SIZES = {
-      hardware: { w: 14, d: 9, h: 6, wall: 0xd8a25a },
-      dress: { w: 13, d: 8, h: 5.5, wall: 0xf0c8dc },
-      barber: { w: 10, d: 7, h: 5, wall: 0xbcd8f0 },
-      showroom: { w: 26, d: 15, h: 7.5, wall: 0x3c4258 },
-      casino: { w: 18, d: 12, h: 7, wall: 0xe8c86a },
-      safehouse: { w: 10, d: 8, h: 9, wall: 0xc8bca8 }
+      hardware: { w: 20, d: 12, h: 9, wall: 0xd8a25a },
+      dress: { w: 18, d: 11, h: 8.5, wall: 0xf0c8dc },
+      barber: { w: 14, d: 9, h: 7.5, wall: 0xbcd8f0 },
+      showroom: { w: 34, d: 18, h: 9, wall: 0x3c4258 },
+      casino: { w: 24, d: 16, h: 9, wall: 0xe8c86a },
+      safehouse: { w: 11, d: 9, h: 10, wall: 0xc8bca8 }
     };
     var walls = new GeoBatch();      // window-textured shells
     var trims = new GeoBatch();      // doors, awnings, roof lips (unlit color)
@@ -655,11 +659,11 @@ GAME.shops = (function () {
         // the gold hall, a deco sunburst stacked over the doors, the gull's
         // wheel actually turning, bulbs down every lip, a red carpet to the
         // mat and two searchlights sweeping the sky off the roof
-        var t2w = 12, t2d = 8, t2h = 3.6;
-        var t2x = placed.cx + dir.x * 1.5, t2z = placed.cz + dir.z * 1.5;
+        var t2w = 16, t2d = 11, t2h = 5;
+        var t2x = placed.cx + dir.x * 1.8, t2z = placed.cz + dir.z * 1.8;
         walls.addBox(t2x, gy + S.h + t2h / 2 - 0.1, t2z, dir.x !== 0 ? t2d : t2w, t2h, dir.x !== 0 ? t2w : t2d, 0, S.wall, 28);
         GAME.city.addSolid(t2x, t2z, dir.x !== 0 ? t2d : t2w, dir.x !== 0 ? t2w : t2d, gy + S.h + t2h - 0.1);
-        trims.addBox(t2x, gy + S.h + t2h + 0.7, t2z, 6, 1.5, 4.5, 0, 0x241a36, 0);
+        trims.addBox(t2x, gy + S.h + t2h + 1.0, t2z, 8, 2.1, 5.5, 0, 0x241a36, 0);
         // gold lips on both tiers, and a row of warm bulbs under the first
         onFace(0.2, 0, gy + S.h - 0.28, S.w - 0.6, 0.4, 0.24, 0xffd24a);
         var t2fx = t2x - dir.x * (t2d / 2), t2fz = t2z - dir.z * (t2d / 2);
@@ -707,8 +711,8 @@ GAME.shops = (function () {
         // the glass jewel box: glazing you can SEE THROUGH to lit machines on
         // the showroom floor, a chrome band breathing along the roofline,
         // pennants across the forecourt and a rotating totem out by the road
-        var glz = neonBox(dir.x !== 0 ? 0.14 : S.w - 2, 4.2, dir.x !== 0 ? S.w - 2 : 0.14, 0x9fd8e8, { transparent: true, opacity: 0.32 });
-        glz.position.set(fx - dir.x * 0.12, gy + 2.3, fz - dir.z * 0.12);
+        var glz = neonBox(dir.x !== 0 ? 0.14 : S.w - 2, 5.6, dir.x !== 0 ? S.w - 2 : 0.14, 0x9fd8e8, { transparent: true, opacity: 0.32 });
+        glz.position.set(fx - dir.x * 0.12, gy + 3.1, fz - dir.z * 0.12);
         scene.add(glz);
         // the skirt strip stands clear of the glazing's planes — at 0.2 its
         // inner face shared the glass's and the two banded strips flickered.
@@ -740,14 +744,14 @@ GAME.shops = (function () {
         GAME.city.kinetics.push({ m: chase, pulse: 2.6, lo: 0.45, hi: 1.0 });
         // the totem: a pole by the road, the mint machine turning on top
         var ttx = fx - dir.x * 9 + px2.x * (S.w / 2 + 3.5), ttz = fz - dir.z * 9 + px2.z * (S.w / 2 + 3.5);
-        trims.addBox(ttx, gy + 4.5, ttz, 0.5, 9, 0.5, 0, 0x3a3f52, 0);
-        GAME.city.addSolid(ttx, ttz, 0.7, 0.7, gy + 9, 'prop', true);
+        trims.addBox(ttx, gy + 5.5, ttz, 0.5, 11, 0.5, 0, 0x3a3f52, 0);
+        GAME.city.addSolid(ttx, ttz, 0.7, 0.7, gy + 11, 'prop', true);
         var head = new THREE.Group();
         head.add(neonBox(3.6, 2.4, 0.24, 0x141020));
         var sil = neonBox(2.4, 0.62, 0.3, 0x8dffd8); sil.position.y = -0.5; head.add(sil);
         var silc = neonBox(1.2, 0.5, 0.3, 0x8dffd8); silc.position.set(0.15, 0.05, 0); head.add(silc);
         var hring = neonBox(3.9, 0.18, 0.28, 0xff4fa3); hring.position.y = 1.0; head.add(hring);
-        head.position.set(ttx, gy + 10.3, ttz);
+        head.position.set(ttx, gy + 12.3, ttz);
         scene.add(head);
         GAME.city.kinetics.push({ m: head, spin: 1.1 });
         // pennants strung from the facade corner to the totem

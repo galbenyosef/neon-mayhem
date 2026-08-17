@@ -940,7 +940,7 @@ GAME.city = (function () {
         // the casino terrace: a pad off the south rail, the rail parted
         // around its mouth so the walkway to the wheel stays clear. Sized
         // for the palace now, with a double row of piles under the weight.
-        pier.addBox(452, 0.375, 266.5, 27, 0.25, 19, 0, 0x7a5a40, 0);
+        pier.addBox(452, 0.375, 266, 27, 0.25, 20, 0, 0x7a5a40, 0);
         [[443.5, 268.5], [452, 272.5], [460.5, 268.5], [443.5, 274.8], [460.5, 274.8]].forEach(function (cp) {
           pier.addBox(cp[0], -0.7, cp[1], 0.8, 3.4, 0.8, 0, 0x4a3828, 0);
         });
@@ -1353,7 +1353,7 @@ GAME.city = (function () {
     // the vision: a green-glazed cab you can read from the runway, a rotating
     // beacon above it, and a windsock on the apron
     var tb = new GeoBatch();
-    tb.addBox(A.cx + 30, 5, A.cz + 28, 84, 10, 16, 0, 0x8a94b0, 28);
+    tb.addBox(A.cx + 30, 6, A.cz + 28, 84, 12, 16, 0, 0x8a94b0, 28);
     tb.addBox(A.cx + 40, 12, A.cz + 26, 8, 24, 8, 0, 0x9aa8c8, 0); // tower
     tb.addBox(A.cx + 40, 25, A.cz + 26, 11, 4, 11, 0, 0x141824, 0); // tower cab
     tb.addBox(A.apron.x + 20, 3, A.apron.z - 14, 0.3, 6, 0.3, 0, 0xd0d4dc, 0);  // windsock pole
@@ -1378,7 +1378,7 @@ GAME.city = (function () {
     wsMesh.matrixAutoUpdate = false; scene.add(wsMesh);
     var tbm = new THREE.Mesh(tb.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     tbm.matrixAutoUpdate = false; scene.add(tbm);
-    addSolid(A.cx + 30, A.cz + 28, 84, 16, 10);
+    addSolid(A.cx + 30, A.cz + 28, 84, 16, 12);
     addSolid(A.cx + 40, A.cz + 26, 8, 8, 24);
     // runway edge lights
     var glowB = new GeoBatch();
