@@ -225,7 +225,7 @@ GAME.shops = (function () {
     if (owns(s.id)) {
       // your own bed is not merchandise: no price tag, no FREE, no BUY chip —
       // "the condo, FREE" read as a purchase you were about to make
-      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Your place. Health restored.', price: 0, noPrice: true, chip: 'REST' }];
+      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Eight hours pass. Health back, heat forgotten.', price: 0, noPrice: true, chip: 'REST' }];
     }
     return [{ id: 'buy', name: 'BUY ' + s.name, ds: s.tag + '  You’ll wake up here, gear intact.', price: s.price }];
   }
@@ -301,7 +301,29 @@ GAME.shops = (function () {
   }
   function buySafehouse(loc, id) {
     var P = GAME.player;
-    if (id === 'rest') { P.health = 100; note('You slept like 1986 would never end.'); return; }
+    if (id === 'rest') {
+      // no sleeping on the clock: a fare in the back seat or a race half
+      // run does not pause for a nap
+      if (GAME.missions && GAME.missions.active) { note('No sleeping on the clock.'); return; }
+      close();
+      GAME.hud.fade(function () {
+        // eight hours pass behind the blackout: a third of the day wheel
+        // (unless the clock is pinned by choice), the law loses interest,
+        // taken pickups age toward their return, and the body resets
+        GAME.player.health = 100;
+        GAME.police.clearWanted();
+        if (GAME.timeMode === 'auto') {
+          GAME.dayPhase = (GAME.dayPhase + 8 / 24) % 1;
+          GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
+        }
+        GAME.world.pickups.forEach(function (p) {
+          if (p.taken && isFinite(p.respawnT)) p.respawnT -= GAME.DAY_SECONDS / 3;
+        });
+        GAME.hud.message('Eight hours later. Rested, forgotten by the law, good as new.', 5);
+        GAME.track('safehouse-rest');
+      });
+      return;
+    }
     ownedList().push(loc.sh.id);
     GAME.save();
     refreshGarageSpots();   // this lot joins the fleet's rounds
