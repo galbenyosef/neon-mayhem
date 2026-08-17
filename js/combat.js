@@ -142,11 +142,11 @@ GAME.combat = (function () {
     var wd = WEAPONS[w];
     var m = muzzlePos();
     var inv = P.weapons[w];
-    // holding a gun with nothing in it: click once, then put it away —
-    // fists are always loaded (covers a loaded save that comes back empty)
+    // holding a gun with nothing in it: click once, then swap to the next
+    // loaded one (covers a loaded save that comes back empty)
     if (!inv || inv.ammo <= 0) {
       GAME.audio.ricochet();
-      if (P.currentWeapon === w) { P.currentWeapon = 'fist'; refreshWeaponHud(); }
+      if (P.currentWeapon === w) { P.currentWeapon = fallbackFrom(w); refreshWeaponHud(); }
       return;
     }
     if (!GAME.unlimitedAmmo) inv.ammo--;
@@ -178,13 +178,27 @@ GAME.combat = (function () {
     GAME.police.noteGunfire(P.pos);
     GAME.peds.panic(P.pos.x, P.pos.z, 30);
     GAME.missions.notifyChaos(2);
-    // the last round spends the gun: an empty weapon drops to fists on its
-    // own instead of dry-clicking in a firefight
+    // the last round spends the gun: an empty weapon hands off to the next
+    // loaded one on its own instead of dry-clicking in a firefight
     if (inv.ammo <= 0 && P.currentWeapon === w) {
-      P.currentWeapon = 'fist';
-      GAME.hud.message('Out of ammo — fists up.', 2);
+      var next = fallbackFrom(w);
+      P.currentWeapon = next;
+      GAME.hud.message('Out of ammo — ' + (next === 'fist' ? 'fists up.' : WEAPONS[next].name + ' up.'), 2);
     }
     refreshWeaponHud();
+  }
+
+  // the next loaded gun in 1-5 order after the spent one, wrapping round the
+  // coat — or fists, which are always loaded, when every magazine is empty
+  function fallbackFrom(w) {
+    var P = GAME.player, at = WEAPON_ORDER.indexOf(w);
+    for (var i = 1; i < WEAPON_ORDER.length; i++) {
+      var cand = WEAPON_ORDER[(at + i) % WEAPON_ORDER.length];
+      if (cand === 'fist') continue;
+      var cinv = P.weapons[cand];
+      if (cinv && cinv.have && cinv.ammo > 0) return cand;
+    }
+    return 'fist';
   }
 
   function punch() {
