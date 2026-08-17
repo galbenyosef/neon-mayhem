@@ -1151,6 +1151,64 @@ GAME.isla = (function () {
     b.addBox(POI.factory.x + 18, y + 23.5, POI.factory.z - 10, 2.5, 1.2, 2.5, 0, 0xf78ab8, 0);
     b.addBox(POI.factory.x + 18, y + 25.7, POI.factory.z - 10, 2.5, 1.2, 2.5, 0, 0xf78ab8, 0);
     city.addSign(sg, 24, POI.factory.x, y + 11, POI.factory.z + 15.3, 0, 30, 5);
+    // The FRONT (+z, the sign face) was a bare cream wall under a good
+    // roofline. Same cure as the respray garages: trade dress. A working
+    // dock, the shop where the product is sold, and the product itself in
+    // neon on the wall.
+    var fx = POI.factory.x, fz = POI.factory.z;
+    // candy-stripe pilasters up the facade corners, and a pink cornice
+    [-22.4, 22.4].forEach(function (px3) {
+      for (var st = 0; st < 7; st++) {
+        b.addBox(fx + px3, y + 1 + st * 2, fz + 15.2, 1.3, 2, 0.6, 0, st % 2 ? 0xf2e6cf : 0xf78ab8, 0);
+      }
+    });
+    b.addBox(fx, y + 15.4, fz + 15.2, 46.6, 1.2, 0.7, 0, 0xf78ab8, 0);
+    // loading dock: a raised apron and two bays. The left roller is down in
+    // pink slats; the right stands open on a lit hall — someone is loading.
+    b.addBox(fx - 11.5, y + 0.55, fz + 16.6, 17, 1.1, 3.2, 0, 0xd8ccb8, 0);
+    city.addSolid(fx - 11.5, fz + 16.6, 17, 3.2, y + 1.1);
+    [-16.5, -7].forEach(function (bx2, bi) {
+      b.addBox(fx + bx2, y + 5.9, fz + 15.25, 7.6, 1.4, 0.6, 0, 0xf78ab8, 0);   // lintel
+      if (bi === 0) {
+        for (var sl = 0; sl < 5; sl++) {
+          b.addBox(fx + bx2, y + 1.5 + sl * 0.76, fz + 15.2, 6.6, 0.66, 0.5, 0, sl % 2 ? 0xe8b8cc : 0xf6dce6, 0);
+        }
+      } else {
+        b.addBox(fx + bx2, y + 3.15, fz + 15.2, 6.6, 4.1, 0.5, 0, 0x2a2030, 0);
+        batches.glow.addBox(fx + bx2, y + 4.9, fz + 15.55, 5.4, 0.3, 0.18, 0, 0xffd890, 0);  // warm lamp
+        pools.addGroundQuad(fx + bx2, y + 1.22, fz + 16.6, 6.4, 3, 0, 0x6a4a16);             // its wash on the dock
+      }
+    });
+    // churns and crates waiting on the apron
+    b.addBox(fx - 4.4, y + 1.75, fz + 16.4, 0.95, 1.3, 0.95, 0, 0xc8ccd4, 0);
+    b.addBox(fx - 3.2, y + 1.6, fz + 17.2, 0.95, 1.0, 0.95, 0.4, 0xc8ccd4, 0);
+    [[-19.6, 0, 0xf6dce6], [-18.4, 0, 0x8dffd8], [-19.0, 1.15, 0xfff0c8]].forEach(function (cr) {
+      b.addBox(fx + cr[0], y + 1.65 + cr[1], fz + 17.4, 1.15, 1.15, 1.15, cr[1] ? 0.5 : 0.15, cr[2], 0);
+    });
+    // the factory SHOP: glass door under a pink-and-cream striped awning,
+    // porthole windows warm above it — the corner where the product is sold
+    b.addBox(fx + 6.5, y + 1.8, fz + 15.2, 2.0, 3.6, 0.5, 0, 0x33454e, 0);
+    batches.glow.addBox(fx + 6.5, y + 2.0, fz + 15.5, 1.6, 2.6, 0.14, 0, 0x9fe8f0, 0);
+    for (var aw = 0; aw < 8; aw++) {
+      b.addBox(fx + 2.7 + aw * 1.25, y + 4.6, fz + 16.0, 1.25, 0.5, 2.2, 0, aw % 2 ? 0xf6f2ea : 0xf78ab8, 0);
+    }
+    [4, 7, 10].forEach(function (wx) {
+      batches.glow.addBox(fx + wx, y + 7.0, fz + 15.25, 1.1, 1.1, 0.16, 0, 0xfff0c8, 0);
+    });
+    // the product in neon on its backboard: scoop over a waffle cone, a
+    // cherry that blinks, and drips that actually drip — respray-style
+    b.addBox(fx + 18, y + 10.9, fz + 15.25, 5.4, 5.8, 0.5, 0, 0x14101f, 0);
+    batches.glow.addBox(fx + 18, y + 12.6, fz + 15.6, 2.7, 1.5, 0.2, 0, 0xff8ab8, 0);   // scoop
+    batches.glow.addBox(fx + 18, y + 11.4, fz + 15.6, 2.3, 0.5, 0.18, 0, 0xffd24a, 0);  // cone rim
+    batches.glow.addBox(fx + 18, y + 10.6, fz + 15.6, 1.5, 0.9, 0.18, 0, 0xe8a83e, 0);
+    batches.glow.addBox(fx + 18, y + 9.7, fz + 15.6, 0.7, 0.9, 0.18, 0, 0xe8a83e, 0);
+    city.kmesh(0.6, 0.6, 0.3, 0xe8283e, fx + 18, y + 13.7, fz + 15.6, { blink: 2.2, duty: 0.6 });
+    [0, 1].forEach(function (di) {
+      city.kmesh(0.24, 0.3, 0.2, 0xff8ab8, fx + 16.9 - di * 0.3, y + 8.9 - di * 0.6, fz + 15.55,
+        { blink: 1.8, duty: 0.34, phase: 1.8 - di * 0.6 });
+    });
+    // pink wash on the forecourt in front of the shop
+    pools.addGroundQuad(fx + 7, y + 0.1, fz + 18.5, 14, 7, 0, 0x6a2438);
 
     // lighthouse on the south-west point — candy stripes and a beam that
     // actually sweeps the coast, the island's one moving light
