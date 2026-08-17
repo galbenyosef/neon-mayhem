@@ -578,6 +578,7 @@ GAME.vehicles = (function () {
     var airT = car.air || 0;
     car.air = 0;
     var isPlayer = car === GAME.player.car && GAME.player.inCar;
+    var earned = car.jumpRamp !== undefined && car.jumpRamp !== null;
     var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
     // earned, not stumbled into: rolling off the side of a ramp (or crawling
     // off the lip) is a fall — hang time alone doesn't pay, distance does
@@ -599,7 +600,13 @@ GAME.vehicles = (function () {
       damageCar(car, Math.min(40, (impact - 16) * 2.2), 'wall');
       GAME.audio.crash(Math.min(1, impact / 30));
       if (isPlayer) GAME.cameraShake = Math.min(1, impact / 26);
-      if (car.spec.bike && isPlayer && GAME.player.onBike && impact > 24) GAME.ejectBike(impact);
+      // Wheels-down off a real ramp is a landing, not a crash: a jump earned
+      // at the lip keeps its rider short of the truly catastrophic, however
+      // hard the boost ramp threw them. Getting tossed is for FALLS — riding
+      // off a roof or a cliff with no ramp under the launch — where coming
+      // down at 24 m/s means a twelve-metre drop nobody aimed.
+      var botched = earned ? impact > 34 : impact > 24;
+      if (car.spec.bike && isPlayer && GAME.player.onBike && botched) GAME.ejectBike(impact);
     }
   }
 
