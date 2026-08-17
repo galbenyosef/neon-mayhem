@@ -6,6 +6,8 @@
 GAME.shops = (function () {
   var el = {}, openShop = null, sel = 0, pendingBuy = null, locations = [], markerMesh = null, markerData = [];
   var leftSince = {};   // reopen only after you step off the mat
+  var lastWX = null, lastWZ = null;   // where the walk-in scan last saw the player
+  var lastUnlocked = null;   // island gate state at the last walk-in scan
   var spinProps = [];   // slow turntables: the showroom's display car, etc.
 
   // sign-atlas slots for the storefront names — indexes into city.js SIGN_TEXTS,
@@ -158,6 +160,18 @@ GAME.shops = (function () {
           var q = boxes[b];
           if (px > q.minX - 1.6 && px < q.maxX + 1.6 && pz > q.minZ - 1.6 && pz < q.maxZ + 1.6) { hit = true; break; }
         }
+        if (hit) continue;
+        // ...and never on top of a parked vehicle. The spot hunt vetted
+        // water, roads and walls but not CARS, so a second showroom
+        // purchase was delivered squarely onto the first — a helicopter
+        // set down on the dune buggy bought a minute earlier.
+        var cars = GAME.world.cars, gy = GAME.city.groundY(px, pz);
+        for (var ci = 0; ci < cars.length; ci++) {
+          var cc = cars[ci];
+          if (cc.dead) continue;
+          if (Math.abs(cc.pos.y - gy) > 5) continue;   // a car on a roof doesn't block the street
+          if (U.dist2(px, pz, cc.pos.x, cc.pos.z) < 6.5 * 6.5) { hit = true; break; }
+        }
         if (!hit) return { x: px, z: pz };
       }
     }
@@ -209,7 +223,9 @@ GAME.shops = (function () {
   function safehouseItems(loc) {
     var s = loc.sh;
     if (owns(s.id)) {
-      return [{ id: 'rest', name: 'REST', ds: 'Your place. Sleep it off — health restored.', price: 0 }];
+      // your own bed is not merchandise: no price tag, no FREE, no BUY chip —
+      // "the condo, FREE" read as a purchase you were about to make
+      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Eight hours pass. Health back, heat forgotten.', price: 0, noPrice: true, chip: 'REST' }];
     }
     return [{ id: 'buy', name: 'BUY ' + s.name, ds: s.tag + '  You’ll wake up here, gear intact.', price: s.price }];
   }
@@ -220,7 +236,7 @@ GAME.shops = (function () {
     function row(id, name, ds, price) {
       var inGarage = garage().indexOf(id) >= 0;
       return { id: id, name: name, price: price,
-        owned: inGarage, ds: inGarage ? 'In your garage — a fresh one always waits at home.' : ds };
+        owned: inGarage, ds: inGarage ? 'In your garage — one waits here and at every place you own.' : ds };
     }
     return [
       row('motorcycle', 'NEON STREAK', 'The bike. Fast, loud, unwise.', 4000),
@@ -234,9 +250,17 @@ GAME.shops = (function () {
   }
   function bribeItems() {
     var w = GAME.police.wanted;
+    // rank pricing: the sergeant charges by how hot you are. Losing the top
+    // star of a five-star manhunt is dearer work than shaking off a fender-
+    // bender — $150 a star at one star, $750 at five. CLEAN SLATE is the
+    // whole ladder summed (no discount, no trap: singles total the same),
+    // and it steps aside when one star is all the books hold — two rows
+    // selling the identical favor at the identical price read as a bug.
+    var ww = Math.max(1, w);
     return [
-      { id: 'star', name: 'LOSE ONE STAR', ds: w > 0 ? 'The sergeant looks away.' : 'You’re clean already.', price: 300, off: w <= 0 },
-      { id: 'slate', name: 'CLEAN SLATE', ds: w > 0 ? 'All ' + w + ' star' + (w > 1 ? 's' : '') + ', forgotten.' : 'Nothing on the books.', price: 300 * Math.max(1, w), off: w <= 0 }
+      { id: 'star', name: 'LOSE ONE STAR', ds: w > 0 ? 'The sergeant looks away.' : 'You’re clean already.', price: 150 * ww, off: w <= 0 },
+      { id: 'slate', name: 'CLEAN SLATE', price: 75 * ww * (ww + 1), off: w <= 1,
+        ds: w > 1 ? 'All ' + w + ' stars, forgotten.' : w === 1 ? 'One star on the books — just lose it.' : 'Nothing on the books.' }
     ];
   }
   function casinoItems() {
@@ -277,13 +301,39 @@ GAME.shops = (function () {
   }
   function buySafehouse(loc, id) {
     var P = GAME.player;
-    if (id === 'rest') { P.health = 100; note('You slept like 1986 would never end.'); return; }
+    if (id === 'rest') {
+      // no sleeping on the clock: a fare in the back seat or a race half
+      // run does not pause for a nap
+      if (GAME.missions && GAME.missions.active) { note('No sleeping on the clock.'); return; }
+      close();
+      GAME.hud.fade(function () {
+        // eight hours pass behind the blackout: a third of the day wheel,
+        // the law loses interest, taken pickups age toward their return,
+        // and the body resets. The bed outranks a pinned sky — "respecting"
+        // a day/night pin here meant four sleeps changed nothing outside,
+        // which read as the feature being broken. Sleeping is the loudest
+        // possible statement that time should move, so it unpins the sun.
+        GAME.player.health = 100;
+        GAME.police.clearWanted();
+        var unpinned = GAME.timeMode !== 'auto';
+        if (unpinned) GAME.setTimeMode('auto');   // persists the preference too
+        GAME.dayPhase = (GAME.dayPhase + 8 / 24) % 1;
+        GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
+        GAME.world.pickups.forEach(function (p) {
+          if (p.taken && isFinite(p.respawnT)) p.respawnT -= GAME.DAY_SECONDS / 3;
+        });
+        GAME.hud.message('Eight hours later. Rested, forgotten by the law, good as new.'
+          + (unpinned ? ' The sky is back on the clock.' : ''), 5);
+        GAME.track('safehouse-rest');
+      });
+      return;
+    }
     ownedList().push(loc.sh.id);
     GAME.save();
-    refreshGarageSpots();   // the fleet moves home with you
+    refreshGarageSpots();   // this lot joins the fleet's rounds
     GAME.track('safehouse-bought');
     note('The keys are yours.');
-    GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all.', 5);
+    GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all, with your garage parked outside.', 5);
     GAME.share.show({
       slug: 'safehouse-' + loc.sh.id,
       eyebrow: 'COSTA ROSA · 1986',
@@ -297,7 +347,8 @@ GAME.shops = (function () {
   }
   // ---------- the garage ----------
   // A deed, not a rental: every vehicle you buy is registered to a parking
-  // spot at your best property (or the showroom forecourt while you rent).
+  // spot at the showroom AND at each property you own — the same fleet,
+  // waiting at every address.
   // The parked-vehicle spawner already guarantees specials at their spot, so
   // wreck it, sink it or leave it across the channel — a fresh one is waiting
   // at home. The registry persists; the spots are rebuilt every boot.
@@ -307,32 +358,67 @@ GAME.shops = (function () {
     if (!GAME.prefs.garage) GAME.prefs.garage = [];
     return GAME.prefs.garage;
   }
-  function homeBase() {
-    // the priciest property you own is home; the forecourt is the fallback
+  function garageBases() {
+    // every lot you can call yours hosts the whole fleet: the showroom
+    // forecourt always, and each property as you buy it — so a bought
+    // vehicle is wherever you happen to be, not at one address you have
+    // to remember ("from where do I pick them up?")
+    var bases = [];
+    var sr = locations.filter(function (l) { return l.kind === 'showroom'; })[0];
+    // narrow: the dealer lot is the strip between the x=50 road and the glass
+    // hall — the grid must run DOWN it, not across it. Seeded wide it walked
+    // into the grown building on one side or the carriageway on the other,
+    // and clearSpot scattered the fleet out of sight ("my cars vanished").
+    if (sr) bases.push({ id: 'showroom', x: sr.forecourt.x, z: sr.forecourt.z, heading: sr.heading || 0, narrow: true });
     var unlocked = !GAME.isla || GAME.isla.isOpen();
-    var best = null;
     for (var i = 0; i < SAFEHOUSES.length; i++) {
       var s = SAFEHOUSES[i];
       if (!owns(s.id) || !s.at) continue;
       if (s.isla && !unlocked) continue;
-      if (!best || s.price > best.price) best = s;
+      bases.push({ id: s.id, x: s.at.x, z: s.at.z, heading: 0 });
     }
-    if (best) return { x: best.at.x, z: best.at.z, heading: 0 };
-    var sr = locations.filter(function (l) { return l.kind === 'showroom'; })[0];
-    return sr ? { x: sr.forecourt.x, z: sr.forecourt.z, heading: sr.heading || 0 } : { x: 0, z: 0, heading: 0 };
+    return bases;
   }
   function refreshGarageSpots() {
-    var base = homeBase();
-    garage().forEach(function (type, i) {
-      var s = clearSpot(base.x + 6 + (i % 3) * 5, base.z + 6 + Math.floor(i / 3) * 6);
-      var g = garageSpots[type];
-      if (!g) {
-        g = { x: s.x, z: s.z, heading: base.heading, vtype: type, owned: true };
-        garageSpots[type] = g;
-        GAME.city.parkedSpots.push(g);
-      } else {
-        g.x = s.x; g.z = s.z; g.heading = base.heading;
-      }
+    // A wider grid than the old 5 x 6 m: the parked spawner keeps ~7.7 m
+    // clear around a spot, so five-metre neighbours BLOCKED each other —
+    // half the fleet never appeared, and what did appear crowded one pile.
+    // Spots are also kept clear of each other after the spiral hunt moves
+    // them, for the same reason.
+    var fleet = garage();
+    garageBases().forEach(function (base) {
+      var placedNow = [];
+      fleet.forEach(function (type, i) {
+        var seedX, seedZ;
+        if (base.narrow) {
+          // two columns deep, marching south down the dealer strip
+          seedX = base.x - 3.5 + (i % 2) * 9;
+          seedZ = base.z + 6 + Math.floor(i / 2) * 10;
+        } else {
+          seedX = base.x + 6 + (i % 3) * 9;
+          seedZ = base.z + 6 + Math.floor(i / 3) * 10;
+        }
+        var s = clearSpot(seedX, seedZ);
+        for (var t = 0; t < 3; t++) {
+          var clash = false;
+          for (var p = 0; p < placedNow.length; p++) {
+            if (U.dist2(placedNow[p].x, placedNow[p].z, s.x, s.z) < 8 * 8) { clash = true; break; }
+          }
+          if (!clash) break;
+          if (base.narrow) seedZ += 10; else seedX += 9;
+          s = clearSpot(seedX, seedZ);
+        }
+        placedNow.push(s);
+        var key = base.id + ':' + type;
+        var g = garageSpots[key];
+        if (!g) {
+          g = { x: s.x, z: s.z, heading: base.heading, vtype: type, owned: true };
+          garageSpots[key] = g;
+          GAME.city.parkedSpots.push(g);
+        } else {
+          g.x = s.x; g.z = s.z; g.heading = base.heading;
+        }
+      });
     });
   }
 
@@ -349,8 +435,8 @@ GAME.shops = (function () {
     GAME.track('showroom-' + id);
     var spec = GAME.vehicles.TYPES[id];
     note('Keys in the ignition, right outside.');
-    GAME.hud.message('Delivered to the forecourt — and registered to your garage: lose it and a fresh one waits at ' +
-      (ownsAny() ? 'your place' : 'the showroom') + '.', 5);
+    GAME.hud.message('Delivered to the forecourt — and registered to your garage: a fresh one waits here' +
+      (ownsAny() ? ' and at every place you own' : '') + '.', 5);
     GAME.share.show({
       slug: 'bought-' + id,
       eyebrow: 'GRAN ROSA MOTORS · 1986',
@@ -359,7 +445,7 @@ GAME.shops = (function () {
       accent: '#8dffd8',
       stats: [{ label: 'Paid', value: '$' + (items(loc).filter(function (r) { return r.id === id; })[0] || { price: 0 }).price.toLocaleString() },
         { label: 'Plate', value: 'ROSA-' + String(garage().length).padStart(2, '0') },
-        { label: 'Kept at', value: ownsAny() ? 'HOME' : 'SHOWROOM' }]
+        { label: 'Kept at', value: ownsAny() ? 'ALL YOUR LOTS' : 'SHOWROOM' }]
     });
     return car;
   }
@@ -434,11 +520,14 @@ GAME.shops = (function () {
         at: clearSpot(st.spawn.x + 10, st.spawn.z + 6), isla: !!st.isla, color: 0x4da3ff
       });
     });
-    // property: the island villa anchors to the marina once the island exists
+    // property: the island villa anchors to the marina once the island exists.
+    // South of the jetty field, not inside it — the old seed put the front
+    // yard across a plank row and beached a hull on the doorstep, and the
+    // parked fleet threaded a metre-wide gap between boat and water's edge.
     SAFEHOUSES.forEach(function (s) {
       if (!s.at && s.isla && GAME.isla) {
         var M = GAME.isla.pois().marina;
-        s.at = clearSpot(M.x - 22, M.z + 26);
+        s.at = clearSpot(M.x - 7, M.z + 40);
       } else if (s.at) {
         s.at = clearSpot(s.at.x, s.at.z);
       }
@@ -463,17 +552,28 @@ GAME.shops = (function () {
     // Each trade gets its own building, sized and dressed for what it sells —
     // not one grey hut with different labels. Walls are tinted per kind so the
     // row of shops reads at a glance against the city's plain blocks.
+    // Proportions are part of the read: a palace must out-bulk a bungalow,
+    // and a shop must hold the street wall against 7-18 m neighbours. The
+    // first sizes were hut-scale — a 5.5 m THREADS read as a kiosk beside
+    // the apartment rows, and the "palace" barely cleared a villa.
     var SIZES = {
-      hardware: { w: 14, d: 9, h: 6, wall: 0xd8a25a },
-      dress: { w: 13, d: 8, h: 5.5, wall: 0xf0c8dc },
-      barber: { w: 10, d: 7, h: 5, wall: 0xbcd8f0 },
-      showroom: { w: 26, d: 15, h: 7.5, wall: 0x3c4258 },
-      casino: { w: 9, d: 8, h: 5.5, wall: 0xe8c86a },
-      safehouse: { w: 10, d: 8, h: 9, wall: 0xc8bca8 }
+      hardware: { w: 20, d: 12, h: 9, wall: 0xd8a25a },
+      dress: { w: 18, d: 11, h: 8.5, wall: 0xf0c8dc },
+      barber: { w: 14, d: 9, h: 7.5, wall: 0xbcd8f0 },
+      showroom: { w: 34, d: 18, h: 9, wall: 0x3c4258 },
+      casino: { w: 24, d: 16, h: 9, wall: 0xe8c86a },
+      safehouse: { w: 11, d: 9, h: 10, wall: 0xc8bca8 }
     };
     var walls = new GeoBatch();      // window-textured shells
     var trims = new GeoBatch();      // doors, awnings, roof lips (unlit color)
     var signs = new GeoBatch();
+    var pools = new GeoBatch();      // additive light on the pavement
+    // a single live mesh for anything that turns, blinks or breathes
+    function neonBox(w, h, d, color, mat) {
+      var mo = { color: color };
+      if (mat) for (var mm in mat) mo[mm] = mat[mm];
+      return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial(mo));
+    }
     // ramps were placed before the shops existed, and their placement vetted
     // an empty air corridor past the lip — don't build a wall into it now
     function corridorClear(cx, cz, sx, sz) {
@@ -542,10 +642,6 @@ GAME.shops = (function () {
       loc.at = { x: placed.mx, z: placed.mz };
       if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
       var gy = GAME.city.groundY(placed.cx, placed.cz);
-      // shell, sunk half a metre so sloped ground never shows a gap
-      walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, S.wall, 28);
-      trims.addBox(placed.cx, gy + S.h + 0.22, placed.cz, placed.sx + 0.6, 0.34, placed.sz + 0.6, 0, 0x241a36, 0);
-      GAME.city.addSolid(placed.cx, placed.cz, placed.sx, placed.sz, gy + S.h);
       // the door face and its outward normal (-dir); everything on the
       // facade hangs off these
       var fx = placed.cx - dir.x * (S.d / 2), fz = placed.cz - dir.z * (S.d / 2);
@@ -557,44 +653,229 @@ GAME.shops = (function () {
         trims.addBox(fx - dir.x * out + px2.x * along, y, fz - dir.z * out + px2.z * along,
           dir.x !== 0 ? thick : w, h, dir.x !== 0 ? w : thick, 0, color, 0);
       }
-      // door
-      onFace(0.09, 0, gy + 1.5, doorW, 3.0, 0.18, 0x120c1e);
-      // awning in the shop's color
-      onFace(0.55, 0, gy + 3.15, S.w - 1.2, 0.16, 1.1, loc.color);
+      // shell, sunk half a metre so sloped ground never shows a gap. The
+      // showroom is the exception: a glass hall is glass because there is
+      // NOTHING behind the pane but the hall — with the normal shell, the
+      // glazing sat over a textured wall and read as an apartment block
+      // wearing a windscreen. It gets back and side walls, a roof, and an
+      // open front for the glass; everyone else keeps the full box.
+      if (loc.kind === 'showroom') {
+        var bwx = placed.cx + dir.x * (S.d / 2 - 0.5), bwz = placed.cz + dir.z * (S.d / 2 - 0.5);
+        walls.addBox(bwx, gy + S.h / 2 - 0.25, bwz, dir.x !== 0 ? 1 : S.w, S.h + 0.5, dir.x !== 0 ? S.w : 1, 0, S.wall, 28);
+        [-1, 1].forEach(function (ss) {
+          walls.addBox(placed.cx + px2.x * ss * (S.w / 2 - 0.5), gy + S.h / 2 - 0.25,
+            placed.cz + px2.z * ss * (S.w / 2 - 0.5),
+            dir.x !== 0 ? S.d : 1, S.h + 0.5, dir.x !== 0 ? 1 : S.d, 0, S.wall, 28);
+        });
+        // roof slab recessed inside the wall heads — flush with them, every
+        // shared edge and top plane shimmered in the flicker audit
+        walls.addBox(placed.cx, gy + S.h - 0.48, placed.cz, dir.x !== 0 ? S.d - 2.4 : S.w - 2.4, 0.6, dir.x !== 0 ? S.w - 2.4 : S.d - 2.4, 0, 0x2e3346, 0);
+      } else {
+        walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, S.wall, 28);
+      }
+      trims.addBox(placed.cx, gy + S.h + 0.22, placed.cz, placed.sx + 0.6, 0.34, placed.sz + 0.6, 0, 0x241a36, 0);
+      GAME.city.addSolid(placed.cx, placed.cz, placed.sx, placed.sz, gy + S.h);
+      if (loc.kind !== 'showroom') {
+        // door
+        onFace(0.09, 0, gy + 1.5, doorW, 3.0, 0.18, 0x120c1e);
+        // awning in the shop's color
+        onFace(0.55, 0, gy + 3.15, S.w - 1.2, 0.16, 1.1, loc.color);
+      }
       // ---- per-trade dressing ----
       if (loc.kind === 'dress') {
-        // lit display windows flanking the door, a dressed dummy in each
+        // lit display windows flanking the door, a dressed dummy in each,
+        // and a pink script-line breathing under the name — boutique, not box
         [-1, 1].forEach(function (sside) {
           var off = sside * (doorW / 2 + 2.4);
           onFace(0.12, off, gy + 1.7, 3.2, 2.6, 0.14, 0xfff4e0);
           onFace(0.3, off, gy + 1.15, 0.5, 0.9, 0.3, sside < 0 ? 0xf78ab8 : 0x8fd0f0);
           onFace(0.3, off, gy + 1.85, 0.34, 0.34, 0.3, 0xeac8a8);
         });
+        var vst = neonBox(dir.x !== 0 ? 0.16 : S.w - 3.5, 0.22, dir.x !== 0 ? S.w - 3.5 : 0.16, 0xff8fd0, { transparent: true, opacity: 0.9 });
+        vst.position.set(fx - dir.x * 0.2, gy + S.h - 1.9, fz - dir.z * 0.2);
+        scene.add(vst);
+        GAME.city.kinetics.push({ m: vst, pulse: 1.9, lo: 0.45, hi: 1.0 });
       } else if (loc.kind === 'barber') {
-        // the pole: red-white-blue courses, standing proud beside the door
+        // the pole TURNS now — offset courses on a spinning column read as
+        // the classic spiral — and the checkerboard floor spills out the door
+        var bpx = fx - dir.x * 0.6 + px2.x * (doorW / 2 + 1.1);
+        var bpz = fz - dir.z * 0.6 + px2.z * (doorW / 2 + 1.1);
+        var poleG = new THREE.Group();
         for (var pb = 0; pb < 6; pb++) {
-          onFace(0.6, doorW / 2 + 1.1, gy + 1.1 + pb * 0.34, 0.34, 0.34, 0.34,
-            pb % 3 === 0 ? 0xe23a3a : pb % 3 === 1 ? 0xf2f2f2 : 0x3a6ae2);
+          var pc = neonBox(0.4, 0.34, 0.4, pb % 3 === 0 ? 0xe23a3a : pb % 3 === 1 ? 0xf2f2f2 : 0x3a6ae2);
+          pc.position.set(Math.cos(pb * 2.1) * 0.1, 0.95 + pb * 0.34, Math.sin(pb * 2.1) * 0.1);
+          poleG.add(pc);
         }
+        poleG.position.set(bpx, gy, bpz);
+        scene.add(poleG);
+        GAME.city.kinetics.push({ m: poleG, spin: 2.6 });
         onFace(0.12, -(doorW / 2 + 1.9), gy + 1.8, 2.4, 2.2, 0.14, 0xfff4e0);
+        for (var ck = 0; ck < 8; ck++) {
+          var ckc = (ck % 4) - 1.5, ckr = Math.floor(ck / 4);
+          trims.addGroundQuad(fx - dir.x * (0.75 + ckr * 0.9) + px2.x * ckc * 0.9, gy + 0.07,
+            fz - dir.z * (0.75 + ckr * 0.9) + px2.z * ckc * 0.9, 0.86, 0.86, 0,
+            (ckc + ckr) % 2 ? 0x16161c : 0xe8e8ec);
+        }
       } else if (loc.kind === 'hardware') {
-        // roller door beside the entrance and a steel band over the front
+        // pawn-shop menace, per the vision: a barred lit window, ammo crates
+        // by the door, sodium spill, and an OPEN sign that can't quite die
         onFace(0.1, doorW / 2 + 2.6, gy + 1.6, 4.0, 3.2, 0.16, 0x585c66);
-        onFace(0.14, 0, gy + S.h - 1.9, S.w - 1.0, 0.5, 0.2, 0x585c66);
+        onFace(0.3, 0, gy + S.h - 1.9, S.w - 1.0, 0.5, 0.2, 0x585c66);
+        onFace(0.12, -(doorW / 2 + 2.1), gy + 1.8, 2.8, 2.2, 0.14, 0xffe9b8);
+        [-0.85, 0, 0.85].forEach(function (bx) {
+          onFace(0.22, -(doorW / 2 + 2.1) + bx, gy + 1.8, 0.16, 2.4, 0.1, 0x241a2e);
+        });
+        var crx = fx - dir.x * 1.4 + px2.x * (S.w / 2 - 1.3);
+        var crz = fz - dir.z * 1.4 + px2.z * (S.w / 2 - 1.3);
+        trims.addBox(crx, gy + 0.5, crz, 1.05, 1.0, 1.05, 0.3, 0x8a6a3a, 0);
+        trims.addBox(crx + 0.2, gy + 1.3, crz - 0.1, 0.85, 0.6, 0.85, 0.8, 0x6a5a4a, 0);
+        var open = neonBox(1.5, 0.7, 0.14, 0xff4a3a);
+        open.position.set(fx - dir.x * 0.22 + px2.x * (doorW / 2 + 1.3), gy + 3.0, fz - dir.z * 0.22 + px2.z * (doorW / 2 + 1.3));
+        scene.add(open);
+        GAME.city.kinetics.push({ m: open, blink: 1.15, duty: 0.78 });
+        pools.addGroundQuad(fx - dir.x * 2.2, gy + 0.1, fz - dir.z * 2.2, 12, 9, 0, 0x6a4210);
       } else if (loc.kind === 'casino') {
-        // the gull's wheel over the door, wedge-striped in gold and night
+        // THE LUCKY GULL, palace edition: a second tier and a dark crown over
+        // the gold hall, a deco sunburst stacked over the doors, the gull's
+        // wheel actually turning, bulbs down every lip, a red carpet to the
+        // mat and two searchlights sweeping the sky off the roof
+        var t2w = 16, t2d = 11, t2h = 5;
+        var t2x = placed.cx + dir.x * 1.8, t2z = placed.cz + dir.z * 1.8;
+        walls.addBox(t2x, gy + S.h + t2h / 2 - 0.1, t2z, dir.x !== 0 ? t2d : t2w, t2h, dir.x !== 0 ? t2w : t2d, 0, S.wall, 28);
+        GAME.city.addSolid(t2x, t2z, dir.x !== 0 ? t2d : t2w, dir.x !== 0 ? t2w : t2d, gy + S.h + t2h - 0.1);
+        trims.addBox(t2x, gy + S.h + t2h + 1.0, t2z, 8, 2.1, 5.5, 0, 0x241a36, 0);
+        // gold lips on both tiers, and a row of warm bulbs under the first
+        onFace(0.2, 0, gy + S.h - 0.28, S.w - 0.6, 0.4, 0.24, 0xffd24a);
+        var t2fx = t2x - dir.x * (t2d / 2), t2fz = t2z - dir.z * (t2d / 2);
+        trims.addBox(t2fx - dir.x * 0.12, gy + S.h + t2h - 0.28, t2fz - dir.z * 0.12,
+          dir.x !== 0 ? 0.24 : t2w - 0.6, 0.4, dir.x !== 0 ? t2w - 0.6 : 0.24, 0, 0xffd24a, 0);
+        for (var bl = 0; bl < 9; bl++) {
+          onFace(0.24, (bl - 4) * (S.w - 2.6) / 8, gy + S.h - 0.85, 0.28, 0.28, 0.2, 0xfff0b8);
+        }
+        // the sunburst: gold and pink courses stepping wider over the doors
+        for (var sb = 0; sb < 5; sb++) {
+          onFace(0.16 + sb * 0.012, 0, gy + 3.45 + sb * 0.42, 3.4 + sb * 1.45, 0.34, 0.14, sb % 2 ? 0xff4fa3 : 0xffd24a);
+        }
+        onFace(0.11, 0, gy + 3.12, doorW + 0.9, 0.28, 0.2, 0xffd24a);   // gilt door head
+        // the gull's wheel, turning over the crown
+        var wheelG = new THREE.Group();
         for (var cs = 0; cs < 8; cs++) {
           var ca = cs / 8 * Math.PI * 2;
-          onFace(0.25, Math.cos(ca) * 1.5, gy + S.h + 1.5 + Math.sin(ca) * 1.5, 0.8, 0.8, 0.3,
-            cs % 2 ? 0xffe14f : 0x241a36);
+          var wb2 = neonBox(0.8, 0.8, 0.24, cs % 2 ? 0xffe14f : 0xff4fa3);
+          wb2.position.set(Math.cos(ca) * 1.6, Math.sin(ca) * 1.6, 0);
+          wheelG.add(wb2);
         }
+        wheelG.add(neonBox(0.7, 0.7, 0.26, 0xfff6d8));
+        wheelG.position.set(t2fx - dir.x * 0.5, gy + S.h + t2h + 2.1, t2fz - dir.z * 0.5);
+        scene.add(wheelG);
+        GAME.city.kinetics.push({ m: wheelG, spinZ: 0.8 });
+        // searchlights: tilted beams on the second-tier corners, sweeping slow
+        [-1, 1].forEach(function (sside) {
+          var slx = t2x + px2.x * sside * (t2w / 2 - 1.4), slz = t2z + px2.z * sside * (t2w / 2 - 1.4);
+          trims.addBox(slx, gy + S.h + t2h + 0.4, slz, 0.8, 0.8, 0.8, 0, 0x3a3040, 0);
+          var sl = new THREE.Group();
+          var tilt = new THREE.Group();
+          tilt.rotation.z = 0.4;
+          var beam = neonBox(0.6, 26, 0.6, 0xfff2c8, { transparent: true, opacity: 0.22, depthWrite: false });
+          beam.position.y = 13;
+          tilt.add(beam);
+          sl.add(tilt);
+          sl.position.set(slx, gy + S.h + t2h + 0.8, slz);
+          scene.add(sl);
+          GAME.city.kinetics.push({ m: sl, spin: 0.5 + sside * 0.13 });
+        });
+        // the red carpet, rolled from the doors to the mat, edged in gold
+        trims.addGroundQuad(fx - dir.x * 2.8, gy + 0.09, fz - dir.z * 2.8, dir.x !== 0 ? 5.6 : 2.2, dir.x !== 0 ? 2.2 : 5.6, 0, 0x9a1626);
+        pools.addGroundQuad(fx - dir.x * 3, gy + 0.11, fz - dir.z * 3, 16, 12, 0, 0x7a5a12);
       } else if (loc.kind === 'showroom') {
-        // a glass hall: full-width lit glazing, and the trade's own proof —
-        // a machine on a turntable out front (spun in update())
-        onFace(0.12, 0, gy + 2.3, S.w - 2, 4.2, 0.14, 0x9fd8e8);
+        // the glass jewel box: glazing you can SEE THROUGH to lit machines on
+        // the showroom floor, a chrome band breathing along the roofline,
+        // pennants across the forecourt and a rotating totem out by the road
+        // the pane itself: barely-there blue, framed like real curtain glass —
+        // header beam above, corner posts and slim mullions, mint entry posts
+        var glz = neonBox(dir.x !== 0 ? 0.14 : S.w - 2, 5.6, dir.x !== 0 ? S.w - 2 : 0.14, 0x9fd8e8, { transparent: true, opacity: 0.18 });
+        glz.position.set(fx - dir.x * 0.12, gy + 3.1, fz - dir.z * 0.12);
+        scene.add(glz);
+        onFace(-0.5, 0, gy + (5.9 + S.h) / 2, S.w - 2.2, S.h - 5.9, 0.9, 0x2e3346);
+        [-1, 1].forEach(function (mp) {
+          onFace(0.02, mp * (S.w / 2 - 0.9), gy + 3.1, 0.8, 5.6, 0.8, 0x2e3346);
+          onFace(0.02, mp * (S.w / 6), gy + 3.1, 0.26, 5.6, 0.3, 0x223040);
+          onFace(0.05, mp * 1.7, gy + 1.7, 0.22, 3.4, 0.26, 0x8dffd8);
+        });
+        onFace(0.05, 0, gy + 3.55, 3.7, 0.2, 0.22, 0x8dffd8);
         // the skirt strip stands clear of the glazing's planes — at 0.2 its
-        // inner face shared the glass's and the two banded strips flickered
-        onFace(0.3, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x8dffd8);
+        // inner face shared the glass's and the two banded strips flickered.
+        // And it is muted on purpose: painted the marker's own mint it read
+        // as one enormous glowing doormat across the whole front, as if the
+        // entry highlight were the width of the building. The doormat ring
+        // at the door is the entry; the skirt is just plinth.
+        onFace(0.3, 0, gy + 0.35, S.w - 1.6, 0.7, 0.3, 0x2a544c);
+        // the hall glows from within: lit ceiling, a bright back wall to
+        // silhouette the stock, a pale floor and a spot under each machine
+        trims.addBox(placed.cx, gy + S.h - 0.8, placed.cz, dir.x !== 0 ? 9 : S.w - 5, 0.3, dir.x !== 0 ? S.w - 5 : 9, 0, 0xfff2dc, 0);
+        trims.addBox(placed.cx + dir.x * (S.d / 2 - 1.2), gy + 2.6, placed.cz + dir.z * (S.d / 2 - 1.2),
+          dir.x !== 0 ? 0.2 : S.w - 4, 3.4, dir.x !== 0 ? S.w - 4 : 0.2, 0, 0xffe9cc, 0);
+        trims.addGroundQuad(placed.cx, gy + 0.06, placed.cz, dir.x !== 0 ? 11 : S.w - 4, dir.x !== 0 ? S.w - 4 : 11, 0, 0x686874);
+        [-5.5, 5.5].forEach(function (alo, ai) {
+          var icx = placed.cx + px2.x * alo + dir.x * 1.0, icz = placed.cz + px2.z * alo + dir.z * 1.0;
+          trims.addGroundQuad(icx, gy + 0.08, icz, 5.4, 3.6, 0, 0xd8d0c2);
+          var icar = GAME.vehicles.buildMesh(ai ? 'sports' : 'sedan');
+          if (icar) {
+            // showroom lighting: the stock glows like it's under the lamps,
+            // not parked in a cave — unlit materials read lit through glass
+            icar.traverse(function (o) {
+              if (o.isMesh && o.material) {
+                var src = o.material;
+                o.material = new THREE.MeshBasicMaterial({
+                  color: src.color ? src.color.clone() : 0xffffff,
+                  vertexColors: !!src.vertexColors
+                });
+              }
+            });
+            icar.position.set(icx, gy + 0.1, icz);
+            icar.rotation.y = Math.atan2(dir.x, dir.z) + (ai ? 0.5 : -0.4);
+            scene.add(icar);
+          }
+        });
+        // chrome band, breathing
+        var chase = neonBox(dir.x !== 0 ? 0.2 : S.w - 0.8, 0.35, dir.x !== 0 ? S.w - 0.8 : 0.2, 0xf0f6ff, { transparent: true, opacity: 0.9 });
+        chase.position.set(fx - dir.x * 0.34, gy + S.h - 0.35, fz - dir.z * 0.34);
+        scene.add(chase);
+        GAME.city.kinetics.push({ m: chase, pulse: 2.6, lo: 0.45, hi: 1.0 });
+        // the totem: a pole by the road, the mint machine turning on top
+        var ttx = fx - dir.x * 9 + px2.x * (S.w / 2 + 3.5), ttz = fz - dir.z * 9 + px2.z * (S.w / 2 + 3.5);
+        trims.addBox(ttx, gy + 5.5, ttz, 0.5, 11, 0.5, 0, 0x3a3f52, 0);
+        GAME.city.addSolid(ttx, ttz, 0.7, 0.7, gy + 11, 'prop', true);
+        var head = new THREE.Group();
+        head.add(neonBox(3.6, 2.4, 0.24, 0x141020));
+        var sil = neonBox(2.4, 0.62, 0.3, 0x8dffd8); sil.position.y = -0.5; head.add(sil);
+        var silc = neonBox(1.2, 0.5, 0.3, 0x8dffd8); silc.position.set(0.15, 0.05, 0); head.add(silc);
+        var hring = neonBox(3.9, 0.18, 0.28, 0xff4fa3); hring.position.y = 1.0; head.add(hring);
+        head.position.set(ttx, gy + 12.3, ttz);
+        scene.add(head);
+        GAME.city.kinetics.push({ m: head, spin: 1.1 });
+        // pennants strung from the facade corner to the totem
+        var pcx = fx + px2.x * (S.w / 2 - 1), pcz = fz + px2.z * (S.w / 2 - 1);
+        for (var pf = 0; pf <= 6; pf++) {
+          var pt = pf / 6;
+          trims.addBox(U.lerp(pcx, ttx, pt), gy + 5.6 - Math.sin(pt * Math.PI) * 0.5, U.lerp(pcz, ttz, pt),
+            0.34, 0.42, 0.1, Math.atan2(ttx - pcx, ttz - pcz), [0x8dffd8, 0xff4fa3, 0xffe14f][pf % 3], 0);
+        }
+        pools.addGroundQuad(placed.cx - dir.x * (S.d / 2 + 3), gy + 0.1, placed.cz - dir.z * (S.d / 2 + 3), 22, 10, 0, 0x2e5a50);
+        // the forecourt lot, painted like it means it: your garage lives here
+        // until you own a place — a pad down the strip beside the hall, a
+        // mint border on the road side, bay lines where the fleet parks
+        if (loc.forecourt) {
+          // paint layers a clear step apart — 0.015 gaps shimmered from the air
+          var fcx = loc.forecourt.x + 1.5, fcz = loc.forecourt.z + 15;
+          trims.addGroundQuad(fcx, gy + 0.04, fcz, 13, 34, 0, 0x1f1f28);
+          trims.addGroundQuad(fcx - 6.2, gy + 0.16, fcz, 0.5, 34, 0, 0x8dffd8);
+          trims.addGroundQuad(fcx, gy + 0.16, fcz + 16.8, 13, 0.5, 0, 0x8dffd8);
+          trims.addGroundQuad(fcx, gy + 0.16, fcz - 16.8, 13, 0.5, 0, 0x8dffd8);
+          [-10, 0, 10].forEach(function (bz) {
+            trims.addGroundQuad(fcx, gy + 0.24, fcz + bz, 11, 0.35, 0, 0xd8d8e0);
+          });
+        }
         var plX = fx - dir.x * 7 + px2.x * (S.w / 2 - 3);
         var plZ = fz - dir.z * 7 + px2.z * (S.w / 2 - 3);
         trims.addBox(plX, gy + 0.4, plZ, 4.4, 0.8, 4.4, 0, 0x8dffd8, 0);
@@ -611,6 +892,10 @@ GAME.shops = (function () {
         // strip of facade, and the lit windows flickered against the board
         onFace(0.12, 0, gy + S.h - 2.65, S.w - 3, 1.6, 0.14, 0xffe9b0);
         onFace(0.45, doorW / 2 + 0.8, gy + 3.4, 0.3, 0.5, 0.3, 0xffd890);
+        // the porch lamp actually lights the porch — domestic warmth, the
+        // only light temperature in the city that says "lived in"
+        pools.addGroundQuad(fx - dir.x * 1.4 + px2.x * (doorW / 2 + 0.8), gy + 0.1,
+          fz - dir.z * 1.4 + px2.z * (doorW / 2 + 0.8), 7, 7, 0, 0x7a5a20);
       }
       // the name in lights
       var slot = SIGN_SLOT[loc.id];
@@ -625,12 +910,18 @@ GAME.shops = (function () {
     var wallMesh = new THREE.Mesh(walls.build(), GAME.city.lam(GAME.city.tex.strip));
     wallMesh.matrixAutoUpdate = false;
     scene.add(wallMesh);
-    var trimMesh = new THREE.Mesh(trims.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    var trimMesh = new THREE.Mesh(trims.build(), new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
     trimMesh.matrixAutoUpdate = false;
     scene.add(trimMesh);
     var signMesh = new THREE.Mesh(signs.build(), GAME.city.signMesh.material);
     signMesh.matrixAutoUpdate = false;
     scene.add(signMesh);
+    var poolsMesh = new THREE.Mesh(pools.build(), new THREE.MeshBasicMaterial({
+      vertexColors: true, map: GAME.city.glowTexture('rgba(255,255,255,0.6)'),
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    poolsMesh.matrixAutoUpdate = false;
+    scene.add(poolsMesh);
   }
 
   // one instanced-ish batch of glowing doormats, pulsing in update()
@@ -675,7 +966,20 @@ GAME.shops = (function () {
     if (!openShop) return;
     var P = GAME.player, list = items(openShop);
     el.title.textContent = openShop.name;
+    // the boot-time tag goes stale the moment a safehouse changes hands, and
+    // the hint with it — buying your condo mid-visit must not leave a footer
+    // still promising a BUY that no longer exists. Both live here in render.
+    if (openShop.kind === 'safehouse') openShop.tag = owns(openShop.sh.id) ? 'Yours' : 'For sale';
     el.tag.textContent = openShop.tag || '';
+    var hint = $('shop-hint');
+    if (hint) hint.textContent =
+      openShop.kind === 'dress' || openShop.kind === 'barber'
+        ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY asks before it charges  ·  Esc leave'
+        : openShop.kind === 'showroom'
+          ? 'Click or W/S to put it on the turntable  ·  BUY asks before it charges  ·  Esc leave'
+          : openShop.kind === 'safehouse' && owns(openShop.sh.id)
+            ? 'Your place — Enter to sleep it off, nothing to buy here  ·  Esc leave'
+            : 'Click or W/S to select  ·  BUY (or Enter) asks before it charges  ·  Esc leave';
     el.cash.textContent = '$' + P.cash.toLocaleString();
     el.items.innerHTML = '';
     sel = Math.max(0, Math.min(sel, list.length - 1));
@@ -690,9 +994,12 @@ GAME.shops = (function () {
       // click) opens a confirmation card — nothing is ever bought without
       // answering it. Re-visiting a row can only ever re-preview it.
       var armed = i === sel && buyable;
+      // noPrice rows are actions, not goods (sleeping in your own bed):
+      // never print FREE or a BUY chip on them — that read as a purchase
       var priceCell = it.owned ? 'YOURS'
-        : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
-          : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
+        : it.noPrice ? (armed ? (it.chip || 'GO') : '')
+          : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
+            : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
       // the row only ever selects and previews. Money moves through the BUY
@@ -888,6 +1195,9 @@ GAME.shops = (function () {
   function openConfirm(it) {
     if (!openShop || !it || it.owned || it.off) return;
     if (spinning) { note('The wheel is still spinning…'); return; }
+    // no money moves on a noPrice action, so the gate would only ask
+    // "buy this? Free" — the exact wording the condo bug shipped. Act directly.
+    if (it.noPrice) { buy(it.id); return; }
     var P = GAME.player;
     if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); return; }
     pendingBuy = it.id;
@@ -933,15 +1243,16 @@ GAME.shops = (function () {
     if (!loc || openShop) return false;
     openShop = loc;
     sel = 0;
+    // The mirror greets you AS YOU ARE. In the changing room and the chair
+    // the cursor starts on the row you're already wearing, so the first
+    // thing the glass shows is the player, exactly — clothes, cut, color,
+    // skin — not row one's shirt pulled over your head.
+    if (loc.kind === 'dress' || loc.kind === 'barber') {
+      var list0 = items(loc);
+      for (var oi = 0; oi < list0.length; oi++) if (list0[oi].owned) { sel = oi; break; }
+    }
     cancelConfirm();
     note('');
-    var hint = $('shop-hint');
-    if (hint) hint.textContent =
-      loc.kind === 'dress' || loc.kind === 'barber'
-        ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY asks before it charges  ·  Esc leave'
-        : loc.kind === 'showroom'
-          ? 'Click or W/S to put it on the turntable  ·  BUY asks before it charges  ·  Esc leave'
-          : 'Click or W/S to select  ·  BUY (or Enter) asks before it charges  ·  Esc leave';
     el.screen.style.display = 'flex';
     GAME.shopOpen = true;
     GAME.releasePointer();
@@ -1008,7 +1319,15 @@ GAME.shops = (function () {
     }
     for (var sp = 0; sp < spinProps.length; sp++) spinProps[sp].mesh.rotation.y += dt * spinProps[sp].rate;
     if (GAME.shopOpen || !GAME.started || P.state !== 'alive') return;
+    // a walk-in must be WALKED in. Feet cover under a metre per tick, so a
+    // multi-metre move between scans is a teleport — waking up at your own
+    // condo, a mission repositioning you, a loaded save — and any mat you
+    // land on stays shut until you step off and come back meaning it
+    var jumped = lastWX !== null && U.dist2(P.pos.x, P.pos.z, lastWX, lastWZ) > 12 * 12;
+    lastWX = P.pos.x; lastWZ = P.pos.z;
     var unlocked = !GAME.isla || GAME.isla.isOpen();
+    // the bridges opening adds the island lots — re-plan the fleet then
+    if (unlocked !== lastUnlocked) { lastUnlocked = unlocked; refreshGarageSpots(); }
     for (var k = 0; k < locations.length; k++) {
       var loc = locations[k];
       if (loc.isla && !unlocked) continue;
@@ -1016,6 +1335,7 @@ GAME.shops = (function () {
       if (d2 > 5.5 * 5.5) { leftSince[loc.id] = true; continue; }
       if (P.inCar || d2 > 2.6 * 2.6) continue;
       if (leftSince[loc.id] === false) continue;   // still standing where it closed
+      if (leftSince[loc.id] === undefined || jumped) { leftSince[loc.id] = false; continue; }
       open(loc);
       return;
     }
@@ -1061,7 +1381,17 @@ GAME.shops = (function () {
     homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns,
     renderPreview: renderPreview,
     garage: function () { return garage().slice(); },
-    garageSpot: function (type) { return garageSpots[type] || null; },
+    garageSpot: function (type) {
+      // the fleet parks at every base now — answer with the nearest copy
+      var P = GAME.player, best = null, bd = 1e18;
+      for (var k in garageSpots) {
+        var g = garageSpots[k];
+        if (g.vtype !== type) continue;
+        var d = U.dist2(P.pos.x, P.pos.z, g.x, g.z);
+        if (d < bd) { bd = d; best = g; }
+      }
+      return best;
+    },
     get isOpen() { return !!openShop; },
     get current() { return openShop; },
     get selected() { return openShop ? items(openShop)[sel] : null; },

@@ -127,7 +127,9 @@ var VEHICLES = {
   // bought over the showroom counter by anyone with the money
   gunship: { label: 'Talon', maxSpeed: 42, accel: 12, grip: 4, turn: 2, hp: 420, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x3a4632, 0x2c3626, 0x46523a], heli: true, gunship: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
-  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
+  // wheelH is the real gear length: the mesh reaches 0.5 below its origin, and
+  // at 1.1 the whole plane taxied and parked six tenths of a metre in the air
+  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 0.5 },
   // Isla Verde's own stock. The buggy is for the cove, the pickup for the
   // villa lanes, the limo for the resort — and the truck sells ice cream.
   buggy: { label: 'Dune Hopper', maxSpeed: 33, accel: 15, grip: 4.2, turn: 3.0, hp: 110, l: 3.4, w: 1.85, cabinH: 0.0, bodyH: 0.42, colors: [0xffb03a, 0x6ae8a0, 0xff6a8a, 0xf0f0f4], buggy: true },
@@ -195,10 +197,10 @@ function buildHeliMesh(colorHex, gunship) {
   b.addBox(0, 1.52, 1.2, 1.7, 1.1, 1.4, 0, 0x141824, 0);        // canopy glass
   b.addBox(0, 1.4, -3.4, 0.5, 0.5, 3.6, 0, colorHex, 0);        // tail boom
   b.addBox(0, 1.9, -5.1, 0.16, 1.1, 0.7, 0, colorHex, 0);       // tail fin
-  b.addBox(-0.9, 0.2, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);   // left skid
-  b.addBox(0.9, 0.2, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);    // right skid
-  b.addBox(-0.9, 0.6, 0.6, 0.1, 0.6, 0.1, 0, 0x0c0c10, 0);
-  b.addBox(0.9, 0.6, 0.6, 0.1, 0.6, 0.1, 0, 0x0c0c10, 0);
+  b.addBox(-0.9, 0.1, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);   // left skid
+  b.addBox(0.9, 0.1, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);    // right skid
+  b.addBox(-0.9, 0.5, 0.6, 0.1, 0.7, 0.1, 0, 0x0c0c10, 0);
+  b.addBox(0.9, 0.5, 0.6, 0.1, 0.7, 0.1, 0, 0x0c0c10, 0);
   b.addBox(0, 2.05, -0.6, 0.24, 0.3, 0.24, 0, 0x0c0c10, 0);     // rotor mast
   var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
   g.add(body);
@@ -403,7 +405,10 @@ GAME.vehicles = (function () {
     // so a vehicle driving east or west got no pitch at all and sat flat while
     // the ramp climbed out from under its nose.
     if (!spec.heli && !spec.plane) mesh.rotation.order = 'YXZ';
-    mesh.position.set(x, GAME.city.groundY(x, z), z);
+    // aircraft rest on their gear, not on their bellies: a plane spawned at
+    // raw ground level buried its wheels half a metre in the apron
+    var restH = spec.plane ? (spec.wheelH || 1.1) : spec.heli ? 0.05 : 0;
+    mesh.position.set(x, GAME.city.groundY(x, z) + restH, z);
     mesh.rotation.y = heading || 0;
     GAME.scene.add(mesh);
     var car = {
@@ -578,6 +583,7 @@ GAME.vehicles = (function () {
     var airT = car.air || 0;
     car.air = 0;
     var isPlayer = car === GAME.player.car && GAME.player.inCar;
+    var earned = car.jumpRamp !== undefined && car.jumpRamp !== null;
     var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
     // earned, not stumbled into: rolling off the side of a ramp (or crawling
     // off the lip) is a fall — hang time alone doesn't pay, distance does
@@ -599,7 +605,13 @@ GAME.vehicles = (function () {
       damageCar(car, Math.min(40, (impact - 16) * 2.2), 'wall');
       GAME.audio.crash(Math.min(1, impact / 30));
       if (isPlayer) GAME.cameraShake = Math.min(1, impact / 26);
-      if (car.spec.bike && isPlayer && GAME.player.onBike && impact > 24) GAME.ejectBike(impact);
+      // Wheels-down off a real ramp is a landing, not a crash: a jump earned
+      // at the lip keeps its rider short of the truly catastrophic, however
+      // hard the boost ramp threw them. Getting tossed is for FALLS — riding
+      // off a roof or a cliff with no ramp under the launch — where coming
+      // down at 24 m/s means a twelve-metre drop nobody aimed.
+      var botched = earned ? impact > 34 : impact > 24;
+      if (car.spec.bike && isPlayer && GAME.player.onBike && botched) GAME.ejectBike(impact);
     }
   }
 
@@ -616,8 +628,12 @@ GAME.vehicles = (function () {
     var afx = Math.abs(fx), afz = Math.abs(fz);
     for (var bi = 0; bi < boxes.length; bi++) {
       var b = boxes[bi];
-      // jumped clear of it — don't clip a car that's sailing over a fence
-      if (b.h !== undefined && b.h < car.pos.y - 0.3) continue;
+      // Jumped clear of it — or STANDING ON it. A car parked on a roof sits
+      // at exactly the box's top, and the old `top < y - 0.3` test still
+      // counted the building as a wall — the collider shoved any car that
+      // landed on a roof straight off the edge, which is why the rooftop leg
+      // of the chain jump never held. Same rule the on-foot check uses.
+      if (b.h !== undefined && b.h <= car.pos.y + 0.3) continue;
       // and don't clip a car driving under one: a bridge parapet belongs to
       // the deck it stands on, not to the road it crosses over
       if (b.minY !== undefined && car.pos.y < b.minY - 1) continue;
@@ -657,7 +673,7 @@ GAME.vehicles = (function () {
         car.hitCd = 0.25;
         damageCar(car, Math.min(32, impact * 1.5), 'wall');
         GAME.audio.crash(impact / 18);
-        GAME.fx.spawn(car.pos.x + nx, 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
+        GAME.fx.spawn(car.pos.x + nx, car.pos.y + 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
         if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
         // riders get thrown off in a hard wall hit
         if (car.spec.bike && car === GAME.player.car && GAME.player.onBike && impact > 9) {
@@ -694,7 +710,7 @@ GAME.vehicles = (function () {
           var dmg = Math.min(26, rel * 1.3);
           damageCar(a, dmg * 0.6, b); damageCar(b, dmg * 0.6, a);
           GAME.audio.crash(rel / 20);
-          GAME.fx.spawn((a.pos.x + b.pos.x) / 2, 0.8, (a.pos.z + b.pos.z) / 2, { count: 6, color: 0xffe0a0, spread: 3, life: 0.35 });
+          GAME.fx.spawn((a.pos.x + b.pos.x) / 2, (a.pos.y + b.pos.y) / 2 + 0.8, (a.pos.z + b.pos.z) / 2, { count: 6, color: 0xffe0a0, spread: 3, life: 0.35 });
           if (a === GAME.player.car || b === GAME.player.car) GAME.cameraShake = Math.min(1, rel / 18);
           var pc = GAME.player.car;
           if ((a === pc || b === pc) && rel > 6) {
@@ -726,17 +742,37 @@ GAME.vehicles = (function () {
     // crash, and the first the player knew was waking up in hospital — the
     // fire fuse detonated a car they never realized was dying. Threshold
     // crossings now announce themselves, the way the aircraft already do.
-    if (car === pc && GAME.player.inCar && !car.spec.heli && !car.spec.plane) {
+    if (car === pc && GAME.player.inCar) {
+      // The fire is news for every hull, aircraft included: the airframe
+      // warnings say "damaged", never "burning", so a fuse lit under a
+      // landed heli used to burn in silence — and the blast a second after
+      // stepping out was a death nobody saw coming.
       if (car.stage >= 2 && car.stageWarn !== 2) {
         car.stageWarn = 2;
         GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
         GAME.audio.sting('busted');
-      } else if (car.stage === 1 && !car.stageWarn) {
+      } else if (car.stage === 1 && !car.stageWarn && !car.spec.heli && !car.spec.plane) {
         car.stageWarn = 1;
         GAME.hud.message('Your ride is smoking — it won\'t take much more.', 3);
       }
     }
-    if (car.hp <= 0) explodeCar(car, source, car.byPlayer);
+    if (car.hp <= 0) {
+      // The ride the player is sitting in never detonates out of nowhere: a
+      // killing blow leaves it at a sliver, IN FLAMES, and the explosion a
+      // breath later is what kills — visibly — instead of a ledger hitting
+      // zero mid-smoke. (One last chance to bail, the way the fire stage
+      // always promised.) Everyone else's cars still go up on the spot.
+      if (car === pc && GAME.player.inCar) {
+        car.hp = 1;
+        car.fireFuse = car.stage >= 2 && car.fireFuse > 0 ? Math.min(car.fireFuse, 1.2) : 1.2;
+        car.stage = 2;
+        if (car.stageWarn !== 2) {
+          car.stageWarn = 2;
+          GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
+          GAME.audio.sting('busted');
+        }
+      } else explodeCar(car, source, car.byPlayer);
+    }
   }
 
   function explodeCar(car, source, byPlayerIn) {
@@ -745,9 +781,11 @@ GAME.vehicles = (function () {
     // player-caused if this blast (or the damage that led to it) traces to the player
     var byPlayer = !!(byPlayerIn || car.byPlayer);
     GAME.audio.explosion();
-    GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 9);
-    GAME.fx.spawn(car.pos.x, 1.2, car.pos.z, { count: 30, color: 0xff9030, spread: 7, vy: 5, life: 1.1, grav: -3 });
-    GAME.fx.spawn(car.pos.x, 1.5, car.pos.z, { count: 20, color: 0x333333, spread: 4, vy: 4, life: 1.6, grav: -0.5 });
+    // the blast happens where the CAR is — at world height 1.5 a car
+    // exploding on a bridge deck flashed under the roadway, unseen
+    GAME.fx.flash(car.pos.x, car.pos.y + 1.5, car.pos.z, 9);
+    GAME.fx.spawn(car.pos.x, car.pos.y + 1.2, car.pos.z, { count: 30, color: 0xff9030, spread: 7, vy: 5, life: 1.1, grav: -3 });
+    GAME.fx.spawn(car.pos.x, car.pos.y + 1.5, car.pos.z, { count: 20, color: 0x333333, spread: 4, vy: 4, life: 1.6, grav: -0.5 });
     var oldMat = car.mesh.userData.bodyMesh.material;
     car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
     if (oldMat && oldMat.dispose) oldMat.dispose();
@@ -759,7 +797,11 @@ GAME.vehicles = (function () {
       // altitude counts: a wreck going up underneath you shouldn't catch you
       // while you're hanging off a parachute or standing on a roof
       var dy = Math.abs(p.pos.y - car.pos.y);
-      if (U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z) < 64 && dy < 7) GAME.playerDamage(55, 'explosion');
+      var dd = U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z);
+      // the blast fades with distance: standing over it is nearly fatal, and
+      // every step away is worth something — a flat 55 made "walked clear of
+      // the wreck" and "stood in the fireball" the same wound
+      if (dd < 64 && dy < 7) GAME.playerDamage(Math.round(75 - Math.sqrt(dd) * 6.8), 'explosion');
     }
     if (p.car === car) GAME.playerDamage(200, 'explosion');
     world.peds.forEach(function (ped) {
@@ -915,19 +957,32 @@ GAME.vehicles = (function () {
       // spot — no distance floor, larger spawn range, and exempt from the parked cap
       var special = sp.police || sp.vtype;
       if (!special && GAME.city.inAirport(sp.x, sp.z)) continue; // no random cars on the airfield
-      // don't park a twin of the special vehicle the player is currently driving
-      // (e.g. a second ambulance sitting in the bay you just took yours from)
-      if (sp.vtype && !sp.live && P.inCar && P.car && P.car.type === sp.vtype) continue;
+      // Don't restock the spot the player's CURRENT vehicle was taken from —
+      // or is halfway through the door of (the spot is freed the moment
+      // boarding starts, and during the walk-to-the-seat beat the player
+      // still counts as on foot; the helipad used to restock itself in that
+      // half-second, dropping a second helicopter on the first). Matching by
+      // TYPE was too broad: flying your own bought helicopter past the tower
+      // pad kept the tower's find hidden the whole time.
+      var pcar = (P.inCar && P.car) || (P.entering && P.entering.car) || null;
+      if (sp.vtype && !sp.live && pcar && pcar.fromSpot === sp) continue;
       var minD = special ? 0 : 40 * 40;
-      var range = special ? 210 : 140;
-      var despawnR = special ? 260 : 190;
+      // a spot can ask to exist at longer range: the helipad finds sit on
+      // towers and summits you can see from half the map, and an empty pad
+      // at that distance reads as "there is no helicopter in this game"
+      var range = sp.range || (special ? 210 : 140);
+      var despawnR = sp.despawn || (special ? 260 : 190);
       if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
+        // The check is height-aware — street traffic far below a rooftop pad
+        // must not block it — but it has to measure against the spot's OWN
+        // level. A spot with no explicit y (its height IS the terrain, like
+        // the Alta Verde helipad on its summit) used to compare against sea
+        // level, so nothing actually standing on it ever counted as blocking.
+        var spY = sp.y !== undefined ? sp.y : GAME.city.groundY(sp.x, sp.z);
         for (var c = 0; c < world.cars.length; c++) {
           if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, sp.x, sp.z) < 60 &&
-            Math.abs(world.cars[c].pos.y - (sp.y || 0)) < 6) { clear = false; break; }
-          // the check is height-aware: street traffic 72m below the tower's
-          // helipad must not block the helicopter from appearing on it
+            Math.abs(world.cars[c].pos.y - spY) < 6) { clear = false; break; }
         }
         if (!clear) continue;
         var types = sp.isla ? ['sedan', 'buggy', 'pickup', 'van', 'limo', 'sports']
@@ -937,6 +992,9 @@ GAME.vehicles = (function () {
         var head = special ? sp.heading : sp.heading + (Math.random() < 0.5 ? 0 : Math.PI);
         var car = spawnCar(type, sp.x, sp.z, head, { parkedSpot: sp, ai: { mode: 'parked' } });
         if (sp.y !== undefined) car.pos.y = sp.y;   // a spot up on a roof
+        // remember the origin for the restock guard: parkedSpot is unbound
+        // the moment the player boards, but where it CAME from doesn't change
+        car.fromSpot = sp;
         sp.live = car;
         live++;
       } else if (sp.live && d2 > despawnR * despawnR && sp.live !== GAME.player.car && !sp.live.dead) {
@@ -967,16 +1025,32 @@ GAME.vehicles = (function () {
       if (car.dead) {
         if (!car.deadT) car.deadT = 0;
         car.deadT += dt;
-        GAME.fx.spawn(car.pos.x, 1.2, car.pos.z, { count: 1, color: 0x222222, spread: 0.5, vy: 1.5, life: 1.4, grav: 0.2 });
+        GAME.fx.spawn(car.pos.x, car.pos.y + 1.2, car.pos.z, { count: 1, color: 0x222222, spread: 0.5, vy: 1.5, life: 1.4, grav: 0.2 });
         if (car.deadT > 14 && car !== P.car) { removeCar(car); continue; }
         continue;
       }
       if (car.stage >= 1) {
         car.smokeT -= dt;
         if (car.smokeT <= 0) {
-          car.smokeT = 0.12;
-          var col = car.stage >= 2 ? 0xff7020 : 0x555560;
-          GAME.fx.spawn(car.pos.x + fwdX(car) * 1.4, 1.0, car.pos.z + fwdZ(car) * 1.4, { count: 2, color: col, spread: 0.6, vy: 2, life: 0.8, grav: 0.5 });
+          // Burning reads like burning, wherever the car is. The emitter
+          // used to sit at WORLD height 1 m — a taxi cooking off on a bridge
+          // deck pushed its smoke and flames out nine metres BELOW the road,
+          // so the first visible sign of the fire was the detonation. And a
+          // stage-2 "fire" was two faint dots: it's a real blaze now —
+          // flames at the engine, black smoke rolling off, a flickering glow.
+          var bnY = car.pos.y + 1.0;
+          var bnX = car.pos.x + fwdX(car) * 1.4, bnZ = car.pos.z + fwdZ(car) * 1.4;
+          if (car.stage >= 2) {
+            car.smokeT = 0.09;
+            GAME.fx.spawn(bnX, bnY, bnZ, { count: 3, color: 0xff7020, spread: 0.8, vy: 2.6, life: 0.35, grav: 1.5 });
+            GAME.fx.spawn(bnX, bnY + 0.4, bnZ, { count: 2, color: 0xffc040, spread: 0.5, vy: 3.2, life: 0.25, grav: 1.5 });
+            GAME.fx.spawn(bnX, bnY + 0.8, bnZ, { count: 2, color: 0x2a2a2e, spread: 0.7, vy: 2.4, life: 1.3, grav: 0.6 });
+            car.fireGlowT = (car.fireGlowT || 0) - 0.09;
+            if (car.fireGlowT <= 0) { car.fireGlowT = 0.4; GAME.fx.flash(bnX, bnY + 0.4, bnZ, 1.6); }
+          } else {
+            car.smokeT = 0.12;
+            GAME.fx.spawn(bnX, bnY, bnZ, { count: 3, color: 0x555560, spread: 0.7, vy: 2.2, life: 1.0, grav: 0.5 });
+          }
         }
         if (car.stage >= 2) {
           car.fireFuse -= dt;

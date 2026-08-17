@@ -446,11 +446,25 @@ GAME.isla = (function () {
   }
 
   var touched = [];
+  // Build-time memo. Constructing the island samples groundY hundreds of
+  // thousands of times, and every interior corner is asked for up to four
+  // times (shared between neighbouring quads) — nearly half the game's boot
+  // was spent recomputing identical answers. During build() the results are
+  // cached at 1 cm quantization (mesh-only precision); gameplay queries stay
+  // uncached — they're few, and wheels never land on the same spot twice.
+  var buildCache = null;
+  function groundY(x, z) {
+    if (!buildCache) return groundYRaw(x, z);
+    var k = Math.round(x * 100) * 2000000 + Math.round(z * 100) + 1000000;
+    var v = buildCache.get(k);
+    if (v === undefined) { v = groundYRaw(x, z); buildCache.set(k, v); }
+    return v;
+  }
   // The island's ground: terrain with the roads cut into it. Every road within
   // reach contributes by weight rather than the nearest one winning outright —
   // picking a winner puts a cliff along the line midway between two roads at
   // different heights, which is exactly where junctions are.
-  function groundY(x, z) {
+  function groundYRaw(x, z) {
     var list = cellAt(x, z);
     var base = terrainY(x, z) * coastDamp(x, z);
     if (!list) return base;
@@ -907,19 +921,69 @@ GAME.isla = (function () {
 
   function buildLandmarks(batches, scene) {
     var b = batches.plain, sg = batches.signs;
+    var pools = new GeoBatch();   // additive light on the ground, built at the end
     var y;
 
-    // police station — the island's only one, in the middle of the port grid
+    // police station — the island's only one, and it wears the same uniform
+    // as the mainland's: navy base band, steps to a portico, twin blue
+    // lantern globes on the pavement, the badge, and a parapet band
+    // breathing slow blue. The kit IS the identity; the island keeps it.
     y = groundY(POI.police.x, POI.police.z);
     b.addBox(POI.police.x, y + 7, POI.police.z + 12, 56, 14, 24, 0, 0x8a94c0, 0);
     city.addSolid(POI.police.x, POI.police.z + 12, 56, 24, y + 14);
+    b.addBox(POI.police.x, y + 1.3, POI.police.z + 12, 56.6, 2.6, 24.6, 0, 0x2c3a6a, 0);
+    b.addBox(POI.police.x, y + 4.7, POI.police.z - 1.6, 14, 0.7, 4, 0, 0x2c3a6a, 0);
+    [-5, 5].forEach(function (px5) {
+      b.addBox(POI.police.x + px5, y + 2.35, POI.police.z - 3.1, 0.8, 4.7, 0.8, 0, 0xc8d0e8, 0);
+    });
+    b.addBox(POI.police.x, y + 0.16, POI.police.z - 4.1, 14, 0.32, 1.4, 0, 0x9aa4c4, 0);
+    [-5.2, 5.2].forEach(function (lx2) {
+      b.addBox(POI.police.x + lx2, y + 1.4, POI.police.z - 5.4, 0.32, 2.8, 0.32, 0, 0x3a4472, 0);
+      batches.glow.addBox(POI.police.x + lx2, y + 3.1, POI.police.z - 5.4, 0.75, 0.85, 0.75, 0, 0x66b4ff, 0);
+      pools.addGroundQuad(POI.police.x + lx2, y + 0.1, POI.police.z - 5.4, 8, 8, 0, 0x1c4a9a);
+    });
+    batches.glow.addBox(POI.police.x, y + 5.55, POI.police.z - 0.15, 12, 0.32, 0.16, 0, 0xbcd7ff, 0);
+    batches.glow.addBox(POI.police.x, y + 8.6, POI.police.z - 0.15, 2.8, 3.2, 0.2, 0, 0x2456c8, 0);
+    batches.glow.addBox(POI.police.x, y + 8.6, POI.police.z - 0.22, 1.9, 2.2, 0.14, 0, 0xdce8ff, 0);
+    var ipbB = new GeoBatch();
+    [[0, -11.9, 55.8, 0.42], [0, 11.9, 55.8, 0.42], [-27.9, 0, 0.42, 23.2], [27.9, 0, 0.42, 23.2]].forEach(function (pb) {
+      ipbB.addBox(POI.police.x + pb[0], y + 13.4, POI.police.z + 12 + pb[1], pb[2], 0.45, pb[3], 0, 0x3a78e8, 0);
+    });
+    var ipbMesh = new THREE.Mesh(ipbB.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }));
+    ipbMesh.matrixAutoUpdate = false;
+    scene.add(ipbMesh);
+    city.kinetics.push({ m: ipbMesh, pulse: 1.5, lo: 0.4, hi: 0.95 });
     city.addSign(sg, 20, POI.police.x, y + 11, POI.police.z - 0.2, Math.PI, 24, 4.2);
 
-    // hospital — the island's only one, on the flat at the head of the grid
+    // hospital — no longer a white block: the same read as the mainland's,
+    // scaled to the island. Cross tower, lit ward bands, red EMERGENCY
+    // canopy over its bay, beacon on top.
     y = groundY(POI.hospital.x, POI.hospital.z);
     b.addBox(POI.hospital.x, y + 8, POI.hospital.z - 12, 52, 16, 24, 0, 0xd8e8f0, 0);
     city.addSolid(POI.hospital.x, POI.hospital.z - 12, 52, 24, y + 16);
-    city.addSign(sg, 19, POI.hospital.x, y + 12.5, POI.hospital.z + 0.2, 0, 26, 4.4);
+    b.addBox(POI.hospital.x, y + 1.3, POI.hospital.z - 12, 52.6, 2.6, 24.6, 0, 0xc05a6a, 0);
+    b.addBox(POI.hospital.x + 22, y + 11, POI.hospital.z + 0.8, 3.6, 22, 3.6, 0, 0xe6f0f6, 0);
+    city.addSolid(POI.hospital.x + 22, POI.hospital.z + 0.8, 3.6, 3.6, y + 22);
+    // an equal-armed PLUS on every face, same cure as the mainland tower:
+    // the long vertical with a high crossbar read as a chapel
+    [[0, 1.95, 0], [-1.95, 0.8, 1], [1.95, 0.8, 1]].forEach(function (cf) {
+      batches.glow.addBox(POI.hospital.x + 22 + cf[0], y + 18.3, POI.hospital.z + 0.8 + cf[1], cf[2] ? 0.26 : 1.5, 4.4, cf[2] ? 1.5 : 0.26, 0, 0xe23a4a, 0);
+      batches.glow.addBox(POI.hospital.x + 22 + cf[0], y + 18.3, POI.hospital.z + 0.8 + cf[1], cf[2] ? 0.24 : 4.4, 1.5, cf[2] ? 4.4 : 0.24, 0, 0xe23a4a, 0);
+    });
+    [6.2, 9.4, 12.6].forEach(function (wy) {
+      batches.glow.addBox(POI.hospital.x - 4, y + wy, POI.hospital.z + 0.08, 40, 0.7, 0.1, 0, 0xcfe8f4, 0);
+    });
+    b.addBox(POI.hospital.x, y + 4.9, POI.hospital.z + 3.4, 18, 0.7, 6, 0, 0xe8f0f4, 0);
+    batches.glow.addBox(POI.hospital.x, y + 4.45, POI.hospital.z + 3.4, 17, 0.16, 5.2, 0, 0xe23a4a, 0);
+    [[-7.8, 1.6], [7.8, 1.6], [-7.8, 5.4], [7.8, 5.4]].forEach(function (cc) {
+      b.addBox(POI.hospital.x + cc[0], y + 2.25, POI.hospital.z + cc[1], 0.65, 4.5, 0.65, 0, 0xe8f0f4, 0);
+    });
+    city.addSign(sg, 43, POI.hospital.x, y + 4.95, POI.hospital.z + 6.55, 0, 13, 1.5);
+    pools.addGroundQuad(POI.hospital.x, y + 0.1, POI.hospital.z + 3.4, 20, 9, 0, 0x8a1622);
+    batches.glow.addGroundQuad(POI.hospital.x, y + 16.06, POI.hospital.z - 12, 2, 7, 0, 0xe23a4a);
+    batches.glow.addGroundQuad(POI.hospital.x, y + 16.06, POI.hospital.z - 12, 7, 2, 0, 0xe23a4a);
+    city.kmesh(0.65, 0.65, 0.65, 0xff3b4e, POI.hospital.x + 22, y + 22.7, POI.hospital.z + 0.8, { blink: 1.6, duty: 0.55 });
+    city.addSign(sg, 19, POI.hospital.x - 5, y + 13.6, POI.hospital.z + 0.2, 0, 22, 3.8);
 
     // ice cream factory — a cream slab with a cone on the roof you can see from
     // the promenade, and a forecourt where the truck waits
@@ -936,31 +1000,71 @@ GAME.isla = (function () {
       new THREE.MeshLambertMaterial({ color: 0xffd7e4, emissive: 0x442230 }));
     scoop.position.set(POI.factory.x + 12, y + 27, POI.factory.z);
     scene.add(scoop);
+    // the cherry on top, blinking; a mint neon collar under the scoop; and a
+    // candy-striped stack — pastel industrial, per the vision
+    city.kmesh(0.95, 0.95, 0.95, 0xe8283e, POI.factory.x + 12, y + 31.6, POI.factory.z, { blink: 2.2, duty: 0.6 });
+    [[2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6]].forEach(function (nc) {
+      batches.glow.addBox(POI.factory.x + 12 + nc[0], y + 23.2, POI.factory.z + nc[1],
+        nc[0] ? 0.3 : 4.6, 0.3, nc[0] ? 4.6 : 0.3, 0, 0x8dffd8, 0);
+    });
+    b.addBox(POI.factory.x + 18, y + 21, POI.factory.z - 10, 2.2, 10, 2.2, 0, 0xf0e2ce, 0);
+    b.addBox(POI.factory.x + 18, y + 23.5, POI.factory.z - 10, 2.5, 1.2, 2.5, 0, 0xf78ab8, 0);
+    b.addBox(POI.factory.x + 18, y + 25.7, POI.factory.z - 10, 2.5, 1.2, 2.5, 0, 0xf78ab8, 0);
     city.addSign(sg, 24, POI.factory.x, y + 11, POI.factory.z + 15.3, 0, 30, 5);
 
-    // lighthouse on the south-west point
+    // lighthouse on the south-west point — candy stripes and a beam that
+    // actually sweeps the coast, the island's one moving light
     y = groundY(POI.lighthouse.x, POI.lighthouse.z);
     var tower = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 4.4, 26, 12),
       new THREE.MeshLambertMaterial({ color: 0xe8e4dc }));
     tower.position.set(POI.lighthouse.x, y + 13, POI.lighthouse.z);
     scene.add(tower);
+    [[5, 4.2], [11, 3.8], [17, 3.4]].forEach(function (st) {
+      var band = new THREE.Mesh(new THREE.CylinderGeometry(st[1], st[1] + 0.14, 2.4, 12),
+        new THREE.MeshLambertMaterial({ color: 0xe0604e }));
+      band.position.set(POI.lighthouse.x, y + st[0], POI.lighthouse.z);
+      scene.add(band);
+    });
+    var gallery = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.1, 0.5, 12),
+      new THREE.MeshLambertMaterial({ color: 0x3a3440 }));
+    gallery.position.set(POI.lighthouse.x, y + 25.2, POI.lighthouse.z);
+    scene.add(gallery);
     var lamp = new THREE.Mesh(new THREE.SphereGeometry(2.2, 10, 8),
       new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
     lamp.position.set(POI.lighthouse.x, y + 27, POI.lighthouse.z);
     scene.add(lamp);
+    var beamG = new THREE.Group();
+    var beamM = new THREE.Mesh(new THREE.BoxGeometry(44, 0.6, 0.6),
+      new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.34, depthWrite: false }));
+    beamG.add(beamM);
+    beamG.position.set(POI.lighthouse.x, y + 27, POI.lighthouse.z);
+    scene.add(beamG);
+    city.kinetics.push({ m: beamG, spin: 0.85 });
     city.addSolid(POI.lighthouse.x, POI.lighthouse.z, 9, 9, y + 26);
     city.addSign(sg, 25, POI.lighthouse.x, y + 6.5, POI.lighthouse.z + 5, 0, 16, 3);
 
-    // marina: finger jetties and a line of moored hulls
+    // marina: finger jetties, moored hulls — and now masts over them with
+    // string lights down every jetty, so the water's edge glitters
     city.addSign(sg, 27, POI.marina.x + 6, groundY(POI.marina.x + 6, POI.marina.z - 34) + 7,
       POI.marina.z - 34, 0, 24, 4);
     y = 0.5;
     for (var j = 0; j < 4; j++) {
       var jz = POI.marina.z - 24 + j * 16;
       b.addBox(POI.marina.x - 16, y, jz, 42, 0.6, 3.2, 0, 0x7a5a40, 0);
+      // the planks carry you: without a deck entry the ground under them is
+      // the flat shore at 0, so anyone strolling the marina waded shin-deep
+      // through every jetty on the way to the villa
+      city.addDeck({ x: POI.marina.x - 16, z: jz, w: 42, len: 3.2, rot: 0, y0: y + 0.3, y1: y + 0.3 });
+      batches.glow.addBox(POI.marina.x - 16, y + 2.0, jz - 1.4, 40, 0.13, 0.13, 0, 0xffd890, 0);
+      b.addBox(POI.marina.x - 35, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
+      b.addBox(POI.marina.x + 3, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
       for (var m = 0; m < 3; m++) {
         var hx = POI.marina.x - 32 + m * 13;
         b.addBox(hx, y + 0.7, jz + 5, 9, 1.6, 3.4, 0, U.pick(Math.random, [0xd8d8e0, 0xc0d8e8, 0xe8e0d0]), 0);
+        if ((j + m) % 2 === 0) {
+          b.addBox(hx, y + 5.2, jz + 5, 0.16, 7.4, 0.16, 0, 0xf0f0ea, 0);
+          batches.glow.addBox(hx, y + 9.1, jz + 5, 0.24, 0.24, 0.24, 0, 0xffe9b0, 0);
+        }
       }
     }
 
@@ -1029,10 +1133,40 @@ GAME.isla = (function () {
       }
     }
 
+    // VERDE MOTORS — the island's respray garage, on the port flat facing the
+    // town grid's western avenue. Same three-walls-and-roof as the mainland
+    // shops, mouth open to the street; the door point sits 12 m off the
+    // road's centreline so a car just driving past is never $100 lighter for
+    // it. Without one of these, every set of island stars meant a bridge run
+    // home to lose the heat.
+    (function () {
+      var G = { x: 920, z: 170 };
+      var gy = groundY(G.x, G.z);
+      b.addBox(G.x, gy + 4, G.z - 7, 24, 8, 2, 0, 0x585068, 0);
+      b.addBox(G.x, gy + 4, G.z + 7, 24, 8, 2, 0, 0x585068, 0);
+      b.addBox(G.x + 11, gy + 4, G.z, 2, 8, 12, 0, 0x585068, 0);
+      b.addBox(G.x, gy + 8.5, G.z, 26, 1.4, 17, 0, 0x484058, 0);
+      city.addSolid(G.x, G.z - 7, 24, 2, gy + 8);
+      city.addSolid(G.x, G.z + 7, 24, 2, gy + 8);
+      city.addSolid(G.x + 11, G.z, 2, 12, gy + 8);
+      city.addSign(sg, 18, G.x - 12.6, gy + 6.7, G.z, -Math.PI / 2, 10, 2.5); // RESPRAY, over the mouth
+      city.addSign(sg, 31, G.x, gy + 6.6, G.z - 8.1, Math.PI, 13, 2.4);      // the house name, on the street corner face
+      city.dressRespray(b, batches.glow, pools, G.x, G.z, gy);               // the trade dress every garage wears
+      reserve(G.x, G.z, 26);
+      city.pois.resprays.push({ x: G.x, z: G.z, door: { x: G.x - 14, z: G.z }, isla: true });
+    })();
+
     [POI.police, POI.hospital, POI.factory, POI.lighthouse, POI.marina,
       POI.container, POI.observatory, POI.helipad, POI.cove].forEach(function (P) {
       reserve(P.x, P.z, 42);
     });
+
+    var poolsMesh = new THREE.Mesh(pools.build(), new THREE.MeshBasicMaterial({
+      vertexColors: true, map: city.glowTexture('rgba(255,255,255,0.6)'),
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    poolsMesh.matrixAutoUpdate = false;
+    scene.add(poolsMesh);
   }
 
   // The Mirador observatory: a terraced building you can walk up into rather
@@ -1128,6 +1262,17 @@ GAME.isla = (function () {
     // north end of it stays open — that far strip is where the reward sits
     b.addBox(O.x, top + 4.2, O.z, 16, 8, 16, 0, WALL, 0);
     city.addSolid(O.x, O.z, 16, 16, top + 8.2);
+    // the copper dome with its telescope slit — the hill's crown silhouette,
+    // faintly green-gold at night
+    var dome = new THREE.Mesh(new THREE.SphereGeometry(7.2, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: 0x9a6a3c, emissive: 0x1a2e14 }));
+    dome.position.set(O.x, top + 8.2, O.z);
+    scene.add(dome);
+    var slit = new THREE.Mesh(new THREE.BoxGeometry(1.5, 6.6, 3.4),
+      new THREE.MeshLambertMaterial({ color: 0x241a10 }));
+    slit.position.set(O.x, top + 11.4, O.z - 4.4);
+    slit.rotation.x = -0.5;
+    scene.add(slit);
     var dome = new THREE.Mesh(new THREE.SphereGeometry(8.4, 20, 12, 0, TAU, 0, Math.PI / 2),
       new THREE.MeshLambertMaterial({ color: 0x6e9d8d }));
     dome.position.set(O.x, top + 8.2, O.z);
@@ -1425,8 +1570,9 @@ GAME.isla = (function () {
     // cruisers outside the island station, an ambulance at the island hospital
     city.parkedSpots.push({ x: POI.police.x - 20, z: POI.police.z - 6, heading: 0, police: true });
     city.parkedSpots.push({ x: POI.police.x + 20, z: POI.police.z - 6, heading: 0, police: true });
-    // the helicopter, which now lives only up here
-    city.parkedSpots.push({ x: POI.helipad.x, z: POI.helipad.z, heading: Math.PI, vtype: 'helicopter' });
+    // the helicopter on the summit pad — visible from across the island, so
+    // it exists at long range like the mainland tower's find
+    city.parkedSpots.push({ x: POI.helipad.x, z: POI.helipad.z, heading: Math.PI, vtype: 'helicopter', range: 420, despawn: 480 });
     // a buggy on the cove, a pickup at the villas, a limo at the resort
     city.parkedSpots.push({ x: POI.cove.x - 12, z: POI.cove.z + 6, heading: Math.PI, vtype: 'buggy' });
     city.parkedSpots.push({ x: tx(900), z: tz(-282), heading: 0, vtype: 'pickup' });
@@ -1462,6 +1608,44 @@ GAME.isla = (function () {
         nodes[i].nb.push(nodes[k]); nodes[k].nb.push(nodes[i]);
       }
     }
+    // The proximity rule stitches junctions, but it cannot reach a road that
+    // never comes near another: the promenade runs a full block off the
+    // street grid, and the hill spur dies out short of the ring road. A
+    // stranded road strands the router — ask it for a path into a piece it
+    // cannot reach and it answers with a straight line through the
+    // buildings. So: flood the graph, and while more than one piece remains,
+    // join the closest pair of nodes between the largest piece and the rest.
+    // The seam lands on the shortest real gap, which is where you would
+    // actually drive across.
+    for (;;) {
+      var comps = [];
+      for (i = 0; i < nodes.length; i++) nodes[i].comp = -1;
+      for (i = 0; i < nodes.length; i++) {
+        if (nodes[i].comp >= 0) continue;
+        var stack = [nodes[i]], mem = [];
+        nodes[i].comp = comps.length;
+        while (stack.length) {
+          var nd2 = stack.pop(); mem.push(nd2);
+          for (k = 0; k < nd2.nb.length; k++) {
+            if (nd2.nb[k].comp < 0) { nd2.nb[k].comp = comps.length; stack.push(nd2.nb[k]); }
+          }
+        }
+        comps.push(mem);
+      }
+      if (comps.length <= 1) break;
+      comps.sort(function (a, b) { return b.length - a.length; });
+      var main = comps[0], bp = null, bq = null, bd = 1e18;
+      for (i = 1; i < comps.length; i++) {
+        for (k = 0; k < comps[i].length; k++) {
+          for (var m = 0; m < main.length; m++) {
+            var dd = U.dist2(comps[i][k].x, comps[i][k].z, main[m].x, main[m].z);
+            if (dd < bd) { bd = dd; bp = comps[i][k]; bq = main[m]; }
+          }
+        }
+      }
+      bp.nb.push(bq); bq.nb.push(bp);
+    }
+    for (i = 0; i < nodes.length; i++) delete nodes[i].comp;
     return nodes;
   }
   // where each bridge meets the mainland and the island, so the two graphs join
@@ -1486,6 +1670,7 @@ GAME.isla = (function () {
       strip: new GeoBatch(), downtown: new GeoBatch(), signs: new GeoBatch(),
       glow: new GeoBatch()
     };
+    buildCache = new Map();   // see groundY: the build asks the same corners over and over
     buildLand(batches.plain);
     buildRoads(batches.plain);
     buildLandmarks(batches, scene);
@@ -1494,6 +1679,7 @@ GAME.isla = (function () {
     buildLights(batches.plain, batches.glow);
     buildSpans(batches, scene);
     buildSpots(rng);
+    buildCache = null;        // gameplay queries run uncached
 
     function addMesh(batch, mat) {
       var m = new THREE.Mesh(batch.build(), mat);
@@ -1505,7 +1691,7 @@ GAME.isla = (function () {
     addMesh(batches.generic, city.lam(city.tex.generic));
     addMesh(batches.strip, city.lam(city.tex.strip));
     addMesh(batches.downtown, city.lam(city.tex.downtown));
-    addMesh(batches.glow, new THREE.MeshBasicMaterial({ vertexColors: true }));
+    addMesh(batches.glow, new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
     addMesh(batches.signs, new THREE.MeshBasicMaterial({
       map: city.signTex, transparent: true, vertexColors: true, side: THREE.DoubleSide
     }));

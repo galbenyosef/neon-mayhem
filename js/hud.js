@@ -1,7 +1,8 @@
 GAME.hud = (function () {
   var el = {};
+  var lastClock = '';
   var shownCash = 0, targetCash = 0;
-  var msgT = 0, zoneT = 0, lastZone = '';
+  var msgT = 0, countT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
   var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 560;
   var MAP_W = 1020, MAP_H = 560;   // world -520..1520 by -560..560, at 0.5 px/m
@@ -14,8 +15,8 @@ GAME.hud = (function () {
   function $(id) { return document.getElementById(id); }
 
   function init() {
-    ['minimap', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
-      'msg-line', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
+    ['minimap', 'clock', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
+      'msg-line', 'count-big', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
       'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
       .forEach(function (id) { el[id] = $(id); });
@@ -31,10 +32,24 @@ GAME.hud = (function () {
     buildMapBuffer();
     targetCash = shownCash = GAME.player.cash;
     updateCashText();
+    // The trophy shelf, in plain words: how many marked missions have a
+    // personal best on file, out of how many exist — "Best runs saved: 7"
+    // answered a question nobody asked. While the channel is still closed,
+    // the same count doubles as the road to the island, so say that too.
     var bests = GAME.bests || {};
-    var keys = Object.keys(bests);
-    if (keys.length) el['title-best'].textContent = 'Best runs saved: ' + keys.length + '  ·  Cash: $' + GAME.player.cash;
-    else if (GAME.player.cash !== 250) el['title-best'].textContent = 'Cash: $' + GAME.player.cash;
+    var defs = (GAME.missions && GAME.missions.DEFS) || [];
+    var beaten = 0;
+    for (var di = 0; di < defs.length; di++) if (bests[defs[di].id] !== undefined) beaten++;
+    if (beaten) {
+      var bl = 'Missions beaten: ' + beaten + ' of ' + defs.length;
+      if (GAME.isla && !GAME.isla.isOpen()) {
+        var need = GAME.isla.required || 4;
+        bl += '  ·  ' + Math.min(beaten, need) + ' of ' + need + ' toward the bridges';
+      }
+      el['title-best'].textContent = bl + '  ·  Cash: $' + GAME.player.cash;
+    } else if (GAME.player.cash !== 250) {
+      el['title-best'].textContent = 'Cash: $' + GAME.player.cash;
+    }
 
     el['press-enter'].addEventListener('click', function () { GAME.startGame(); });
     el['title-screen'].addEventListener('click', function () { GAME.startGame(); });
@@ -673,6 +688,13 @@ GAME.hud = (function () {
       updateCashText();
     }
     var P = GAME.player;
+    // The town clock: dayPhase 0 is midnight, 0.5 is noon, 24 hours around
+    // the wheel — pinned day or night freezes it with the sun. The 150 s day
+    // makes a raw minute hand a blur (9.6 game-minutes a second), so it
+    // reads in ten-minute steps, ticking about once a real second.
+    var cm = Math.floor(GAME.dayPhase * 144) * 10 % 1440;
+    var ct = (cm < 600 ? '0' : '') + Math.floor(cm / 60) + ':' + (cm % 60 === 0 ? '00' : cm % 60);
+    if (ct !== lastClock) { lastClock = ct; el.clock.textContent = ct; }
     el['health-fill'].style.width = U.clamp(P.health, 0, 100) + '%';
     el['armor-fill'].style.width = U.clamp(P.armor, 0, 100) + '%';
     // aircraft wear their condition on the HUD: their damage is otherwise
@@ -689,6 +711,7 @@ GAME.hud = (function () {
       } else vl.style.display = 'none';
     }
     if (msgT > 0) { msgT -= dt; if (msgT <= 0) el['msg-line'].style.opacity = 0; }
+    if (countT > 0) { countT -= dt; if (countT <= 0) el['count-big'].style.opacity = 0; }
     if (radioT > 0) { radioT -= dt; if (radioT <= 0) el['radio-popup'].style.opacity = 0; }
     zoneT -= dt;
     if (zoneT <= 0) {
@@ -772,6 +795,16 @@ GAME.hud = (function () {
       el['msg-line'].style.opacity = 1;
       msgT = dur || 2.5;
     },
+    // the huge centre numeral for mission countdowns. Callers repeat it every
+    // frame while the count runs; it lets go of the screen on its own once
+    // they stop (which is how "GO!" gets its moment and then clears itself)
+    bigCount: function (text) {
+      var e = el['count-big'];
+      text = String(text);
+      if (e.textContent !== text) e.textContent = text;
+      e.style.opacity = 1;
+      countT = 0.8;
+    },
     radioPopup: function (name) {
       el['radio-popup'].textContent = '♪ ' + name;
       el['radio-popup'].style.opacity = 1;
@@ -835,6 +868,9 @@ GAME.hud = (function () {
         }
       }, 550);
     },
+    // the raw dimmer, for rituals that keep their own time (mission starts
+    // count the blackout in game ticks, so pausing pauses it)
+    fadeSet: function (v) { el['fade-layer'].style.opacity = v; },
     hideTitle: function () {
       el['title-screen'].style.display = 'none';
       document.getElementById('hud').style.display = 'block';

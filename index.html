@@ -36,6 +36,9 @@
   #minimap { width:100%; height:100%; }
 
   #stat-block { right:16px; top:12px; text-align:right; }
+  /* the town clock: a bedside-radio readout above the money */
+  #clock { font-size:15px; font-weight:800; letter-spacing:3px; color:#9df3ff;
+    text-shadow:0 0 8px rgba(60,220,255,.75), 1px 1px 0 #0a2030; }
   #cash { font-size:26px; font-weight:800; font-style:italic; color:#8dffd8; text-shadow:0 0 8px rgba(70,255,190,.8), 2px 2px 0 #06281c; letter-spacing:1px; }
   #wanted-stars { font-size:24px; letter-spacing:3px; color:rgba(255,255,255,.22); text-shadow:none; margin-top:2px; }
   #wanted-stars .lit { color:#ffd24a; text-shadow:0 0 10px rgba(255,190,40,.9); }
@@ -61,6 +64,10 @@
   #msg-line { left:50%; bottom:24%; transform:translateX(-50%); font-size:19px; font-weight:700; color:#fff;
     text-shadow:0 0 10px rgba(255,120,220,.9); opacity:0; transition:opacity .3s; text-align:center;
     max-width:70vw; white-space:normal; line-height:1.4; }
+  /* the mission-start countdown: one huge numeral, dead centre, gone on GO */
+  #count-big { left:50%; top:34%; transform:translate(-50%,-50%); font-size:clamp(64px,15vh,116px); font-weight:900;
+    font-style:italic; color:#8dffd8; text-shadow:0 0 26px rgba(60,255,190,.9), 4px 4px 0 #0a2a20;
+    opacity:0; transition:opacity .2s; text-align:center; letter-spacing:6px; }
   #mission-hud { left:50%; top:12px; transform:translateX(-50%); text-align:center; display:none; }
   #mission-title { font-size:18px; font-weight:800; font-style:italic; color:#ffe08a; text-shadow:0 0 10px rgba(255,190,60,.8); }
   #mission-obj { font-size:15px; color:#e8f6ff; text-shadow:0 1px 3px #000; margin-top:2px; }
@@ -293,6 +300,7 @@
 <div id="hud" style="display:none">
   <div class="panel" id="minimap-wrap"><canvas id="minimap" width="180" height="180"></canvas></div>
   <div class="panel" id="stat-block">
+    <div id="clock">00:00</div>
     <div id="cash">$0</div>
     <div id="wanted-stars"></div>
     <div class="bar"><div id="health-fill"></div></div>
@@ -304,6 +312,7 @@
   <div class="panel" id="zone-popup"></div>
   <div class="panel" id="poi-hint"></div>
   <div class="panel" id="msg-line"></div>
+  <div class="panel" id="count-big"></div>
   <div class="panel" id="mission-hud">
     <div id="mission-title"></div>
     <div id="mission-obj"></div>
@@ -376,8 +385,11 @@
     <b>1–5</b> weapons &nbsp;·&nbsp; <b>, / .</b> radio &nbsp;·&nbsp; <b>J</b> taxi / paramedic / ice cream job &nbsp;·&nbsp; <b>P</b> map &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>T</b> CRT &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause
   </div>
   <div id="title-footer">Fan-made tribute. Not affiliated with Rockstar Games or Take-Two Interactive. No original game assets used.
-    &nbsp;·&nbsp; <a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
-      style="color:#9df3ff;pointer-events:auto;">github.com/pranshuparmar/neon-mayhem</a></div>
+    &nbsp;·&nbsp; <!-- the whole title screen is a start button, so the link must
+      stop its events short of it — same pattern as the pause screen's link -->
+    <a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
+      style="color:#9df3ff;pointer-events:auto;" onclick="event.stopPropagation()"
+      ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
 </div>
 
 <div id="controls-bar"></div>

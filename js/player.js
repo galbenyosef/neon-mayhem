@@ -156,17 +156,27 @@ GAME.playerWasted = function (cause) {
   GAME.track('wasted');
   GAME.timeScale = 0.35;
   killLoopingAudio();
-  GAME.audio.sting('wasted');
   // the card tells the truth about THIS death: a bed only counts on the
   // island you went down on — and if you own one elsewhere, say why it
   // didn't help, so the rule teaches itself
   var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
   var ownsElsewhere = !home && GAME.shops && GAME.shops.ownsAny();
-  GAME.hud.showBig('wasted', home
+  var body = home
     ? 'You wake up at your place. Cash and weapons intact.'
     : ownsElsewhere
       ? 'You wake up at the local hospital — your bed is on the other island. Weapons gone, cash intact.'
-      : 'You wake up at the hospital. Weapons gone, cash intact.');
+      : 'You wake up at the hospital. Weapons gone, cash intact.';
+  // An explosion death gets its beat: the banner used to slam on in the very
+  // frame the blast spawned, so dying in a burning car read as "I suddenly
+  // died" — the fireball was behind the card. Let the slow-mo blast play,
+  // THEN call it.
+  var delay = cause === 'explosion' ? 900 : 0;
+  var show = function () {
+    if (P.state !== 'wasted' || P.respawnQueued) return;
+    GAME.audio.sting('wasted');
+    GAME.hud.showBig('wasted', body);
+  };
+  if (delay) setTimeout(show, delay); else show();
   GAME.missions.failActive('You got wasted.');
 };
 
@@ -341,7 +351,8 @@ function stepEnter(dt) {
     GAME.hud.message(car.spec.label, 1.6);
     // the radio comes on tuned to whatever the last driver left it on
     if (!car.spec.heli && !car.spec.plane) GAME.hud.radioPopup(GAME.audio.radio.randomStation());
-    if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
+    if (car.spec.gunship) GAME.hud.message('TALON — Space up · Shift down · WASD fly · LMB/GUN chin gun · RMB/RKT rockets · F to exit', 5);
+    else if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
     else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
     else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
     else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
@@ -353,6 +364,10 @@ function forceExitCar(silent) {
   var P = GAME.player;
   if (!P.inCar) return;
   var car = P.car;
+  // bailing out of a burning ride resets the fuse to scramble length: the
+  // killing blow keeps its short cinematic fuse while you're aboard, but
+  // once you're out the door the blast should be a thing you can outwalk
+  if (car.fireFuse > 0 && !car.dead) car.fireFuse = Math.max(car.fireFuse, 2.5);
   car.controls = { throttle: 0, steer: 0, handbrake: false };
   car.occupied = null;
   var side = car.heading - Math.PI / 2;
@@ -370,7 +385,8 @@ function forceExitCar(silent) {
   // a hovering exit (under chute height) steps out at altitude — you drop
   // the rest of the way on ordinary gravity rather than teleporting down
   if (car.spec.heli || car.spec.plane) {
-    var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4);
+    // the heli's origin now sits at skid level, so its cabin floor IS its pos
+    var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 0.1);
     if (feetY > P.pos.y + 0.3) { P.pos.y = feetY; P.airborne = true; }
   }
   P.velY = 0;
@@ -503,9 +519,13 @@ function updateOnFoot(dt) {
   if (T.active) { mx += T.stickX; mz += -T.stickY; }
   var mag = Math.min(1, U.len(mx, mz));
   if (P.carHurtCd > 0) P.carHurtCd -= dt;
-  // run: Shift on desktop, RUN toggle or full stick deflection on touch
-  var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run || (T.active && mag > 0.85)) && !aiming;
-  var target = mag * (aiming ? 2.0 : run ? 7.5 : 2.8);   // sprint is 1.25x the old 6.0
+  // Run is a CHOICE: Shift on desktop, the RUN toggle on touch. Full stick
+  // deflection used to count as sprinting too, which meant nobody ever
+  // walked — a pinned stick is simply how you move on a phone, and on any
+  // desktop whose browser reports touch (most precision touchpads do) the
+  // layer enables and a held W read as a pinned stick.
+  var run = ((GAME.key('ShiftLeft') || GAME.key('ShiftRight')) || T.run) && !aiming;
+  var target = mag * (aiming ? 2.0 : run ? 8 : 4.2);   // the 2.8 walk read as slow motion, and sprint keeps its lead over it
   P.moveSpeed = U.damp(P.moveSpeed, target, 8, dt);
 
   if (mag > 0.05) {
@@ -553,6 +573,9 @@ function updateOnFoot(dt) {
     }
   }
   P.pos.x = nx; P.pos.z = nz;
+  // the closed channel's line stops walkers too — parachuting onto the
+  // bridge deck past the barrier used to leave a free stroll to the island
+  if (GAME.aircraft) GAME.aircraft.enforceAirspace(P.pos);
   if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
   var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
@@ -681,6 +704,9 @@ function updateDriving(dt) {
     if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
     return;
   }
+  // ground vehicles answer to the closed channel's line too (a truck that
+  // hopped the barrier onto the bridge deck is not a loophole)
+  if (GAME.aircraft) GAME.aircraft.enforceAirspace(car.pos);
   var c = car.controls;
   if (GAME.autopilot) {
     if (!car.ai || car.ai.mode !== 'traffic') car.ai = { mode: 'traffic', desired: 13, laneX: 0, laneZ: 0 };

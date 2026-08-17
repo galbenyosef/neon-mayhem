@@ -87,22 +87,24 @@ GAME.missions = (function () {
       cps: [[50, 50], [150, -50], [50, -250], [-50, -350], [-150, -250], [-150, -50], [-50, 50]]
     },
     // courier drops are generated fresh each run (see rollCourierStops)
-    // courier clocks are meant to be beaten narrowly, not strolled through.
-    // Legs run at 3x their old length — a delivery is a drive across town,
-    // not a hop round the block — and the clocks scaled with them.
-    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 228, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 330, legMax: 720 },
-    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 264, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 360, legMax: 780 },
-    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 240, start: { x: 364, z: 104 }, drops: 4, legMin: 300, legMax: 660 },
-    { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 60, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
-    { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 60, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
-    { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 60, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
+    // Courier clocks are set from the stopwatch, not from generosity: the
+    // sampled routes run 2.3-2.9 km and the race rivals prove ~22 m/s is what
+    // "competitive" means on these streets, so each clock is that drive plus
+    // a fifth for traffic and corners. A flat-out clean run beats them
+    // narrowly; a stroll does not finish.
+    { id: 'courier0', type: 'courier', name: 'HOT PLATES', reward: 300, time: 130, start: { x: 158.4, z: 41.6 }, drops: 4, legMin: 330, legMax: 720 },
+    { id: 'courier1', type: 'courier', name: 'NIGHT MAIL', reward: 320, time: 130, start: { x: -241.6, z: -41.6 }, drops: 4, legMin: 360, legMax: 780 },
+    { id: 'courier2', type: 'courier', name: 'BEACH RUN', reward: 340, time: 115, start: { x: 364, z: 104 }, drops: 4, legMin: 300, legMax: 660 },
+    { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 30, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
+    { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 30, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
+    { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 30, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
     // Isla Verde's own work, and it stays over here — every checkpoint, drop
     // and target is on the island, so nothing ever asks you to cross mid-run.
     // Coordinates come from the island itself once it has registered.
     { id: 'race3', type: 'race', name: 'ALTA VERDE CLIMB', reward: 750, isla: 'climb', start: null, cps: null },
     { id: 'race4', type: 'race', name: 'MIRADOR RUN', reward: 800, isla: 'mirador', start: null, cps: null },
-    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 282, isla: 'port', start: null, drops: 4, legMin: 330, legMax: 720 },
-    { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 60, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
+    { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 180, isla: 'port', start: null, drops: 4, legMin: 330, legMax: 720 },
+    { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 30, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
   ];
 
   // Island mission anchors, resolved after the island registers. A race's
@@ -194,6 +196,13 @@ GAME.missions = (function () {
   // closer than the radius asked for, which made every fare a short hop.
   function randomRoadPoint(fromX, fromZ, minR, maxR) {
     var best = null, bestErr = 1e18;
+    // '' means over water — which includes a BRIDGE DECK. A crossing connects
+    // two landmasses, so a run started mid-bridge may be sent to either side.
+    // Comparing every candidate against '' used to reject them all, and the
+    // fallback then returned the caller's own position: a taxi shift started
+    // on a bridge kept declaring the driver to be the pickup, and the ped it
+    // spawned at their feet promptly vanished — "your fare is gone", forever.
+    var fromIsle = GAME.city.islandIdAt(fromX, fromZ);
     for (var t = 0; t < 60; t++) {
       var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, minR, maxR);
       var rp = GAME.city.nearestRoadPoint(fromX + Math.cos(a) * r, fromZ + Math.sin(a) * r);
@@ -202,7 +211,7 @@ GAME.missions = (function () {
       if (GAME.city.isInWater(rp.x, rp.z)) continue;
       // stay on the landmass you started on: a courier leg that crosses the
       // channel is not a delivery run, it is a swim
-      if (GAME.city.islandIdAt(rp.x, rp.z) !== GAME.city.islandIdAt(fromX, fromZ)) continue;
+      if (fromIsle && GAME.city.islandIdAt(rp.x, rp.z) !== fromIsle) continue;
       // nudge onto the sidewalk edge, clear of the driving lanes
       var sgn = Math.random() < 0.5 ? 1 : -1;
       var off = rp.axis === 'net' ? [Math.cos(rp.heading) * 9 * sgn, -Math.sin(rp.heading) * 9 * sgn]
@@ -214,7 +223,10 @@ GAME.missions = (function () {
       var err = d < minR ? minR - d : d - maxR;
       if (err < bestErr) { bestErr = err; best = [px, pz]; }
     }
-    return best || [Math.round(fromX), Math.round(fromZ)];
+    if (best) return best;
+    // last resort: a real road point, never the caller's own position
+    var fb = GAME.city.nearestRoadPoint(fromX, fromZ);
+    return [Math.round(fb.x), Math.round(fb.z)];
   }
 
   // a route that stays on the streets: road-graph nodes, then in along the
@@ -269,7 +281,7 @@ GAME.missions = (function () {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
-      targets: [], timeLeft: 120, chimeT: 0, routeCp: null
+      targets: [], timeLeft: 60, chimeT: 0, routeCp: null
     };
     setMarkersVisible(false);
     updateCp();
@@ -295,8 +307,8 @@ GAME.missions = (function () {
       active.level++;
       active.sales = 0;
       active.quota += 2;
-      active.timeLeft += 55;
-      GAME.hud.message('ROUND ' + active.level + ' — +55s, sell ' + active.quota + '  ·  +$' + pay, 3.4);
+      active.timeLeft += 30;
+      GAME.hud.message('ROUND ' + active.level + ' — +30s, sell ' + active.quota + '  ·  +$' + pay, 3.4);
       GAME.audio.sting('win');
     } else {
       GAME.hud.message('Sold — +$' + pay + '  ·  ' + active.sales + ' / ' + active.quota, 2);
@@ -356,9 +368,9 @@ GAME.missions = (function () {
       // an ambulance fills up before running to the hospital; a cab takes one fare
       capacity: kind === 'ambulance' ? 3 : 1,
       level: 1, targets: [], aboard: 0,
-      // calls come in at 3x the distance now, so the shift clock starts
-      // (and refills — see completeFare) to match
-      timeLeft: kind === 'ambulance' ? 170 : 150,
+      // the opening clock covers the first call and a breath, no more — the
+      // shift is earned fare by fare (see completeFare)
+      timeLeft: kind === 'ambulance' ? 70 : 60,
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
@@ -594,8 +606,10 @@ GAME.missions = (function () {
     var hs = GAME.city.pois.hospitals, best = null, bd = 1e18;
     var here = GAME.city.islandIdAt(f.x, f.z);
     for (var hi = 0; hi < hs.length; hi++) {
-      // the run stays on this landmass — a shift never sends you over a bridge
-      if (GAME.city.islandIdAt(hs[hi].x, hs[hi].z) !== here) continue;
+      // the run stays on this landmass — a shift never sends you over a
+      // bridge. Mid-crossing ('' — the deck is over water) either side's
+      // hospital is fair: the bridge leads to both.
+      if (here && GAME.city.islandIdAt(hs[hi].x, hs[hi].z) !== here) continue;
       var dd = U.dist2(f.x, f.z, hs[hi].x, hs[hi].z);
       if (dd < bd) { bd = dd; best = hs[hi]; }
     }
@@ -647,9 +661,14 @@ GAME.missions = (function () {
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
     var msg = word + '! +$' + fare;
-    // each fare buys enough clock for the next long call and no more; the
-    // shift stays under pressure at the new 3x distances
-    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 85 : 90) + n * 12, 280);
+    // Each fare buys the next call and loose change at best — measured, not
+    // guessed: a fare's legs route 0.8-1.4 km, 40-60 s at the pace the race
+    // rivals set, plus the kerbside pickup, and the calls stretch with the
+    // level while the refill does not. Early fares bank a little, the mid
+    // shift breaks even, and the deep shift bleeds: a shift is a run at a
+    // high score, not a loop you can hold forever. The tight bank cap means
+    // even a flawless streak never sits on a cushion.
+    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 40 + n * 12 : 48 + n * 8), 120);
 
     if (active.targets.length) {
       // still people waiting on this level — go back out for them
@@ -774,48 +793,63 @@ GAME.missions = (function () {
     GAME.track('mission-started-' + def.type);
     active = {
       def: def, t: 0, cpIndex: 0, score: 0,
-      timeLeft: def.time || 0, racers: [], state: 'countdown', countdown: def.type === 'race' ? 3.2 : 0,
+      timeLeft: def.time || 0, racers: [], state: 'fade', countdown: 3,
       // a fresh set of drops every time you take the run
       stops: def.type === 'courier' ? rollCourierStops(def) : null
     };
-    // orient first, before rivals form up on the (new) heading
+    // races and couriers line you up on the first objective — but the
+    // about-face happens behind a fade to black, because watching your own
+    // car spun to a new heading read as the game grabbing the wheel. Then
+    // everyone waits out the countdown; nothing starts until GO. The blackout
+    // runs on game time, not a timer: pausing holds it, and a throttled tab
+    // can't leave a mission stranded half-started.
     var first = def.type === 'race' ? def.cps[0] : active.stops ? active.stops[0] : null;
-    if (first) faceToward(first[0], first[1]);
-    if (def.type === 'race') {
-      // The field races what YOU race: turn up on a bike and the rivals are
-      // on bikes, turn up in a limo and it's a limo race. Rivals in sports
-      // cars against a player's motorcycle decided the race at the start line.
-      var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
-      for (var i = 0; i < 3; i++) {
-        var off = (i + 1) * 5;
-        var rx = def.start.x - Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-        var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-        var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
-        car.cpIndex = 0;
-        // rivals shrug off scrapes — a race should be decided on the road, not by
-        // one of them cooking off against a lamp post
-        car.hp = car.spec.hp * 5;
-        active.racers.push(car);
+    function arm() {
+      if (def.type === 'race' && (!P.inCar || !P.car)) {
+        // stepped out of the car during the blackout: scratch the start
+        cleanup();
+        GAME.hud.message('Race scratched — you left your ride.', 2.5);
+        return;
       }
-      GAME.hud.message('3...', 1);
-      setTimeout(function () { if (active) GAME.hud.message('2...', 1); }, 1000);
-      setTimeout(function () { if (active) GAME.hud.message('1...', 1); }, 2000);
-      setTimeout(function () { if (active) { GAME.hud.message('GO!', 1); } }, 3000);
-    } else if (def.type === 'rampage') {
-      // the rampage arsenal is on loan — remember it so it can be reclaimed at the
-      // end (otherwise the marker is a free-ammo dispenser on repeat)
-      active.grantWeapon = def.weapon;
-      active.grantAmmo = def.ammo;
-      active.grantHad = !!(P.weapons[def.weapon] && P.weapons[def.weapon].have);
-      GAME.combat.giveWeapon(def.weapon, def.ammo);
-      active.state = 'run';
-      active.topupT = 0;
-      spawnRampageTargets(14, 6);
-      GAME.hud.message('Cause $' + def.target + ' of mayhem! Wreck cars and crowds.', 3.5);
-    } else {
-      active.state = 'run';
-      GAME.hud.message('First delivery is marked. Go!', 3);
+      if (first) faceToward(first[0], first[1]);
+      if (def.type === 'race') {
+        // The field races what YOU race: turn up on a bike and the rivals are
+        // on bikes, turn up in a limo and it's a limo race. Rivals in sports
+        // cars against a player's motorcycle decided the race at the start line.
+        var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
+        for (var i = 0; i < 3; i++) {
+          var off = (i + 1) * 5;
+          var rx = def.start.x - Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
+          car.cpIndex = 0;
+          // rivals shrug off scrapes — a race should be decided on the road, not by
+          // one of them cooking off against a lamp post
+          car.hp = car.spec.hp * 5;
+          active.racers.push(car);
+        }
+      } else if (def.type === 'rampage') {
+        // the arsenal arrives on GO, and on loan — what was granted is
+        // remembered so it can be reclaimed at the end (otherwise the marker
+        // is a free-ammo dispenser on repeat), and a start that never reaches
+        // GO grants nothing, so there is nothing to claw back
+        active.goSetup = function () {
+          active.grantWeapon = def.weapon;
+          active.grantAmmo = def.ammo;
+          active.grantHad = !!(P.weapons[def.weapon] && P.weapons[def.weapon].have);
+          GAME.combat.giveWeapon(def.weapon, def.ammo);
+          active.topupT = 0;
+          spawnRampageTargets(14, 6);
+          GAME.hud.message('Cause $' + def.target + ' of mayhem! Wreck cars and crowds.', 3.5);
+        };
+      } else {
+        active.goSetup = function () { GAME.hud.message('First delivery is marked.', 3); };
+      }
+      active.state = 'countdown';
+      GAME.hud.missionObjective(objectiveText());
     }
+    if (first) { active.arm = arm; active.fadeT = 0.55; GAME.hud.fadeSet(1); }
+    else arm();
     setMarkersVisible(false);
     GAME.hud.missionStart(def.name, objectiveText());
     GAME.audio.pickup();
@@ -976,6 +1010,7 @@ GAME.missions = (function () {
     active = null;
     cpMarker.visible = false;
     setMarkersVisible(true);
+    GAME.hud.fadeSet(0);   // a start that dies mid-blackout takes the black with it
     GAME.hud.missionEnd();
     GAME.save();
   }
@@ -1143,7 +1178,7 @@ GAME.missions = (function () {
       for (var rg = 0; rg < doors.length; rg++) {
         var rd = U.dist2(px, pz, doors[rg].door.x, doors[rg].door.z);
         if (rd < 34 * 34 && (!hint || rd < hint.d)) {
-          hint = { d: rd, text: 'RESPRAY · $100 — repairs your ride and clears the heat' + (P.inCar ? '' : '   —   drive in') };
+          hint = { d: rd, text: 'RESPRAY · $100 — repairs your ride; fresh paint clears up to two stars' + (P.inCar ? '' : '   —   drive in') };
         }
       }
       // and the shops share the one readout instead of talking over it
@@ -1164,11 +1199,32 @@ GAME.missions = (function () {
     // active mission
     var d2 = active.def;
     active.t += dt;
-    if (active.state === 'countdown') {
-      active.countdown -= dt;
+    if (active.state === 'fade' || active.state === 'countdown') {
+      // held on the line: the car sits, the rivals sit, no mission clock runs
       if (P.car) { P.car.controls.throttle = 0; P.car.speed *= 0.9; }
       for (var r0 = 0; r0 < active.racers.length; r0++) active.racers[r0].controls = { throttle: 0, steer: 0, handbrake: true };
-      if (active.countdown <= 0) { active.state = 'run'; active.t = 0; }
+      if (active.state === 'fade') {
+        active.fadeT -= dt;
+        if (active.fadeT <= 0) {
+          GAME.hud.fadeSet(0);
+          var armFn = active.arm; active.arm = null;
+          if (armFn) armFn();   // may scratch the start, which clears `active`
+        }
+        return;
+      }
+      if (active.state === 'countdown') {
+        active.countdown -= dt;
+        if (active.countdown <= 0) {
+          active.state = 'run'; active.t = 0;
+          GAME.hud.bigCount('GO!');
+          GAME.audio.pickup();
+          if (active.goSetup) { active.goSetup(); active.goSetup = null; }
+        } else {
+          var num = Math.max(1, Math.ceil(active.countdown));
+          if (num !== active.lastNum) { active.lastNum = num; GAME.audio.cashTick(); }
+          GAME.hud.bigCount(num);
+        }
+      }
       return;
     }
 
@@ -1303,7 +1359,12 @@ GAME.missions = (function () {
           }
         }
         stepBoarding(dt, f, P);
-      } else if (tgt && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) {
+      } else if (tgt && active.aboard > 0 && U.dist2(f.x, f.z, tgt[0], tgt[1]) < 38 && Math.abs(P.car.speed) < 4) {
+        // aboard > 0 is load-bearing: when dispatch holds the next round for
+        // heat, the phase stays 'dropoff' with an empty cab — without the
+        // guard, idling on the drop-off re-completed the "delivery" every
+        // tick, and a 3-fare shift compounded to level 143 and a million
+        // dollars in level bonuses before the driver's foot left the brake
         completeFare(d2.type, f, tgt);
       }
       updateArrows(dt);
@@ -1367,7 +1428,14 @@ GAME.missions = (function () {
       return;
     }
     GAME.addCash(-100);
-    GAME.police.clearWanted();
+    // Paint convinces a patrol, not a manhunt. At one or two stars the law
+    // is hunting a CAR, and the car just changed — clean. From three up
+    // they know your face (fares bail at three, air units fly): the garage
+    // still fixes the metal, but the warrant survives. Deep trouble is the
+    // desk sergeant's ladder or a night's sleep — $100 of paint clearing a
+    // five-star manhunt made the sergeant's $2,250 rate card a joke.
+    var w = GAME.police.wanted;
+    if (w > 0 && w <= 2) GAME.police.clearWanted();
     // works for any driven vehicle, motorcycles included: full repair + fresh paint
     var car = P.car;
     car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0; car.spiked = false; car.fireFuse = 0;
@@ -1376,7 +1444,9 @@ GAME.missions = (function () {
     }
     GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 4);
     GAME.audio.pickup();
-    GAME.hud.message('Resprayed & fully repaired — the heat is off.', 3);
+    GAME.hud.message(w >= 3
+      ? 'Resprayed & fully repaired — but three stars is past paint. They know your face.'
+      : 'Resprayed & fully repaired — the heat is off.', 3);
     GAME.track('respray-used');
     resprayCooldown = 8;
   }
@@ -1396,14 +1466,14 @@ GAME.missions = (function () {
     notifyChaos: notifyChaos,
     objectiveText: objectiveText,
     getRoutePoints: function () {
-      if (!active || active.state === 'countdown') return null;
+      if (!active || active.state === 'fade' || active.state === 'countdown') return null;
       if (active.def.type === 'race') return active.raceRoute || active.def.cps.slice(active.cpIndex);
       if (active.courierRoute) return active.courierRoute; // courier / taxi / ambulance
       return null;
     },
     // the immediate target marker (checkpoint / stop / pickup / drop-off)
     getObjectivePoint: function () {
-      if (!active || active.state === 'countdown') return null;
+      if (!active || active.state === 'fade' || active.state === 'countdown') return null;
       return currentCp();
     },
     getBlips: function () {

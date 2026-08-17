@@ -11,7 +11,7 @@ var WEAPON_ORDER = ['fist', 'pistol', 'smg', 'shotgun', 'rifle'];
 
 GAME.combat = (function () {
   var aiming = false, lockTarget = null, lockIdx = 0;
-  var cooldown = 0, aimToggle = false, aimYawRef = 0;
+  var cooldown = 0, aimToggle = false, aimYawRef = 0, rmbWas = false;
   var reticle = null;
 
   function initReticle() {
@@ -142,7 +142,13 @@ GAME.combat = (function () {
     var wd = WEAPONS[w];
     var m = muzzlePos();
     var inv = P.weapons[w];
-    if (!inv || inv.ammo <= 0) { GAME.audio.ricochet(); return; }
+    // holding a gun with nothing in it: click once, then swap to the next
+    // loaded one (covers a loaded save that comes back empty)
+    if (!inv || inv.ammo <= 0) {
+      GAME.audio.ricochet();
+      if (P.currentWeapon === w) { P.currentWeapon = fallbackFrom(w); refreshWeaponHud(); }
+      return;
+    }
     if (!GAME.unlimitedAmmo) inv.ammo--;
     GAME.audio.gunshot(w);
     GAME.fx.flash(m.x + Math.sin(dirYaw) * 0.6, m.y, m.z + Math.cos(dirYaw) * 0.6, 0.8);
@@ -172,7 +178,27 @@ GAME.combat = (function () {
     GAME.police.noteGunfire(P.pos);
     GAME.peds.panic(P.pos.x, P.pos.z, 30);
     GAME.missions.notifyChaos(2);
+    // the last round spends the gun: an empty weapon hands off to the next
+    // loaded one on its own instead of dry-clicking in a firefight
+    if (inv.ammo <= 0 && P.currentWeapon === w) {
+      var next = fallbackFrom(w);
+      P.currentWeapon = next;
+      GAME.hud.message('Out of ammo — ' + (next === 'fist' ? 'fists up.' : WEAPONS[next].name + ' up.'), 2);
+    }
     refreshWeaponHud();
+  }
+
+  // the next loaded gun in 1-5 order after the spent one, wrapping round the
+  // coat — or fists, which are always loaded, when every magazine is empty
+  function fallbackFrom(w) {
+    var P = GAME.player, at = WEAPON_ORDER.indexOf(w);
+    for (var i = 1; i < WEAPON_ORDER.length; i++) {
+      var cand = WEAPON_ORDER[(at + i) % WEAPON_ORDER.length];
+      if (cand === 'fist') continue;
+      var cinv = P.weapons[cand];
+      if (cinv && cinv.have && cinv.ammo > 0) return cand;
+    }
+    return 'fist';
   }
 
   function punch() {
@@ -202,7 +228,7 @@ GAME.combat = (function () {
   function update(dt) {
     var P = GAME.player, inp = GAME.input, T = inp.touch;
     cooldown -= dt;
-    if (P.state !== 'alive' || P.entering) { setAiming(false); inp.lmbPressed = false; return; }
+    if (P.state !== 'alive' || P.entering) { setAiming(false); aimToggle = false; inp.lmbPressed = false; return; }
 
     // weapon select
     for (var i = 0; i < WEAPON_ORDER.length; i++) {
@@ -216,6 +242,14 @@ GAME.combat = (function () {
     }
 
     if (GAME.keyPressed('Tab')) aimToggle = !aimToggle;
+    // A Tab-latched aim must never outlive the moment: releasing RMB ends
+    // aiming (latch included), and boarding a vehicle clears it. A stale
+    // latch used to survive car rides and hospital visits, after which RMB
+    // read as completely broken — aim was already stuck on, so holding or
+    // releasing the button changed nothing.
+    if (rmbWas && !inp.rmb) aimToggle = false;
+    rmbWas = inp.rmb;
+    if (P.inCar) aimToggle = false;
     var aimHeld = inp.rmb || aimToggle || T.aim;
     setAiming(aimHeld && !P.inCar);
 
@@ -265,7 +299,11 @@ GAME.combat = (function () {
     var settling = !!inp.lockGraceT && performance.now() - inp.lockGraceT < 450;
 
     if (P.inCar) {
-      var hasSMG = P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
+      // no drive-by from an aircraft: the TALON's own weapons read LMB/FIRE,
+      // and the SMG going off alongside the chin gun was a double trigger —
+      // every burst of gunship fire also burned drive-by ammo sideways
+      var airCar = P.car && (P.car.spec.heli || P.car.spec.plane);
+      var hasSMG = !airCar && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       var left = GAME.key('KeyQ') || T.driveByL;
       var right = GAME.key('KeyE') || T.driveByR;
       var fireBtn = (inp.lmb && !settling) || T.fire;

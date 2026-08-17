@@ -15,7 +15,10 @@
     scene.fog = new THREE.Fog(0x2a1440, 110, GAME.isTouch ? 320 : 430);
     GAME.scene = scene;
 
-    var camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 3000);
+    // near 0.35, not 0.1: depth precision scales with the near plane, and at
+    // 0.1 the buffer couldn't tell road paint from road under a plane at
+    // altitude — whole carriageways shimmered from the air
+    var camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.35, 3000);
     camera.position.set(340, 6, 30);
     GAME.cameraObj = camera;
 
@@ -212,7 +215,10 @@
     GAME.input.keys = {};
     GAME.input.lmb = false; GAME.input.lmbPressed = false; GAME.input.rmb = false;
     GAME.input.lockGraceT = performance.now();
-    GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
+    // start sunny (~late afternoon); sunset ~18s in, night ~55s. A pinned
+    // clock keeps its hour — resetting the phase under a pin left the HUD
+    // clock saying 15:00 over a midnight-frozen sky
+    if (GAME.timeMode === 'auto') GAME.dayPhase = 0.63;
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
   };
@@ -363,7 +369,13 @@
     GAME.hud.update(dt);
   };
 
-  var STEP = 1 / 60;
+  // Catch-up is capped at TWO sim ticks per rendered frame. The old cap of
+  // five meant a machine that fell behind (an integrated GPU with other tabs
+  // open) paid up to 5x the sim cost per frame exactly when it could least
+  // afford it — a spiral that read as sluggishness everywhere. Two keeps the
+  // sim realtime all the way down to 30 fps and sheds work below that
+  // (fractionally slower motion) instead of digging the hole deeper.
+  var STEP = 1 / 60, MAX_TICKS = 2;
   function loop(now) {
     requestAnimationFrame(loop);
     var real = Math.min(0.1, (now - lastT) / 1000);
@@ -371,21 +383,21 @@
     if (!GAME.started) {
       accumulator += real;
       var g0 = 0;
-      while (accumulator >= STEP && g0 < 5) {
+      while (accumulator >= STEP && g0 < MAX_TICKS) {
         GAME.tickAttract(STEP);
         accumulator -= STEP;
         g0++;
       }
-      if (g0 === 5) accumulator = 0;
+      if (g0 === MAX_TICKS) accumulator = 0;
     } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
       accumulator += real * GAME.timeScale;
       var guard = 0;
-      while (accumulator >= STEP && guard < 5) {
+      while (accumulator >= STEP && guard < MAX_TICKS) {
         GAME.tick(STEP);
         accumulator -= STEP;
         guard++;
       }
-      if (guard === 5) accumulator = 0;
+      if (guard === MAX_TICKS) accumulator = 0;
     }
     // From altitude the road layers sat closer together than the depth buffer
     // could tell apart (0.03m of separation against ~0.2m of precision at half
