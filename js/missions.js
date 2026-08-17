@@ -1178,7 +1178,7 @@ GAME.missions = (function () {
       for (var rg = 0; rg < doors.length; rg++) {
         var rd = U.dist2(px, pz, doors[rg].door.x, doors[rg].door.z);
         if (rd < 34 * 34 && (!hint || rd < hint.d)) {
-          hint = { d: rd, text: 'RESPRAY · $100 — repairs your ride and clears the heat' + (P.inCar ? '' : '   —   drive in') };
+          hint = { d: rd, text: 'RESPRAY · $100 — repairs your ride; fresh paint clears up to two stars' + (P.inCar ? '' : '   —   drive in') };
         }
       }
       // and the shops share the one readout instead of talking over it
@@ -1428,7 +1428,14 @@ GAME.missions = (function () {
       return;
     }
     GAME.addCash(-100);
-    GAME.police.clearWanted();
+    // Paint convinces a patrol, not a manhunt. At one or two stars the law
+    // is hunting a CAR, and the car just changed — clean. From three up
+    // they know your face (fares bail at three, air units fly): the garage
+    // still fixes the metal, but the warrant survives. Deep trouble is the
+    // desk sergeant's ladder or a night's sleep — $100 of paint clearing a
+    // five-star manhunt made the sergeant's $2,250 rate card a joke.
+    var w = GAME.police.wanted;
+    if (w > 0 && w <= 2) GAME.police.clearWanted();
     // works for any driven vehicle, motorcycles included: full repair + fresh paint
     var car = P.car;
     car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0; car.spiked = false; car.fireFuse = 0;
@@ -1437,7 +1444,9 @@ GAME.missions = (function () {
     }
     GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 4);
     GAME.audio.pickup();
-    GAME.hud.message('Resprayed & fully repaired — the heat is off.', 3);
+    GAME.hud.message(w >= 3
+      ? 'Resprayed & fully repaired — but three stars is past paint. They know your face.'
+      : 'Resprayed & fully repaired — the heat is off.', 3);
     GAME.track('respray-used');
     resprayCooldown = 8;
   }

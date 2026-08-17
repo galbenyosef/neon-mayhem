@@ -28,8 +28,8 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 ## The law
 
 - A 0–5 star wanted system that escalates from pursuing cruisers to foot pursuits, roadblocks, spike strips and visible air units — searchlight, strobes, tracer and all.
-- Four **respray garages** (three mainland, VERDE MOTORS on the island) repair the car and clear the heat for $100.
-- Or see the **desk sergeant**: losing the top star of a deep warrant costs more than shaking off a fender-bender ($150 a star at one star, $750 at five), and CLEAN SLATE wipes the whole ladder for exactly the sum of its steps. No discounts, no traps.
+- Four **respray garages** (three mainland, VERDE MOTORS on the island) repair and recolor the car for $100 — and fresh paint fools a patrol, so up to two stars die with the old color. From three up they know your *face*, and paint stops helping.
+- That's when you see the **desk sergeant**: losing the top star of a deep warrant costs more than shaking off a fender-bender ($150 a star at one star, $750 at five), and CLEAN SLATE wipes the whole ladder for exactly the sum of its steps. No discounts, no traps. (Or sleep it off at home — free, if you can spare eight hours.)
 
 ## Work
 
