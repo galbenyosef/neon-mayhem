@@ -1436,11 +1436,16 @@ GAME.missions = (function () {
     // five-star manhunt made the sergeant's $2,250 rate card a joke.
     var w = GAME.police.wanted;
     if (w > 0 && w <= 2) GAME.police.clearWanted();
-    // works for any driven vehicle, motorcycles included: full repair + fresh paint
+    // works for any driven vehicle, motorcycles included: full repair + fresh
+    // paint. Hand the body back to the SHARED vertex-color material (un-
+    // burning it), and free a private burnt coat if that's what it wore —
+    // never the shared one every living car is dressed in.
     var car = P.car;
     car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0; car.spiked = false; car.fireFuse = 0;
     if (car.mesh.userData.bodyMesh) {
-      car.mesh.userData.bodyMesh.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+      var oldPaint = car.mesh.userData.bodyMesh.material;
+      car.mesh.userData.bodyMesh.material = sharedVertexLambert();
+      if (oldPaint && oldPaint.dispose && !(oldPaint.userData && oldPaint.userData.shared)) oldPaint.dispose();
     }
     GAME.fx.flash(car.pos.x, 1.5, car.pos.z, 4);
     GAME.audio.pickup();
