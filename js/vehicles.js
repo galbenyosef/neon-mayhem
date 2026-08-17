@@ -1061,7 +1061,10 @@ GAME.vehicles = (function () {
         // aircraft are flown from player.js; abandoned airborne ones fall.
         // The police air unit flies itself (police.js) and never falls.
         var powered = (car === P.car && P.inCar) || !!car.aiAir;
-        var restY = car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4;
+        // skid-level rest, same as spawn (+0.05) and player landings — this
+        // branch kept the old cabin-origin 1.4, so an abandoned heli (and
+        // the wreck it usually becomes) settled hovering 1.35 m off the road
+        var restY = car.spec.plane ? (car.spec.wheelH || 1.1) : 0.05;
         if (!powered) {
           // the surface, not the street: an abandoned or parked aircraft over
           // a rooftop settles on the roof instead of falling through it
