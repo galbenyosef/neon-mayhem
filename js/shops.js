@@ -582,10 +582,6 @@ GAME.shops = (function () {
       loc.at = { x: placed.mx, z: placed.mz };
       if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
       var gy = GAME.city.groundY(placed.cx, placed.cz);
-      // shell, sunk half a metre so sloped ground never shows a gap
-      walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, S.wall, 28);
-      trims.addBox(placed.cx, gy + S.h + 0.22, placed.cz, placed.sx + 0.6, 0.34, placed.sz + 0.6, 0, 0x241a36, 0);
-      GAME.city.addSolid(placed.cx, placed.cz, placed.sx, placed.sz, gy + S.h);
       // the door face and its outward normal (-dir); everything on the
       // facade hangs off these
       var fx = placed.cx - dir.x * (S.d / 2), fz = placed.cz - dir.z * (S.d / 2);
@@ -597,10 +593,32 @@ GAME.shops = (function () {
         trims.addBox(fx - dir.x * out + px2.x * along, y, fz - dir.z * out + px2.z * along,
           dir.x !== 0 ? thick : w, h, dir.x !== 0 ? w : thick, 0, color, 0);
       }
-      // door
-      onFace(0.09, 0, gy + 1.5, doorW, 3.0, 0.18, 0x120c1e);
-      // awning in the shop's color
-      onFace(0.55, 0, gy + 3.15, S.w - 1.2, 0.16, 1.1, loc.color);
+      // shell, sunk half a metre so sloped ground never shows a gap. The
+      // showroom is the exception: a glass hall is glass because there is
+      // NOTHING behind the pane but the hall — with the normal shell, the
+      // glazing sat over a textured wall and read as an apartment block
+      // wearing a windscreen. It gets back and side walls, a roof, and an
+      // open front for the glass; everyone else keeps the full box.
+      if (loc.kind === 'showroom') {
+        var bwx = placed.cx + dir.x * (S.d / 2 - 0.5), bwz = placed.cz + dir.z * (S.d / 2 - 0.5);
+        walls.addBox(bwx, gy + S.h / 2 - 0.25, bwz, dir.x !== 0 ? 1 : S.w, S.h + 0.5, dir.x !== 0 ? S.w : 1, 0, S.wall, 28);
+        [-1, 1].forEach(function (ss) {
+          walls.addBox(placed.cx + px2.x * ss * (S.w / 2 - 0.5), gy + S.h / 2 - 0.25,
+            placed.cz + px2.z * ss * (S.w / 2 - 0.5),
+            dir.x !== 0 ? S.d : 1, S.h + 0.5, dir.x !== 0 ? 1 : S.d, 0, S.wall, 28);
+        });
+        walls.addBox(placed.cx, gy + S.h - 0.3, placed.cz, dir.x !== 0 ? S.d : S.w, 0.6, dir.x !== 0 ? S.w : S.d, 0, 0x2e3346, 0);
+      } else {
+        walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, S.wall, 28);
+      }
+      trims.addBox(placed.cx, gy + S.h + 0.22, placed.cz, placed.sx + 0.6, 0.34, placed.sz + 0.6, 0, 0x241a36, 0);
+      GAME.city.addSolid(placed.cx, placed.cz, placed.sx, placed.sz, gy + S.h);
+      if (loc.kind !== 'showroom') {
+        // door
+        onFace(0.09, 0, gy + 1.5, doorW, 3.0, 0.18, 0x120c1e);
+        // awning in the shop's color
+        onFace(0.55, 0, gy + 3.15, S.w - 1.2, 0.16, 1.1, loc.color);
+      }
       // ---- per-trade dressing ----
       if (loc.kind === 'dress') {
         // lit display windows flanking the door, a dressed dummy in each,
@@ -711,9 +729,18 @@ GAME.shops = (function () {
         // the glass jewel box: glazing you can SEE THROUGH to lit machines on
         // the showroom floor, a chrome band breathing along the roofline,
         // pennants across the forecourt and a rotating totem out by the road
-        var glz = neonBox(dir.x !== 0 ? 0.14 : S.w - 2, 5.6, dir.x !== 0 ? S.w - 2 : 0.14, 0x9fd8e8, { transparent: true, opacity: 0.32 });
+        // the pane itself: barely-there blue, framed like real curtain glass —
+        // header beam above, corner posts and slim mullions, mint entry posts
+        var glz = neonBox(dir.x !== 0 ? 0.14 : S.w - 2, 5.6, dir.x !== 0 ? S.w - 2 : 0.14, 0x9fd8e8, { transparent: true, opacity: 0.18 });
         glz.position.set(fx - dir.x * 0.12, gy + 3.1, fz - dir.z * 0.12);
         scene.add(glz);
+        onFace(-0.25, 0, gy + (5.9 + S.h) / 2, S.w, S.h - 5.9, 0.9, 0x2e3346);
+        [-1, 1].forEach(function (mp) {
+          onFace(0.02, mp * (S.w / 2 - 0.9), gy + 3.1, 0.8, 5.6, 0.8, 0x2e3346);
+          onFace(0.02, mp * (S.w / 6), gy + 3.1, 0.26, 5.6, 0.3, 0x223040);
+          onFace(0.05, mp * 1.7, gy + 1.7, 0.22, 3.4, 0.26, 0x8dffd8);
+        });
+        onFace(0.05, 0, gy + 3.55, 3.7, 0.2, 0.22, 0x8dffd8);
         // the skirt strip stands clear of the glazing's planes — at 0.2 its
         // inner face shared the glass's and the two banded strips flickered.
         // And it is muted on purpose: painted the marker's own mint it read
@@ -732,6 +759,17 @@ GAME.shops = (function () {
           trims.addGroundQuad(icx, gy + 0.08, icz, 5.4, 3.6, 0, 0xd8d0c2);
           var icar = GAME.vehicles.buildMesh(ai ? 'sports' : 'sedan');
           if (icar) {
+            // showroom lighting: the stock glows like it's under the lamps,
+            // not parked in a cave — unlit materials read lit through glass
+            icar.traverse(function (o) {
+              if (o.isMesh && o.material) {
+                var src = o.material;
+                o.material = new THREE.MeshBasicMaterial({
+                  color: src.color ? src.color.clone() : 0xffffff,
+                  vertexColors: !!src.vertexColors
+                });
+              }
+            });
             icar.position.set(icx, gy + 0.1, icz);
             icar.rotation.y = Math.atan2(dir.x, dir.z) + (ai ? 0.5 : -0.4);
             scene.add(icar);
