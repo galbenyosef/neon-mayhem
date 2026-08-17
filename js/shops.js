@@ -331,7 +331,11 @@ GAME.shops = (function () {
     }
     if (best) return { x: best.at.x, z: best.at.z, heading: 0 };
     var sr = locations.filter(function (l) { return l.kind === 'showroom'; })[0];
-    return sr ? { x: sr.forecourt.x, z: sr.forecourt.z, heading: sr.heading || 0 } : { x: 0, z: 0, heading: 0 };
+    // narrow: the dealer lot is the strip between the x=50 road and the glass
+    // hall — the grid must run DOWN it, not across it. Seeded wide it walked
+    // into the grown building on one side or the carriageway on the other,
+    // and clearSpot scattered the fleet out of sight ("my cars vanished").
+    return sr ? { x: sr.forecourt.x, z: sr.forecourt.z, heading: sr.heading || 0, narrow: true } : { x: 0, z: 0, heading: 0 };
   }
   function refreshGarageSpots() {
     var base = homeBase();
@@ -342,7 +346,15 @@ GAME.shops = (function () {
     // them, for the same reason.
     var placedNow = [];
     garage().forEach(function (type, i) {
-      var seedX = base.x + 6 + (i % 3) * 9, seedZ = base.z + 6 + Math.floor(i / 3) * 10;
+      var seedX, seedZ;
+      if (base.narrow) {
+        // two columns deep, marching south down the dealer strip
+        seedX = base.x - 3.5 + (i % 2) * 9;
+        seedZ = base.z + 6 + Math.floor(i / 2) * 10;
+      } else {
+        seedX = base.x + 6 + (i % 3) * 9;
+        seedZ = base.z + 6 + Math.floor(i / 3) * 10;
+      }
       var s = clearSpot(seedX, seedZ);
       for (var t = 0; t < 3; t++) {
         var clash = false;
@@ -350,7 +362,7 @@ GAME.shops = (function () {
           if (U.dist2(placedNow[p].x, placedNow[p].z, s.x, s.z) < 8 * 8) { clash = true; break; }
         }
         if (!clash) break;
-        seedX += 9;
+        if (base.narrow) seedZ += 10; else seedX += 9;
         s = clearSpot(seedX, seedZ);
       }
       placedNow.push(s);
@@ -800,6 +812,19 @@ GAME.shops = (function () {
             0.34, 0.42, 0.1, Math.atan2(ttx - pcx, ttz - pcz), [0x8dffd8, 0xff4fa3, 0xffe14f][pf % 3], 0);
         }
         pools.addGroundQuad(placed.cx - dir.x * (S.d / 2 + 3), gy + 0.1, placed.cz - dir.z * (S.d / 2 + 3), 22, 10, 0, 0x2e5a50);
+        // the forecourt lot, painted like it means it: your garage lives here
+        // until you own a place — a pad down the strip beside the hall, a
+        // mint border on the road side, bay lines where the fleet parks
+        if (loc.forecourt) {
+          var fcx = loc.forecourt.x + 1.5, fcz = loc.forecourt.z + 15;
+          trims.addGroundQuad(fcx, gy + 0.04, fcz, 13, 34, 0, 0x1f1f28);
+          trims.addGroundQuad(fcx - 6.2, gy + 0.055, fcz, 0.5, 34, 0, 0x8dffd8);
+          trims.addGroundQuad(fcx, gy + 0.055, fcz + 16.8, 13, 0.5, 0, 0x8dffd8);
+          trims.addGroundQuad(fcx, gy + 0.055, fcz - 16.8, 13, 0.5, 0, 0x8dffd8);
+          [-10, 0, 10].forEach(function (bz) {
+            trims.addGroundQuad(fcx, gy + 0.06, fcz + bz, 11, 0.35, 0, 0xd8d8e0);
+          });
+        }
         var plX = fx - dir.x * 7 + px2.x * (S.w / 2 - 3);
         var plZ = fz - dir.z * 7 + px2.z * (S.w / 2 - 3);
         trims.addBox(plX, gy + 0.4, plZ, 4.4, 0.8, 4.4, 0, 0x8dffd8, 0);
