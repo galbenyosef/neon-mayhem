@@ -411,7 +411,7 @@ GAME.police = (function () {
     var los = GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, f.x, f.z)
       && Math.abs(f.y - cop.pos.y) < 3;   // not through a floor
     var wantShoot = s >= 2 && dist < 28 && playerSlow && los;
-    var chaseSpeed = P.inCar ? 4.8 : 4.3;
+    var chaseSpeed = 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
     cop.pos.x += Math.sin(cop.heading) * cop.speed * dt;
     cop.pos.z += Math.cos(cop.heading) * cop.speed * dt;

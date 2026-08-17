@@ -322,12 +322,12 @@ GAME.peds = (function () {
         if (wd2 < 4 || ped.wpT <= 0) newWaypoint(ped);
         var th = Math.atan2(ped.wpX - ped.pos.x, ped.wpZ - ped.pos.z);
         ped.heading = U.angleLerp(ped.heading, th, Math.min(1, dt * 4));
-        ped.speed = U.damp(ped.speed, 1.5, 3, dt);
+        ped.speed = U.damp(ped.speed, 3.57, 3, dt);   // 0.85x the player's 4.2 walk
       } else if (ped.state === 'flee') {
         ped.fleeT -= dt;
         var fh = Math.atan2(ped.pos.x - ped.fleeX, ped.pos.z - ped.fleeZ);
         ped.heading = U.angleLerp(ped.heading, fh + Math.sin(GAME.time * 3 + i) * 0.5, Math.min(1, dt * 5));
-        ped.speed = U.damp(ped.speed, 4.6, 4, dt);
+        ped.speed = U.damp(ped.speed, 6.8, 4, dt);    // 0.85x the player's 8 sprint
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
       } else if (ped.state === 'attack') {
         // this one is coming for you — properly. They run you down faster
@@ -358,8 +358,8 @@ GAME.peds = (function () {
           var targetCarBody = chaseCar ? myCar : tcar;
           var reach = targetCarBody ? (targetCarBody.spec.l / 2 + 1.5) : 1.7;
           if (ad2 > reach * reach) {
-            // angry beats scared: they close faster than anyone flees
-            ped.speed = U.damp(ped.speed, 5.4, 6, dt);
+            // a full 0.85x-sprint charge: faster than you can walk away
+            ped.speed = U.damp(ped.speed, 6.8, 6, dt);
             ped.yankT = 0;
           } else {
             ped.speed = U.damp(ped.speed, 0, 9, dt);

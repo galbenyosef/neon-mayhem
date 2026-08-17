@@ -574,7 +574,7 @@ GAME.missions = (function () {
       var d = Math.sqrt(dx * dx + dz * dz);
       if (d < 2.2) { collectTarget(t); continue; }
       ped.heading = Math.atan2(dx, dz);
-      ped.speed = 4.2;
+      ped.speed = 6.8;   // 0.85x the player's 8 sprint
       ped.pos.x += Math.sin(ped.heading) * ped.speed * dt;
       ped.pos.z += Math.cos(ped.heading) * ped.speed * dt;
       var rp = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
