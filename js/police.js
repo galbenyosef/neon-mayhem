@@ -247,6 +247,10 @@ GAME.police = (function () {
       // nothing ever saw you, and the heat quietly erased itself.
       var onIsla = rp.axis === 'net';
       if (!onIsla && (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480)) continue;
+      // the candidate ring is 130-190 m out, but mid-channel the nearest
+      // ROAD to a candidate can be a distant shore — a cruiser spawned there
+      // was culled by the 260 m rule the next frame, a spawn into the void
+      if (U.dist2(rp.x, rp.z, px, pz) > 230 * 230) continue;
       var clear = true;
       for (var c = 0; c < GAME.world.cars.length; c++) {
         if (U.dist2(GAME.world.cars[c].pos.x, GAME.world.cars[c].pos.z, rp.x, rp.z) < 80) { clear = false; break; }
@@ -284,7 +288,9 @@ GAME.police = (function () {
       // same island-aware bounds as the cruisers above
       if (rp.axis !== 'net' && (rp.x < -470 || rp.x > 352 || Math.abs(rp.z) > 470)) continue;
       if (GAME.city.isInWater(rp.x, rp.z)) continue;
-      if (U.dist2(rp.x, rp.z, f.x, f.z) < 22 * 22) continue;
+      // near-ring candidates (26-48 m) can also resolve to a distant shore
+      // mid-channel — an officer materializing 300 m away serves nobody
+      if (U.dist2(rp.x, rp.z, f.x, f.z) < 22 * 22 || U.dist2(rp.x, rp.z, f.x, f.z) > 80 * 80) continue;
       spawnFootCop(rp.x, rp.z);
       return;
     }
