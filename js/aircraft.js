@@ -224,11 +224,14 @@ GAME.aircraft = (function () {
     }
 
     // on the wheels the engine has to haul the airframe up to rotation
-    // speed — the takeoff run is real. Stalled in the air the throttle is
-    // nearly useless (no airflow over the wings): recovery comes from the
-    // DIVE, so a rooftop departure genuinely drops before it climbs.
+    // speed — the takeoff run is real. At 0.42 the roll was ~20 m and the
+    // plane leapt off any side street; 0.17 stretches it past 60 m against
+    // the same drag, so a departure needs a genuine runway's worth of
+    // ground. Stalled in the air the throttle is nearly useless (no airflow
+    // over the wings): recovery comes from the DIVE, so a rooftop departure
+    // genuinely drops before it climbs.
     var wasFlying = (car.speed || 0) >= car.spec.stall;
-    var acc = car.spec.accel * (onGround && thr > 0 ? 0.42 : (!onGround && !wasFlying ? 0.15 : 1));
+    var acc = car.spec.accel * (onGround && thr > 0 ? 0.17 : (!onGround && !wasFlying ? 0.15 : 1));
     // and on the ground it can taxi backwards out of a corner
     car.speed = U.clamp((car.speed || 0) + thr * acc * dt, onGround ? -7 : 0, car.spec.maxSpeed);
     car.speed *= Math.exp(-0.09 * dt);
