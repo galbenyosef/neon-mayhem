@@ -213,6 +213,70 @@ GAME.isla = (function () {
       if (lane.length < 3 || shadow > (lane.length - 1) * 0.3) return;
       road(lane, 8, 'local');
     });
+
+    trimSeaTails();
+  }
+
+  // No street runs on past its last junction to die on the beach: an end
+  // that stands close to the waterline (seaward of the coastal ring) is cut
+  // back to where the road last crosses another one — for the quay streets
+  // that is the ring itself, so they now END at that junction instead of
+  // running a dead stub down to the sand.
+  function trimSeaTails() {
+    function minDistOther(x, z, self) {
+      var best = 1e9;
+      for (var i = 0; i < NET.length; i++) {
+        var o = NET[i];
+        if (o === self) continue;
+        for (var e = 0; e < o.pts.length - 1; e++) {
+          var a = o.pts[e], b = o.pts[e + 1];
+          var vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz;
+          var t = l2 > 1e-9 ? U.clamp(((x - a[0]) * vx + (z - a[1]) * vz) / l2, 0, 1) : 0;
+          var d = U.dist(x, z, a[0] + vx * t, a[1] + vz * t);
+          if (d < best) best = d;
+        }
+      }
+      return best;
+    }
+    // walk a polyline from one end at 1m steps until the centreline crosses
+    // another road's centreline; report the arc distance of the crossing
+    function junctionFrom(pts, self) {
+      var d = 0, px = pts[0][0], pz = pts[0][1];
+      for (var i = 1; i < pts.length; i++) {
+        var sx = pts[i][0] - pts[i - 1][0], sz = pts[i][1] - pts[i - 1][1];
+        var sl = Math.hypot(sx, sz);
+        for (var w = 0; w < sl; w += 1) {
+          var x = pts[i - 1][0] + sx * (w / sl), z = pts[i - 1][1] + sz * (w / sl);
+          if (minDistOther(x, z, self) < 1.2) return { d: d + w, x: x, z: z };
+        }
+        d += sl;
+      }
+      return null;
+    }
+    function cutFront(pts, at) {
+      var out = [[at.x, at.z]], d = 0;
+      for (var i = 1; i < pts.length; i++) {
+        d += U.dist(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]);
+        if (d > at.d + 0.5) out.push(pts[i]);
+      }
+      return out;
+    }
+    for (var i = 0; i < NET.length; i++) {
+      var s = NET[i];
+      if (s.closed) continue;
+      // the ring sits at f=0.845 (inland 0.155); an open end seaward of it
+      // is on its way to the water
+      [false, true].forEach(function (rev) {
+        var pts = rev ? s.pts.slice().reverse() : s.pts;
+        var e = pts[0];
+        if (inland(e[0], e[1]) >= 0.15) return;
+        var j = junctionFrom(pts, s);
+        if (!j || j.d < 0.5) return;   // no junction, or already starting on one
+        var cut = cutFront(pts, j);
+        if (cut.length < 2) return;
+        s.pts = rev ? cut.reverse() : cut;
+      });
+    }
   }
 
   // nearest point on anything already in the network, before the index exists
@@ -788,7 +852,24 @@ GAME.isla = (function () {
         // grass over the deck on 17 of 19 segments before this.
         var corner0 = ringPt(a0, f0), corner1 = ringPt(a1, f1);
         var reach = Math.max(Math.abs(corner1[0] - corner0[0]), Math.abs(corner1[1] - corner0[1]));
-        subs[s * RINGS + r] = onRoad(mid[0], mid[1], reach) ? SUB : 1;
+        if (onRoad(mid[0], mid[1], reach)) { subs[s * RINGS + r] = SUB; continue; }
+        // Away from roads the cell drew as ONE flat quad, but feet stand on
+        // the analytic groundY — wherever the ground curves (hill flanks,
+        // the outer batter of a cut) the two disagreed by up to 0.8 m and
+        // the player hovered over the grass or waded through it. Probe the
+        // cell against its own flat quad and subdivide where it sags.
+        var y00 = groundY(corner0[0], corner0[1]), y11 = groundY(corner1[0], corner1[1]);
+        var qA = ringPt(a1, f0), qB = ringPt(a0, f1);
+        var y10 = groundY(qA[0], qA[1]), y01 = groundY(qB[0], qB[1]);
+        var sag = 0;
+        var probes = [[0.5, 0.5], [0.5, 0], [0.5, 1], [0, 0.5], [1, 0.5]];
+        for (var pi = 0; pi < probes.length; pi++) {
+          var pu = probes[pi][0], pv = probes[pi][1];
+          var qp = ringPt(U.lerp(a0, a1, pu), U.lerp(f0, f1, pv));
+          var flat = U.lerp(U.lerp(y00, y10, pu), U.lerp(y01, y11, pu), pv);
+          sag = Math.max(sag, Math.abs(groundY(qp[0], qp[1]) - flat));
+        }
+        subs[s * RINGS + r] = sag > 0.3 ? SUB : sag > 0.08 ? 3 : 1;
       }
     }
     for (s = 0; s < SECT; s++) {
@@ -809,34 +890,23 @@ GAME.isla = (function () {
           }
         }
         // T-junctions were the cracks in the hillsides: a subdivided cell
-        // sampled its boundary densely — heights off the neighbour's straight
+        // sampled its boundary densely — heights off the neighbour's straighter
         // edge wherever groundY bends (every slope, every cut), and the
-        // ring-boundary rows on the ellipse ARC where the coarse neighbour
+        // ring-boundary rows on the ellipse ARC where a coarser neighbour
         // spans the chord, an open sliver with the sea showing through from
-        // above. Any fine edge that abuts a coarse cell is therefore laid
-        // down the coarse cell's own straight edge instead of resampled.
+        // above. Any edge finer than its neighbour is therefore laid down
+        // the polyline the NEIGHBOUR draws for that edge instead of
+        // resampled: shared vertices land on identical samples, and the
+        // points between them on the neighbour's own straight segments.
         if (sub > 1) {
-          var c00 = G[0][0], cS0 = G[sub][0], cSS = G[sub][sub], c0S = G[0][sub];
-          if (r > 0 && subs[s * RINGS + (r - 1)] === 1) {
-            for (si = 1; si < sub; si++) {
-              t = si / sub;
-              G[si][0] = [U.lerp(c00[0], cS0[0], t), U.lerp(c00[1], cS0[1], t), U.lerp(c00[2], cS0[2], t)];
-            }
-          }
-          if (r < RINGS - 1 && subs[s * RINGS + (r + 1)] === 1) {
-            for (si = 1; si < sub; si++) {
-              t = si / sub;
-              G[si][sub] = [U.lerp(c0S[0], cSS[0], t), U.lerp(c0S[1], cSS[1], t), U.lerp(c0S[2], cSS[2], t)];
-            }
-          }
-          // sector-boundary edges are already straight in plan (ringPt is
-          // linear in f at fixed angle), so only the heights need pinning
-          if (subs[((s + SECT - 1) % SECT) * RINGS + r] === 1) {
-            for (ri = 1; ri < sub; ri++) G[0][ri][1] = U.lerp(c00[1], c0S[1], ri / sub);
-          }
-          if (subs[((s + 1) % SECT) * RINGS + r] === 1) {
-            for (ri = 1; ri < sub; ri++) G[sub][ri][1] = U.lerp(cS0[1], cSS[1], ri / sub);
-          }
+          var nb = r > 0 ? subs[s * RINGS + (r - 1)] : sub;
+          if (nb < sub) snapRingEdge(G, sub, nb, a0, a1, f0, 0);
+          nb = r < RINGS - 1 ? subs[s * RINGS + (r + 1)] : sub;
+          if (nb < sub) snapRingEdge(G, sub, nb, a0, a1, f1, sub);
+          nb = subs[((s + SECT - 1) % SECT) * RINGS + r];
+          if (nb < sub) snapSectorEdge(G, sub, nb, a0, f0, f1, 0);
+          nb = subs[((s + 1) % SECT) * RINGS + r];
+          if (nb < sub) snapSectorEdge(G, sub, nb, a1, f0, f1, sub);
         }
         for (si = 0; si < sub; si++) {
           for (ri = 0; ri < sub; ri++) {
@@ -844,6 +914,32 @@ GAME.isla = (function () {
           }
         }
       }
+    }
+  }
+  // lay this cell's boundary row at ff (ri 0 or sub) along the nb-resolution
+  // polyline the coarser ring-neighbour draws for the same edge
+  function snapRingEdge(G, sub, nb, a0, a1, ff, ri) {
+    var P = [];
+    for (var j = 0; j <= nb; j++) {
+      var q = ringPt(U.lerp(a0, a1, j / nb), ff);
+      P.push([q[0], groundY(q[0], q[1]), q[1]]);
+    }
+    for (var si = 1; si < sub; si++) {
+      var u = si / sub * nb, j2 = Math.min(nb - 1, Math.floor(u)), fr = u - j2;
+      G[si][ri] = [U.lerp(P[j2][0], P[j2 + 1][0], fr), U.lerp(P[j2][1], P[j2 + 1][1], fr), U.lerp(P[j2][2], P[j2 + 1][2], fr)];
+    }
+  }
+  // sector-boundary edges are already straight in plan (ringPt is linear in
+  // f at fixed angle), so only the heights need pinning to the coarser side
+  function snapSectorEdge(G, sub, nb, aa, f0, f1, si) {
+    var H = [];
+    for (var j = 0; j <= nb; j++) {
+      var q = ringPt(aa, U.lerp(f0, f1, j / nb));
+      H.push(groundY(q[0], q[1]));
+    }
+    for (var ri = 1; ri < sub; ri++) {
+      var u = ri / sub * nb, j2 = Math.min(nb - 1, Math.floor(u)), fr = u - j2;
+      G[si][ri][1] = U.lerp(H[j2], H[j2 + 1], fr);
     }
   }
 
