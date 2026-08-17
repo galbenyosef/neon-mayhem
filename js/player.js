@@ -278,6 +278,11 @@ function respawnAfterScreen() {
     if (GAME.unlimitedAmmo) GAME.combat.giveAllWeapons();
     GAME.combat.refreshWeaponHud();
     GAME.police.clearWanted();
+    // The old life's fires are not your crimes: a cruiser rammed before
+    // you went down used to cook off AFTER the respawn, and its kill_cop
+    // handed you fresh stars at your own front door. Sever every player
+    // attribution the previous life left smouldering in the world.
+    GAME.world.cars.forEach(function (wc) { wc.byPlayer = false; });
     P.state = 'alive';
   });
 }
@@ -301,7 +306,19 @@ GAME.enterCar = function (car) {
     // turn on you and try to take their ride back with their fists.
     var side = car.heading + Math.PI / 2;
     var dx = Math.sin(side) * 1.6, dz = Math.cos(side) * 1.6;
-    var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz, car.isPolice ? { cop: true } : undefined);
+    // The car remembers its driver. Jack it, let the owner take it back,
+    // jack it again — the SAME person climbs out both times, same clothes
+    // and same temper, instead of a fresh stranger materializing at the
+    // wheel of a car that already had an owner.
+    var driver = GAME.peds.spawnPed(car.pos.x + dx, car.pos.z + dz,
+      car.isPolice ? { cop: true } : car.lastDriver ? { look: car.lastDriver } : undefined);
+    if (!car.isPolice) {
+      if (car.lastDriver) driver.temper = car.lastDriver.temper;
+      else {
+        car.lastDriver = { shirt: driver.look.shirt, pants: driver.look.pants, skin: driver.look.skin,
+          hair: driver.look.hair, hairCol: driver.look.hairCol, temper: driver.temper };
+      }
+    }
     if (!car.isPolice && driver.temper > 0.55) {
       driver.state = 'attack';
       driver.attackT = 12;

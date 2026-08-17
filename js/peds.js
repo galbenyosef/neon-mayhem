@@ -84,9 +84,13 @@ function buildPedMesh(opts) {
   var pantColors = [0x3a4a68, 0x684a3a, 0x2a2a34, 0x8a4a5a, 0xd8d0c0];
   var skins = [0xeac8a8, 0xc89878, 0x8a6848, 0x6a4c34, 0xf0d8c0];
   var hairColors = [0x1c1a18, 0x5a3c22, 0x2e2018, 0xd8b86a, 0xa8482a, 0x8a8a90];
-  var shirt = opts.cop ? 0x2a4a8a : U.pick(Math.random, shirtColors);
-  var pants = opts.cop ? 0x1a2a4a : U.pick(Math.random, pantColors);
-  var skin = U.pick(Math.random, skins);
+  // opts.look pins the whole appearance — the same person can step out of
+  // the same car twice instead of a stranger wearing his job
+  var look = opts.look || null;
+  var shirt = opts.cop ? 0x2a4a8a : look ? look.shirt : U.pick(Math.random, shirtColors);
+  var pants = opts.cop ? 0x1a2a4a : look ? look.pants : U.pick(Math.random, pantColors);
+  var skin = look ? look.skin : U.pick(Math.random, skins);
+  g.userData.look = { shirt: shirt, pants: pants, skin: skin };
   // The town shares its wardrobe: constant colors, constant box sizes, one
   // registry entry each — a ped spawn allocates wrappers, not buffers. The
   // PLAYER (and the wardrobe mirror) re-tints these materials in place, so
@@ -115,8 +119,12 @@ function buildPedMesh(opts) {
     // nobody in this town is bald unless they paid the barber for it
     // (the player's own hair is the wardrobe's business — see shops.js)
     var styles = ['crew', 'crew', 'crew', 'flattop', 'flattop', 'pompadour', 'mullet', 'afro', 'ponytail', 'mohawk'];
-    var hair = makeHair(U.pick(Math.random, styles), U.pick(Math.random, hairColors));
+    var hairStyle = look ? look.hair : U.pick(Math.random, styles);
+    var hairCol = look ? look.hairCol : U.pick(Math.random, hairColors);
+    var hair = makeHair(hairStyle, hairCol);
     if (hair) { hair.position.y = 1.6; g.add(hair); }
+    g.userData.look.hair = hairStyle;
+    g.userData.look.hairCol = hairCol;
   }
   function limb(w, len, mat, x, y) {
     var pivot = new THREE.Group();
@@ -161,6 +169,7 @@ GAME.peds = (function () {
       wpX: x, wpZ: z, wpT: 0,
       shootT: U.randRange(Math.random, 0.5, 1.5)
     };
+    ped.look = mesh.userData.look;   // so a car can remember who drives it
     world.peds.push(ped);
     return ped;
   }
@@ -177,6 +186,9 @@ GAME.peds = (function () {
     ped.dead = true;
     ped.state = 'dead';
     ped.deadT = 0;
+    // a dead owner can't come back for his car — forget him, so the next
+    // jack doesn't raise him from the pavement
+    if (ped.stolenCar && ped.stolenCar.lastDriver) ped.stolenCar.lastDriver = null;
     GAME.fx.spawn(ped.pos.x, 1.1, ped.pos.z, { count: 7, color: 0xc42848, spread: 1.6, vy: 1.5, life: 0.4, grav: -3 });
     GAME.audio.yelp();
     ped.mesh.rotation.x = Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2;

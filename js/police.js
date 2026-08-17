@@ -33,6 +33,10 @@ GAME.police = (function () {
 
   var lastCopKillT = -99;
   function reportCrime(type, pos) {
+    // dead men draw no stars: while the wasted/busted screen is up nothing
+    // the world does — a rammed cruiser cooking off, a fire spreading — can
+    // hang new heat on the player
+    if (GAME.player.state !== 'alive') return;
     var now = GAME.time;
     if (!PER_VICTIM[type] && crimeCooldown[type] && now - crimeCooldown[type] < 1.2) return;
     if (!ALWAYS[type] && !witnessed(pos)) return; // nobody saw it
@@ -62,6 +66,7 @@ GAME.police = (function () {
   }
 
   function noteGunfire(pos) {
+    if (GAME.player.state !== 'alive') return;   // see reportCrime
     var now = GAME.time;
     if (crimeCooldown.gunfire && now - crimeCooldown.gunfire < 2.5) return;
     // public gunfire: anyone nearby to hear it
