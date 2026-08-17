@@ -1049,6 +1049,10 @@ GAME.isla = (function () {
     for (var j = 0; j < 4; j++) {
       var jz = POI.marina.z - 24 + j * 16;
       b.addBox(POI.marina.x - 16, y, jz, 42, 0.6, 3.2, 0, 0x7a5a40, 0);
+      // the planks carry you: without a deck entry the ground under them is
+      // the flat shore at 0, so anyone strolling the marina waded shin-deep
+      // through every jetty on the way to the villa
+      city.addDeck({ x: POI.marina.x - 16, z: jz, w: 42, len: 3.2, rot: 0, y0: y + 0.3, y1: y + 0.3 });
       batches.glow.addBox(POI.marina.x - 16, y + 2.0, jz - 1.4, 40, 0.13, 0.13, 0, 0xffd890, 0);
       b.addBox(POI.marina.x - 35, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
       b.addBox(POI.marina.x + 3, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);

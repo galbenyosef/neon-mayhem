@@ -7,6 +7,7 @@ GAME.shops = (function () {
   var el = {}, openShop = null, sel = 0, pendingBuy = null, locations = [], markerMesh = null, markerData = [];
   var leftSince = {};   // reopen only after you step off the mat
   var lastWX = null, lastWZ = null;   // where the walk-in scan last saw the player
+  var lastUnlocked = null;   // island gate state at the last walk-in scan
   var spinProps = [];   // slow turntables: the showroom's display car, etc.
 
   // sign-atlas slots for the storefront names — indexes into city.js SIGN_TEXTS,
@@ -235,7 +236,7 @@ GAME.shops = (function () {
     function row(id, name, ds, price) {
       var inGarage = garage().indexOf(id) >= 0;
       return { id: id, name: name, price: price,
-        owned: inGarage, ds: inGarage ? 'In your garage — a fresh one always waits at home.' : ds };
+        owned: inGarage, ds: inGarage ? 'In your garage — one waits here and at every place you own.' : ds };
     }
     return [
       row('motorcycle', 'NEON STREAK', 'The bike. Fast, loud, unwise.', 4000),
@@ -303,10 +304,10 @@ GAME.shops = (function () {
     if (id === 'rest') { P.health = 100; note('You slept like 1986 would never end.'); return; }
     ownedList().push(loc.sh.id);
     GAME.save();
-    refreshGarageSpots();   // the fleet moves home with you
+    refreshGarageSpots();   // this lot joins the fleet's rounds
     GAME.track('safehouse-bought');
     note('The keys are yours.');
-    GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all.', 5);
+    GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all, with your garage parked outside.', 5);
     GAME.share.show({
       slug: 'safehouse-' + loc.sh.id,
       eyebrow: 'COSTA ROSA · 1986',
@@ -320,7 +321,8 @@ GAME.shops = (function () {
   }
   // ---------- the garage ----------
   // A deed, not a rental: every vehicle you buy is registered to a parking
-  // spot at your best property (or the showroom forecourt while you rent).
+  // spot at the showroom AND at each property you own — the same fleet,
+  // waiting at every address.
   // The parked-vehicle spawner already guarantees specials at their spot, so
   // wreck it, sink it or leave it across the channel — a fresh one is waiting
   // at home. The registry persists; the spots are rebuilt every boot.
@@ -330,61 +332,67 @@ GAME.shops = (function () {
     if (!GAME.prefs.garage) GAME.prefs.garage = [];
     return GAME.prefs.garage;
   }
-  function homeBase() {
-    // the priciest property you own is home; the forecourt is the fallback
-    var unlocked = !GAME.isla || GAME.isla.isOpen();
-    var best = null;
-    for (var i = 0; i < SAFEHOUSES.length; i++) {
-      var s = SAFEHOUSES[i];
-      if (!owns(s.id) || !s.at) continue;
-      if (s.isla && !unlocked) continue;
-      if (!best || s.price > best.price) best = s;
-    }
-    if (best) return { x: best.at.x, z: best.at.z, heading: 0 };
+  function garageBases() {
+    // every lot you can call yours hosts the whole fleet: the showroom
+    // forecourt always, and each property as you buy it — so a bought
+    // vehicle is wherever you happen to be, not at one address you have
+    // to remember ("from where do I pick them up?")
+    var bases = [];
     var sr = locations.filter(function (l) { return l.kind === 'showroom'; })[0];
     // narrow: the dealer lot is the strip between the x=50 road and the glass
     // hall — the grid must run DOWN it, not across it. Seeded wide it walked
     // into the grown building on one side or the carriageway on the other,
     // and clearSpot scattered the fleet out of sight ("my cars vanished").
-    return sr ? { x: sr.forecourt.x, z: sr.forecourt.z, heading: sr.heading || 0, narrow: true } : { x: 0, z: 0, heading: 0 };
+    if (sr) bases.push({ id: 'showroom', x: sr.forecourt.x, z: sr.forecourt.z, heading: sr.heading || 0, narrow: true });
+    var unlocked = !GAME.isla || GAME.isla.isOpen();
+    for (var i = 0; i < SAFEHOUSES.length; i++) {
+      var s = SAFEHOUSES[i];
+      if (!owns(s.id) || !s.at) continue;
+      if (s.isla && !unlocked) continue;
+      bases.push({ id: s.id, x: s.at.x, z: s.at.z, heading: 0 });
+    }
+    return bases;
   }
   function refreshGarageSpots() {
-    var base = homeBase();
     // A wider grid than the old 5 x 6 m: the parked spawner keeps ~7.7 m
     // clear around a spot, so five-metre neighbours BLOCKED each other —
     // half the fleet never appeared, and what did appear crowded one pile.
     // Spots are also kept clear of each other after the spiral hunt moves
     // them, for the same reason.
-    var placedNow = [];
-    garage().forEach(function (type, i) {
-      var seedX, seedZ;
-      if (base.narrow) {
-        // two columns deep, marching south down the dealer strip
-        seedX = base.x - 3.5 + (i % 2) * 9;
-        seedZ = base.z + 6 + Math.floor(i / 2) * 10;
-      } else {
-        seedX = base.x + 6 + (i % 3) * 9;
-        seedZ = base.z + 6 + Math.floor(i / 3) * 10;
-      }
-      var s = clearSpot(seedX, seedZ);
-      for (var t = 0; t < 3; t++) {
-        var clash = false;
-        for (var p = 0; p < placedNow.length; p++) {
-          if (U.dist2(placedNow[p].x, placedNow[p].z, s.x, s.z) < 8 * 8) { clash = true; break; }
+    var fleet = garage();
+    garageBases().forEach(function (base) {
+      var placedNow = [];
+      fleet.forEach(function (type, i) {
+        var seedX, seedZ;
+        if (base.narrow) {
+          // two columns deep, marching south down the dealer strip
+          seedX = base.x - 3.5 + (i % 2) * 9;
+          seedZ = base.z + 6 + Math.floor(i / 2) * 10;
+        } else {
+          seedX = base.x + 6 + (i % 3) * 9;
+          seedZ = base.z + 6 + Math.floor(i / 3) * 10;
         }
-        if (!clash) break;
-        if (base.narrow) seedZ += 10; else seedX += 9;
-        s = clearSpot(seedX, seedZ);
-      }
-      placedNow.push(s);
-      var g = garageSpots[type];
-      if (!g) {
-        g = { x: s.x, z: s.z, heading: base.heading, vtype: type, owned: true };
-        garageSpots[type] = g;
-        GAME.city.parkedSpots.push(g);
-      } else {
-        g.x = s.x; g.z = s.z; g.heading = base.heading;
-      }
+        var s = clearSpot(seedX, seedZ);
+        for (var t = 0; t < 3; t++) {
+          var clash = false;
+          for (var p = 0; p < placedNow.length; p++) {
+            if (U.dist2(placedNow[p].x, placedNow[p].z, s.x, s.z) < 8 * 8) { clash = true; break; }
+          }
+          if (!clash) break;
+          if (base.narrow) seedZ += 10; else seedX += 9;
+          s = clearSpot(seedX, seedZ);
+        }
+        placedNow.push(s);
+        var key = base.id + ':' + type;
+        var g = garageSpots[key];
+        if (!g) {
+          g = { x: s.x, z: s.z, heading: base.heading, vtype: type, owned: true };
+          garageSpots[key] = g;
+          GAME.city.parkedSpots.push(g);
+        } else {
+          g.x = s.x; g.z = s.z; g.heading = base.heading;
+        }
+      });
     });
   }
 
@@ -401,8 +409,8 @@ GAME.shops = (function () {
     GAME.track('showroom-' + id);
     var spec = GAME.vehicles.TYPES[id];
     note('Keys in the ignition, right outside.');
-    GAME.hud.message('Delivered to the forecourt — and registered to your garage: lose it and a fresh one waits at ' +
-      (ownsAny() ? 'your place' : 'the showroom') + '.', 5);
+    GAME.hud.message('Delivered to the forecourt — and registered to your garage: a fresh one waits here' +
+      (ownsAny() ? ' and at every place you own' : '') + '.', 5);
     GAME.share.show({
       slug: 'bought-' + id,
       eyebrow: 'GRAN ROSA MOTORS · 1986',
@@ -411,7 +419,7 @@ GAME.shops = (function () {
       accent: '#8dffd8',
       stats: [{ label: 'Paid', value: '$' + (items(loc).filter(function (r) { return r.id === id; })[0] || { price: 0 }).price.toLocaleString() },
         { label: 'Plate', value: 'ROSA-' + String(garage().length).padStart(2, '0') },
-        { label: 'Kept at', value: ownsAny() ? 'HOME' : 'SHOWROOM' }]
+        { label: 'Kept at', value: ownsAny() ? 'ALL YOUR LOTS' : 'SHOWROOM' }]
     });
     return car;
   }
@@ -486,11 +494,14 @@ GAME.shops = (function () {
         at: clearSpot(st.spawn.x + 10, st.spawn.z + 6), isla: !!st.isla, color: 0x4da3ff
       });
     });
-    // property: the island villa anchors to the marina once the island exists
+    // property: the island villa anchors to the marina once the island exists.
+    // South of the jetty field, not inside it — the old seed put the front
+    // yard across a plank row and beached a hull on the doorstep, and the
+    // parked fleet threaded a metre-wide gap between boat and water's edge.
     SAFEHOUSES.forEach(function (s) {
       if (!s.at && s.isla && GAME.isla) {
         var M = GAME.isla.pois().marina;
-        s.at = clearSpot(M.x - 22, M.z + 26);
+        s.at = clearSpot(M.x - 7, M.z + 40);
       } else if (s.at) {
         s.at = clearSpot(s.at.x, s.at.z);
       }
@@ -1289,6 +1300,8 @@ GAME.shops = (function () {
     var jumped = lastWX !== null && U.dist2(P.pos.x, P.pos.z, lastWX, lastWZ) > 12 * 12;
     lastWX = P.pos.x; lastWZ = P.pos.z;
     var unlocked = !GAME.isla || GAME.isla.isOpen();
+    // the bridges opening adds the island lots — re-plan the fleet then
+    if (unlocked !== lastUnlocked) { lastUnlocked = unlocked; refreshGarageSpots(); }
     for (var k = 0; k < locations.length; k++) {
       var loc = locations[k];
       if (loc.isla && !unlocked) continue;
@@ -1342,7 +1355,17 @@ GAME.shops = (function () {
     homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns,
     renderPreview: renderPreview,
     garage: function () { return garage().slice(); },
-    garageSpot: function (type) { return garageSpots[type] || null; },
+    garageSpot: function (type) {
+      // the fleet parks at every base now — answer with the nearest copy
+      var P = GAME.player, best = null, bd = 1e18;
+      for (var k in garageSpots) {
+        var g = garageSpots[k];
+        if (g.vtype !== type) continue;
+        var d = U.dist2(P.pos.x, P.pos.z, g.x, g.z);
+        if (d < bd) { bd = d; best = g; }
+      }
+      return best;
+    },
     get isOpen() { return !!openShop; },
     get current() { return openShop; },
     get selected() { return openShop ? items(openShop)[sel] : null; },

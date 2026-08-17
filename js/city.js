@@ -141,6 +141,12 @@ GAME.city = (function () {
   city.isInWater = function (x, z, atY) {
     if (city.isOnPier(x, z)) return false;
     if (city.crossings.length && city.crossingY(x, z, atY) !== null) return false;
+    // a walkable deck keeps you dry too — a jetty plank can run out past the
+    // waterline, and standing on its end is not swimming
+    if (city.decks.length) {
+      var dy = city.deckAt(x, z);
+      if (dy !== null && (atY === undefined || atY >= dy - 1.2)) return false;
+    }
     return !city.islandAt(x, z);
   };
   // Is there sea under this point, whatever is carried over it? A bridge deck
