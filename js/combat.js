@@ -142,7 +142,13 @@ GAME.combat = (function () {
     var wd = WEAPONS[w];
     var m = muzzlePos();
     var inv = P.weapons[w];
-    if (!inv || inv.ammo <= 0) { GAME.audio.ricochet(); return; }
+    // holding a gun with nothing in it: click once, then put it away —
+    // fists are always loaded (covers a loaded save that comes back empty)
+    if (!inv || inv.ammo <= 0) {
+      GAME.audio.ricochet();
+      if (P.currentWeapon === w) { P.currentWeapon = 'fist'; refreshWeaponHud(); }
+      return;
+    }
     if (!GAME.unlimitedAmmo) inv.ammo--;
     GAME.audio.gunshot(w);
     GAME.fx.flash(m.x + Math.sin(dirYaw) * 0.6, m.y, m.z + Math.cos(dirYaw) * 0.6, 0.8);
@@ -172,6 +178,12 @@ GAME.combat = (function () {
     GAME.police.noteGunfire(P.pos);
     GAME.peds.panic(P.pos.x, P.pos.z, 30);
     GAME.missions.notifyChaos(2);
+    // the last round spends the gun: an empty weapon drops to fists on its
+    // own instead of dry-clicking in a firefight
+    if (inv.ammo <= 0 && P.currentWeapon === w) {
+      P.currentWeapon = 'fist';
+      GAME.hud.message('Out of ammo — fists up.', 2);
+    }
     refreshWeaponHud();
   }
 
