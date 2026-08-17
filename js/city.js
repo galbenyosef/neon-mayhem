@@ -677,8 +677,12 @@ GAME.city = (function () {
       // roof, wearing a red cross on three faces — the thing you steer by
       batches.generic.addBox(H.x + 26, 13, H.z + 1, 4, 26, 4, 0, 0xe6f0f6, 0);
       addSolid(H.x + 26, H.z + 1, 4, 4, 26);
+      // an equal-armed PLUS, both bars centred on one point — the old long
+      // vertical with its crossbar riding high read as a church steeple,
+      // not a clinic. (The two bars sit at different depths off the face
+      // on purpose: coplanar overlap at the middle would flicker.)
       [[0, 2.15, 0], [-2.15, 0.9, Math.PI / 2], [2.15, 0.9, Math.PI / 2]].forEach(function (cf) {
-        batches.marks.addBox(H.x + 26 + cf[0], 19.5, H.z + 1 + cf[1], cf[2] ? 0.28 : 1.5, 10, cf[2] ? 1.5 : 0.28, 0, 0xe23a4a, 0);
+        batches.marks.addBox(H.x + 26 + cf[0], 21.6, H.z + 1 + cf[1], cf[2] ? 0.28 : 1.7, 5, cf[2] ? 1.7 : 0.28, 0, 0xe23a4a, 0);
         batches.marks.addBox(H.x + 26 + cf[0], 21.6, H.z + 1 + cf[1], cf[2] ? 0.26 : 5, 1.7, cf[2] ? 5 : 0.26, 0, 0xe23a4a, 0);
       });
       // lit ward bands across the facade, cool white — a hospital never sleeps

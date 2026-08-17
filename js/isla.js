@@ -964,8 +964,10 @@ GAME.isla = (function () {
     b.addBox(POI.hospital.x, y + 1.3, POI.hospital.z - 12, 52.6, 2.6, 24.6, 0, 0xc05a6a, 0);
     b.addBox(POI.hospital.x + 22, y + 11, POI.hospital.z + 0.8, 3.6, 22, 3.6, 0, 0xe6f0f6, 0);
     city.addSolid(POI.hospital.x + 22, POI.hospital.z + 0.8, 3.6, 3.6, y + 22);
+    // an equal-armed PLUS on every face, same cure as the mainland tower:
+    // the long vertical with a high crossbar read as a chapel
     [[0, 1.95, 0], [-1.95, 0.8, 1], [1.95, 0.8, 1]].forEach(function (cf) {
-      batches.glow.addBox(POI.hospital.x + 22 + cf[0], y + 16.5, POI.hospital.z + 0.8 + cf[1], cf[2] ? 0.26 : 1.3, 8.5, cf[2] ? 1.3 : 0.26, 0, 0xe23a4a, 0);
+      batches.glow.addBox(POI.hospital.x + 22 + cf[0], y + 18.3, POI.hospital.z + 0.8 + cf[1], cf[2] ? 0.26 : 1.5, 4.4, cf[2] ? 1.5 : 0.26, 0, 0xe23a4a, 0);
       batches.glow.addBox(POI.hospital.x + 22 + cf[0], y + 18.3, POI.hospital.z + 0.8 + cf[1], cf[2] ? 0.24 : 4.4, 1.5, cf[2] ? 4.4 : 0.24, 0, 0xe23a4a, 0);
     });
     [6.2, 9.4, 12.6].forEach(function (wy) {
