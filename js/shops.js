@@ -1148,6 +1148,14 @@ GAME.shops = (function () {
     if (!loc || openShop) return false;
     openShop = loc;
     sel = 0;
+    // The mirror greets you AS YOU ARE. In the changing room and the chair
+    // the cursor starts on the row you're already wearing, so the first
+    // thing the glass shows is the player, exactly — clothes, cut, color,
+    // skin — not row one's shirt pulled over your head.
+    if (loc.kind === 'dress' || loc.kind === 'barber') {
+      var list0 = items(loc);
+      for (var oi = 0; oi < list0.length; oi++) if (list0[oi].owned) { sel = oi; break; }
+    }
     cancelConfirm();
     note('');
     var hint = $('shop-hint');
