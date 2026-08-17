@@ -215,7 +215,10 @@
     GAME.input.keys = {};
     GAME.input.lmb = false; GAME.input.lmbPressed = false; GAME.input.rmb = false;
     GAME.input.lockGraceT = performance.now();
-    GAME.dayPhase = 0.63; // start sunny (~late afternoon); sunset ~18s in, night ~55s
+    // start sunny (~late afternoon); sunset ~18s in, night ~55s. A pinned
+    // clock keeps its hour — resetting the phase under a pin left the HUD
+    // clock saying 15:00 over a midnight-frozen sky
+    if (GAME.timeMode === 'auto') GAME.dayPhase = 0.63;
     GAME.hud.hideTitle();
     GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
   };

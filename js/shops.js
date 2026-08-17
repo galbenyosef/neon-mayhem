@@ -307,19 +307,23 @@ GAME.shops = (function () {
       if (GAME.missions && GAME.missions.active) { note('No sleeping on the clock.'); return; }
       close();
       GAME.hud.fade(function () {
-        // eight hours pass behind the blackout: a third of the day wheel
-        // (unless the clock is pinned by choice), the law loses interest,
-        // taken pickups age toward their return, and the body resets
+        // eight hours pass behind the blackout: a third of the day wheel,
+        // the law loses interest, taken pickups age toward their return,
+        // and the body resets. The bed outranks a pinned sky — "respecting"
+        // a day/night pin here meant four sleeps changed nothing outside,
+        // which read as the feature being broken. Sleeping is the loudest
+        // possible statement that time should move, so it unpins the sun.
         GAME.player.health = 100;
         GAME.police.clearWanted();
-        if (GAME.timeMode === 'auto') {
-          GAME.dayPhase = (GAME.dayPhase + 8 / 24) % 1;
-          GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
-        }
+        var unpinned = GAME.timeMode !== 'auto';
+        if (unpinned) GAME.setTimeMode('auto');   // persists the preference too
+        GAME.dayPhase = (GAME.dayPhase + 8 / 24) % 1;
+        GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
         GAME.world.pickups.forEach(function (p) {
           if (p.taken && isFinite(p.respawnT)) p.respawnT -= GAME.DAY_SECONDS / 3;
         });
-        GAME.hud.message('Eight hours later. Rested, forgotten by the law, good as new.', 5);
+        GAME.hud.message('Eight hours later. Rested, forgotten by the law, good as new.'
+          + (unpinned ? ' The sky is back on the clock.' : ''), 5);
         GAME.track('safehouse-rest');
       });
       return;
