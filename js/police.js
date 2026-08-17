@@ -241,7 +241,12 @@ GAME.police = (function () {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 130, 190);
       var rp = GAME.city.nearestRoadPoint(px + Math.cos(a) * r, pz + Math.sin(a) * r);
-      if (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480) continue;
+      // island road points come back with axis 'net' and live far outside the
+      // mainland box — the same convention traffic already honors. Without it
+      // Isla Verde had no pursuit below air-unit stars: nothing ever spawned,
+      // nothing ever saw you, and the heat quietly erased itself.
+      var onIsla = rp.axis === 'net';
+      if (!onIsla && (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480)) continue;
       var clear = true;
       for (var c = 0; c < GAME.world.cars.length; c++) {
         if (U.dist2(GAME.world.cars[c].pos.x, GAME.world.cars[c].pos.z, rp.x, rp.z) < 80) { clear = false; break; }
@@ -276,7 +281,8 @@ GAME.police = (function () {
     for (var t = 0; t < 8; t++) {
       var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 26, 48);
       var rp = GAME.city.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
-      if (rp.x < -470 || rp.x > 352 || Math.abs(rp.z) > 470) continue;
+      // same island-aware bounds as the cruisers above
+      if (rp.axis !== 'net' && (rp.x < -470 || rp.x > 352 || Math.abs(rp.z) > 470)) continue;
       if (GAME.city.isInWater(rp.x, rp.z)) continue;
       if (U.dist2(rp.x, rp.z, f.x, f.z) < 22 * 22) continue;
       spawnFootCop(rp.x, rp.z);
