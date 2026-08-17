@@ -127,7 +127,9 @@ var VEHICLES = {
   // bought over the showroom counter by anyone with the money
   gunship: { label: 'Talon', maxSpeed: 42, accel: 12, grip: 4, turn: 2, hp: 420, l: 8.5, w: 2.4, cabinH: 1.4, bodyH: 1.5, colors: [0x3a4632, 0x2c3626, 0x46523a], heli: true, gunship: true },
   monster: { label: 'Sledgehammer', maxSpeed: 33, accel: 15, grip: 5.8, turn: 2.3, hp: 420, l: 5.2, w: 2.6, cabinH: 1.1, bodyH: 1.2, colors: [0x7a3ad8, 0x38e8ff, 0xff2f7a], monster: true },
-  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 1.1 },
+  // wheelH is the real gear length: the mesh reaches 0.5 below its origin, and
+  // at 1.1 the whole plane taxied and parked six tenths of a metre in the air
+  airplane: { label: 'Skywhistle', maxSpeed: 72, accel: 20, grip: 4, turn: 2, hp: 150, l: 11, w: 3, cabinH: 1.4, bodyH: 1.4, colors: [0xf0f0f4, 0xff2f7a, 0x38e8ff], plane: true, stall: 17, wheelH: 0.5 },
   // Isla Verde's own stock. The buggy is for the cove, the pickup for the
   // villa lanes, the limo for the resort — and the truck sells ice cream.
   buggy: { label: 'Dune Hopper', maxSpeed: 33, accel: 15, grip: 4.2, turn: 3.0, hp: 110, l: 3.4, w: 1.85, cabinH: 0.0, bodyH: 0.42, colors: [0xffb03a, 0x6ae8a0, 0xff6a8a, 0xf0f0f4], buggy: true },
@@ -195,10 +197,10 @@ function buildHeliMesh(colorHex, gunship) {
   b.addBox(0, 1.52, 1.2, 1.7, 1.1, 1.4, 0, 0x141824, 0);        // canopy glass
   b.addBox(0, 1.4, -3.4, 0.5, 0.5, 3.6, 0, colorHex, 0);        // tail boom
   b.addBox(0, 1.9, -5.1, 0.16, 1.1, 0.7, 0, colorHex, 0);       // tail fin
-  b.addBox(-0.9, 0.2, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);   // left skid
-  b.addBox(0.9, 0.2, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);    // right skid
-  b.addBox(-0.9, 0.6, 0.6, 0.1, 0.6, 0.1, 0, 0x0c0c10, 0);
-  b.addBox(0.9, 0.6, 0.6, 0.1, 0.6, 0.1, 0, 0x0c0c10, 0);
+  b.addBox(-0.9, 0.1, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);   // left skid
+  b.addBox(0.9, 0.1, -0.4, 0.14, 0.14, 3.4, 0, 0x0c0c10, 0);    // right skid
+  b.addBox(-0.9, 0.5, 0.6, 0.1, 0.7, 0.1, 0, 0x0c0c10, 0);
+  b.addBox(0.9, 0.5, 0.6, 0.1, 0.7, 0.1, 0, 0x0c0c10, 0);
   b.addBox(0, 2.05, -0.6, 0.24, 0.3, 0.24, 0, 0x0c0c10, 0);     // rotor mast
   var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
   g.add(body);
@@ -403,7 +405,10 @@ GAME.vehicles = (function () {
     // so a vehicle driving east or west got no pitch at all and sat flat while
     // the ramp climbed out from under its nose.
     if (!spec.heli && !spec.plane) mesh.rotation.order = 'YXZ';
-    mesh.position.set(x, GAME.city.groundY(x, z), z);
+    // aircraft rest on their gear, not on their bellies: a plane spawned at
+    // raw ground level buried its wheels half a metre in the apron
+    var restH = spec.plane ? (spec.wheelH || 1.1) : spec.heli ? 0.05 : 0;
+    mesh.position.set(x, GAME.city.groundY(x, z) + restH, z);
     mesh.rotation.y = heading || 0;
     GAME.scene.add(mesh);
     var car = {

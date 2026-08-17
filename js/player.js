@@ -385,7 +385,8 @@ function forceExitCar(silent) {
   // a hovering exit (under chute height) steps out at altitude — you drop
   // the rest of the way on ordinary gravity rather than teleporting down
   if (car.spec.heli || car.spec.plane) {
-    var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 1.4);
+    // the heli's origin now sits at skid level, so its cabin floor IS its pos
+    var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 0.1);
     if (feetY > P.pos.y + 0.3) { P.pos.y = feetY; P.airborne = true; }
   }
   P.velY = 0;

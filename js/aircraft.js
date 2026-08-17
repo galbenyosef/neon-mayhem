@@ -88,8 +88,10 @@ GAME.aircraft = (function () {
     car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
     warnAirspace(car.pos.x, lim);
 
-    // land on whatever surface is below (terrain or a rooftop)
-    var minY = GAME.city.surfaceY(car.pos.x, car.pos.z) + 1.4;
+    // Land on whatever surface is below (terrain or a rooftop). The floor is
+    // skid height, not cabin height — at +1.4 a "landed" helicopter hung in
+    // the air over the road, skids a full metre off the tarmac.
+    var minY = GAME.city.surfaceY(car.pos.x, car.pos.z) + 0.05;
     if (car.pos.y < minY) {
       car.pos.y = minY;
       // no floats on this airframe: set down on open water and it goes under
