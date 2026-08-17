@@ -370,7 +370,7 @@ GAME.missions = (function () {
       level: 1, targets: [], aboard: 0,
       // the opening clock covers the first call and a breath, no more — the
       // shift is earned fare by fare (see completeFare)
-      timeLeft: kind === 'ambulance' ? 85 : 75,
+      timeLeft: kind === 'ambulance' ? 70 : 60,
       jobCount: 0, earned: 0, routeCp: null
     };
     startRound();
@@ -661,13 +661,14 @@ GAME.missions = (function () {
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
     var msg = word + '! +$' + fare;
-    // Each fare buys the next call and small change — measured, not guessed:
-    // a fare's legs route 0.8-1.4 km, which is 40-60 s at the pace the race
-    // rivals set, plus the kerbside pickup. The refill sits a shade above
-    // that, so a clean shift survives on its own speed and a sloppy one
-    // bleeds out; the low bank cap keeps even a hot streak on the clock.
-    active.timeLeft = Math.min(active.timeLeft + 55 + n * (kind === 'ambulance' ? 16 : 8),
-      kind === 'ambulance' ? 160 : 150);
+    // Each fare buys the next call and loose change at best — measured, not
+    // guessed: a fare's legs route 0.8-1.4 km, 40-60 s at the pace the race
+    // rivals set, plus the kerbside pickup, and the calls stretch with the
+    // level while the refill does not. Early fares bank a little, the mid
+    // shift breaks even, and the deep shift bleeds: a shift is a run at a
+    // high score, not a loop you can hold forever. The tight bank cap means
+    // even a flawless streak never sits on a cushion.
+    active.timeLeft = Math.min(active.timeLeft + (kind === 'ambulance' ? 40 + n * 12 : 48 + n * 8), 120);
 
     if (active.targets.length) {
       // still people waiting on this level — go back out for them
