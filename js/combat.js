@@ -3,8 +3,10 @@ var WEAPONS = {
   pistol: { name: 'PISTOL', slot: 2, damage: 26, range: 60, rate: 0.34, auto: false, spread: 0.012 },
   smg: { name: 'SMG', slot: 3, damage: 11, range: 48, rate: 0.085, auto: true, spread: 0.045, driveby: true },
   shotgun: { name: 'SHOTGUN', slot: 4, damage: 11, range: 24, rate: 0.95, auto: false, spread: 0.085, pellets: 7 },
-  // The one thing you cannot buy, find in a crate or take off a cop: it sits
-  // on the observatory terrace on Isla Verde and nowhere else.
+  // The world's only PICKUP for it sits on the observatory terrace on Isla
+  // Verde — but the hardware counters sell it over the counter for $5,000
+  // (with refills), and the all-25-jumps arsenal includes it. Scarce as a
+  // find, not as a purchase.
   rifle: { name: 'RIFLE', slot: 5, damage: 68, range: 150, rate: 0.85, auto: false, spread: 0.002 }
 };
 var WEAPON_ORDER = ['fist', 'pistol', 'smg', 'shotgun', 'rifle'];
@@ -528,7 +530,6 @@ GAME.combat = (function () {
   return {
     WEAPONS: WEAPONS,
     get aiming() { return aiming; },
-    get lockTarget() { return lockTarget; },
     get lockTarget() { return lockTarget; },
     update: update,
     updatePickups: updatePickups,

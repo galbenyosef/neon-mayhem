@@ -538,7 +538,6 @@ GAME.city = (function () {
     buildSpots();
   };
 
-  var signBatchRef = null;
   function addSign(batch, slotIdx, x, y, z, rotY, w, h, tint) {
     var s = city.signSlots[slotIdx];
     batch.addWallQuad(x, y, z, w, h, rotY, tint === undefined ? 0xffffff : tint, s.u0, s.v0, s.u1, s.v1);

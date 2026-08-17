@@ -157,8 +157,10 @@ GAME.audio = (function () {
           if (st % 2 === 1) noiseBurst(0.03, 8000, 0.09, 'highpass', t);
           tone(midi(bass + 12 * (st % 2)), spb * 0.9, 0.22, 'sawtooth', 0, t, radioBus);
           var arpN = chord[st % chord.length] + 12 * (1 + ((st >> 2) % 2));
-          var g = ctx.createGain(); g.gain.value = 1; g.connect(verb);
-          tone(midi(arpN), spb * 1.6, 0.13, 'sawtooth', 0, t, g);
+          // straight into the reverb like every other verb-bound voice — a
+          // per-note unity wrapper here outlived tone()'s onended cleanup,
+          // leaking one GainNode into the bus per arp note (~7 a second)
+          tone(midi(arpN), spb * 1.6, 0.13, 'sawtooth', 0, t, verb);
           if (st % 16 === 0) for (var i = 0; i < chord.length; i++) tone(midi(chord[i]), spb * 14, 0.05, 'sawtooth', 0, t, verb);
         }
       },

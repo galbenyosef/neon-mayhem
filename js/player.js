@@ -19,13 +19,14 @@ GAME.focus = function () {
 
 GAME.initPlayer = function () {
   var P = GAME.player;
-  var mesh = GAME.peds.buildPedMesh({ noHair: true }); // the wardrobe supplies the hair
-  // fixed outfit so the player reads distinctly
-  mesh.userData.joints.torso.material = new THREE.MeshLambertMaterial({ color: 0xf0f0f8 });
-  mesh.userData.joints.armL.children[0].material = mesh.userData.joints.torso.material;
-  mesh.userData.joints.armR.children[0].material = mesh.userData.joints.torso.material;
-  mesh.userData.joints.legL.children[0].material = new THREE.MeshLambertMaterial({ color: 0x38b8c8 });
-  mesh.userData.joints.legR.children[0].material = mesh.userData.joints.legL.children[0].material;
+  // privateMats: the wardrobe re-tints this figure in place — shared
+  // materials here would dress the whole town every time you change shirts
+  var mesh = GAME.peds.buildPedMesh({ noHair: true, privateMats: true }); // the wardrobe supplies the hair
+  // fixed outfit so the player reads distinctly — tint the private materials
+  // in place (the arms already share the torso's, the legs each other's)
+  // rather than replacing them, which orphaned two fresh materials at boot
+  mesh.userData.joints.torso.material.color.setHex(0xf0f0f8);
+  mesh.userData.joints.legL.children[0].material.color.setHex(0x38b8c8);
   GAME.scene.add(mesh);
   P.mesh = mesh;
   P.pos = mesh.position;

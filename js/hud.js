@@ -257,13 +257,18 @@ GAME.hud = (function () {
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
     if (GAME.nav.dest && catVis('dest')) {
-      g.strokeStyle = 'rgba(141,255,216,.95)';
-      g.lineWidth = 2.5;
-      g.beginPath();
-      g.moveTo(w2mx(px), w2my(pz));
-      GAME.nav.path.forEach(function (n) { g.lineTo(w2mx(n.x), w2my(n.z)); });
-      g.lineTo(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z));
-      g.stroke();
+      // an empty path is "no route" (a destination the streets can't reach,
+      // e.g. the island while the bridges are closed) — stroking through it
+      // drew one confident straight line across the water. Marker only.
+      if (GAME.nav.path.length) {
+        g.strokeStyle = 'rgba(141,255,216,.95)';
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(w2mx(px), w2my(pz));
+        GAME.nav.path.forEach(function (n) { g.lineTo(w2mx(n.x), w2my(n.z)); });
+        g.lineTo(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z));
+        g.stroke();
+      }
       g.fillStyle = '#ff8aff';
       g.beginPath();
       g.arc(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z), 6, 0, Math.PI * 2);
@@ -600,16 +605,19 @@ GAME.hud = (function () {
       var mobj = GAME.missions.getObjectivePoint();
       if (mobj) blip(mobj[0], mobj[1], '#ffe14f', 4.5 / zoom);
     }
-    // nav route
+    // nav route — same rule as the big map: an empty path strokes nothing,
+    // the destination blip alone tells the story
     if (GAME.nav.dest && catVis('dest')) {
-      g.strokeStyle = 'rgba(141,255,216,.95)';
-      g.lineWidth = 2.4 / zoom;
-      g.beginPath();
-      g.moveTo(0, 0);
-      var path = GAME.nav.path;
-      for (var np = 0; np < path.length; np++) g.lineTo((path[np].x - px) * MAP_S, (path[np].z - pz) * MAP_S);
-      g.lineTo((GAME.nav.dest.x - px) * MAP_S, (GAME.nav.dest.z - pz) * MAP_S);
-      g.stroke();
+      if (GAME.nav.path.length) {
+        g.strokeStyle = 'rgba(141,255,216,.95)';
+        g.lineWidth = 2.4 / zoom;
+        g.beginPath();
+        g.moveTo(0, 0);
+        var path = GAME.nav.path;
+        for (var np = 0; np < path.length; np++) g.lineTo((path[np].x - px) * MAP_S, (path[np].z - pz) * MAP_S);
+        g.lineTo((GAME.nav.dest.x - px) * MAP_S, (GAME.nav.dest.z - pz) * MAP_S);
+        g.stroke();
+      }
       blip(GAME.nav.dest.x, GAME.nav.dest.z, '#ff8aff', 4.5 / zoom);
     }
     var mb = GAME.missions.getBlips();
@@ -910,22 +918,47 @@ GAME.nav = (function () {
 
   function key(n) { return n.id; }
 
-  // BFS along the road-node graph; returns [{x,z}...] start->goal
+  // Dijkstra over edge length along the road-node graph; [{x,z}...] start->goal.
+  // Hop-count BFS minimized the wrong thing once the island joined: its lane
+  // links run ~34 m against the mainland's ~100 m blocks, so "fewest edges"
+  // biased routes onto fewer-but-longer mainland legs. Metres win now. The
+  // graph is a few hundred nodes and this runs at most every 1.5 s, so the
+  // heapless closest-first scan is comfortably inside budget.
   function roadPath(x0, z0, x1, z1) {
     var start = GAME.city.nearestNode(x0, z0);
     var goal = GAME.city.nearestNode(x1, z1);
     if (!start || !goal) return [];
-    var prev = {}, q = [start];
-    prev[key(start)] = null;
-    while (q.length) {
-      var n = q.shift();
+    // a closed bridge doesn't route: while the gates are down the spans are
+    // off the graph, so a cross-channel destination degrades to a stub at
+    // the far end instead of a confident line through the police barrier
+    var gated = GAME.isla && !GAME.isla.isOpen();
+    var dist = {}, prev = {}, done = {}, open = [start];
+    dist[key(start)] = 0; prev[key(start)] = null;
+    while (open.length) {
+      var bi = 0;
+      for (var i = 1; i < open.length; i++) if (dist[key(open[i])] < dist[key(open[bi])]) bi = i;
+      var n = open.splice(bi, 1)[0];
+      var nk = key(n);
+      if (done[nk]) continue;
+      done[nk] = true;
       if (n === goal) break;
       var nbs = GAME.city.neighbors(n);
-      for (var i = 0; i < nbs.length; i++) {
-        var k = key(nbs[i]);
-        if (!(k in prev)) { prev[k] = n; q.push(nbs[i]); }
+      for (var j = 0; j < nbs.length; j++) {
+        var b = nbs[j];
+        if (gated && b.span) continue;
+        var bk = key(b);
+        if (done[bk]) continue;
+        var d = dist[nk] + U.dist(n.x, n.z, b.x, b.z);
+        if (dist[bk] === undefined || d < dist[bk]) {
+          dist[bk] = d; prev[bk] = n;
+          open.push(b);
+        }
       }
     }
+    // an unreached goal is no route at all: the degraded walk-back used to
+    // hand back a single far-end stub, and the map drew the player-to-stub
+    // connector as a confident schematic line straight across the water
+    if (!(key(goal) in prev)) return [];
     var out = [], cur = goal;
     while (cur) { out.unshift({ x: cur.x, z: cur.z }); cur = prev[key(cur)]; }
     return out;
@@ -941,7 +974,8 @@ GAME.nav = (function () {
     var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
     dest.rx = rp.x; dest.rz = rp.z;
     path = roadPath(px, pz, rp.x, rp.z);
-    path.push({ x: rp.x, z: rp.z });
+    // no route, no line — the destination marker alone tells the story
+    if (path.length) path.push({ x: rp.x, z: rp.z });
   }
 
   return {
