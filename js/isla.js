@@ -1685,7 +1685,7 @@ GAME.isla = (function () {
     addMesh(batches.generic, city.lam(city.tex.generic));
     addMesh(batches.strip, city.lam(city.tex.strip));
     addMesh(batches.downtown, city.lam(city.tex.downtown));
-    addMesh(batches.glow, new THREE.MeshBasicMaterial({ vertexColors: true }));
+    addMesh(batches.glow, new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
     addMesh(batches.signs, new THREE.MeshBasicMaterial({
       map: city.signTex, transparent: true, vertexColors: true, side: THREE.DoubleSide
     }));

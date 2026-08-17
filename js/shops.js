@@ -619,7 +619,9 @@ GAME.shops = (function () {
             placed.cz + px2.z * ss * (S.w / 2 - 0.5),
             dir.x !== 0 ? S.d : 1, S.h + 0.5, dir.x !== 0 ? 1 : S.d, 0, S.wall, 28);
         });
-        walls.addBox(placed.cx, gy + S.h - 0.3, placed.cz, dir.x !== 0 ? S.d : S.w, 0.6, dir.x !== 0 ? S.w : S.d, 0, 0x2e3346, 0);
+        // roof slab recessed inside the wall heads — flush with them, every
+        // shared edge and top plane shimmered in the flicker audit
+        walls.addBox(placed.cx, gy + S.h - 0.48, placed.cz, dir.x !== 0 ? S.d - 2.4 : S.w - 2.4, 0.6, dir.x !== 0 ? S.w - 2.4 : S.d - 2.4, 0, 0x2e3346, 0);
       } else {
         walls.addBox(placed.cx, gy + S.h / 2 - 0.25, placed.cz, placed.sx, S.h + 0.5, placed.sz, 0, S.wall, 28);
       }
@@ -670,7 +672,7 @@ GAME.shops = (function () {
         // pawn-shop menace, per the vision: a barred lit window, ammo crates
         // by the door, sodium spill, and an OPEN sign that can't quite die
         onFace(0.1, doorW / 2 + 2.6, gy + 1.6, 4.0, 3.2, 0.16, 0x585c66);
-        onFace(0.14, 0, gy + S.h - 1.9, S.w - 1.0, 0.5, 0.2, 0x585c66);
+        onFace(0.3, 0, gy + S.h - 1.9, S.w - 1.0, 0.5, 0.2, 0x585c66);
         onFace(0.12, -(doorW / 2 + 2.1), gy + 1.8, 2.8, 2.2, 0.14, 0xffe9b8);
         [-0.85, 0, 0.85].forEach(function (bx) {
           onFace(0.22, -(doorW / 2 + 2.1) + bx, gy + 1.8, 0.16, 2.4, 0.1, 0x241a2e);
@@ -746,7 +748,7 @@ GAME.shops = (function () {
         var glz = neonBox(dir.x !== 0 ? 0.14 : S.w - 2, 5.6, dir.x !== 0 ? S.w - 2 : 0.14, 0x9fd8e8, { transparent: true, opacity: 0.18 });
         glz.position.set(fx - dir.x * 0.12, gy + 3.1, fz - dir.z * 0.12);
         scene.add(glz);
-        onFace(-0.25, 0, gy + (5.9 + S.h) / 2, S.w, S.h - 5.9, 0.9, 0x2e3346);
+        onFace(-0.5, 0, gy + (5.9 + S.h) / 2, S.w - 2.2, S.h - 5.9, 0.9, 0x2e3346);
         [-1, 1].forEach(function (mp) {
           onFace(0.02, mp * (S.w / 2 - 0.9), gy + 3.1, 0.8, 5.6, 0.8, 0x2e3346);
           onFace(0.02, mp * (S.w / 6), gy + 3.1, 0.26, 5.6, 0.3, 0x223040);
@@ -816,13 +818,14 @@ GAME.shops = (function () {
         // until you own a place — a pad down the strip beside the hall, a
         // mint border on the road side, bay lines where the fleet parks
         if (loc.forecourt) {
+          // paint layers a clear step apart — 0.015 gaps shimmered from the air
           var fcx = loc.forecourt.x + 1.5, fcz = loc.forecourt.z + 15;
           trims.addGroundQuad(fcx, gy + 0.04, fcz, 13, 34, 0, 0x1f1f28);
-          trims.addGroundQuad(fcx - 6.2, gy + 0.055, fcz, 0.5, 34, 0, 0x8dffd8);
-          trims.addGroundQuad(fcx, gy + 0.055, fcz + 16.8, 13, 0.5, 0, 0x8dffd8);
-          trims.addGroundQuad(fcx, gy + 0.055, fcz - 16.8, 13, 0.5, 0, 0x8dffd8);
+          trims.addGroundQuad(fcx - 6.2, gy + 0.16, fcz, 0.5, 34, 0, 0x8dffd8);
+          trims.addGroundQuad(fcx, gy + 0.16, fcz + 16.8, 13, 0.5, 0, 0x8dffd8);
+          trims.addGroundQuad(fcx, gy + 0.16, fcz - 16.8, 13, 0.5, 0, 0x8dffd8);
           [-10, 0, 10].forEach(function (bz) {
-            trims.addGroundQuad(fcx, gy + 0.06, fcz + bz, 11, 0.35, 0, 0xd8d8e0);
+            trims.addGroundQuad(fcx, gy + 0.24, fcz + bz, 11, 0.35, 0, 0xd8d8e0);
           });
         }
         var plX = fx - dir.x * 7 + px2.x * (S.w / 2 - 3);
@@ -859,7 +862,7 @@ GAME.shops = (function () {
     var wallMesh = new THREE.Mesh(walls.build(), GAME.city.lam(GAME.city.tex.strip));
     wallMesh.matrixAutoUpdate = false;
     scene.add(wallMesh);
-    var trimMesh = new THREE.Mesh(trims.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    var trimMesh = new THREE.Mesh(trims.build(), new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
     trimMesh.matrixAutoUpdate = false;
     scene.add(trimMesh);
     var signMesh = new THREE.Mesh(signs.build(), GAME.city.signMesh.material);

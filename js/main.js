@@ -15,7 +15,10 @@
     scene.fog = new THREE.Fog(0x2a1440, 110, GAME.isTouch ? 320 : 430);
     GAME.scene = scene;
 
-    var camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 3000);
+    // near 0.35, not 0.1: depth precision scales with the near plane, and at
+    // 0.1 the buffer couldn't tell road paint from road under a plane at
+    // altitude — whole carriageways shimmered from the air
+    var camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.35, 3000);
     camera.position.set(340, 6, 30);
     GAME.cameraObj = camera;
 

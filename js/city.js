@@ -507,7 +507,9 @@ GAME.city = (function () {
     }
     addMesh(batches.ground, new THREE.MeshLambertMaterial({ vertexColors: true }));
     addMesh(asphalt, new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 70, specular: 0x232e42 }));
-    addMesh(batches.marks, new THREE.MeshBasicMaterial({ vertexColors: true }));
+    // road paint always wins its tie against the asphalt beneath it — a
+    // depth-only nudge toward the camera, so no altitude can blur the two
+    addMesh(batches.marks, new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
     addMesh(batches.downtown, lam(texDowntown));
     addMesh(batches.strip, lam(texStrip));
     addMesh(batches.generic, lam(texGeneric));
@@ -775,7 +777,8 @@ GAME.city = (function () {
     // parapet band, breathing slow blue — its own mesh so it can pulse
     var pbB = new GeoBatch();
     [[0, -13.05, 69.8, 0.45], [0, 13.05, 69.8, 0.45], [-34.9, 0, 0.45, 25.2], [34.9, 0, 0.45, 25.2]].forEach(function (pb) {
-      pbB.addBox(P.police.x + pb[0], 13.75, P.police.z + 10 + pb[1], pb[2], 0.5, pb[3], 0, 0x3a78e8, 0);
+      // proud of the roofline — flush with it, band top and roof top shimmered
+      pbB.addBox(P.police.x + pb[0], 13.95, P.police.z + 10 + pb[1], pb[2], 0.5, pb[3], 0, 0x3a78e8, 0);
     });
     var pbMesh = new THREE.Mesh(pbB.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }));
     pbMesh.matrixAutoUpdate = false;
@@ -897,26 +900,37 @@ GAME.city = (function () {
       batches.wood.addBox(365, 0.32, pp[0] + 4, 10, 0.04, 3, 0, 0x6a4c34, 0);
     });
 
-    // sand strip built as segments following the shoreline
+    // Sand strip built as segments following the shoreline. The segments
+    // overhang their neighbours half a metre so no seam ever opens — but
+    // overhangs at the SAME height are the flicker audit's biggest family:
+    // from a plane, every overlap shimmered. Neighbours now alternate
+    // heights, and the wet band floats well clear of the dry sand.
     var sand = new GeoBatch();
     var sandShades = [0xd8c496, 0xd0bc8e, 0xdcc89c, 0xccb888];
+    var sIdx = 0;
     for (var sz = -500; sz < 500; sz += 20) {
       var mid = sz + 10;
       var w = city.shoreline(mid) + 6 - SAND_X0;
-      sand.addGroundQuad(SAND_X0 + w / 2, 0.06, mid, w, 20.5, 0, U.pick(rng, sandShades));
+      sand.addGroundQuad(SAND_X0 + w / 2, 0.06 + (sIdx % 2) * 0.06, mid, w, 20.5, 0, U.pick(rng, sandShades));
       // darker wet band at the waterline
-      sand.addGroundQuad(SAND_X0 + w - 4, 0.07, mid, 9, 20.5, 0, 0xb0a078);
+      sand.addGroundQuad(SAND_X0 + w - 4, 0.2, mid, 9, 20.5, 0, 0xb0a078);
+      sIdx++;
     }
-    // narrow sand fringes along the island's other shores
+    // Narrow sand fringes along the island's other shores. Each family of
+    // strips lives on its own height tier: where the west fringe crosses the
+    // north and south runs at the map corners, same-tier overlaps shimmered
+    // from the air just like the beach bands did.
     for (var fz = -520; fz < 520; fz += 20) {
       var wsh = city.westShore(fz + 10);
-      sand.addGroundQuad(wsh + 6, 0.05, fz + 10, 26, 20.5, 0, U.pick(rng, sandShades));
+      sand.addGroundQuad(wsh + 6, 0.22 + (sIdx % 2) * 0.06, fz + 10, 26, 20.5, 0, U.pick(rng, sandShades));
+      sIdx++;
     }
     for (var fx = -520; fx < 380; fx += 20) {
       var nsh = city.northShore(fx + 10);
-      sand.addGroundQuad(fx + 10, 0.05, nsh + 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      sand.addGroundQuad(fx + 10, 0.46 + (sIdx % 2) * 0.06, nsh + 6, 20.5, 26, 0, U.pick(rng, sandShades));
       var ssh = city.southShore(fx + 10);
-      sand.addGroundQuad(fx + 10, 0.05, ssh - 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      sand.addGroundQuad(fx + 10, 0.46 + ((sIdx + 1) % 2) * 0.06, ssh - 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      sIdx++;
     }
     var sandMesh = new THREE.Mesh(sand.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     sandMesh.matrixAutoUpdate = false;
@@ -1332,20 +1346,20 @@ GAME.city = (function () {
     var marks = new GeoBatch();
     // runway asphalt
     b.addGroundQuad((A.minX + A.maxX) / 2, 0.04, A.cz, A.maxX - A.minX, 26, 0, 0x0e0c14);
-    // dashed centerline
-    for (var x = A.minX + 12; x < A.maxX - 12; x += 14) marks.addGroundQuad(x, 0.07, A.cz, 6, 0.5, 0, 0xd8c46a);
+    // dashed centerline, lifted clear of the asphalt so altitude can't blur them together
+    for (var x = A.minX + 12; x < A.maxX - 12; x += 14) marks.addGroundQuad(x, 0.13, A.cz, 6, 0.5, 0, 0xd8c46a);
     // threshold bars at each end
     for (var t = -1; t <= 1; t += 2) {
       for (var k = -4; k <= 4; k += 2) {
-        marks.addGroundQuad(A.cx + t * ((A.maxX - A.minX) / 2 - 6), 0.07, A.cz + k * 1.4, 4, 0.9, 0, 0xf0f0f0);
+        marks.addGroundQuad(A.cx + t * ((A.maxX - A.minX) / 2 - 6), 0.13, A.cz + k * 1.4, 4, 0.9, 0, 0xf0f0f0);
       }
     }
-    // apron pad
-    b.addGroundQuad(A.apron.x, 0.05, A.apron.z, 34, 34, 0, 0x1a1a22);
+    // apron pad — it overlaps the runway strip, so it sits a clear step above
+    b.addGroundQuad(A.apron.x, 0.17, A.apron.z, 34, 34, 0, 0x1a1a22);
     // threshold end lights: green where you land, red where you must not
     for (var te = -4; te <= 4; te += 2) {
-      marks.addGroundQuad(A.minX + 2, 0.07, A.cz + te * 1.4, 1.2, 1.0, 0, 0x38e878);
-      marks.addGroundQuad(A.maxX - 2, 0.07, A.cz + te * 1.4, 1.2, 1.0, 0, 0xe23a4a);
+      marks.addGroundQuad(A.minX + 2, 0.13, A.cz + te * 1.4, 1.2, 1.0, 0, 0x38e878);
+      marks.addGroundQuad(A.maxX - 2, 0.13, A.cz + te * 1.4, 1.2, 1.0, 0, 0xe23a4a);
     }
     var rw = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
     rw.matrixAutoUpdate = false; scene.add(rw);
@@ -1357,11 +1371,13 @@ GAME.city = (function () {
     tb.addBox(A.cx + 40, 12, A.cz + 26, 8, 24, 8, 0, 0x9aa8c8, 0); // tower
     tb.addBox(A.cx + 40, 25, A.cz + 26, 11, 4, 11, 0, 0x141824, 0); // tower cab
     tb.addBox(A.apron.x + 20, 3, A.apron.z - 14, 0.3, 6, 0.3, 0, 0xd0d4dc, 0);  // windsock pole
-    var mk = new THREE.Mesh(marks.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+    var mk = new THREE.Mesh(marks.build(), new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
     mk.matrixAutoUpdate = false; scene.add(mk);
-    // cab glazing, lit controller-green on all four faces
+    // cab glazing, lit controller-green on all four faces — standing a hand
+    // proud of the cab, because flush with it the two planes fought (the
+    // flickering tower glass of the audit's origin story)
     var cabB = new GeoBatch();
-    [[0, 5.35, 10.6, 0.3], [0, -5.35, 10.6, 0.3], [5.35, 0, 0.3, 10.0], [-5.35, 0, 0.3, 10.0]].forEach(function (cg) {
+    [[0, 5.85, 10.6, 0.3], [0, -5.85, 10.6, 0.3], [5.85, 0, 0.3, 10.0], [-5.85, 0, 0.3, 10.0]].forEach(function (cg) {
       cabB.addBox(A.cx + 40 + cg[0], 25.1, A.cz + 26 + cg[1], cg[2], 1.6, cg[3], 0, 0x8fffc8, 0);
     });
     var cabMesh = new THREE.Mesh(cabB.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
