@@ -137,6 +137,18 @@ var VEHICLES = {
   icecream: { label: 'Sunny Scoops', maxSpeed: 21, accel: 6.2, grip: 5.8, turn: 1.7, hp: 200, l: 5.2, w: 2.2, cabinH: 0, bodyH: 0.55, colors: [0xfdf6ec], icecream: true }
 };
 
+// Merged bodies are keyed by everything that shapes their vertices — type
+// plus the baked-in colors. The palettes are small and finite, so the cache
+// tops out at a few dozen geometries and every spawn after the first reuses
+// them: the bubble stops paying typed-array and GPU-upload tax per car.
+// (The batch is still filled on a hit — plain array pushes, near-free.)
+var carGeoCache = {};
+function cachedGeo(key, batch) {
+  var g = carGeoCache[key];
+  if (!g) { g = batch.build(); g.userData.shared = true; carGeoCache[key] = g; }
+  return g;
+}
+
 function buildBikeMesh(colorHex, trim) {
   var g = new THREE.Group();
   var b = new GeoBatch();
@@ -156,10 +168,10 @@ function buildBikeMesh(colorHex, trim) {
   var wheel = new GeoBatch();
   wheel.addBox(0, 0.34, 0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
   wheel.addBox(0, 0.34, -0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
-  var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var body = new THREE.Mesh(cachedGeo('bike|' + colorHex + '|' + (trim || 0), b), sharedVertexLambert());
   g.add(body);
-  g.add(new THREE.Mesh(wheel.build(), new THREE.MeshLambertMaterial({ vertexColors: true })));
-  var hl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.06), new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
+  g.add(new THREE.Mesh(cachedGeo('bikewheels', wheel), sharedVertexLambert()));
+  var hl = new THREE.Mesh(sharedBoxGeo(0.2, 0.14, 0.06), sharedBasic(0xfff2c0));
   hl.position.set(0, 0.72, 0.83);
   g.add(hl);
   g.userData.bodyMesh = body;
@@ -201,7 +213,7 @@ function buildHeliMesh(colorHex, gunship) {
   b.addBox(-0.9, 0.5, 0.6, 0.1, 0.7, 0.1, 0, 0x0c0c10, 0);
   b.addBox(0.9, 0.5, 0.6, 0.1, 0.7, 0.1, 0, 0x0c0c10, 0);
   b.addBox(0, 2.05, -0.6, 0.24, 0.3, 0.24, 0, 0x0c0c10, 0);     // rotor mast
-  var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var body = new THREE.Mesh(cachedGeo('heli|' + colorHex + '|' + (gunship ? 1 : 0), b), sharedVertexLambert());
   g.add(body);
   // spinning main rotor
   var rg = new GeoBatch();
@@ -209,15 +221,15 @@ function buildHeliMesh(colorHex, gunship) {
   // same plane, their top and bottom faces flickered where they met
   rg.addBox(0, 0, 0, 0.3, 0.06, 11, 0, 0x1a1a20, 0);
   rg.addBox(0, 0.08, 0, 11, 0.06, 0.3, 0, 0x1a1a20, 0);
-  var rotor = new THREE.Mesh(rg.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var rotor = new THREE.Mesh(cachedGeo('helirotor', rg), sharedVertexLambert());
   rotor.position.set(0, 2.3, -0.6);
   g.add(rotor);
   var tg = new GeoBatch();
   tg.addBox(0, 0, 0, 0.14, 0.05, 2.2, 0, 0x1a1a20, 0);
-  var tail = new THREE.Mesh(tg.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var tail = new THREE.Mesh(cachedGeo('helitail', tg), sharedVertexLambert());
   tail.position.set(0.2, 1.9, -5.1);
   g.add(tail);
-  var hl = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.06), new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
+  var hl = new THREE.Mesh(sharedBoxGeo(0.3, 0.16, 0.06), sharedBasic(0xfff2c0));
   hl.position.set(0, 1.2, 2.0);
   g.add(hl);
   g.userData.bodyMesh = body;
@@ -243,17 +255,17 @@ function buildPlaneMesh(colors) {
   b.addBox(-0.55, 0.35, 1.0, 0.14, 0.7, 0.14, 0, 0x0c0c10, 0);
   b.addBox(0.55, 0.35, 1.0, 0.14, 0.7, 0.14, 0, 0x0c0c10, 0);
   b.addBox(0, 0.4, -3.5, 0.12, 0.5, 0.12, 0, 0x0c0c10, 0);
-  var mesh = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var mesh = new THREE.Mesh(cachedGeo('plane|' + body + '|' + accent, b), sharedVertexLambert());
   g.add(mesh);
   // nose light + spinning prop
   var pg = new GeoBatch();
   // same trick as the rotor: crossed blades sit 2 cm apart in depth
   pg.addBox(0, 0, 0, 0.24, 3.4, 0.14, 0, 0x1a1a20, 0);
   pg.addBox(0, 0, 0.02, 3.4, 0.24, 0.14, 0, 0x1a1a20, 0);
-  var prop = new THREE.Mesh(pg.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var prop = new THREE.Mesh(cachedGeo('planeprop', pg), sharedVertexLambert());
   prop.position.set(0, 1.2, 4.7);
   g.add(prop);
-  var hl = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.06), new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
+  var hl = new THREE.Mesh(sharedBoxGeo(0.3, 0.16, 0.06), sharedBasic(0xfff2c0));
   hl.position.set(0, 1.2, 4.8);
   g.add(hl);
   g.userData.bodyMesh = mesh;
@@ -275,13 +287,13 @@ function buildMonsterMesh(colorHex) {
   [[1.25, 1.5], [-1.25, 1.5], [1.25, -1.5], [-1.25, -1.5]].forEach(function (w) {
     wh.addBox(w[0], 1.06, w[1], 0.62, 2.12, 2.12, 0, 0x0c0c10, 0);
   });
-  var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var body = new THREE.Mesh(cachedGeo('monster|' + colorHex, b), sharedVertexLambert());
   g.add(body);
-  g.add(new THREE.Mesh(wh.build(), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  g.add(new THREE.Mesh(cachedGeo('monsterwheels', wh), sharedVertexLambert()));
   var glow = new GeoBatch();
   glow.addBox(0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
   glow.addBox(-0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
-  g.add(new THREE.Mesh(glow.build(), new THREE.MeshBasicMaterial({ vertexColors: true })));
+  g.add(new THREE.Mesh(cachedGeo('monsterglow', glow), sharedVertexBasic()));
   g.userData.bodyMesh = body;
   return g;
 }
@@ -366,7 +378,7 @@ function buildCarMesh(type, colorHex) {
     // a centimetre up: its underside used to share the cabin's bottom plane
     b.addBox(0, 0.42 + s.bodyH / 2 + 0.01, s.l * 0.28, s.w * 0.7, 0.1, 1.2, 0, 0x30405a, 0);
   }
-  var body = new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  var body = new THREE.Mesh(cachedGeo('car|' + type + '|' + colorHex, b), sharedVertexLambert());
   g.add(body);
 
   var glow = new GeoBatch();
@@ -375,13 +387,13 @@ function buildCarMesh(type, colorHex) {
   glow.addBox(hw * 0.55, 0.5, -hl - 0.02, 0.38, 0.14, 0.06, 0, 0xff3040, 0);
   glow.addBox(-hw * 0.55, 0.5, -hl - 0.02, 0.38, 0.14, 0.06, 0, 0xff3040, 0);
   if (type === 'taxi') glow.addBox(0, 1.35, -0.1, 0.7, 0.24, 0.34, 0, 0xffd040, 0);
-  var glowMesh = new THREE.Mesh(glow.build(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  var glowMesh = new THREE.Mesh(cachedGeo('carglow|' + type, glow), sharedVertexBasic());
   g.add(glowMesh);
 
   if (type === 'police') {
-    var barR = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.34), new THREE.MeshBasicMaterial({ color: 0xff2030 }));
+    var barR = new THREE.Mesh(sharedBoxGeo(0.42, 0.22, 0.34), sharedBasic(0xff2030));
     barR.position.set(0.28, 1.28, -0.5);
-    var barB = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.34), new THREE.MeshBasicMaterial({ color: 0x2050ff }));
+    var barB = new THREE.Mesh(sharedBoxGeo(0.42, 0.22, 0.34), sharedBasic(0x2050ff));
     barB.position.set(-0.28, 1.28, -0.5);
     g.add(barR); g.add(barB);
     g.userData.lightbar = [barR, barB];

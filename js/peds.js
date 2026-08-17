@@ -32,9 +32,11 @@ GAME.resolveCircle = function (x, z, r, feetY) {
 function makeHair(style, colorHex) {
   if (style === 'buzz') return null;
   var g = new THREE.Group();
-  var mat = new THREE.MeshLambertMaterial({ color: colorHex });
+  // hair is never re-tinted in place — a new cut is a new mesh — so every
+  // head of the same color shares one material and one box per shape
+  var mat = sharedLambert(colorHex);
   function box(w, h, d, x, y, z) {
-    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    var m = new THREE.Mesh(sharedBoxGeo(w, h, d), mat);
     m.position.set(x, y, z);
     g.add(m);
     return m;
@@ -85,19 +87,28 @@ function buildPedMesh(opts) {
   var shirt = opts.cop ? 0x2a4a8a : U.pick(Math.random, shirtColors);
   var pants = opts.cop ? 0x1a2a4a : U.pick(Math.random, pantColors);
   var skin = U.pick(Math.random, skins);
-  var mats = {
+  // The town shares its wardrobe: constant colors, constant box sizes, one
+  // registry entry each — a ped spawn allocates wrappers, not buffers. The
+  // PLAYER (and the wardrobe mirror) re-tints these materials in place, so
+  // those two figures must own private copies or THREADS would dye every
+  // pedestrian wearing the same shirt.
+  var mats = opts.privateMats ? {
     shirt: new THREE.MeshLambertMaterial({ color: shirt }),
     pants: new THREE.MeshLambertMaterial({ color: pants }),
     skin: new THREE.MeshLambertMaterial({ color: skin })
+  } : {
+    shirt: sharedLambert(shirt),
+    pants: sharedLambert(pants),
+    skin: sharedLambert(skin)
   };
-  var torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.26), mats.shirt);
+  var torso = new THREE.Mesh(sharedBoxGeo(0.46, 0.62, 0.26), mats.shirt);
   torso.position.y = 1.12;
   g.add(torso);
-  var head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.26), mats.skin);
+  var head = new THREE.Mesh(sharedBoxGeo(0.26, 0.28, 0.26), mats.skin);
   head.position.y = 1.6;
   g.add(head);
   if (opts.cop) {
-    var cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), mats.pants);
+    var cap = new THREE.Mesh(sharedBoxGeo(0.3, 0.1, 0.3), mats.pants);
     cap.position.y = 1.78;
     g.add(cap);
   } else if (!opts.noHair) {
@@ -110,7 +121,7 @@ function buildPedMesh(opts) {
   function limb(w, len, mat, x, y) {
     var pivot = new THREE.Group();
     pivot.position.set(x, y, 0);
-    var m = new THREE.Mesh(new THREE.BoxGeometry(w, len, w), mat);
+    var m = new THREE.Mesh(sharedBoxGeo(w, len, w), mat);
     m.position.y = -len / 2;
     pivot.add(m);
     g.add(pivot);

@@ -35,15 +35,56 @@ var U = {
   pick: function (rng, arr) { return arr[Math.floor(rng() * arr.length) % arr.length]; }
 };
 
+// ---------- shared render resources ----------
+// The spawn bubble used to buy fresh geometries and materials for every car
+// and ped it minted and throw them away on despawn — leak-free since the
+// disposal fix, but a steady tax on the GC and the GPU upload path (the
+// mobile spawn hitch). Everything here is immutable by convention: constant-
+// dimension boxes, constant-color materials, and merged bodies whose color
+// is baked into vertex data. They are built once, marked shared, and
+// disposeTree leaves them alone. Anything that intends to MUTATE a material
+// (the player's outfit, the wardrobe mirror) must build private ones.
+var SHARED = { geo: {}, mat: {} };
+function sharedBoxGeo(w, h, d) {
+  var k = w + '|' + h + '|' + d;
+  var g = SHARED.geo[k];
+  if (!g) { g = new THREE.BoxGeometry(w, h, d); g.userData.shared = true; SHARED.geo[k] = g; }
+  return g;
+}
+function sharedLambert(hex) {
+  var k = 'L' + hex;
+  var m = SHARED.mat[k];
+  if (!m) { m = new THREE.MeshLambertMaterial({ color: hex }); m.userData.shared = true; SHARED.mat[k] = m; }
+  return m;
+}
+function sharedBasic(hex) {
+  var k = 'B' + hex;
+  var m = SHARED.mat[k];
+  if (!m) { m = new THREE.MeshBasicMaterial({ color: hex }); m.userData.shared = true; SHARED.mat[k] = m; }
+  return m;
+}
+// the two vertex-color workhorses every merged body/glow rides on
+function sharedVertexLambert() {
+  var m = SHARED.mat.VL;
+  if (!m) { m = new THREE.MeshLambertMaterial({ vertexColors: true }); m.userData.shared = true; SHARED.mat.VL = m; }
+  return m;
+}
+function sharedVertexBasic() {
+  var m = SHARED.mat.VB;
+  if (!m) { m = new THREE.MeshBasicMaterial({ vertexColors: true }); m.userData.shared = true; SHARED.mat.VB = m; }
+  return m;
+}
+
 // free a mesh/group's GPU resources before dropping it from the scene, so the
-// spawn bubble doesn't leak geometries/materials for the whole session
+// spawn bubble doesn't leak geometries/materials for the whole session —
+// shared registry entries stay: they are the whole point of the registry
 function disposeTree(root) {
   if (!root) return;
   root.traverse(function (o) {
-    if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+    if (o.geometry && o.geometry.dispose && !(o.geometry.userData && o.geometry.userData.shared)) o.geometry.dispose();
     if (o.material) {
-      if (Array.isArray(o.material)) o.material.forEach(function (m) { m && m.dispose && m.dispose(); });
-      else if (o.material.dispose) o.material.dispose();
+      if (Array.isArray(o.material)) o.material.forEach(function (m) { if (m && m.dispose && !(m.userData && m.userData.shared)) m.dispose(); });
+      else if (o.material.dispose && !(o.material.userData && o.material.userData.shared)) o.material.dispose();
     }
   });
 }

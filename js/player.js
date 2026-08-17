@@ -19,7 +19,9 @@ GAME.focus = function () {
 
 GAME.initPlayer = function () {
   var P = GAME.player;
-  var mesh = GAME.peds.buildPedMesh({ noHair: true }); // the wardrobe supplies the hair
+  // privateMats: the wardrobe re-tints this figure in place — shared
+  // materials here would dress the whole town every time you change shirts
+  var mesh = GAME.peds.buildPedMesh({ noHair: true, privateMats: true }); // the wardrobe supplies the hair
   // fixed outfit so the player reads distinctly
   mesh.userData.joints.torso.material = new THREE.MeshLambertMaterial({ color: 0xf0f0f8 });
   mesh.userData.joints.armL.children[0].material = mesh.userData.joints.torso.material;
