@@ -1,5 +1,6 @@
 GAME.hud = (function () {
   var el = {};
+  var lastClock = '';
   var shownCash = 0, targetCash = 0;
   var msgT = 0, countT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
@@ -14,7 +15,7 @@ GAME.hud = (function () {
   function $(id) { return document.getElementById(id); }
 
   function init() {
-    ['minimap', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
+    ['minimap', 'clock', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
       'msg-line', 'count-big', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
       'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
@@ -673,6 +674,13 @@ GAME.hud = (function () {
       updateCashText();
     }
     var P = GAME.player;
+    // The town clock: dayPhase 0 is midnight, 0.5 is noon, 24 hours around
+    // the wheel — pinned day or night freezes it with the sun. The 150 s day
+    // makes a raw minute hand a blur (9.6 game-minutes a second), so it
+    // reads in ten-minute steps, ticking about once a real second.
+    var cm = Math.floor(GAME.dayPhase * 144) * 10 % 1440;
+    var ct = (cm < 600 ? '0' : '') + Math.floor(cm / 60) + ':' + (cm % 60 === 0 ? '00' : cm % 60);
+    if (ct !== lastClock) { lastClock = ct; el.clock.textContent = ct; }
     el['health-fill'].style.width = U.clamp(P.health, 0, 100) + '%';
     el['armor-fill'].style.width = U.clamp(P.armor, 0, 100) + '%';
     // aircraft wear their condition on the HUD: their damage is otherwise

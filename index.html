@@ -36,6 +36,9 @@
   #minimap { width:100%; height:100%; }
 
   #stat-block { right:16px; top:12px; text-align:right; }
+  /* the town clock: a bedside-radio readout above the money */
+  #clock { font-size:15px; font-weight:800; letter-spacing:3px; color:#9df3ff;
+    text-shadow:0 0 8px rgba(60,220,255,.75), 1px 1px 0 #0a2030; }
   #cash { font-size:26px; font-weight:800; font-style:italic; color:#8dffd8; text-shadow:0 0 8px rgba(70,255,190,.8), 2px 2px 0 #06281c; letter-spacing:1px; }
   #wanted-stars { font-size:24px; letter-spacing:3px; color:rgba(255,255,255,.22); text-shadow:none; margin-top:2px; }
   #wanted-stars .lit { color:#ffd24a; text-shadow:0 0 10px rgba(255,190,40,.9); }
@@ -297,6 +300,7 @@
 <div id="hud" style="display:none">
   <div class="panel" id="minimap-wrap"><canvas id="minimap" width="180" height="180"></canvas></div>
   <div class="panel" id="stat-block">
+    <div id="clock">00:00</div>
     <div id="cash">$0</div>
     <div id="wanted-stars"></div>
     <div class="bar"><div id="health-fill"></div></div>
