@@ -257,13 +257,18 @@ GAME.hud = (function () {
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
     if (GAME.nav.dest && catVis('dest')) {
-      g.strokeStyle = 'rgba(141,255,216,.95)';
-      g.lineWidth = 2.5;
-      g.beginPath();
-      g.moveTo(w2mx(px), w2my(pz));
-      GAME.nav.path.forEach(function (n) { g.lineTo(w2mx(n.x), w2my(n.z)); });
-      g.lineTo(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z));
-      g.stroke();
+      // an empty path is "no route" (a destination the streets can't reach,
+      // e.g. the island while the bridges are closed) — stroking through it
+      // drew one confident straight line across the water. Marker only.
+      if (GAME.nav.path.length) {
+        g.strokeStyle = 'rgba(141,255,216,.95)';
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(w2mx(px), w2my(pz));
+        GAME.nav.path.forEach(function (n) { g.lineTo(w2mx(n.x), w2my(n.z)); });
+        g.lineTo(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z));
+        g.stroke();
+      }
       g.fillStyle = '#ff8aff';
       g.beginPath();
       g.arc(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z), 6, 0, Math.PI * 2);
@@ -600,16 +605,19 @@ GAME.hud = (function () {
       var mobj = GAME.missions.getObjectivePoint();
       if (mobj) blip(mobj[0], mobj[1], '#ffe14f', 4.5 / zoom);
     }
-    // nav route
+    // nav route — same rule as the big map: an empty path strokes nothing,
+    // the destination blip alone tells the story
     if (GAME.nav.dest && catVis('dest')) {
-      g.strokeStyle = 'rgba(141,255,216,.95)';
-      g.lineWidth = 2.4 / zoom;
-      g.beginPath();
-      g.moveTo(0, 0);
-      var path = GAME.nav.path;
-      for (var np = 0; np < path.length; np++) g.lineTo((path[np].x - px) * MAP_S, (path[np].z - pz) * MAP_S);
-      g.lineTo((GAME.nav.dest.x - px) * MAP_S, (GAME.nav.dest.z - pz) * MAP_S);
-      g.stroke();
+      if (GAME.nav.path.length) {
+        g.strokeStyle = 'rgba(141,255,216,.95)';
+        g.lineWidth = 2.4 / zoom;
+        g.beginPath();
+        g.moveTo(0, 0);
+        var path = GAME.nav.path;
+        for (var np = 0; np < path.length; np++) g.lineTo((path[np].x - px) * MAP_S, (path[np].z - pz) * MAP_S);
+        g.lineTo((GAME.nav.dest.x - px) * MAP_S, (GAME.nav.dest.z - pz) * MAP_S);
+        g.stroke();
+      }
       blip(GAME.nav.dest.x, GAME.nav.dest.z, '#ff8aff', 4.5 / zoom);
     }
     var mb = GAME.missions.getBlips();
