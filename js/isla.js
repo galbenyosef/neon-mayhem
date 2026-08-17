@@ -770,14 +770,16 @@ GAME.isla = (function () {
     // old 128x34 a ~20m coast cell could straddle a shallow 14m-wide cut
     // completely, and the grass roofed over the road — the north bridge
     // landed on a ring road nobody could see.
-    var RINGS = LAND_RINGS, SECT = LAND_SECT;
-    for (var s = 0; s < SECT; s++) {
-      var a0 = s / SECT * TAU, a1 = (s + 1) / SECT * TAU;
-      for (var r = 0; r < RINGS; r++) {
-        var f0 = 1 - r / RINGS, f1 = 1 - (r + 1) / RINGS;
+    var RINGS = LAND_RINGS, SECT = LAND_SECT, SUB = 6;
+    // Which cells subdivide is decided up front, in one pass, because a
+    // cell's boundary vertices depend on its NEIGHBOUR's choice too (below).
+    var subs = new Uint8Array(SECT * RINGS);
+    var s, r, a0, a1, f0, f1, si, ri, t;
+    for (s = 0; s < SECT; s++) {
+      a0 = s / SECT * TAU; a1 = (s + 1) / SECT * TAU;
+      for (r = 0; r < RINGS; r++) {
+        f0 = 1 - r / RINGS; f1 = 1 - (r + 1) / RINGS;
         var mid = ringPt((a0 + a1) / 2, (f0 + f1) / 2);
-        var y = groundY(mid[0], mid[1]);
-        var col = f0 > 0.965 ? 0x6a6048 : y > 16 ? 0x2a3526 : y > 6 ? 0x22301f : 0x1b2620;
         // A cell whose corners all sit at groundY still ROOFS a road that
         // crosses between them: the corners stand on the batter above the
         // cut, and the straight triangles between them pass a metre over
@@ -786,17 +788,59 @@ GAME.isla = (function () {
         // grass over the deck on 17 of 19 segments before this.
         var corner0 = ringPt(a0, f0), corner1 = ringPt(a1, f1);
         var reach = Math.max(Math.abs(corner1[0] - corner0[0]), Math.abs(corner1[1] - corner0[1]));
-        var sub = onRoad(mid[0], mid[1], reach) ? 6 : 1;
-        for (var si = 0; si < sub; si++) {
-          for (var ri = 0; ri < sub; ri++) {
-            var aa0 = U.lerp(a0, a1, si / sub), aa1 = U.lerp(a0, a1, (si + 1) / sub);
-            var ff0 = U.lerp(f0, f1, ri / sub), ff1 = U.lerp(f0, f1, (ri + 1) / sub);
-            var p = [], pairs = [[aa0, ff0], [aa1, ff0], [aa1, ff1], [aa0, ff1]];
-            for (var k = 0; k < 4; k++) {
-              var q = ringPt(pairs[k][0], pairs[k][1]);
-              p.push([q[0], groundY(q[0], q[1]), q[1]]);
+        subs[s * RINGS + r] = onRoad(mid[0], mid[1], reach) ? SUB : 1;
+      }
+    }
+    for (s = 0; s < SECT; s++) {
+      a0 = s / SECT * TAU; a1 = (s + 1) / SECT * TAU;
+      for (r = 0; r < RINGS; r++) {
+        f0 = 1 - r / RINGS; f1 = 1 - (r + 1) / RINGS;
+        var cm = ringPt((a0 + a1) / 2, (f0 + f1) / 2);
+        var my = groundY(cm[0], cm[1]);
+        var col = f0 > 0.965 ? 0x6a6048 : my > 16 ? 0x2a3526 : my > 6 ? 0x22301f : 0x1b2620;
+        var sub = subs[s * RINGS + r];
+        // sample the cell as a (sub+1)^2 grid of groundY points
+        var G = [];
+        for (si = 0; si <= sub; si++) {
+          G.push([]);
+          for (ri = 0; ri <= sub; ri++) {
+            var q = ringPt(U.lerp(a0, a1, si / sub), U.lerp(f0, f1, ri / sub));
+            G[si].push([q[0], groundY(q[0], q[1]), q[1]]);
+          }
+        }
+        // T-junctions were the cracks in the hillsides: a subdivided cell
+        // sampled its boundary densely — heights off the neighbour's straight
+        // edge wherever groundY bends (every slope, every cut), and the
+        // ring-boundary rows on the ellipse ARC where the coarse neighbour
+        // spans the chord, an open sliver with the sea showing through from
+        // above. Any fine edge that abuts a coarse cell is therefore laid
+        // down the coarse cell's own straight edge instead of resampled.
+        if (sub > 1) {
+          var c00 = G[0][0], cS0 = G[sub][0], cSS = G[sub][sub], c0S = G[0][sub];
+          if (r > 0 && subs[s * RINGS + (r - 1)] === 1) {
+            for (si = 1; si < sub; si++) {
+              t = si / sub;
+              G[si][0] = [U.lerp(c00[0], cS0[0], t), U.lerp(c00[1], cS0[1], t), U.lerp(c00[2], cS0[2], t)];
             }
-            b.addQuad(p[0], p[1], p[2], p[3], col, [0, 1, 0]);
+          }
+          if (r < RINGS - 1 && subs[s * RINGS + (r + 1)] === 1) {
+            for (si = 1; si < sub; si++) {
+              t = si / sub;
+              G[si][sub] = [U.lerp(c0S[0], cSS[0], t), U.lerp(c0S[1], cSS[1], t), U.lerp(c0S[2], cSS[2], t)];
+            }
+          }
+          // sector-boundary edges are already straight in plan (ringPt is
+          // linear in f at fixed angle), so only the heights need pinning
+          if (subs[((s + SECT - 1) % SECT) * RINGS + r] === 1) {
+            for (ri = 1; ri < sub; ri++) G[0][ri][1] = U.lerp(c00[1], c0S[1], ri / sub);
+          }
+          if (subs[((s + 1) % SECT) * RINGS + r] === 1) {
+            for (ri = 1; ri < sub; ri++) G[sub][ri][1] = U.lerp(cS0[1], cSS[1], ri / sub);
+          }
+        }
+        for (si = 0; si < sub; si++) {
+          for (ri = 0; ri < sub; ri++) {
+            b.addQuad(G[si][ri], G[si + 1][ri], G[si + 1][ri + 1], G[si][ri + 1], col, [0, 1, 0]);
           }
         }
       }
