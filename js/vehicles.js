@@ -836,7 +836,11 @@ GAME.vehicles = (function () {
     var dx = tx - car.pos.x, dz = tz - car.pos.z;
     var distN = Math.sqrt(dx * dx + dz * dz);
     if (distN < 6) {
-      var nbs = city.neighbors(ai.node).filter(function (n) { return n !== ai.prev; });
+      // a closed bridge is closed to traffic too: while the channel gates are
+      // down, span nodes don't exist as far as a wandering car cares — else
+      // it turned onto the approach and nosed into the police line forever
+      var gated = GAME.isla && !GAME.isla.isOpen();
+      var nbs = city.neighbors(ai.node).filter(function (n) { return n !== ai.prev && !(gated && n.span); });
       if (!nbs.length) nbs = [ai.prev];
       // prefer continuing straight
       var next = null;

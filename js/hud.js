@@ -915,6 +915,10 @@ GAME.nav = (function () {
     var start = GAME.city.nearestNode(x0, z0);
     var goal = GAME.city.nearestNode(x1, z1);
     if (!start || !goal) return [];
+    // a closed bridge doesn't route: while the gates are down the spans are
+    // off the graph, so a cross-channel destination degrades to a stub at
+    // the far end instead of a confident line through the police barrier
+    var gated = GAME.isla && !GAME.isla.isOpen();
     var prev = {}, q = [start];
     prev[key(start)] = null;
     while (q.length) {
@@ -922,6 +926,7 @@ GAME.nav = (function () {
       if (n === goal) break;
       var nbs = GAME.city.neighbors(n);
       for (var i = 0; i < nbs.length; i++) {
+        if (gated && nbs[i].span) continue;
         var k = key(nbs[i]);
         if (!(k in prev)) { prev[k] = n; q.push(nbs[i]); }
       }
