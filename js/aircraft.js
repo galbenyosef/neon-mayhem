@@ -114,12 +114,23 @@ GAME.aircraft = (function () {
   // Chin gun rakes the ground ahead of the nose (hold fire), rockets thump
   // out on the right hand (or the AIM button) and detonate where they land.
   var rockets = [];
-  function hitAt(x, z, rad, dmg) {
+  function hitAt(x, z, rad, dmg, byPlayer) {
     var cars = GAME.world.cars, P = GAME.player;
     for (var i = 0; i < cars.length; i++) {
       var c = cars[i];
       if (c.dead || (P.inCar && c === P.car)) continue;
-      if (U.dist2(c.pos.x, c.pos.z, x, z) < rad * rad) GAME.vehicles.damageCar(c, dmg, 'shot');
+      if (U.dist2(c.pos.x, c.pos.z, x, z) < rad * rad) {
+        // 'shot' is the NPC-fire source, which attribution deliberately
+        // ignores — without the explicit flag the TALON's guns were
+        // invisible to the law against vehicles (ped hits already counted):
+        // rocketing a cruiser next to a witness left the warrant at zero
+        GAME.vehicles.damageCar(c, dmg, 'shot', byPlayer);
+        // and the same two crimes the ground guns report on these hits
+        if (byPlayer) {
+          if (c.isPolice && !c.mission) GAME.police.reportCrime('hit_cop_car', P.pos);
+          else if (c.ai && c.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);
+        }
+      }
     }
     var peds = GAME.world.peds;
     var pr = rad * 0.7;
@@ -141,7 +152,8 @@ GAME.aircraft = (function () {
       var iz = car.pos.z + fz2 * d + (Math.random() - 0.5) * 2.6;
       var iy = GAME.city.surfaceY(ix, iz);
       GAME.fx.spawn(ix, iy + 0.3, iz, { count: 4, color: 0xffe0a0, spread: 0.9, life: 0.25 });
-      hitAt(ix, iz, 3.2, 8);
+      hitAt(ix, iz, 3.2, 8, true);
+      GAME.police.noteGunfire(car.pos);   // the chin gun is as loud as any gun
     }
     car.rkT = (car.rkT || 0) - dt;
     if ((inp.rmb || T.aim) && car.rkT <= 0) {
@@ -158,6 +170,7 @@ GAME.aircraft = (function () {
       var dl = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) || 1;
       rockets.push({ x: mx2, y: my2, z: mz2,
         vx: ddx / dl * 55, vy: ddy / dl * 55, vz: ddz / dl * 55, t: 0, from: car });
+      GAME.police.noteGunfire(car.pos);
     }
     for (var i = rockets.length - 1; i >= 0; i--) {
       var r = rockets[i];
@@ -181,7 +194,8 @@ GAME.aircraft = (function () {
         GAME.fx.flash(r.x, ey + 0.6, r.z, 8);
         GAME.audio.crash(1);
         GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.55);
-        hitAt(r.x, r.z, 7, 85);
+        // rockets in this array only ever leave the player's TALON
+        hitAt(r.x, r.z, 7, 85, true);
         rockets.splice(i, 1);
       }
     }
