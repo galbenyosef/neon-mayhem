@@ -213,6 +213,70 @@ GAME.isla = (function () {
       if (lane.length < 3 || shadow > (lane.length - 1) * 0.3) return;
       road(lane, 8, 'local');
     });
+
+    trimSeaTails();
+  }
+
+  // No street runs on past its last junction to die on the beach: an end
+  // that stands close to the waterline (seaward of the coastal ring) is cut
+  // back to where the road last crosses another one — for the quay streets
+  // that is the ring itself, so they now END at that junction instead of
+  // running a dead stub down to the sand.
+  function trimSeaTails() {
+    function minDistOther(x, z, self) {
+      var best = 1e9;
+      for (var i = 0; i < NET.length; i++) {
+        var o = NET[i];
+        if (o === self) continue;
+        for (var e = 0; e < o.pts.length - 1; e++) {
+          var a = o.pts[e], b = o.pts[e + 1];
+          var vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz;
+          var t = l2 > 1e-9 ? U.clamp(((x - a[0]) * vx + (z - a[1]) * vz) / l2, 0, 1) : 0;
+          var d = U.dist(x, z, a[0] + vx * t, a[1] + vz * t);
+          if (d < best) best = d;
+        }
+      }
+      return best;
+    }
+    // walk a polyline from one end at 1m steps until the centreline crosses
+    // another road's centreline; report the arc distance of the crossing
+    function junctionFrom(pts, self) {
+      var d = 0, px = pts[0][0], pz = pts[0][1];
+      for (var i = 1; i < pts.length; i++) {
+        var sx = pts[i][0] - pts[i - 1][0], sz = pts[i][1] - pts[i - 1][1];
+        var sl = Math.hypot(sx, sz);
+        for (var w = 0; w < sl; w += 1) {
+          var x = pts[i - 1][0] + sx * (w / sl), z = pts[i - 1][1] + sz * (w / sl);
+          if (minDistOther(x, z, self) < 1.2) return { d: d + w, x: x, z: z };
+        }
+        d += sl;
+      }
+      return null;
+    }
+    function cutFront(pts, at) {
+      var out = [[at.x, at.z]], d = 0;
+      for (var i = 1; i < pts.length; i++) {
+        d += U.dist(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]);
+        if (d > at.d + 0.5) out.push(pts[i]);
+      }
+      return out;
+    }
+    for (var i = 0; i < NET.length; i++) {
+      var s = NET[i];
+      if (s.closed) continue;
+      // the ring sits at f=0.845 (inland 0.155); an open end seaward of it
+      // is on its way to the water
+      [false, true].forEach(function (rev) {
+        var pts = rev ? s.pts.slice().reverse() : s.pts;
+        var e = pts[0];
+        if (inland(e[0], e[1]) >= 0.15) return;
+        var j = junctionFrom(pts, s);
+        if (!j || j.d < 0.5) return;   // no junction, or already starting on one
+        var cut = cutFront(pts, j);
+        if (cut.length < 2) return;
+        s.pts = rev ? cut.reverse() : cut;
+      });
+    }
   }
 
   // nearest point on anything already in the network, before the index exists
@@ -770,14 +834,16 @@ GAME.isla = (function () {
     // old 128x34 a ~20m coast cell could straddle a shallow 14m-wide cut
     // completely, and the grass roofed over the road — the north bridge
     // landed on a ring road nobody could see.
-    var RINGS = LAND_RINGS, SECT = LAND_SECT;
-    for (var s = 0; s < SECT; s++) {
-      var a0 = s / SECT * TAU, a1 = (s + 1) / SECT * TAU;
-      for (var r = 0; r < RINGS; r++) {
-        var f0 = 1 - r / RINGS, f1 = 1 - (r + 1) / RINGS;
+    var RINGS = LAND_RINGS, SECT = LAND_SECT, SUB = 6;
+    // Which cells subdivide is decided up front, in one pass, because a
+    // cell's boundary vertices depend on its NEIGHBOUR's choice too (below).
+    var subs = new Uint8Array(SECT * RINGS);
+    var s, r, a0, a1, f0, f1, si, ri, t;
+    for (s = 0; s < SECT; s++) {
+      a0 = s / SECT * TAU; a1 = (s + 1) / SECT * TAU;
+      for (r = 0; r < RINGS; r++) {
+        f0 = 1 - r / RINGS; f1 = 1 - (r + 1) / RINGS;
         var mid = ringPt((a0 + a1) / 2, (f0 + f1) / 2);
-        var y = groundY(mid[0], mid[1]);
-        var col = f0 > 0.965 ? 0x6a6048 : y > 16 ? 0x2a3526 : y > 6 ? 0x22301f : 0x1b2620;
         // A cell whose corners all sit at groundY still ROOFS a road that
         // crosses between them: the corners stand on the batter above the
         // cut, and the straight triangles between them pass a metre over
@@ -786,20 +852,94 @@ GAME.isla = (function () {
         // grass over the deck on 17 of 19 segments before this.
         var corner0 = ringPt(a0, f0), corner1 = ringPt(a1, f1);
         var reach = Math.max(Math.abs(corner1[0] - corner0[0]), Math.abs(corner1[1] - corner0[1]));
-        var sub = onRoad(mid[0], mid[1], reach) ? 6 : 1;
-        for (var si = 0; si < sub; si++) {
-          for (var ri = 0; ri < sub; ri++) {
-            var aa0 = U.lerp(a0, a1, si / sub), aa1 = U.lerp(a0, a1, (si + 1) / sub);
-            var ff0 = U.lerp(f0, f1, ri / sub), ff1 = U.lerp(f0, f1, (ri + 1) / sub);
-            var p = [], pairs = [[aa0, ff0], [aa1, ff0], [aa1, ff1], [aa0, ff1]];
-            for (var k = 0; k < 4; k++) {
-              var q = ringPt(pairs[k][0], pairs[k][1]);
-              p.push([q[0], groundY(q[0], q[1]), q[1]]);
-            }
-            b.addQuad(p[0], p[1], p[2], p[3], col, [0, 1, 0]);
+        if (onRoad(mid[0], mid[1], reach)) { subs[s * RINGS + r] = SUB; continue; }
+        // Away from roads the cell drew as ONE flat quad, but feet stand on
+        // the analytic groundY — wherever the ground curves (hill flanks,
+        // the outer batter of a cut) the two disagreed by up to 0.8 m and
+        // the player hovered over the grass or waded through it. Probe the
+        // cell against its own flat quad and subdivide where it sags.
+        var y00 = groundY(corner0[0], corner0[1]), y11 = groundY(corner1[0], corner1[1]);
+        var qA = ringPt(a1, f0), qB = ringPt(a0, f1);
+        var y10 = groundY(qA[0], qA[1]), y01 = groundY(qB[0], qB[1]);
+        var sag = 0;
+        var probes = [[0.5, 0.5], [0.5, 0], [0.5, 1], [0, 0.5], [1, 0.5]];
+        for (var pi = 0; pi < probes.length; pi++) {
+          var pu = probes[pi][0], pv = probes[pi][1];
+          var qp = ringPt(U.lerp(a0, a1, pu), U.lerp(f0, f1, pv));
+          var flat = U.lerp(U.lerp(y00, y10, pu), U.lerp(y01, y11, pu), pv);
+          sag = Math.max(sag, Math.abs(groundY(qp[0], qp[1]) - flat));
+        }
+        subs[s * RINGS + r] = sag > 0.3 ? SUB : sag > 0.08 ? 3 : 1;
+      }
+    }
+    for (s = 0; s < SECT; s++) {
+      a0 = s / SECT * TAU; a1 = (s + 1) / SECT * TAU;
+      for (r = 0; r < RINGS; r++) {
+        f0 = 1 - r / RINGS; f1 = 1 - (r + 1) / RINGS;
+        var cm = ringPt((a0 + a1) / 2, (f0 + f1) / 2);
+        var my = groundY(cm[0], cm[1]);
+        var col = f0 > 0.965 ? 0x6a6048 : my > 16 ? 0x2a3526 : my > 6 ? 0x22301f : 0x1b2620;
+        var sub = subs[s * RINGS + r];
+        // sample the cell as a (sub+1)^2 grid of groundY points
+        var G = [];
+        for (si = 0; si <= sub; si++) {
+          G.push([]);
+          for (ri = 0; ri <= sub; ri++) {
+            var q = ringPt(U.lerp(a0, a1, si / sub), U.lerp(f0, f1, ri / sub));
+            G[si].push([q[0], groundY(q[0], q[1]), q[1]]);
+          }
+        }
+        // T-junctions were the cracks in the hillsides: a subdivided cell
+        // sampled its boundary densely — heights off the neighbour's straighter
+        // edge wherever groundY bends (every slope, every cut), and the
+        // ring-boundary rows on the ellipse ARC where a coarser neighbour
+        // spans the chord, an open sliver with the sea showing through from
+        // above. Any edge finer than its neighbour is therefore laid down
+        // the polyline the NEIGHBOUR draws for that edge instead of
+        // resampled: shared vertices land on identical samples, and the
+        // points between them on the neighbour's own straight segments.
+        if (sub > 1) {
+          var nb = r > 0 ? subs[s * RINGS + (r - 1)] : sub;
+          if (nb < sub) snapRingEdge(G, sub, nb, a0, a1, f0, 0);
+          nb = r < RINGS - 1 ? subs[s * RINGS + (r + 1)] : sub;
+          if (nb < sub) snapRingEdge(G, sub, nb, a0, a1, f1, sub);
+          nb = subs[((s + SECT - 1) % SECT) * RINGS + r];
+          if (nb < sub) snapSectorEdge(G, sub, nb, a0, f0, f1, 0);
+          nb = subs[((s + 1) % SECT) * RINGS + r];
+          if (nb < sub) snapSectorEdge(G, sub, nb, a1, f0, f1, sub);
+        }
+        for (si = 0; si < sub; si++) {
+          for (ri = 0; ri < sub; ri++) {
+            b.addQuad(G[si][ri], G[si + 1][ri], G[si + 1][ri + 1], G[si][ri + 1], col, [0, 1, 0]);
           }
         }
       }
+    }
+  }
+  // lay this cell's boundary row at ff (ri 0 or sub) along the nb-resolution
+  // polyline the coarser ring-neighbour draws for the same edge
+  function snapRingEdge(G, sub, nb, a0, a1, ff, ri) {
+    var P = [];
+    for (var j = 0; j <= nb; j++) {
+      var q = ringPt(U.lerp(a0, a1, j / nb), ff);
+      P.push([q[0], groundY(q[0], q[1]), q[1]]);
+    }
+    for (var si = 1; si < sub; si++) {
+      var u = si / sub * nb, j2 = Math.min(nb - 1, Math.floor(u)), fr = u - j2;
+      G[si][ri] = [U.lerp(P[j2][0], P[j2 + 1][0], fr), U.lerp(P[j2][1], P[j2 + 1][1], fr), U.lerp(P[j2][2], P[j2 + 1][2], fr)];
+    }
+  }
+  // sector-boundary edges are already straight in plan (ringPt is linear in
+  // f at fixed angle), so only the heights need pinning to the coarser side
+  function snapSectorEdge(G, sub, nb, aa, f0, f1, si) {
+    var H = [];
+    for (var j = 0; j <= nb; j++) {
+      var q = ringPt(aa, U.lerp(f0, f1, j / nb));
+      H.push(groundY(q[0], q[1]));
+    }
+    for (var ri = 1; ri < sub; ri++) {
+      var u = ri / sub * nb, j2 = Math.min(nb - 1, Math.floor(u)), fr = u - j2;
+      G[si][ri][1] = U.lerp(H[j2], H[j2 + 1], fr);
     }
   }
 
@@ -964,12 +1104,14 @@ GAME.isla = (function () {
     b.addBox(POI.hospital.x, y + 1.3, POI.hospital.z - 12, 52.6, 2.6, 24.6, 0, 0xc05a6a, 0);
     b.addBox(POI.hospital.x + 22, y + 11, POI.hospital.z + 0.8, 3.6, 22, 3.6, 0, 0xe6f0f6, 0);
     city.addSolid(POI.hospital.x + 22, POI.hospital.z + 0.8, 3.6, 3.6, y + 22);
-    // an equal-armed PLUS on every face, same cure as the mainland tower:
-    // the long vertical with a high crossbar read as a chapel
-    [[0, 1.95, 0], [-1.95, 0.8, 1], [1.95, 0.8, 1]].forEach(function (cf) {
-      batches.glow.addBox(POI.hospital.x + 22 + cf[0], y + 18.3, POI.hospital.z + 0.8 + cf[1], cf[2] ? 0.26 : 1.5, 4.4, cf[2] ? 1.5 : 0.26, 0, 0xe23a4a, 0);
-      batches.glow.addBox(POI.hospital.x + 22 + cf[0], y + 18.3, POI.hospital.z + 0.8 + cf[1], cf[2] ? 0.24 : 4.4, 1.5, cf[2] ? 4.4 : 0.24, 0, 0xe23a4a, 0);
-    });
+    // an equal-armed PLUS as ONE cross THROUGH the tower, same cure as the
+    // mainland fin: per-face plates overhung the corners and jumbled into
+    // each other from diagonal views; two concentric bars extruded through
+    // each axis read as a clean plus from every direction
+    batches.glow.addBox(POI.hospital.x + 22, y + 18.3, POI.hospital.z + 0.8, 1.2, 3.4, 4.1, 0, 0xe23a4a, 0);
+    batches.glow.addBox(POI.hospital.x + 22, y + 18.3, POI.hospital.z + 0.8, 3.4, 1.22, 4.08, 0, 0xe23a4a, 0);
+    batches.glow.addBox(POI.hospital.x + 22, y + 18.3, POI.hospital.z + 0.8, 4.1, 3.38, 1.18, 0, 0xe23a4a, 0);
+    batches.glow.addBox(POI.hospital.x + 22, y + 18.3, POI.hospital.z + 0.8, 4.08, 1.2, 3.42, 0, 0xe23a4a, 0);
     [6.2, 9.4, 12.6].forEach(function (wy) {
       batches.glow.addBox(POI.hospital.x - 4, y + wy, POI.hospital.z + 0.08, 40, 0.7, 0.1, 0, 0xcfe8f4, 0);
     });
@@ -1010,7 +1152,66 @@ GAME.isla = (function () {
     b.addBox(POI.factory.x + 18, y + 21, POI.factory.z - 10, 2.2, 10, 2.2, 0, 0xf0e2ce, 0);
     b.addBox(POI.factory.x + 18, y + 23.5, POI.factory.z - 10, 2.5, 1.2, 2.5, 0, 0xf78ab8, 0);
     b.addBox(POI.factory.x + 18, y + 25.7, POI.factory.z - 10, 2.5, 1.2, 2.5, 0, 0xf78ab8, 0);
-    city.addSign(sg, 24, POI.factory.x, y + 11, POI.factory.z + 15.3, 0, 30, 5);
+    // The FRONT faces the road, which runs along the NORTH (-z) side; the
+    // +z face looks out over open water and is the back. The storefront —
+    // sign included — hangs on the road face. Same cure as the respray
+    // garages: trade dress. A working dock, the shop where the product is
+    // sold, and the product itself in neon on the wall.
+    city.addSign(sg, 24, POI.factory.x, y + 11, POI.factory.z - 15.3, Math.PI, 30, 5);
+    var fx = POI.factory.x, fz = POI.factory.z;
+    // candy-stripe pilasters up the facade corners, and a pink cornice
+    [-22.4, 22.4].forEach(function (px3) {
+      for (var st = 0; st < 7; st++) {
+        b.addBox(fx + px3, y + 1 + st * 2, fz - 15.2, 1.3, 2, 0.6, 0, st % 2 ? 0xf2e6cf : 0xf78ab8, 0);
+      }
+    });
+    b.addBox(fx, y + 15.4, fz - 15.2, 46.6, 1.2, 0.7, 0, 0xf78ab8, 0);
+    // loading dock: a raised apron and two bays. The left roller is down in
+    // pink slats; the right stands open on a lit hall — someone is loading.
+    b.addBox(fx - 11.5, y + 0.55, fz - 16.6, 17, 1.1, 3.2, 0, 0xd8ccb8, 0);
+    city.addSolid(fx - 11.5, fz - 16.6, 17, 3.2, y + 1.1);
+    [-16.5, -7].forEach(function (bx2, bi) {
+      b.addBox(fx + bx2, y + 5.9, fz - 15.25, 7.6, 1.4, 0.6, 0, 0xf78ab8, 0);   // lintel
+      if (bi === 0) {
+        for (var sl = 0; sl < 5; sl++) {
+          b.addBox(fx + bx2, y + 1.5 + sl * 0.76, fz - 15.2, 6.6, 0.66, 0.5, 0, sl % 2 ? 0xe8b8cc : 0xf6dce6, 0);
+        }
+      } else {
+        b.addBox(fx + bx2, y + 3.15, fz - 15.2, 6.6, 4.1, 0.5, 0, 0x2a2030, 0);
+        batches.glow.addBox(fx + bx2, y + 4.9, fz - 15.55, 5.4, 0.3, 0.18, 0, 0xffd890, 0);  // warm lamp
+        pools.addGroundQuad(fx + bx2, y + 1.22, fz - 16.6, 6.4, 3, 0, 0x6a4a16);             // its wash on the dock
+      }
+    });
+    // churns and crates waiting on the apron
+    b.addBox(fx - 4.4, y + 1.75, fz - 16.4, 0.95, 1.3, 0.95, 0, 0xc8ccd4, 0);
+    b.addBox(fx - 3.2, y + 1.6, fz - 17.2, 0.95, 1.0, 0.95, 0.4, 0xc8ccd4, 0);
+    [[-19.6, 0, 0xf6dce6], [-18.4, 0, 0x8dffd8], [-19.0, 1.15, 0xfff0c8]].forEach(function (cr) {
+      b.addBox(fx + cr[0], y + 1.65 + cr[1], fz - 17.4, 1.15, 1.15, 1.15, cr[1] ? 0.5 : 0.15, cr[2], 0);
+    });
+    // the factory SHOP: glass door under a pink-and-cream striped awning,
+    // porthole windows warm above it — the corner where the product is sold
+    b.addBox(fx + 6.5, y + 1.8, fz - 15.2, 2.0, 3.6, 0.5, 0, 0x33454e, 0);
+    batches.glow.addBox(fx + 6.5, y + 2.0, fz - 15.5, 1.6, 2.6, 0.14, 0, 0x9fe8f0, 0);
+    for (var aw = 0; aw < 8; aw++) {
+      b.addBox(fx + 2.7 + aw * 1.25, y + 4.6, fz - 16.0, 1.25, 0.5, 2.2, 0, aw % 2 ? 0xf6f2ea : 0xf78ab8, 0);
+    }
+    [4, 7, 10].forEach(function (wx) {
+      batches.glow.addBox(fx + wx, y + 7.0, fz - 15.25, 1.1, 1.1, 0.16, 0, 0xfff0c8, 0);
+    });
+    // the product in neon on its backboard: scoop over a waffle cone, a
+    // cherry that blinks, and drips that actually drip — respray-style
+    b.addBox(fx + 18, y + 10.9, fz - 15.25, 5.4, 5.8, 0.5, 0, 0x14101f, 0);
+    batches.glow.addBox(fx + 18, y + 12.6, fz - 15.6, 2.7, 1.5, 0.2, 0, 0xff8ab8, 0);   // scoop
+    batches.glow.addBox(fx + 18, y + 11.4, fz - 15.6, 2.3, 0.5, 0.18, 0, 0xffd24a, 0);  // cone rim
+    batches.glow.addBox(fx + 18, y + 10.6, fz - 15.6, 1.5, 0.9, 0.18, 0, 0xe8a83e, 0);
+    batches.glow.addBox(fx + 18, y + 9.7, fz - 15.6, 0.7, 0.9, 0.18, 0, 0xe8a83e, 0);
+    city.kmesh(0.6, 0.6, 0.3, 0xe8283e, fx + 18, y + 13.7, fz - 15.6, { blink: 2.2, duty: 0.6 });
+    [0, 1].forEach(function (di) {
+      city.kmesh(0.24, 0.3, 0.2, 0xff8ab8, fx + 16.9 - di * 0.3, y + 8.9 - di * 0.6, fz - 15.55,
+        { blink: 1.8, duty: 0.34, phase: 1.8 - di * 0.6 });
+    });
+    // pink wash on the forecourt in front of the shop
+    pools.addGroundQuad(fx + 7, y + 0.1, fz - 18.5, 14, 7, 0, 0x6a2438);
 
     // lighthouse on the south-west point — candy stripes and a beam that
     // actually sweeps the coast, the island's one moving light
@@ -1565,8 +1766,9 @@ GAME.isla = (function () {
         city.parkedSpots.push({ x: ox, z: oz, heading: ang, isla: true });
       }
     }
-    // the ice cream truck waits on the factory forecourt
-    city.parkedSpots.push({ x: POI.factory.x + 30, z: POI.factory.z + 8, heading: Math.PI / 2, vtype: 'icecream' });
+    // the ice cream truck waits on the factory forecourt, road side —
+    // the front faces the road now, and so does the truck
+    city.parkedSpots.push({ x: POI.factory.x + 26, z: POI.factory.z - 24, heading: Math.PI / 2, vtype: 'icecream' });
     // cruisers outside the island station, an ambulance at the island hospital
     city.parkedSpots.push({ x: POI.police.x - 20, z: POI.police.z - 6, heading: 0, police: true });
     city.parkedSpots.push({ x: POI.police.x + 20, z: POI.police.z - 6, heading: 0, police: true });
@@ -1578,9 +1780,12 @@ GAME.isla = (function () {
     city.parkedSpots.push({ x: tx(900), z: tz(-282), heading: 0, vtype: 'pickup' });
     city.parkedSpots.push({ x: tx(1206), z: tz(66), heading: Math.PI / 2, vtype: 'limo' });
 
-    // pickups on the island: a couple of weapons and some health
+    // pickups on the island: a couple of weapons and some health. The second
+    // health used to float right at the factory's front door — free healing
+    // on a shop's doorstep reads as part of the shop; it waits on the quiet
+    // sand BEHIND the factory now, a find rather than a doormat fixture.
     var pk = [['health', 902, 78], ['armor', 1268, 150], ['smg', 1006, -278],
-      ['health', 1164, 420], ['shotgun', 812, 260]];
+      ['health', 1195, 460], ['shotgun', 812, 260]];
     pk.forEach(function (P) { city.pickupSpots.push({ x: P[1], z: P[2], type: P[0] }); });
   }
 
@@ -1592,7 +1797,11 @@ GAME.isla = (function () {
     var nodes = [], i, k;
     for (i = 0; i < NET.length; i++) {
       var s = NET[i];
-      var n = Math.max(1, Math.round(s.len / 34));
+      // 16 m spacing, not 34: the hill switchbacks curve at 20-40 m radius,
+      // and nodes a third of a hairpin apart had traffic tracing CHORDS
+      // across the bends — a quarter of it was off the carriageway at any
+      // moment, cutting corners over the grass
+      var n = Math.max(1, Math.round(s.len / 16));
       var run = [];
       for (k = 0; k <= n; k++) {
         var p = segPointAt(s, k / n);
@@ -1603,7 +1812,10 @@ GAME.isla = (function () {
     }
     for (i = 0; i < nodes.length; i++) {
       for (k = i + 1; k < nodes.length; k++) {
-        if (U.dist2(nodes[i].x, nodes[i].z, nodes[k].x, nodes[k].z) > 18 * 18) continue;
+        // tight enough to stitch real junctions (adjacent roads' nearest
+        // nodes are at most a spacing apart) without sideways links
+        // between merely-parallel stretches
+        if (U.dist2(nodes[i].x, nodes[i].z, nodes[k].x, nodes[k].z) > 12 * 12) continue;
         if (nodes[i].nb.indexOf(nodes[k]) >= 0) continue;
         nodes[i].nb.push(nodes[k]); nodes[k].nb.push(nodes[i]);
       }

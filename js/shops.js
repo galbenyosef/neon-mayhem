@@ -536,10 +536,11 @@ GAME.shops = (function () {
         at: s.at, sh: s, isla: !!s.isla, color: 0x8de8b0
       });
     });
-    // hardware over the channel too, by the ice cream factory gates
+    // hardware over the channel too — on the Puerto Dorado grid, where a
+    // tool counter belongs. It used to stand at the ice cream factory's
+    // gates, hard against the storefront on the same forecourt.
     if (GAME.isla) {
-      var F = GAME.isla.pois().factory;
-      locations.push({ id: 'hardware1', kind: 'hardware', name: 'VERDE HARDWARE', tag: 'Tools for loud problems', at: clearSpot(F.x - 34, F.z - 26), isla: true, color: 0xffd24a });
+      locations.push({ id: 'hardware1', kind: 'hardware', name: 'VERDE HARDWARE', tag: 'Tools for loud problems', at: clearSpot(935, 100), isla: true, color: 0xffd24a });
     }
   }
 
@@ -563,6 +564,15 @@ GAME.shops = (function () {
       showroom: { w: 34, d: 18, h: 9, wall: 0x3c4258 },
       casino: { w: 24, d: 16, h: 9, wall: 0xe8c86a },
       safehouse: { w: 11, d: 9, h: 10, wall: 0xc8bca8 }
+    };
+    // Property is priced $6k / $18k / $45k, and the buildings have to tell
+    // that story: the flat is a weathered harbor box, the condo a slim
+    // tower with a neon balcony, the villa a wide two-tier spread. One
+    // shared template made the villa the worst deal on the map.
+    var SAFE_SIZES = {
+      dock: { w: 11, d: 9, h: 8, wall: 0x9a8f80 },
+      condo: { w: 13, d: 10, h: 14, wall: 0xc8bca8 },
+      villa: { w: 17, d: 12, h: 9, wall: 0xe8e0d0 }
     };
     var walls = new GeoBatch();      // window-textured shells
     var trims = new GeoBatch();      // doors, awnings, roof lips (unlit color)
@@ -610,8 +620,39 @@ GAME.shops = (function () {
       return true;
     }
     locations.forEach(function (loc) {
-      if (loc.kind === 'bribe') return;   // the police station is already a building
+      if (loc.kind === 'bribe') {
+        // The station is already a building, but the sergeant's WINDOW on
+        // the street gets its own furniture: a breathing blue lamp on a
+        // post, a notice board of pinned bills, and cold blue light on the
+        // mat — so the spot reads as police business before the counter
+        // opens.
+        var ba = loc.at;
+        var bgy = GAME.city.groundY(ba.x, ba.z);
+        var bst = GAME.city.nearestStation(ba.x, ba.z);
+        var bdx = bst.x - ba.x, bdz = bst.z - ba.z;
+        var bl2 = Math.hypot(bdx, bdz) || 1; bdx /= bl2; bdz /= bl2;   // toward the station
+        var bsx = -bdz, bsz = bdx;                                     // sideways along its wall
+        trims.addBox(ba.x + bsx * 2.2, bgy + 1.5, ba.z + bsz * 2.2, 0.22, 3.0, 0.22, 0, 0x2c3a6a, 0);
+        var blamp = neonBox(0.55, 0.7, 0.55, 0x4da3ff);
+        blamp.position.set(ba.x + bsx * 2.2, bgy + 3.35, ba.z + bsz * 2.2);
+        scene.add(blamp);
+        GAME.city.kinetics.push({ m: blamp, pulse: 2.2, lo: 0.5, hi: 1.0 });
+        // the notice board faces the mat; the bills are pinned proud of it
+        var bbx = ba.x - bsx * 2.4, bbz = ba.z - bsz * 2.4;
+        var brot = Math.atan2(bdx, bdz);
+        [-0.8, 0.8].forEach(function (bp) {
+          trims.addBox(bbx + bdx * bp, bgy + 0.85, bbz + bdz * bp, 0.15, 1.7, 0.15, brot, 0x2c3a6a, 0);
+        });
+        trims.addBox(bbx, bgy + 1.85, bbz, 2.0, 1.25, 0.1, brot, 0x1c2438, 0);
+        [[-0.6, 0.2, 0xf0f0e8], [0.05, -0.12, 0xe8d890], [0.62, 0.14, 0xf0f0e8]].forEach(function (bill) {
+          trims.addBox(bbx + bdx * bill[0] + bsx * 0.09, bgy + 1.85 + bill[1], bbz + bdz * bill[0] + bsz * 0.09,
+            0.36, 0.48, 0.05, brot, bill[2], 0);
+        });
+        pools.addGroundQuad(ba.x, bgy + 0.1, ba.z, 7, 7, 0, 0x14335a);
+        return;
+      }
       var S = SIZES[loc.kind];
+      if (loc.kind === 'safehouse' && loc.sh && SAFE_SIZES[loc.sh.id]) S = SAFE_SIZES[loc.sh.id];
       if (!S) return;
       // Hunt outward from the intended spot for a mat whose building fits:
       // the door faces whatever road is nearest to each candidate. Boot-time,
@@ -710,11 +751,16 @@ GAME.shops = (function () {
         scene.add(poleG);
         GAME.city.kinetics.push({ m: poleG, spin: 2.6 });
         onFace(0.12, -(doorW / 2 + 1.9), gy + 1.8, 2.4, 2.2, 0.14, 0xfff4e0);
-        for (var ck = 0; ck < 8; ck++) {
-          var ckc = (ck % 4) - 1.5, ckr = Math.floor(ck / 4);
-          trims.addGroundQuad(fx - dir.x * (0.75 + ckr * 0.9) + px2.x * ckc * 0.9, gy + 0.07,
-            fz - dir.z * (0.75 + ckr * 0.9) + px2.z * ckc * 0.9, 0.86, 0.86, 0,
-            (ckc + ckr) % 2 ? 0x16161c : 0xe8e8ec);
+        // the checkerboard spills three full rows onto the pavement, tiles
+        // big enough to read from the street — it was a doormat-sized patch,
+        // and every tile of it was DARK: the parity test ran on the half-tile
+        // column OFFSET (-1.5, -0.5, ...), never an even number, so the
+        // "white" squares never drew and the floor was black on black
+        for (var ck = 0; ck < 12; ck++) {
+          var cki = ck % 4, ckr = Math.floor(ck / 4), ckc = cki - 1.5;
+          trims.addGroundQuad(fx - dir.x * (0.85 + ckr * 1.15) + px2.x * ckc * 1.15, gy + 0.07,
+            fz - dir.z * (0.85 + ckr * 1.15) + px2.z * ckc * 1.15, 1.1, 1.1, 0,
+            (cki + ckr) % 2 ? 0x16161c : 0xe8e8ec);
         }
       } else if (loc.kind === 'hardware') {
         // pawn-shop menace, per the vision: a barred lit window, ammo crates
@@ -722,9 +768,12 @@ GAME.shops = (function () {
         onFace(0.1, doorW / 2 + 2.6, gy + 1.6, 4.0, 3.2, 0.16, 0x585c66);
         onFace(0.3, 0, gy + S.h - 1.9, S.w - 1.0, 0.5, 0.2, 0x585c66);
         onFace(0.12, -(doorW / 2 + 2.1), gy + 1.8, 2.8, 2.2, 0.14, 0xffe9b8);
-        [-0.85, 0, 0.85].forEach(function (bx) {
-          onFace(0.22, -(doorW / 2 + 2.1) + bx, gy + 1.8, 0.16, 2.4, 0.1, 0x241a2e);
+        // bars heavy enough to read from the street, not just the doormat —
+        // four verticals and a crossbar in near-black
+        [-1.15, -0.38, 0.38, 1.15].forEach(function (bx) {
+          onFace(0.22, -(doorW / 2 + 2.1) + bx, gy + 1.8, 0.26, 2.6, 0.12, 0x14101c);
         });
+        onFace(0.24, -(doorW / 2 + 2.1), gy + 1.95, 2.8, 0.24, 0.12, 0x14101c);
         var crx = fx - dir.x * 1.4 + px2.x * (S.w / 2 - 1.3);
         var crz = fz - dir.z * 1.4 + px2.z * (S.w / 2 - 1.3);
         trims.addBox(crx, gy + 0.5, crz, 1.05, 1.0, 1.05, 0.3, 0x8a6a3a, 0);
@@ -887,15 +936,65 @@ GAME.shops = (function () {
           spinProps.push({ mesh: showCar, rate: 0.35 });
         }
       } else if (loc.kind === 'safehouse') {
-        // a home: upstairs window band and a lamp by the door. The band stops
-        // below the sign board — at -2.2 the two shared planes AND a 0.4 m
-        // strip of facade, and the lit windows flickered against the board
-        onFace(0.12, 0, gy + S.h - 2.65, S.w - 3, 1.6, 0.14, 0xffe9b0);
+        // every home keeps the porch lamp — domestic warmth, the only light
+        // temperature in the city that says "lived in" — and then each tier
+        // tells its own story on top
         onFace(0.45, doorW / 2 + 0.8, gy + 3.4, 0.3, 0.5, 0.3, 0xffd890);
-        // the porch lamp actually lights the porch — domestic warmth, the
-        // only light temperature in the city that says "lived in"
         pools.addGroundQuad(fx - dir.x * 1.4 + px2.x * (doorW / 2 + 0.8), gy + 0.1,
           fz - dir.z * 1.4 + px2.z * (doorW / 2 + 0.8), 7, 7, 0, 0x7a5a20);
+        var shid = loc.sh && loc.sh.id;
+        if (shid === 'dock') {
+          // a cot over the harbor: one dim window, a drying net on the wall,
+          // crates by the door and a gull holding the roofline
+          onFace(0.12, 0, gy + S.h - 2.65, S.w - 5, 1.2, 0.14, 0xd8c890);
+          onFace(0.1, -(doorW / 2 + 1.9), gy + 2.2, 2.0, 1.6, 0.08, 0x4a5240);
+          var dcx = fx - dir.x * 1.0 + px2.x * (S.w / 2 - 1.2);
+          var dcz = fz - dir.z * 1.0 + px2.z * (S.w / 2 - 1.2);
+          trims.addBox(dcx, gy + 0.45, dcz, 0.9, 0.9, 0.9, 0.2, 0x8a6a3a, 0);
+          trims.addBox(dcx - 0.15, gy + 1.2, dcz + 0.1, 0.75, 0.6, 0.75, 0.7, 0x6a5a4a, 0);
+          trims.addBox(fx + px2.x * (S.w / 2 - 1), gy + S.h + 0.55, fz + px2.z * (S.w / 2 - 1), 0.3, 0.3, 0.42, 0, 0xf0f0f4, 0);
+          trims.addBox(fx + px2.x * (S.w / 2 - 1) - dir.x * 0.22, gy + S.h + 0.78, fz + px2.z * (S.w / 2 - 1) - dir.z * 0.22, 0.14, 0.16, 0.18, 0, 0xf0f0f4, 0);
+        } else if (shid === 'condo') {
+          // neon out every window: three lit floors and a pink balcony rail
+          // breathing across the face
+          [S.h - 2.65, S.h - 5.65, S.h - 8.65].forEach(function (wy) {
+            onFace(0.12, 0, gy + wy, S.w - 3, 1.6, 0.14, 0xffe9b0);
+          });
+          [-1, 0, 1].forEach(function (bp) {
+            onFace(0.6, bp * (S.w / 2 - 2.4), gy + 5.6, 0.16, 1.3, 0.16, 0x3a3346);
+          });
+          var rail = neonBox(dir.x !== 0 ? 0.18 : S.w - 3.4, 0.2, dir.x !== 0 ? S.w - 3.4 : 0.18, 0xff8fd0, { transparent: true, opacity: 0.9 });
+          rail.position.set(fx - dir.x * 0.66, gy + 6.25, fz - dir.z * 0.66);
+          scene.add(rail);
+          GAME.city.kinetics.push({ m: rail, pulse: 2.0, lo: 0.5, hi: 1.0 });
+          // a palm by the door — the strip address comes with one
+          var ptx = fx - dir.x * 1.6 - px2.x * (doorW / 2 + 2.2);
+          var ptz = fz - dir.z * 1.6 - px2.z * (doorW / 2 + 2.2);
+          trims.addBox(ptx, gy + 1.4, ptz, 0.32, 2.8, 0.32, 0, 0x7a5a38, 0);
+          trims.addBox(ptx, gy + 2.9, ptz, 2.3, 0.16, 0.5, 0.55, 0x3aa860, 0);
+          trims.addBox(ptx, gy + 2.9, ptz, 2.3, 0.16, 0.5, -0.55, 0x3aa860, 0);
+        } else {
+          // the good life: two lit floors, a setback upper tier with a
+          // terrace behind a row of warm bulbs, and a pool by the door
+          onFace(0.12, 0, gy + S.h - 2.65, S.w - 3, 1.6, 0.14, 0xffe9b0);
+          onFace(0.12, 0, gy + S.h - 5.4, S.w - 3, 1.4, 0.14, 0xffe9b0);
+          var vtw = dir.x !== 0 ? S.d / 2 : S.w - 4, vtd = dir.x !== 0 ? S.w - 4 : S.d / 2;
+          var vtx = placed.cx + dir.x * (S.d / 4 - 0.2), vtz = placed.cz + dir.z * (S.d / 4 - 0.2);
+          walls.addBox(vtx, gy + S.h + 2.1, vtz, vtw, 4.6, vtd, 0, S.wall, 28);
+          GAME.city.addSolid(vtx, vtz, vtw, vtd, gy + S.h + 4.3);
+          trims.addBox(placed.cx - dir.x * (S.d / 4), gy + S.h + 0.1, placed.cz - dir.z * (S.d / 4),
+            dir.x !== 0 ? S.d / 2 - 0.6 : S.w - 2, 0.2, dir.x !== 0 ? S.w - 2 : S.d / 2 - 0.6, 0, 0xd8ccb8, 0);
+          for (var vb = -2; vb <= 2; vb++) {
+            trims.addBox(fx - dir.x * 0.5 + px2.x * vb * (S.w / 5 - 0.4), gy + S.h + 1.0,
+              fz - dir.z * 0.5 + px2.z * vb * (S.w / 5 - 0.4), 0.22, 0.22, 0.22, 0, 0xffe9b0, 0);
+          }
+          // the pool, decked and glowing, off the door side of the front
+          var plx = fx - dir.x * 4.2 - px2.x * (S.w / 2 + 3.4);
+          var plz = fz - dir.z * 4.2 - px2.z * (S.w / 2 + 3.4);
+          trims.addGroundQuad(plx, gy + 0.08, plz, 6.2, 4.8, 0, 0xd8d0c0);
+          trims.addGroundQuad(plx, gy + 0.14, plz, 4.8, 3.4, 0, 0x2a9ad8);
+          pools.addGroundQuad(plx, gy + 0.18, plz, 6.5, 5, 0, 0x1a5a7a);
+        }
       }
       // the name in lights
       var slot = SIGN_SLOT[loc.id];

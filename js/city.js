@@ -680,10 +680,16 @@ GAME.city = (function () {
       // vertical with its crossbar riding high read as a church steeple,
       // not a clinic. (The two bars sit at different depths off the face
       // on purpose: coplanar overlap at the middle would flicker.)
-      [[0, 2.15, 0], [-2.15, 0.9, Math.PI / 2], [2.15, 0.9, Math.PI / 2]].forEach(function (cf) {
-        batches.marks.addBox(H.x + 26 + cf[0], 21.6, H.z + 1 + cf[1], cf[2] ? 0.28 : 1.7, 5, cf[2] ? 1.7 : 0.28, 0, 0xe23a4a, 0);
-        batches.marks.addBox(H.x + 26 + cf[0], 21.6, H.z + 1 + cf[1], cf[2] ? 0.26 : 5, 1.7, cf[2] ? 5 : 0.26, 0, 0xe23a4a, 0);
-      });
+      // ...as ONE cross THROUGH the fin, not a plate per face. Per-face
+      // plates sat at different depths, their 5 m arms overhung the 4 m
+      // tower, and any diagonal view jumbled the side plates in front of
+      // the front one. Two concentric bars extruded through each axis read
+      // as a clean plus from every direction instead. (The tiny size
+      // nudges keep overlapping faces off each other's planes.)
+      batches.marks.addBox(H.x + 26, 21.6, H.z + 1, 1.3, 3.8, 4.5, 0, 0xe23a4a, 0);
+      batches.marks.addBox(H.x + 26, 21.6, H.z + 1, 3.8, 1.32, 4.48, 0, 0xe23a4a, 0);
+      batches.marks.addBox(H.x + 26, 21.6, H.z + 1, 4.5, 3.78, 1.28, 0, 0xe23a4a, 0);
+      batches.marks.addBox(H.x + 26, 21.6, H.z + 1, 4.48, 1.3, 3.82, 0, 0xe23a4a, 0);
       // lit ward bands across the facade, cool white — a hospital never sleeps
       [7, 10.5, 14].forEach(function (wy) {
         batches.marks.addBox(H.x - 4, wy, H.z + 2.07, 46, 0.8, 0.12, 0, 0xcfe8f4, 0);
