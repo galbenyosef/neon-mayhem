@@ -536,10 +536,11 @@ GAME.shops = (function () {
         at: s.at, sh: s, isla: !!s.isla, color: 0x8de8b0
       });
     });
-    // hardware over the channel too, by the ice cream factory gates
+    // hardware over the channel too — on the Puerto Dorado grid, where a
+    // tool counter belongs. It used to stand at the ice cream factory's
+    // gates, hard against the storefront on the same forecourt.
     if (GAME.isla) {
-      var F = GAME.isla.pois().factory;
-      locations.push({ id: 'hardware1', kind: 'hardware', name: 'VERDE HARDWARE', tag: 'Tools for loud problems', at: clearSpot(F.x - 34, F.z - 26), isla: true, color: 0xffd24a });
+      locations.push({ id: 'hardware1', kind: 'hardware', name: 'VERDE HARDWARE', tag: 'Tools for loud problems', at: clearSpot(935, 100), isla: true, color: 0xffd24a });
     }
   }
 
