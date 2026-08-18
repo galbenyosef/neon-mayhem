@@ -857,15 +857,27 @@ GAME.vehicles = (function () {
       var gated = GAME.isla && !GAME.isla.isOpen();
       var nbs = city.neighbors(ai.node).filter(function (n) { return n !== ai.prev && !(gated && n.span); });
       if (!nbs.length) nbs = [ai.prev];
-      // prefer continuing straight
-      var next = null;
-      if (ai.prev && Math.random() < 0.6) {
-        var ddx = ai.node.x - ai.prev.x, ddz = ai.node.z - ai.prev.z;
-        for (var k = 0; k < nbs.length; k++) {
-          if (Math.sign(nbs[k].x - ai.node.x) === Math.sign(ddx) && Math.sign(nbs[k].z - ai.node.z) === Math.sign(ddz)) { next = nbs[k]; break; }
-        }
-      }
-      if (!next) next = nbs[Math.floor(Math.random() * nbs.length)];
+      // Follow the road by ANGLE, not by coordinate sign: the old straight
+      // test compared signs, which only means "straight" on the grid — on
+      // the island's curves it failed at nearly every node and traffic took
+      // a random exit each time, swerving between cross-linked lanes and
+      // U-turning mid-road. Score each neighbour by the heading change it
+      // asks for, follow the smallest, and only sometimes take a real fork.
+      var hx = ai.prev ? ai.node.x - ai.prev.x : Math.sin(car.heading);
+      var hz = ai.prev ? ai.node.z - ai.prev.z : Math.cos(car.heading);
+      var hl = Math.sqrt(hx * hx + hz * hz) || 1; hx /= hl; hz /= hl;
+      var scored = nbs.map(function (n) {
+        var vx = n.x - ai.node.x, vz = n.z - ai.node.z;
+        var vl = Math.sqrt(vx * vx + vz * vz) || 1;
+        return { n: n, turn: Math.acos(U.clamp((vx * hx + vz * hz) / vl, -1, 1)) };
+      }).sort(function (a, b) { return a.turn - b.turn; });
+      // a near-U-turn is only for the cornered (dead ends)
+      var options = scored.filter(function (s) { return s.turn < 2.4; });
+      var next;
+      if (!options.length) next = scored[0].n;
+      else if (options.length > 1 && Math.random() < 0.25) {
+        next = options[1 + Math.floor(Math.random() * (options.length - 1))].n;
+      } else next = options[0].n;
       ai.prev = ai.node; ai.node = next;
       // lane offset: keep right of travel direction
       var mx = next.x - ai.prev.x, mz = next.z - ai.prev.z;
@@ -887,6 +899,11 @@ GAME.vehicles = (function () {
     }
 
     var desired = ai.desired || 11;
+    // a bend is not a straight: ease off in proportion to how hard the
+    // wheel is over, so hairpins are taken at hairpin speed instead of
+    // overshot onto the grass
+    var bend = Math.min(1, Math.abs(dh) / 1.1);
+    desired = Math.max(3.5, desired * (1 - bend * 0.65));
     // brake for things ahead
     var fx = fwdX(car), fz = fwdZ(car);
     var lookA = 5 + car.speed * 0.8;

@@ -1797,7 +1797,11 @@ GAME.isla = (function () {
     var nodes = [], i, k;
     for (i = 0; i < NET.length; i++) {
       var s = NET[i];
-      var n = Math.max(1, Math.round(s.len / 34));
+      // 16 m spacing, not 34: the hill switchbacks curve at 20-40 m radius,
+      // and nodes a third of a hairpin apart had traffic tracing CHORDS
+      // across the bends — a quarter of it was off the carriageway at any
+      // moment, cutting corners over the grass
+      var n = Math.max(1, Math.round(s.len / 16));
       var run = [];
       for (k = 0; k <= n; k++) {
         var p = segPointAt(s, k / n);
@@ -1808,7 +1812,10 @@ GAME.isla = (function () {
     }
     for (i = 0; i < nodes.length; i++) {
       for (k = i + 1; k < nodes.length; k++) {
-        if (U.dist2(nodes[i].x, nodes[i].z, nodes[k].x, nodes[k].z) > 18 * 18) continue;
+        // tight enough to stitch real junctions (adjacent roads' nearest
+        // nodes are at most a spacing apart) without sideways links
+        // between merely-parallel stretches
+        if (U.dist2(nodes[i].x, nodes[i].z, nodes[k].x, nodes[k].z) > 12 * 12) continue;
         if (nodes[i].nb.indexOf(nodes[k]) >= 0) continue;
         nodes[i].nb.push(nodes[k]); nodes[k].nb.push(nodes[i]);
       }
