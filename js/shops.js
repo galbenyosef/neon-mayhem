@@ -1356,7 +1356,6 @@ GAME.shops = (function () {
     GAME.shopOpen = true;
     GAME.releasePointer();
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
-    GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0);
     render();
     GAME.track('shop-open-' + loc.kind);
     return true;

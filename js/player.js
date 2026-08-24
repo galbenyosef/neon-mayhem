@@ -150,6 +150,15 @@ function killLoopingAudio() {
   GAME.audio.radio.setVolume(0);
 }
 
+// the canopy is held open the same way, and nothing else puts it away: dying
+// under it (a 4-star bird strafes a glider, and a bailed-out airframe blows up
+// beneath one) left P.parachuting set through the whole wasted screen, so the
+// chute hung in the air over the body — and then the first living frame at the
+// hospital ran a glide step and reported "Feet dry." on solid ground.
+function stowParachute() {
+  if (GAME.player.parachuting && GAME.aircraft) GAME.aircraft.land();
+}
+
 GAME.playerWasted = function (cause) {
   var P = GAME.player;
   if (P.state !== 'alive') return;
@@ -157,6 +166,7 @@ GAME.playerWasted = function (cause) {
   GAME.track('wasted');
   GAME.timeScale = 0.35;
   killLoopingAudio();
+  stowParachute();
   // the card tells the truth about THIS death: a bed only counts on the
   // island you went down on — and if you own one elsewhere, say why it
   // didn't help, so the rule teaches itself
@@ -188,6 +198,7 @@ GAME.playerBusted = function () {
   GAME.track('busted');
   GAME.timeScale = 0.4;
   killLoopingAudio();
+  stowParachute();
   GAME.audio.sting('busted');
   var fine = Math.min(P.cash, 200);
   P.pendingFine = fine;

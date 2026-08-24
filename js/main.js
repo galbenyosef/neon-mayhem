@@ -272,9 +272,30 @@
   // The soothing pads from the title also play under every overlay — pause,
   // the map, a result card. One place decides; everyone who opens or closes
   // an overlay calls it.
+  //
+  // It silences the live world too. Every looping voice is a held gain node
+  // that the tick keeps current, and the tick STOPS behind an overlay — so
+  // whatever was playing when one opened holds that level until it closes.
+  // Each caller used to silence its own, and the result card silenced
+  // nothing at all: finishing a mission in a car left the engine, the skid,
+  // the siren, the rotor and the radio droning under the pads. Doing it here
+  // means no overlay can forget. Engine, skid and siren are re-armed by the
+  // next tick; the radio's level is set once on boarding, so it is restored
+  // by hand — and only to a living driver, or closing the map over your own
+  // corpse would undo the silence death just asked for.
   GAME.syncOverlayMusic = function () {
     if (!GAME.audio.ctx) return;
-    GAME.audio.titleMusic(!GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen);
+    var P = GAME.player;
+    var over = !GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen;
+    GAME.audio.titleMusic(over);
+    if (over) {
+      GAME.audio.engineState(false, 0);
+      GAME.audio.skid(0);
+      GAME.audio.siren(0);
+      GAME.audio.radio.setVolume(0);
+    } else if (P && P.inCar && P.car && P.state === 'alive') {
+      GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
+    }
   };
 
   GAME.togglePause = function () {
@@ -282,11 +303,10 @@
     GAME.paused = !GAME.paused;
     GAME.hud.setPaused(GAME.paused);
     if (GAME.paused) {
-      GAME.audio.engineState(false, 0);
-      GAME.audio.skid(0);
-      GAME.audio.siren(0);
-      // the context stays running: the title pads keep the pause screen warm
-      // (the radio and engines are tick-driven, so they fall silent on their own)
+      // the context stays running so the title pads keep the pause screen
+      // warm; syncOverlayMusic below stops the looping voices. They do NOT
+      // stop on their own — a held gain node with no tick to update it just
+      // sustains, and the radio's scheduler is an interval, not the tick.
       GAME.releasePointer();
     } else {
       GAME.audio.resume();

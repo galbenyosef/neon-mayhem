@@ -768,8 +768,9 @@ GAME.hud = (function () {
       var open = force !== undefined ? force : !GAME.mapOpen;
       GAME.mapOpen = open;
       el['map-screen'].style.display = open ? 'flex' : 'none';
-      // the sim loop halts while the map is open; silence the engine drone
-      if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
+      // the sim loop halts while the map is open; syncOverlayMusic below
+      // silences every voice the halted tick would otherwise leave held
+      if (open) drawBigMap();
       else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
       // the map is a mouse screen: hand the cursor back without touching
       // fullscreen (Esc would drop both, which is why we never make the

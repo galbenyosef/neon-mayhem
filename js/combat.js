@@ -378,7 +378,12 @@ GAME.combat = (function () {
     var P = GAME.player;
     var wd = WEAPONS[P.currentWeapon];
     var inv = P.weapons[P.currentWeapon];
-    GAME.hud.setWeapon(wd.name, P.currentWeapon === 'fist' ? '' : (inv ? inv.ammo : 0));
+    // the reward for all 25 jumps stops the decrement but leaves the count
+    // parked on its starting 999, which reads as "999 bullets left", not
+    // "never reload again". Say what it actually is.
+    GAME.hud.setWeapon(wd.name, P.currentWeapon === 'fist' ? ''
+      : GAME.unlimitedAmmo ? '∞'
+      : (inv ? inv.ammo : 0));
   }
 
   // ---------- pickups ----------

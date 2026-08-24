@@ -443,6 +443,7 @@ GAME.aircraft = (function () {
     updatePlane: updatePlane,
     startParachute: startParachute,
     updateParachute: updateParachute,
+    land: land,
     enforceAirspace: enforceAirspace,
     get parachuting() { return GAME.player.parachuting; }
   };
