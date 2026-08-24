@@ -6,6 +6,7 @@ GAME.touch = (function () {
   var btns = {};
   var enabled = false;
   var lastCarRef = null;   // the vehicle (or null) the flags were last cleared for
+  var lefty = false;       // stick under the right thumb, buttons under the left
 
   function detect() {
     if ('ontouchstart' in window) return true;
@@ -18,6 +19,7 @@ GAME.touch = (function () {
     var b = document.createElement('div');
     b.className = 'tbtn';
     b.textContent = label;
+    b.__inset = right;   // authored as an inset from the thumb's own edge
     b.style.right = right + 'px';
     b.style.bottom = bottom + 'px';
     b.style.width = size + 'px';
@@ -180,12 +182,13 @@ GAME.touch = (function () {
     // camera drag on the game canvas outside the stick zone / buttons
     document.getElementById('game-canvas').addEventListener('touchstart', function (e) {
       var t = e.changedTouches[0];
-      if (t.clientX > window.innerWidth * 0.45 && camId === null && stickId !== t.identifier) {
+      if (camHalf(t.clientX) && camId === null && stickId !== t.identifier) {
         camId = t.identifier;
         camLX = t.clientX; camLY = t.clientY;
       }
     }, { passive: true });
 
+    applyHandedness();
     checkOrientation();
     // A viewport change is an interruption like any other, and the one the
     // release above did not cover. The stick is placed where your thumb
@@ -213,6 +216,34 @@ GAME.touch = (function () {
       T.stickX = dx / max;
       T.stickY = dy / max;
     }
+  }
+
+  // Left-handed layout. Every button is authored as an inset from the edge its
+  // thumb comes from, so mirroring is a matter of applying that same inset to
+  // the other side. The stick zone and the camera-drag half have to travel
+  // with them: leave either behind and both thumbs end up on the same side of
+  // the screen, arguing over it.
+  //
+  // The radar and PAUSE stay where they are. They sit along the top, out of
+  // either thumb's way, and the comment above them says why they were moved
+  // there in the first place.
+  function applyHandedness() {
+    if (!enabled) return;
+    var all = footBtns.concat(carBtns);
+    for (var i = 0; i < all.length; i++) {
+      var b = all[i];
+      if (b.__inset === undefined) continue;
+      b.style.right = lefty ? 'auto' : b.__inset + 'px';
+      b.style.left = lefty ? b.__inset + 'px' : 'auto';
+    }
+    if (stickZone) {
+      stickZone.style.left = lefty ? 'auto' : '0';
+      stickZone.style.right = lefty ? '0' : 'auto';
+    }
+  }
+  // the half of the screen the stick does NOT own
+  function camHalf(x) {
+    return lefty ? x < window.innerWidth * 0.55 : x > window.innerWidth * 0.45;
   }
 
   function checkOrientation() {
@@ -302,5 +333,9 @@ GAME.touch = (function () {
     } else { T.driveByL = false; T.driveByR = false; }
   }
 
-  return { init: init, update: update };
+  return {
+    init: init, update: update,
+    get lefty() { return lefty; },
+    setLefty: function (v) { lefty = !!v; applyHandedness(); return lefty; }
+  };
 })();

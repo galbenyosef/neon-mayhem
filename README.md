@@ -77,7 +77,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 **In the air:** helicopter — climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Plane — `W` to roll down the runway, `Space` to rotate once you're fast, `Q/E` to barrel-roll, and pull hard enough on the elevator for a full loop. `F` bails out with a parachute.
 
-📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape.
+📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape. **Left-handed?** One tap on the pause screen mirrors the whole cluster — stick to the right thumb, buttons to the left, and the camera drag swaps sides to match — and it is remembered.
 
 ## Run it locally
 

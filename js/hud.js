@@ -117,6 +117,23 @@ GAME.hud = (function () {
     } else {
       $('pause-haptic').style.display = 'none';
     }
+    // Handedness, remembered like the rest. touch.init() runs before the save
+    // is read, so the stored choice can only be applied from here — the same
+    // reason the rumble switch above reads its pref at this point.
+    function paintLeftyBtn() {
+      $('pause-lefty').textContent = GAME.touch.lefty ? '🎮 CONTROLS: LEFT' : '🎮 CONTROLS: RIGHT';
+    }
+    if (GAME.isTouch) {
+      pauseBtn('pause-lefty', function () {
+        GAME.touch.setLefty(!GAME.touch.lefty);
+        if (GAME.prefs) { GAME.prefs.lefty = GAME.touch.lefty; GAME.save(); }
+        paintLeftyBtn();
+      });
+      if (GAME.prefs && GAME.prefs.lefty) GAME.touch.setLefty(true);
+      paintLeftyBtn();
+    } else {
+      $('pause-lefty').style.display = 'none';
+    }
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);

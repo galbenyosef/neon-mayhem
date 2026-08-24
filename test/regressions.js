@@ -492,6 +492,10 @@ function withTimeout(p, ms) {
     shake.sent.length === 1, 'sent=' + JSON.stringify(shake.sent) + ' shakeLeft=' + shake.left);
   check('haptics: the shake was still ringing throughout (anchor sanity)',
     shake.left > 0.01, 'left=' + shake.left);
+  check('haptics: the handedness switch is hidden off a touch device',
+    (await page.evaluate(function () {
+      return document.getElementById('pause-lefty').style.display;
+    })) === 'none');
   check('haptics: the rumble switch is hidden where nothing could buzz',
     (await page.evaluate(function () {
       return document.getElementById('pause-haptic').style.display;
@@ -725,6 +729,69 @@ function withTimeout(p, ms) {
     'on=' + hapBtn.mid.on + ' text=' + hapBtn.mid.text + ' pref=' + hapBtn.mid.pref);
   check('touch: and pressing it again turns it back on',
     hapBtn.back === true && /ON/.test(hapBtn.text2), 'on=' + hapBtn.back + ' text=' + hapBtn.text2);
+  // Handedness: the buttons, the stick's half and the camera's half all have
+  // to move together. Leaving any one behind puts both thumbs on the same side.
+  var hand = await tpage.evaluate(function () {
+    var zone = document.getElementById('tstick-zone');
+    var canvas = document.getElementById('game-canvas');
+    var btn = document.getElementById('pause-lefty');
+    function drag(x1, x2) {                  // a camera drag on the canvas
+      GAME.input.touch.camDX = 0;
+      function fire(type, x) {
+        var t = new Touch({ identifier: 9, target: canvas, clientX: x, clientY: 300 });
+        (type === 'touchstart' ? canvas : window).dispatchEvent(new TouchEvent(type, {
+          touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true
+        }));
+      }
+      fire('touchstart', x1); fire('touchmove', x2);
+      var moved = GAME.input.touch.camDX;
+      fire('touchend', x2);
+      GAME.input.touch.camDX = 0;
+      return moved;
+    }
+    function shot() {
+      var fire = document.getElementById('touch-layer').querySelector('.tbtn');
+      return { zoneLeft: zone.style.left, zoneRight: zone.style.right,
+               btnLeft: fire.style.left, btnRight: fire.style.right, inset: fire.__inset };
+    }
+    var W = window.innerWidth;
+    var right = shot();
+    var rightCamLeft = drag(W * 0.2, W * 0.2 + 40);    // left half: the stick's, not the camera's
+    var rightCamRight = drag(W * 0.8, W * 0.8 + 40);
+    btn.click();
+    var lefty = shot(), leftyOn = GAME.touch.lefty, pref = !!(GAME.prefs && GAME.prefs.lefty);
+    var leftyLabel = btn.textContent;
+    var leftyCamLeft = drag(W * 0.2, W * 0.2 + 40);    // now the camera's half
+    var leftyCamRight = drag(W * 0.8, W * 0.8 + 40);
+    btn.click();
+    var back = shot();
+    return { right: right, lefty: lefty, back: back, leftyOn: leftyOn, pref: pref,
+             rightCamLeft: rightCamLeft, rightCamRight: rightCamRight,
+             leftyCamLeft: leftyCamLeft, leftyCamRight: leftyCamRight,
+             backOn: GAME.touch.lefty, leftyLabel: leftyLabel, backLabel: btn.textContent };
+  });
+  check('touch: by default the stick owns the left and the buttons the right (anchor sanity)',
+    hand.right.zoneLeft === '0px' && hand.right.btnRight !== '' && hand.right.btnLeft === 'auto' &&
+    hand.right.inset !== undefined,
+    JSON.stringify(hand.right));
+  check('touch: and the camera drag lives on the half the stick does not own',
+    hand.rightCamLeft === 0 && hand.rightCamRight !== 0,
+    'left=' + hand.rightCamLeft + ' right=' + hand.rightCamRight);
+  check('touch: switching hands moves the stick to the other side',
+    hand.leftyOn === true && hand.lefty.zoneRight === '0px' && hand.lefty.zoneLeft === 'auto',
+    JSON.stringify(hand.lefty));
+  check('touch: the buttons keep their inset, measured from the other edge',
+    hand.lefty.btnLeft === hand.right.inset + 'px' && hand.lefty.btnRight === 'auto',
+    'left=' + hand.lefty.btnLeft + ' right=' + hand.lefty.btnRight + ' inset=' + hand.right.inset);
+  check('touch: and the camera drag moves with them',
+    hand.leftyCamLeft !== 0 && hand.leftyCamRight === 0,
+    'left=' + hand.leftyCamLeft + ' right=' + hand.leftyCamRight);
+  check('touch: the choice is remembered and the label says which hand it is on',
+    hand.pref === true && /LEFT/.test(hand.leftyLabel) && /RIGHT/.test(hand.backLabel),
+    'pref=' + hand.pref + ' lefty="' + hand.leftyLabel + '" back="' + hand.backLabel + '"');
+  check('touch: switching back restores the original layout',
+    hand.backOn === false && hand.back.zoneLeft === '0px' && hand.back.btnRight === hand.right.btnRight,
+    JSON.stringify(hand.back));
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
