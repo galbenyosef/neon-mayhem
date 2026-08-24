@@ -192,7 +192,7 @@ GAME.aircraft = (function () {
         var ey = Math.max(r.y, sy + 0.6);
         GAME.fx.spawn(r.x, ey, r.z, { count: 26, color: 0xff8030, spread: 4, vy: 4, life: 0.7, grav: 0.4 });
         GAME.fx.flash(r.x, ey + 0.6, r.z, 8);
-        GAME.audio.crash(1);
+        GAME.audio.crash(1, r.x, r.z);
         GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.55);
         // rockets in this array only ever leave the player's TALON
         hitAt(r.x, r.z, 7, 85, true);

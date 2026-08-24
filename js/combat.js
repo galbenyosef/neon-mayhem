@@ -523,7 +523,7 @@ GAME.combat = (function () {
     var yaw = Math.atan2(tx - fromX, tz - fromZ) + (Math.random() - 0.5) * (1 - accuracy) * 0.5;
     var dx = Math.sin(yaw), dz = Math.cos(yaw);
     var d = U.dist(fromX, fromZ, tx, tz);
-    GAME.audio.gunshot('pistol');
+    GAME.audio.gunshot('pistol', fromX, fromZ);
     GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * d, 1.2, fromZ + dz * d);
     if (Math.random() < accuracy) {
       if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');

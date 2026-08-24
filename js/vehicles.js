@@ -614,7 +614,7 @@ GAME.vehicles = (function () {
     // hard landings still hurt
     if (impact > 16) {
       damageCar(car, Math.min(40, (impact - 16) * 2.2), 'wall');
-      GAME.audio.crash(Math.min(1, impact / 30));
+      GAME.audio.crash(Math.min(1, impact / 30), car.pos.x, car.pos.z);
       if (isPlayer) GAME.cameraShake = Math.min(1, impact / 26);
       // Wheels-down off a real ramp is a landing, not a crash: a jump earned
       // at the lip keeps its rider short of the truly catastrophic, however
@@ -683,7 +683,7 @@ GAME.vehicles = (function () {
       if (impact > 4 && (car.hitCd || 0) <= 0) {
         car.hitCd = 0.25;
         damageCar(car, Math.min(32, impact * 1.5), 'wall');
-        GAME.audio.crash(impact / 18);
+        GAME.audio.crash(impact / 18, car.pos.x, car.pos.z);
         GAME.fx.spawn(car.pos.x + nx, car.pos.y + 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
         if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
         // riders get thrown off in a hard wall hit
@@ -720,7 +720,7 @@ GAME.vehicles = (function () {
           a.hitCd = 0.25; b.hitCd = 0.25;
           var dmg = Math.min(26, rel * 1.3);
           damageCar(a, dmg * 0.6, b); damageCar(b, dmg * 0.6, a);
-          GAME.audio.crash(rel / 20);
+          GAME.audio.crash(rel / 20, (a.pos.x + b.pos.x) / 2, (a.pos.z + b.pos.z) / 2);
           GAME.fx.spawn((a.pos.x + b.pos.x) / 2, (a.pos.y + b.pos.y) / 2 + 0.8, (a.pos.z + b.pos.z) / 2, { count: 6, color: 0xffe0a0, spread: 3, life: 0.35 });
           if (a === GAME.player.car || b === GAME.player.car) GAME.cameraShake = Math.min(1, rel / 18);
           var pc = GAME.player.car;
@@ -791,7 +791,7 @@ GAME.vehicles = (function () {
     car.dead = true; car.stage = 3;
     // player-caused if this blast (or the damage that led to it) traces to the player
     var byPlayer = !!(byPlayerIn || car.byPlayer);
-    GAME.audio.explosion();
+    GAME.audio.explosion(car.pos.x, car.pos.z);
     // the blast happens where the CAR is — at world height 1.5 a car
     // exploding on a bridge deck flashed under the roadway, unseen
     GAME.fx.flash(car.pos.x, car.pos.y + 1.5, car.pos.z, 9);

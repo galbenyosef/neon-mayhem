@@ -774,7 +774,7 @@ function updateDriving(dt) {
       if (wantHop && !P.hopLatch && car.pos.y <= mgy + 0.1) {
         car.vy = 13.5;
         car.pos.y = mgy + 0.12;
-        GAME.audio.crash(0.35);
+        GAME.audio.crash(0.35, car.pos.x, car.pos.z);
         GAME.cameraShake = 0.4;
       }
       P.hopLatch = wantHop;

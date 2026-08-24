@@ -363,6 +363,9 @@
   GAME.tick = function (dt) {
     GAME.time += dt;
     GAME.frame++;
+    // set the ears before anything this tick has a chance to make a noise
+    var ears = GAME.focus();
+    GAME.audio.setListener(ears.x, ears.z, GAME.cam.yaw);
     GAME.advanceDayCycle(dt);
     GAME.city.update(dt, GAME.time);
     GAME.vehicles.update(dt);

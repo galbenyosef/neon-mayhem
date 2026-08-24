@@ -24,6 +24,8 @@
 //      the first living frame does not run a glide step at the hospital.
 //   4. UNLIMITED AMMO — the all-jumps reward must read as ∞, not as the
 //      frozen 999 the stopped decrement leaves behind.
+//   5. STEREO IMAGE   — a sound's pan must agree with the direction the
+//      player actually moves, so the field can never end up mirrored.
 var http = require('http');
 var fs = require('fs');
 var path = require('path');
@@ -271,6 +273,56 @@ var OVERLAYS = [
     /\d/.test(ammo.finite) && ammo.finite.indexOf('∞') < 0, JSON.stringify(ammo.finite));
   check('ammo: unlimited shows ∞, not 999',
     ammo.unlimited.indexOf('∞') >= 0 && ammo.unlimited.indexOf('999') < 0, JSON.stringify(ammo.unlimited));
+
+  // ---------- 5: the stereo image points the right way ----------
+  // The one thing worth pinning: a mirrored field is both easy to write and
+  // hard to notice in a headless run. So rather than restate the basis (and
+  // risk restating it wrong the same way twice), take the direction the game
+  // ITSELF moves the player when they hold D, and require sound to agree.
+  var pan = await page.evaluate(function () {
+    var P = GAME.player;
+    GAME.test.teleport(350, 300);            // open ground, nothing to bump
+    GAME.test.fastForward(0.6);
+    GAME.cam.yaw = 0.7;
+    var x0 = P.pos.x, z0 = P.pos.z;
+    GAME.input.keys['KeyD'] = true;          // "right" as the player feels it
+    GAME.test.fastForward(0.6);
+    GAME.input.keys['KeyD'] = false;
+    var dx = P.pos.x - x0, dz = P.pos.z - z0;
+    var moved = Math.sqrt(dx * dx + dz * dz);
+    GAME.test.fastForward(0.3);
+    GAME.audio.setListener(P.pos.x, P.pos.z, GAME.cam.yaw);
+    var fx = Math.sin(GAME.cam.yaw), fz = Math.cos(GAME.cam.yaw);
+    return {
+      moved: moved,
+      right: GAME.audio.testPan(P.pos.x + dx * 40, P.pos.z + dz * 40),
+      left: GAME.audio.testPan(P.pos.x - dx * 40, P.pos.z - dz * 40),
+      ahead: GAME.audio.testPan(P.pos.x + fx * 40, P.pos.z + fz * 40),
+      behind: GAME.audio.testPan(P.pos.x - fx * 40, P.pos.z - fz * 40),
+      onTop: GAME.audio.testPan(P.pos.x, P.pos.z)
+    };
+  });
+  check('stereo: the player actually moved (anchor sanity)', pan.moved > 0.5, 'moved=' + pan.moved);
+  check('stereo: a sound where D takes you pans right', pan.right > 0.5, 'pan=' + pan.right);
+  check('stereo: and the opposite side pans left', pan.left < -0.5, 'pan=' + pan.left);
+  check('stereo: dead ahead and dead behind sit centre',
+    Math.abs(pan.ahead) < 0.05 && Math.abs(pan.behind) < 0.05, 'ahead=' + pan.ahead + ' behind=' + pan.behind);
+  check('stereo: a source on the listener does not jitter', pan.onTop === 0, 'pan=' + pan.onTop);
+  check('stereo: nothing pins fully to one ear',
+    Math.abs(pan.right) <= 0.85 && Math.abs(pan.left) <= 0.85, 'r=' + pan.right + ' l=' + pan.left);
+
+  // and the wiring: a chase has to tell the siren WHERE the cruiser is
+  var siren = await page.evaluate(function () {
+    var seen = null, s0 = GAME.audio.siren;
+    GAME.audio.siren = function (v, p, x, z) { if (v > 0) seen = { x: x, z: z }; return s0.apply(GAME.audio, arguments); };
+    GAME.test.setWanted(3);
+    GAME.test.fastForward(6);
+    GAME.audio.siren = s0;
+    return { seen: seen, wanted: GAME.police.wanted };
+  });
+  check('stereo: a chasing cruiser gives the siren its position',
+    !!siren.seen && isFinite(siren.seen.x) && isFinite(siren.seen.z),
+    'wanted=' + siren.wanted + ' got=' + JSON.stringify(siren.seen));
 
   // ---------- nothing broke on the way through ----------
   await page.evaluate(function () { GAME.test.fastForward(5); });
