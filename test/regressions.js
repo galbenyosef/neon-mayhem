@@ -29,7 +29,9 @@
 //   6. RIDING A ROOF  — a chassis that pitches has to carry its passenger
 //      with it, rather than leaving them on the roof it would have had
 //      sitting still.
-//   7. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//   7. TOUCH STICK    — a viewport change mid-drag must let the stick go
+//      rather than keep steering from an origin on the old screen.
+//   8. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
 var http = require('http');
@@ -380,7 +382,58 @@ function withTimeout(p, ms) {
   check('clean: zero page errors', pageErrors.length === 0, pageErrors[0]);
   check('clean: zero console.error', consoleErrors.length === 0, consoleErrors[0]);
 
-  // ---------- 7: the broadphase survives a non-finite lookup ----------
+  // ---------- 7: the touch stick lets go when the viewport changes ----------
+  // The stick is placed where the thumb lands and steers by the offset from
+  // that point, in client coordinates. Turn the device mid-drag and that
+  // origin belongs to a screen that no longer exists — it can sit off the new
+  // viewport entirely, which reads as a stick pinned hard over. The layer
+  // only exists on a touch device, so this needs a context of its own.
+  var tctx = await browser.newContext({ hasTouch: true, viewport: { width: 900, height: 500 } });
+  var tpage = await tctx.newPage();
+  var touchErrors = [];
+  tpage.on('pageerror', function (e) { touchErrors.push(String(e.message).slice(0, 200)); });
+  await tpage.goto(origin + '/index.html');
+  await tpage.waitForFunction(function () {
+    return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
+  }, null, { timeout: 30000 });
+  var held = await tpage.evaluate(function () {
+    GAME.test.start();
+    GAME.test.fastForward(1);
+    var zone = document.getElementById('tstick-zone');
+    window.__touch = function (el, type, x, y) {
+      var t = new Touch({ identifier: 7, target: zone, clientX: x, clientY: y });
+      el.dispatchEvent(new TouchEvent(type, {
+        touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true
+      }));
+    };
+    window.__touch(zone, 'touchstart', 120, 380);
+    window.__touch(window, 'touchmove', 172, 380);   // hard over, 52px = full deflection
+    return { onTouch: GAME.isTouch, zone: !!zone, x: GAME.input.touch.stickX,
+             base: document.getElementById('tstick-base').style.display };
+  });
+  check('touch: the layer is live and the stick is deflected (anchor sanity)',
+    held.onTouch && held.zone && Math.abs(held.x) > 0.5 && held.base === 'block',
+    'x=' + held.x + ' base=' + held.base);
+  await tpage.setViewportSize({ width: 500, height: 900 });   // the device turns
+  var afterTurn = await tpage.evaluate(function () {
+    return { x: GAME.input.touch.stickX, y: GAME.input.touch.stickY,
+             base: document.getElementById('tstick-base').style.display };
+  });
+  check('touch: turning the device lets the stick go', afterTurn.x === 0 && afterTurn.y === 0,
+    'x=' + afterTurn.x + ' y=' + afterTurn.y);
+  check('touch: and puts the stick away with it', afterTurn.base === 'none', 'base=' + afterTurn.base);
+  // it must still work afterwards — a release that never re-arms is no better
+  var regrab = await tpage.evaluate(function () {
+    var zone = document.getElementById('tstick-zone');
+    window.__touch(zone, 'touchstart', 100, 700);
+    window.__touch(window, 'touchmove', 152, 700);
+    return GAME.input.touch.stickX;
+  });
+  check('touch: a fresh grab still steers after the turn', Math.abs(regrab) > 0.5, 'x=' + regrab);
+  check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
+  await tctx.close();
+
+  // ---------- 8: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
   // cell loops spin forever and the frame loop stops dead. Every caller hands
   // these an entity position, so one bad number in the physics reaches them.

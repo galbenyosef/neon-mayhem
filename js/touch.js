@@ -162,15 +162,16 @@ GAME.touch = (function () {
     }, { passive: true });
     // release the stick / camera finger on lift OR on an OS-cancelled touch,
     // otherwise the stick can stay deflected (car drives itself) after an interruption
+    function releaseStick() {
+      stickId = null;
+      T.stickX = 0; T.stickY = 0;
+      stickBase.style.display = 'none';
+      stickNub.style.display = 'none';
+    }
     function endTouch(e) {
       for (var i = 0; i < e.changedTouches.length; i++) {
         var t = e.changedTouches[i];
-        if (t.identifier === stickId) {
-          stickId = null;
-          T.stickX = 0; T.stickY = 0;
-          stickBase.style.display = 'none';
-          stickNub.style.display = 'none';
-        }
+        if (t.identifier === stickId) releaseStick();
         if (t.identifier === camId) camId = null;
       }
     }
@@ -186,7 +187,21 @@ GAME.touch = (function () {
     }, { passive: true });
 
     checkOrientation();
-    window.addEventListener('resize', checkOrientation);
+    // A viewport change is an interruption like any other, and the one the
+    // release above did not cover. The stick is placed where your thumb
+    // landed and steers by the offset from that point, in client
+    // coordinates — turn the device (or gain and lose the browser's chrome,
+    // or enter fullscreen) mid-drag and the origin it is measuring from
+    // belongs to a screen that no longer exists. It can end up off the new
+    // viewport entirely, which reads as a stick pinned hard over that no
+    // amount of thumb movement can bring back. Let go instead: a neutral
+    // stick and a re-touch is a moment's interruption, a stuck one drives
+    // you into the sea.
+    window.addEventListener('resize', function () {
+      checkOrientation();
+      if (stickId !== null) releaseStick();
+      camId = null;
+    });
 
     function moveNub(x, y) {
       var dx = x - baseX, dy = y - baseY;
