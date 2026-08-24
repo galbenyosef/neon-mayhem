@@ -299,6 +299,7 @@ function rayAABB(x0, z0, dx, dz, b) {
 
 GAME.input = {
   keys: {},
+  pressed: {},
   mouseDX: 0, mouseDY: 0,
   lmb: false, rmb: false,
   lmbPressed: false,
@@ -311,7 +312,7 @@ GAME.initInput = function (canvas) {
   var inp = GAME.input;
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Tab') e.preventDefault();
-    if (!e.repeat) inp.keys[e.code] = true;
+    if (!e.repeat) { inp.keys[e.code] = true; inp.pressed[e.code] = true; }
     // Any key is a real gesture that can bring fullscreen back after the
     // browser dropped it over an Esc — EXCEPT Esc itself, which browsers
     // refuse to honor for requestFullscreen (it is the reserved exit key).
@@ -321,7 +322,10 @@ GAME.initInput = function (canvas) {
     if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(e.code);
   });
   window.addEventListener('keyup', function (e) { inp.keys[e.code] = false; });
-  window.addEventListener('blur', function () { inp.keys = {}; inp.lmb = false; inp.rmb = false; });
+  // focus loss eats the keyup, so drop the held keys AND any press nobody
+  // claimed — coming back to a key the game still thinks is down is the
+  // oldest stuck-input bug there is
+  window.addEventListener('blur', function () { inp.keys = {}; inp.pressed = {}; inp.lmb = false; inp.rmb = false; });
 
   canvas.addEventListener('mousedown', function (e) {
     // The click that ACQUIRES pointer lock is aim, not fire. Without this,
@@ -389,3 +393,30 @@ GAME.regainPointer = function () {
 };
 
 GAME.key = function (code) { return !!GAME.input.keys[code]; };
+
+// Edge-triggered input: true exactly once per physical press, to whoever
+// asks first on the tick after it happened.
+//
+// This used to be a per-code cache of "was it down last time somebody
+// asked", written only when somebody asked — and every caller sits behind a
+// mode gate: Comma/Period only while driving, KeyJ only in a cab, Digit1-5
+// only while alive and not mid-entry. Nothing wrote the cache while its gate
+// was shut, so a key already held when one opened read as a brand new press:
+// walk to a car holding Comma and the radio changed station by itself as the
+// door closed, and a key held through an overlay fired the moment it closed.
+// (The mirror case — a real press swallowed because the cache still said
+// "held" — largely healed itself, since the first polled frame with the key
+// up wrote the cache back. It is the spurious fire that actually reached
+// players.)
+//
+// A buffer written by keydown cannot go stale that way, and the tick drops
+// whatever nobody claimed (GAME.clearPressed), so a press meant for a mode
+// that is not running dies in the frame it arrived in instead of being saved
+// up to fire at the wrong moment later.
+GAME.keyPressed = function (code) {
+  var p = GAME.input.pressed;
+  if (!p[code]) return false;
+  p[code] = false;   // one claim per press, as when this consumed the edge
+  return true;
+};
+GAME.clearPressed = function () { GAME.input.pressed = {}; };

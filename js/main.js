@@ -213,6 +213,7 @@
     // is anything the browser synthesizes right behind it (ghost clicks on
     // touch): open the same settle window the pointer lock uses
     GAME.input.keys = {};
+    GAME.input.pressed = {};
     GAME.input.lmb = false; GAME.input.lmbPressed = false; GAME.input.rmb = false;
     GAME.input.lockGraceT = performance.now();
     // start sunny (~late afternoon); sunset ~18s in, night ~55s. A pinned
@@ -387,6 +388,10 @@
     updateHeadlight();
     GAME.touch.update();
     GAME.hud.update(dt);
+    // every press since the last tick has now been offered to everyone who
+    // wanted it; anything unclaimed was for a mode that is not running and
+    // must not survive into one that is
+    GAME.clearPressed();
   };
 
   // Catch-up is capped at TWO sim ticks per rendered frame. The old cap of
@@ -418,6 +423,11 @@
         guard++;
       }
       if (guard === MAX_TICKS) accumulator = 0;
+    } else {
+      // behind pause, the map, a shop or a result card nothing ticks, so
+      // nothing would drain the buffer: keystrokes on an overlay are not
+      // gameplay input and must not fire the moment it closes
+      GAME.clearPressed();
     }
     // From altitude the road layers sat closer together than the depth buffer
     // could tell apart (0.03m of separation against ~0.2m of precision at half
@@ -480,7 +490,11 @@
       for (var i = 0; i < steps; i++) GAME.tick(STEP);
       return GAME.test.getState();
     },
-    pressKey: function (code, down) { GAME.input.keys[code] = down !== false; },
+    pressKey: function (code, down) {
+      var d = down !== false;
+      GAME.input.keys[code] = d;
+      if (d) GAME.input.pressed[code] = true;   // same edge a real keydown leaves
+    },
     getState: function () {
       var P = GAME.player;
       var info = GAME.renderer ? GAME.renderer.info.render : { calls: 0, triangles: 0 };

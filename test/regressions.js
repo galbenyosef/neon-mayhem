@@ -16,10 +16,13 @@
 //      card, and every looping voice is a held gain node the tick would
 //      otherwise leave sustaining. Each overlay must stop engine, skid,
 //      siren and radio, and hand the radio back only to a LIVING driver.
-//   2. PARACHUTE      — a life that ends under the canopy must stow it, so
+//   2. EDGE INPUT     — every caller of GAME.keyPressed sits behind a mode
+//      gate, so a press must be claimable exactly once and an unclaimed one
+//      must not survive the tick it arrived in, in either direction.
+//   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
-//   3. UNLIMITED AMMO — the all-jumps reward must read as ∞, not as the
+//   4. UNLIMITED AMMO — the all-jumps reward must read as ∞, not as the
 //      frozen 999 the stopped decrement leaves behind.
 var http = require('http');
 var fs = require('fs');
@@ -145,7 +148,66 @@ var OVERLAYS = [
   check('on foot: radio stays silent through pause',
     onFoot.foot && !onFoot.radio.some(function (v) { return v > 0; }), JSON.stringify(onFoot.radio));
 
-  // ---------- 2: parachute stowed when the life ends ----------
+  // ---------- 2: edge-triggered input ----------
+  var edge = await page.evaluate(function () {
+    // a press is claimable once, by whoever asks first
+    GAME.test.pressKey('KeyZ', true);
+    var first = GAME.keyPressed('KeyZ'), second = GAME.keyPressed('KeyZ');
+    GAME.test.pressKey('KeyZ', false);
+    // and a press nobody claims must die with the tick it arrived in — while
+    // the key is still physically DOWN, which is the case the old cache got
+    // wrong: never written while nobody was asking, it read a hold nobody
+    // had claimed as a brand new press the next time somebody did
+    GAME.test.pressKey('KeyX', true);
+    GAME.test.fastForward(0.1);
+    var lingered = GAME.keyPressed('KeyX');
+    GAME.test.pressKey('KeyX', false);
+    return { first: first, second: second, lingered: lingered };
+  });
+  check('edge input: a press fires exactly once', edge.first === true && edge.second === false,
+    'first=' + edge.first + ' second=' + edge.second);
+  check('edge input: a held but unclaimed press does not survive its tick', edge.lingered === false);
+
+  // The same thing through the game rather than through the API. Comma and
+  // Period are asked for only while driving, so a hold that starts on foot
+  // is not a car input — but the old cache had no entry for the gate being
+  // shut, so the hold was read as a fresh press the moment the door closed
+  // and changed station on its own.
+  var radio = await page.evaluate(function () {
+    var n = 0, sw = GAME.audio.radio.switchStation;
+    GAME.audio.radio.switchStation = function () { n++; return sw.apply(GAME.audio.radio, arguments); };
+    GAME.test.exitCar();
+    GAME.test.fastForward(0.6);
+    GAME.test.pressKey('Comma', true);      // held where nothing polls it
+    GAME.test.fastForward(0.6);
+    var onFoot = n;
+    GAME.test.enterNearestCar();            // ...and still held on the way in
+    GAME.test.fastForward(2.0);
+    var onEntry = n;
+    GAME.test.pressKey('Comma', false);     // a real press still has to work
+    GAME.test.fastForward(0.1);
+    GAME.test.pressKey('Comma', true);
+    GAME.test.fastForward(0.1);
+    var afterPress = n;
+    GAME.test.pressKey('Comma', false);
+    GAME.audio.radio.switchStation = sw;
+    return { onFoot: onFoot, onEntry: onEntry, afterPress: afterPress, inCar: GAME.player.inCar };
+  });
+  check('edge input: holding a car-only key on foot changes nothing', radio.onFoot === 0, 'switches=' + radio.onFoot);
+  check('edge input: and it does not fire itself off when the door closes', radio.onEntry === 0, 'switches=' + radio.onEntry);
+  check('edge input: a real press in the car still switches the station',
+    radio.inCar && radio.afterPress === 1, 'in car=' + radio.inCar + ' switches=' + radio.afterPress);
+
+  // an overlay halts the tick, so nothing there would drain the buffer
+  await page.evaluate(function () { GAME.togglePause(); GAME.test.pressKey('KeyC', true); });
+  var drained = true;
+  try {
+    await page.waitForFunction(function () { return !(GAME.input.pressed || {})['KeyC']; }, null, { timeout: 5000 });
+  } catch (e) { drained = false; }
+  await page.evaluate(function () { GAME.test.pressKey('KeyC', false); GAME.togglePause(); });
+  check('edge input: a press behind an overlay is not gameplay input', drained);
+
+  // ---------- 3: parachute stowed when the life ends ----------
   var chute = await page.evaluate(function () {
     GAME.aircraft.startParachute(GAME.player.pos.x, GAME.player.pos.y + 60, GAME.player.pos.z, 0);
     // the canopy is the only 2.3-radius half sphere in the scene
@@ -194,7 +256,7 @@ var OVERLAYS = [
     !respawn.msgs.some(function (m) { return m.indexOf('Feet dry') >= 0; }),
     JSON.stringify(respawn.msgs.slice(-3)));
 
-  // ---------- 3: unlimited ammo reads as unlimited ----------
+  // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
     GAME.test.fastForward(1);
     GAME.unlimitedAmmo = false;

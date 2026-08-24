@@ -817,14 +817,6 @@ function updateBikeRider(dt) {
   j.armL.rotation.x = -1.05; j.armR.rotation.x = -1.05; // hands on the handlebars
 }
 
-var pressedCache = {};
-GAME.keyPressed = function (code) {
-  var down = GAME.key(code);
-  var fired = down && !pressedCache[code];
-  pressedCache[code] = down;
-  return fired;
-};
-
 function updateCamera(dt) {
   var P = GAME.player, inp = GAME.input, cam = GAME.cam;
   var mdx = inp.mouseDX, mdy = inp.mouseDY;
