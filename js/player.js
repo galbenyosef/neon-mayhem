@@ -523,6 +523,29 @@ function carRoofY(c, lx, lz) {
   return top;
 }
 // the LOWEST standable level, for deciding when someone is "above" the car
+// The world height of a point on a car's deck, given that point in the body's
+// own frame. carRoofY answers in that frame, and the body is not level:
+// vehicles.js pitches the chassis over ramps and rolls it through corners
+// (mesh.rotation.x / .z), so adding car.pos.y alone stood a rider on the flat
+// roof the car would have had sitting still — hanging in the air off the back
+// of a nose-up truck, or sunk into the front of it.
+//
+// The heading is deliberately zeroed rather than reused: lx/lz arrive already
+// turned into the body frame, so putting it back would apply it twice.
+// Rebuilding through the mesh's OWN euler order matters — ground cars are set
+// to YXZ (so a ramp pitches them whichever way they face) while aircraft keep
+// the default XYZ, and the two do not compose alike.
+var _deckE = null, _deckQ = null, _deckV = null;
+function deckWorldY(c, lx, ly, lz) {
+  var r = c.mesh.rotation;
+  if (!r.x && !r.z) return c.pos.y + ly;   // sitting level: nothing to turn
+  if (!_deckV) { _deckV = new THREE.Vector3(); _deckE = new THREE.Euler(); _deckQ = new THREE.Quaternion(); }
+  _deckE.set(r.x, 0, r.z, r.order);
+  _deckQ.setFromEuler(_deckE);
+  _deckV.set(lx, ly, lz).applyQuaternion(_deckQ);
+  return c.pos.y + _deckV.y;
+}
+
 function carBodyTop(c) {
   var s = c.spec;
   return s.icecream ? 2.6 : s.monster ? 2.3 : s.plane ? 1.4 : s.heli ? 1.9 : s.bike ? 1.0 : 0.42 + s.bodyH / 2;
@@ -635,7 +658,7 @@ function updateOnFoot(dt) {
     if (Math.abs(rlx) > rcc.spec.w / 2 + 0.12 || Math.abs(rlz) > rcc.spec.l / 2 + 0.12) continue;
     var rY = carRoofY(rcc, rlx, rlz);
     if (rY === null) continue;
-    rY += rcc.pos.y;
+    rY = deckWorldY(rcc, rlx, rY, rlz);
     if (P.pos.y >= rY - 0.5 && rY > surf) { surf = rY; roofCar = rcc; }
   }
   // Space jumps when you're on your feet (running gives you a longer hop)

@@ -26,6 +26,9 @@
 //      frozen 999 the stopped decrement leaves behind.
 //   5. STEREO IMAGE   — a sound's pan must agree with the direction the
 //      player actually moves, so the field can never end up mirrored.
+//   6. RIDING A ROOF  — a chassis that pitches has to carry its passenger
+//      with it, rather than leaving them on the roof it would have had
+//      sitting still.
 var http = require('http');
 var fs = require('fs');
 var path = require('path');
@@ -323,6 +326,40 @@ var OVERLAYS = [
   check('stereo: a chasing cruiser gives the siren its position',
     !!siren.seen && isFinite(siren.seen.x) && isFinite(siren.seen.z),
     'wanted=' + siren.wanted + ' got=' + JSON.stringify(siren.seen));
+
+  // ---------- 6: a rider follows the deck when it tilts ----------
+  // vehicles.js pitches a chassis over a ramp (negative rotation.x lifts the
+  // nose), but the roof a rider stood on was a flat plane at car.pos.y — so
+  // standing over the nose of a climbing truck left them hanging in the air.
+  // Ride it with the pitch ramped on gradually, the way a ramp delivers it.
+  var deck = await page.evaluate(function () {
+    var P = GAME.player;
+    GAME.test.teleport(350, 300);
+    GAME.test.fastForward(0.5);
+    var car = GAME.test.spawnCar('van', 7, 0);
+    if (!car) return { spawned: false };
+    GAME.test.fastForward(0.3);
+    var NOSE = 2.0;                       // out along the body's +z, past the cab
+    function hold() { car.ai = null; car.controls = { throttle: 0, steer: 0, handbrake: true }; }
+    // drop onto the deck over the nose and let it settle level
+    hold();
+    P.pos.set(car.pos.x, car.pos.y + 4, car.pos.z + NOSE);
+    P.velY = 0;
+    for (var i = 0; i < 60; i++) { hold(); car.mesh.rotation.x = 0; GAME.test.fastForward(1 / 60); }
+    var level = P.pos.y - car.pos.y, riding = P.roofCar === car;
+    // now lift the nose, a frame at a time
+    for (var j = 0; j < 40; j++) { hold(); car.mesh.rotation.x = -0.35 * (j + 1) / 40; GAME.test.fastForward(1 / 60); }
+    var noseUp = P.pos.y - car.pos.y, stillRiding = P.roofCar === car;
+    return { spawned: true, riding: riding, stillRiding: stillRiding, level: level, noseUp: noseUp,
+             lift: noseUp - level, heading: car.heading };
+  });
+  check('roof: a van spawned and the player is riding it (anchor sanity)',
+    deck.spawned && deck.riding, 'spawned=' + deck.spawned + ' riding=' + deck.riding);
+  check('roof: still aboard after the nose comes up', deck.stillRiding === true);
+  // nose 2.0 m out, pitched 0.35 rad: the deck under them rises ~0.6 m
+  check('roof: standing over a lifted nose rides up with it',
+    deck.lift > 0.35, 'level=' + (deck.level || 0).toFixed(2) + ' noseUp=' + (deck.noseUp || 0).toFixed(2) +
+    ' lift=' + (deck.lift || 0).toFixed(2));
 
   // ---------- nothing broke on the way through ----------
   await page.evaluate(function () { GAME.test.fastForward(5); });
