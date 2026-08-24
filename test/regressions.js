@@ -33,9 +33,12 @@
 //      a browser with no motor at all.
 //   8. FRAME BUDGET   — the crowd thins when frames run late and, more to
 //      the point, comes BACK when they do not.
-//   9. TOUCH STICK    — a viewport change mid-drag must let the stick go
+//   9. SUSPENSION     — weight moves when speed does: the nose lifts under
+//      power and dives under the brakes, on TOP of whatever grade the wheels
+//      are on, and settles back to it.
+//  10. TOUCH STICK    — a viewport change mid-drag must let the stick go
 //      rather than keep steering from an origin on the old screen.
-//  10. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//  11. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
 var http = require('http');
@@ -567,7 +570,91 @@ function withTimeout(p, ms) {
     wired.traffic && wired.peds && wired.parked,
     'traffic=' + wired.traffic + ' peds=' + wired.peds + ' parked=' + wired.parked + ' calls=' + wired.n);
 
-  // ---------- 9: the touch stick lets go when the viewport changes ----------
+  // ---------- 9: suspension carries the load ----------
+  var susp = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys;
+    function clear() { K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false; }
+    GAME.police.clearWanted();
+    P.health = 100;
+    GAME.test.teleport(356, 60);              // the strip: long, flat, straight
+    GAME.test.fastForward(0.5);
+    GAME.test.spawnCar('sedan', 3, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(1.5);
+    var car = P.car;
+    if (!car || !car.susp) return { drove: false };
+    clear();
+    GAME.test.fastForward(1.5);
+    var rest = { p: car.susp.p, grade: car.bodyPitch, mesh: car.mesh.rotation.x };
+
+    K['KeyW'] = true;                         // open the throttle
+    GAME.test.fastForward(0.5);
+    var squat = { p: car.susp.p, speed: car.speed };
+
+    clear(); K['KeyS'] = true;                // and stand on the brakes
+    GAME.test.fastForward(0.5);
+    var dive = { p: car.susp.p, speed: car.speed };
+
+    clear();
+    GAME.test.fastForward(3);                 // let it settle
+    var settled = car.susp.p;
+
+    // in the air nothing loads the springs
+    K['KeyW'] = true;
+    GAME.test.fastForward(1.5);
+    car.pos.y += 8; car.air = 1; car.vy = 4;
+    GAME.test.fastForward(0.4);
+    var air = car.susp.p;
+    clear();
+    GAME.test.fastForward(2);
+    return { drove: true, rest: rest, squat: squat, dive: dive, settled: settled, air: air,
+             sum: Math.abs(car.mesh.rotation.x - (car.bodyPitch + car.susp.p)) };
+  });
+  check('suspension: the player is driving a car with springs (anchor sanity)', susp.drove === true);
+  if (susp.drove) {
+    check('suspension: at rest the body sits on the grade and nothing else',
+      Math.abs(susp.rest.p) < 0.005, 'susp=' + susp.rest.p);
+    check('suspension: opening the throttle lifts the nose',
+      susp.squat.p < -0.01 && susp.squat.speed > 3,
+      'susp=' + susp.squat.p.toFixed(4) + ' speed=' + susp.squat.speed.toFixed(1));
+    check('suspension: braking dives it the other way',
+      susp.dive.p > 0.01, 'susp=' + susp.dive.p.toFixed(4) + ' speed=' + susp.dive.speed.toFixed(1));
+    check('suspension: and it settles back to the grade',
+      Math.abs(susp.settled) < 0.005, 'susp=' + susp.settled.toFixed(4));
+    check('suspension: nothing loads the springs in mid-air',
+      Math.abs(susp.air) < 0.01, 'susp=' + susp.air.toFixed(4));
+    check('suspension: the mesh angle is exactly grade plus spring (additive, not replaced)',
+      susp.sum < 1e-9, 'difference=' + susp.sum);
+  }
+
+  // a bike leans; it has no body to pitch on springs, and the rider owns it
+  var bike = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys;
+    GAME.exitCar();
+    GAME.test.fastForward(0.6);
+    // clear of the car just parked: a bike spawned against it is wedged, and
+    // then this measures nothing at all
+    GAME.test.teleport(356, 160);
+    GAME.test.fastForward(0.5);
+    GAME.test.spawnCar('motorcycle', 5, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(1.5);
+    var car = P.car;
+    if (!car || car.type !== 'motorcycle') return { onBike: false };
+    K['KeyW'] = true;
+    GAME.test.fastForward(2);
+    var p = car.susp ? car.susp.p : 0, speed = car.speed;
+    K['KeyW'] = false;
+    GAME.test.fastForward(1);
+    return { onBike: true, p: p, speed: speed };
+  });
+  check('suspension: the bike is under way (anchor sanity)',
+    bike.onBike === true && bike.speed > 3, 'speed=' + (bike.speed || 0).toFixed(1));
+  check('suspension: a bike gets none of it', Math.abs(bike.p) < 0.005, 'susp=' + (bike.p || 0).toFixed(4));
+
+  // ---------- 10: the touch stick lets go when the viewport changes ----------
   // The stick is placed where the thumb lands and steers by the offset from
   // that point, in client coordinates. Turn the device mid-drag and that
   // origin belongs to a screen that no longer exists — it can sit off the new
@@ -641,7 +728,7 @@ function withTimeout(p, ms) {
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
-  // ---------- 10: the broadphase survives a non-finite lookup ----------
+  // ---------- 11: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
   // cell loops spin forever and the frame loop stops dead. Every caller hands
   // these an entity position, so one bad number in the physics reaches them.

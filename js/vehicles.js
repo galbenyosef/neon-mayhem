@@ -581,7 +581,36 @@ GAME.vehicles = (function () {
     // takes the new grade immediately instead of easing out of its flight pose
     // and burying the nose in the ramp it just landed on
     var justLanded = wasAirborne && !((car.air || 0) > 0.05);
-    car.mesh.rotation.x = justLanded ? pitch : U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 22));
+    // The angle above is the GROUND's — the grade under the wheels, or the
+    // flight pose in the air — so it is tracked on its own rather than read
+    // back off the mesh. What the body does ON TOP of it is load transfer,
+    // and adding the two is what lets a car climbing a ramp still squat under
+    // power instead of one angle overwriting the other.
+    car.bodyPitch = justLanded || car.bodyPitch === undefined
+      ? pitch : U.lerp(car.bodyPitch, pitch, Math.min(1, dt * 22));
+
+    // Weight moves when speed does: open the throttle and it goes to the back
+    // and the nose lifts, stand on the brakes and it goes to the front and the
+    // nose dives. A spring rather than an ease, because the overshoot as it
+    // settles is the part that reads as suspension and not as a slider —
+    // about 1.9 Hz at a damping ratio near 0.7, so it is done in half a
+    // second. Nothing loads the springs in mid-air, so the targets go to zero
+    // there and the body simply hangs at its flight pose.
+    var susp = car.susp || (car.susp = { p: 0, v: 0 });
+    var airborne = (car.air || 0) > 0.05;
+    var accel = (car.speed - (car.suspSpeed === undefined ? car.speed : car.suspSpeed)) / Math.max(dt, 1e-4);
+    car.suspSpeed = car.speed;
+    // bikes lean, they do not sit on a body that pitches on its springs, and
+    // the rider code owns their attitude anyway
+    var load = (airborne || spec.bike) ? 0 : U.clamp(-accel * 0.0045, -0.07, 0.07);
+    susp.v += (-140 * (susp.p - load) - 16 * susp.v) * dt;
+    susp.p += susp.v * dt;
+
+    car.mesh.rotation.x = car.bodyPitch + susp.p;
+    // Roll is left exactly as it was. Leaning out of a corner already exists
+    // here — lateral slip IS the cornering load — and swapping its ease for a
+    // spring would change how the car reads in a direction change without
+    // adding anything the body was not already doing.
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
     car.lastHeading = car.heading;
 

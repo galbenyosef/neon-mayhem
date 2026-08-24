@@ -22,6 +22,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 ## Drive, fly, fall
 
 - Arcade driving with handbrake drifts across a garage's worth of machines: cars, vans, taxis, ambulances, cruisers, a motorcycle and superbike, a dune buggy, a stretch limo, an ice-cream truck, a monster truck — all with 3-stage damage (smoke → fire → boom) and honest fire warnings before anything explodes.
+- Cars sit on their springs. Open the throttle and the nose lifts; stand on the brakes and it dives — added on top of whatever grade the wheels are on, so a car climbing a ramp still squats under power instead of picking one angle or the other.
 - A **helicopter** and a **light plane**, flyable with loops and barrel rolls. The plane's takeoff run is real — about 66 meters of engine haul before the nose comes up, so you'll want the actual runway — and a stalled airframe recovers by *diving*, not throttling. Bail out of either mid-air and a **parachute** opens.
 - **25 hidden stunt jumps** on roadside ramps, a third of them boosted. Air time, distance and spins all pay. Find all 25 for $50,000, the full arsenal with unlimited ammo, and a monster truck that jumps on command.
 
