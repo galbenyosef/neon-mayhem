@@ -948,7 +948,7 @@ GAME.vehicles = (function () {
     for (var i = 0; i < world.cars.length; i++) {
       if (world.cars[i].ai && world.cars[i].ai.mode === 'traffic') live++;
     }
-    var maxT = GAME.settings.maxTraffic;
+    var maxT = GAME.perf.budget(GAME.settings.maxTraffic);
     if (live >= maxT) return;
     var city = GAME.city;
     for (var tries = 0; tries < 6 && live < maxT; tries++) {
@@ -984,6 +984,7 @@ GAME.vehicles = (function () {
     var fc = GAME.focus();
     var P = GAME.player;
     var spots = GAME.city.parkedSpots;
+    var maxParked = GAME.perf.budget(GAME.settings.maxParked);
     var live = 0;
     for (var i = 0; i < spots.length; i++) if (spots[i].live) live++;
     for (var s = 0; s < spots.length; s++) {
@@ -1008,7 +1009,7 @@ GAME.vehicles = (function () {
       // at that distance reads as "there is no helicopter in this game"
       var range = sp.range || (special ? 210 : 140);
       var despawnR = sp.despawn || (special ? 260 : 190);
-      if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
+      if (!sp.live && (special || live < maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
         // The check is height-aware — street traffic far below a rooftop pad
         // must not block it — but it has to measure against the spot's OWN

@@ -397,6 +397,64 @@
     GAME.clearPressed();
   };
 
+  // ---------- what the frame can afford ----------
+  // The crowd costs what it costs, and on a slow machine — or in a five star
+  // chase, where every cruiser is another body, another driver and another
+  // pair of eyes — the frame stops fitting in its 16 ms. Rather than let the
+  // whole simulation go soft, spend fewer bodies.
+  //
+  // GAME.settings stays the authored ceiling: the desktop numbers, or the
+  // lower ones touch.js writes for a phone. This scales what is actually
+  // spawned underneath whichever of those is in force, and never writes to
+  // them — a live measurement must not overwrite a considered choice.
+  //
+  // Nothing is ever culled. All three caps gate NEW spawns only, so a cut
+  // budget drains through the bubble's own despawn rather than popping cars
+  // out of the street in front of you, and a restored one refills the same
+  // way. That is also why it moves in small steps on a slow clock: the street
+  // should thin out and fill back in, not blink.
+  GAME.perf = (function () {
+    var TARGET = 1000 / 60;
+    var SHRINK_AT = 22;   // ~45 fps: late enough to see
+    var GROW_AT = 18;     // ~55 fps: only climb back with room to spare, so
+                          // the two thresholds cannot chase each other
+    var FLOOR = 0.35;     // an empty city is a worse bug than a slow one
+    var STEP = 0.08;
+    var EVERY = 0.5;      // seconds between adjustments
+    var WARMUP = 3;       // boot, shader compiles and texture uploads are not
+                          // evidence about the crowd
+    var ema = TARGET, scale = 1, since = 0, warm = 0;
+
+    function sample(ms) {
+      // a stalled frame — tab switch, GC, a breakpoint — says nothing about
+      // what the crowd costs, and folding it in would drag the average for
+      // seconds afterwards
+      if (!(ms > 0) || ms > 80) return;
+      ema += (ms - ema) * 0.06;
+    }
+    function update(dt) {
+      warm += dt;
+      if (warm < WARMUP) return;
+      since += dt;
+      if (since < EVERY) return;
+      since = 0;
+      if (ema > SHRINK_AT) scale = Math.max(FLOOR, scale - STEP);
+      else if (ema < GROW_AT) scale = Math.min(1, scale + STEP);
+    }
+    return {
+      get scale() { return scale; },
+      get frameMs() { return ema; },
+      sample: sample,
+      update: update,
+      // how many of a thing the budget currently allows. Never zero: a street
+      // with nobody on it reads as broken, not as thrifty.
+      budget: function (n) { return Math.max(1, Math.round(n * scale)); },
+      // headless hooks: pretend the frames have been this long, and start over
+      testFrames: function (ms) { ema = ms; warm = WARMUP; since = EVERY; },
+      testReset: function () { ema = TARGET; scale = 1; since = 0; warm = 0; }
+    };
+  })();
+
   // Catch-up is capped at TWO sim ticks per rendered frame. The old cap of
   // five meant a machine that fell behind (an integrated GPU with other tabs
   // open) paid up to 5x the sim cost per frame exactly when it could least
@@ -406,7 +464,8 @@
   var STEP = 1 / 60, MAX_TICKS = 2;
   function loop(now) {
     requestAnimationFrame(loop);
-    var real = Math.min(0.1, (now - lastT) / 1000);
+    var rawMs = now - lastT;
+    var real = Math.min(0.1, rawMs / 1000);
     lastT = now;
     if (!GAME.started) {
       accumulator += real;
@@ -418,6 +477,10 @@
       }
       if (g0 === MAX_TICKS) accumulator = 0;
     } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
+      // only while the sim is actually running: a paused or overlaid frame
+      // draws a still city and says nothing about what the crowd costs
+      GAME.perf.sample(rawMs);
+      GAME.perf.update(real);
       accumulator += real * GAME.timeScale;
       var guard = 0;
       while (accumulator >= STEP && guard < MAX_TICKS) {

@@ -49,6 +49,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 ## The feel
 
 - 3 procedurally generated radio stations — every note synthesized at runtime with the Web Audio API, with slow synth pads over the title screen.
+- The crowd is spent against the frame, not a fixed number: when frames start arriving late — a deep chase, a slow machine — the city quietly thins the traffic and pavement it spawns, and fills back in when the frames recover. It never culls what is already on screen, so the street thins out rather than blinking.
 - On a phone with a motor for it, the knocks you can see are ones you can **feel**: a short buzz for impacts, for taking a hit, and for your own trigger — rationed so a pile-up cannot turn it into a drone, and switchable from the pause screen.
 - The world is **audible in stereo**: sirens, crashes, gunfire, explosions and the people you startle all play from where they happen, panned across the direction the camera is facing — so a cruiser closing on your left is heard on your left before it is seen. Your own car and radio stay where they belong, centred.
 - The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.

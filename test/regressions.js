@@ -31,9 +31,11 @@
 //      sitting still.
 //   7. HAPTICS        — a buzz per knock, rationed, silenceable, and safe on
 //      a browser with no motor at all.
-//   8. TOUCH STICK    — a viewport change mid-drag must let the stick go
+//   8. FRAME BUDGET   — the crowd thins when frames run late and, more to
+//      the point, comes BACK when they do not.
+//   9. TOUCH STICK    — a viewport change mid-drag must let the stick go
 //      rather than keep steering from an origin on the old screen.
-//   9. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//  10. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
 var http = require('http');
@@ -493,7 +495,79 @@ function withTimeout(p, ms) {
     })) === 'none');
   await page.evaluate(function () { navigator.vibrate = window.__realVibrate; });
 
-  // ---------- 8: the touch stick lets go when the viewport changes ----------
+  // ---------- 8: the frame budget ----------
+  // Unlike the groups above these are specification rather than regression:
+  // the controller is new, so there is no earlier behaviour to fail against.
+  // What they pin is the half that is easy to get wrong — a governor that
+  // only ever ratchets down is worse than none at all.
+  var perf = await page.evaluate(function () {
+    var P = GAME.perf, r = {};
+    P.testReset();
+    r.restScale = P.scale;
+    r.restBudget = P.budget(12);
+
+    // slow frames, but still inside the warmup: boot costs are not evidence
+    for (var i = 0; i < 60; i++) P.sample(40);
+    r.ema = Math.round(P.frameMs);
+    for (var j = 0; j < 60; j++) P.update(0.04);     // 2.4 s, warmup is 3
+    r.duringWarmup = P.scale;
+    for (var k = 0; k < 40; k++) P.update(0.04);     // past it
+    r.afterWarmup = P.scale;
+
+    // all the way down, and no further
+    for (var m = 0; m < 60; m++) P.update(0.5);
+    r.floor = P.scale;
+    r.floorBudget = P.budget(12);
+    r.neverZero = P.budget(1);
+
+    // and back up once the frames come good again
+    P.testFrames(1000 / 120);
+    for (var n = 0; n < 60; n++) P.update(0.5);
+    r.recovered = P.scale;
+    r.recoveredBudget = P.budget(12);
+
+    // between the two thresholds it should hold, not hunt
+    P.testFrames(20);
+    var held = P.scale;
+    for (var q = 0; q < 40; q++) P.update(0.5);
+    r.deadBandDrift = Math.abs(P.scale - held);
+
+    P.testReset();
+    return r;
+  });
+  check('budget: a healthy frame spends the full authored cap (anchor sanity)',
+    perf.restScale === 1 && perf.restBudget === 12, 'scale=' + perf.restScale + ' budget=' + perf.restBudget);
+  check('budget: slow frames actually moved the average (anchor sanity)',
+    perf.ema > 22, 'ema=' + perf.ema);
+  check('budget: nothing is cut while the first seconds are still settling',
+    perf.duringWarmup === 1, 'scale=' + perf.duringWarmup);
+  check('budget: past the warmup, late frames thin the crowd',
+    perf.afterWarmup < 1, 'scale=' + perf.afterWarmup);
+  check('budget: it stops at the floor rather than emptying the city',
+    perf.floor > 0.3 && perf.floor < 0.4 && perf.floorBudget === 4,
+    'scale=' + perf.floor + ' budget=' + perf.floorBudget);
+  check('budget: it never asks for none of something', perf.neverZero >= 1, 'budget=' + perf.neverZero);
+  check('budget: the crowd comes back when the frames do',
+    perf.recovered === 1 && perf.recoveredBudget === 12,
+    'scale=' + perf.recovered + ' budget=' + perf.recoveredBudget);
+  check('budget: between the thresholds it holds instead of hunting',
+    perf.deadBandDrift === 0, 'drift=' + perf.deadBandDrift);
+
+  // and the spawners actually ask it
+  var wired = await page.evaluate(function () {
+    var asked = [], real = GAME.perf.budget;
+    GAME.perf.budget = function (n) { asked.push(n); return real(n); };
+    GAME.test.fastForward(3);
+    GAME.perf.budget = real;
+    var S = GAME.settings;
+    return { traffic: asked.indexOf(S.maxTraffic) >= 0, peds: asked.indexOf(S.maxPeds) >= 0,
+             parked: asked.indexOf(S.maxParked) >= 0, n: asked.length };
+  });
+  check('budget: traffic, pedestrians and parked cars all ask it what they may spend',
+    wired.traffic && wired.peds && wired.parked,
+    'traffic=' + wired.traffic + ' peds=' + wired.peds + ' parked=' + wired.parked + ' calls=' + wired.n);
+
+  // ---------- 9: the touch stick lets go when the viewport changes ----------
   // The stick is placed where the thumb lands and steers by the offset from
   // that point, in client coordinates. Turn the device mid-drag and that
   // origin belongs to a screen that no longer exists — it can sit off the new
@@ -567,7 +641,7 @@ function withTimeout(p, ms) {
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
-  // ---------- 9: the broadphase survives a non-finite lookup ----------
+  // ---------- 10: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
   // cell loops spin forever and the frame loop stops dead. Every caller hands
   // these an entity position, so one bad number in the physics reaches them.
