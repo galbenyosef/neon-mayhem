@@ -414,7 +414,16 @@ function withTimeout(p, ms) {
   check('touch: the layer is live and the stick is deflected (anchor sanity)',
     held.onTouch && held.zone && Math.abs(held.x) > 0.5 && held.base === 'block',
     'x=' + held.x + ' base=' + held.base);
+  // setViewportSize resolves when the viewport is set, NOT when the page has
+  // run its resize listeners — evaluating straight after races them. Listeners
+  // fire in registration order, so one added now runs after the game's: when
+  // it has fired, the handler under test has already had its turn.
+  await tpage.evaluate(function () {
+    window.__resized = false;
+    window.addEventListener('resize', function () { window.__resized = true; });
+  });
   await tpage.setViewportSize({ width: 500, height: 900 });   // the device turns
+  await tpage.waitForFunction(function () { return window.__resized; }, null, { timeout: 5000 });
   var afterTurn = await tpage.evaluate(function () {
     return { x: GAME.input.touch.stickX, y: GAME.input.touch.stickY,
              base: document.getElementById('tstick-base').style.display };
