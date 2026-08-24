@@ -153,6 +153,7 @@ GAME.combat = (function () {
     }
     if (!GAME.unlimitedAmmo) inv.ammo--;
     GAME.audio.gunshot(w);
+    GAME.haptics.shot();
     GAME.fx.flash(m.x + Math.sin(dirYaw) * 0.6, m.y, m.z + Math.cos(dirYaw) * 0.6, 0.8);
     var pellets = wd.pellets || 1;
     for (var p = 0; p < pellets; p++) {

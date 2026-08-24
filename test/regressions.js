@@ -29,9 +29,11 @@
 //   6. RIDING A ROOF  — a chassis that pitches has to carry its passenger
 //      with it, rather than leaving them on the roof it would have had
 //      sitting still.
-//   7. TOUCH STICK    — a viewport change mid-drag must let the stick go
+//   7. HAPTICS        — a buzz per knock, rationed, silenceable, and safe on
+//      a browser with no motor at all.
+//   8. TOUCH STICK    — a viewport change mid-drag must let the stick go
 //      rather than keep steering from an origin on the old screen.
-//   8. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//   9. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
 var http = require('http');
@@ -336,8 +338,15 @@ function withTimeout(p, ms) {
     GAME.audio.siren = function (v, p, x, z) { if (v > 0) seen = { x: x, z: z }; return s0.apply(GAME.audio, arguments); };
     GAME.test.setWanted(3);
     GAME.test.fastForward(6);
+    var wanted = GAME.police.wanted;
     GAME.audio.siren = s0;
-    return { seen: seen, wanted: GAME.police.wanted };
+    // Call off the manhunt. Left running it followed the player into the
+    // groups below, and cops shooting the subject of a measurement is how the
+    // roof height drifted and the damage check found a corpse.
+    GAME.police.clearWanted();
+    GAME.player.health = 100;
+    GAME.test.fastForward(1);
+    return { seen: seen, wanted: wanted };
   });
   check('stereo: a chasing cruiser gives the siren its position',
     !!siren.seen && isFinite(siren.seen.x) && isFinite(siren.seen.z),
@@ -356,33 +365,135 @@ function withTimeout(p, ms) {
     if (!car) return { spawned: false };
     GAME.test.fastForward(0.3);
     var NOSE = 2.0;                       // out along the body's +z, past the cab
-    function hold() { car.ai = null; car.controls = { throttle: 0, steer: 0, handbrake: true }; }
-    // drop onto the deck over the nose and let it settle level
+    // Pin the van square and the rider over the nose every frame. Left free
+    // they both drift a little, and the height being measured depends on
+    // exactly where along the deck the rider ends up — which made this read
+    // anywhere from 1.29 to 1.50 run to run.
+    function hold() {
+      car.ai = null;
+      car.controls = { throttle: 0, steer: 0, handbrake: true };
+      car.heading = 0;                    // so +NOSE along z IS +NOSE along the body
+      P.pos.x = car.pos.x; P.pos.z = car.pos.z + NOSE;
+    }
     hold();
     P.pos.set(car.pos.x, car.pos.y + 4, car.pos.z + NOSE);
     P.velY = 0;
     for (var i = 0; i < 60; i++) { hold(); car.mesh.rotation.x = 0; GAME.test.fastForward(1 / 60); }
     var level = P.pos.y - car.pos.y, riding = P.roofCar === car;
     // now lift the nose, a frame at a time
-    for (var j = 0; j < 40; j++) { hold(); car.mesh.rotation.x = -0.35 * (j + 1) / 40; GAME.test.fastForward(1 / 60); }
+    var PITCH = 0.35;
+    for (var j = 0; j < 40; j++) { hold(); car.mesh.rotation.x = -PITCH * (j + 1) / 40; GAME.test.fastForward(1 / 60); }
     var noseUp = P.pos.y - car.pos.y, stillRiding = P.roofCar === car;
+    // what the geometry says it must be, derived here with plain trig rather
+    // than by asking the code under test what it thinks
+    var expect = level * Math.cos(PITCH) + NOSE * Math.sin(PITCH);
     return { spawned: true, riding: riding, stillRiding: stillRiding, level: level, noseUp: noseUp,
-             lift: noseUp - level, heading: car.heading };
+             lift: noseUp - level, expect: expect };
   });
   check('roof: a van spawned and the player is riding it (anchor sanity)',
     deck.spawned && deck.riding, 'spawned=' + deck.spawned + ' riding=' + deck.riding);
   check('roof: still aboard after the nose comes up', deck.stillRiding === true);
-  // nose 2.0 m out, pitched 0.35 rad: the deck under them rises ~0.6 m
-  check('roof: standing over a lifted nose rides up with it',
-    deck.lift > 0.35, 'level=' + (deck.level || 0).toFixed(2) + ' noseUp=' + (deck.noseUp || 0).toFixed(2) +
-    ' lift=' + (deck.lift || 0).toFixed(2));
+  check('roof: standing over a lifted nose rides up by exactly the geometry',
+    deck.lift > 0.35 && Math.abs(deck.noseUp - deck.expect) < 0.05,
+    'level=' + (deck.level || 0).toFixed(3) + ' noseUp=' + (deck.noseUp || 0).toFixed(3) +
+    ' expected=' + (deck.expect || 0).toFixed(3) + ' lift=' + (deck.lift || 0).toFixed(3));
 
   // ---------- nothing broke on the way through ----------
   await page.evaluate(function () { GAME.test.fastForward(5); });
   check('clean: zero page errors', pageErrors.length === 0, pageErrors[0]);
   check('clean: zero console.error', consoleErrors.length === 0, consoleErrors[0]);
 
-  // ---------- 7: the touch stick lets go when the viewport changes ----------
+  // ---------- 7: haptics ----------
+  var hap = await page.evaluate(function () {
+    window.__buzz = [];
+    window.__realVibrate = navigator.vibrate;
+    navigator.vibrate = function (ms) { window.__buzz.push(ms); return true; };
+    var r = {};
+    r.available = GAME.haptics.available;
+    // rationed: a second buzz of the same size inside the window is dropped,
+    // a harder one gets through — the rule audio.js uses for a pile-up
+    window.__buzz.length = 0;
+    r.first = GAME.haptics.testBuzz(20);
+    r.repeat = GAME.haptics.testBuzz(20);
+    r.harder = GAME.haptics.testBuzz(50);
+    r.sent = window.__buzz.slice();
+    // never longer than the cap, however hard the knock
+    window.__buzz.length = 0;
+    GAME.haptics.testBuzz(9999);
+    r.capped = window.__buzz.slice();
+    // off means off
+    GAME.haptics.setOn(false);
+    window.__buzz.length = 0;
+    GAME.haptics.testBuzz(60);
+    r.whileOff = window.__buzz.slice();
+    GAME.haptics.setOn(true);
+    // and a browser with no motor at all must not throw
+    navigator.vibrate = undefined;
+    r.unavailable = GAME.haptics.available;
+    var threw = false;
+    try { GAME.haptics.knock(1); GAME.haptics.hurt(); GAME.haptics.shot(); } catch (e) { threw = true; }
+    r.threwWithoutApi = threw;
+    navigator.vibrate = function (ms) { window.__buzz.push(ms); return true; };
+    return r;
+  });
+  check('haptics: the recorder is installed and the API reads available (anchor sanity)', hap.available === true);
+  check('haptics: a knock buzzes once and a repeat inside the window is dropped',
+    hap.first === true && hap.repeat === false, 'first=' + hap.first + ' repeat=' + hap.repeat);
+  check('haptics: a harder knock preempts inside the window',
+    hap.harder === true && hap.sent.length === 2, 'sent=' + JSON.stringify(hap.sent));
+  check('haptics: nothing outruns the cap', hap.capped.length === 1 && hap.capped[0] <= 60,
+    'sent=' + JSON.stringify(hap.capped));
+  check('haptics: switched off sends nothing', hap.whileOff.length === 0, 'sent=' + JSON.stringify(hap.whileOff));
+  check('haptics: a browser with no vibrate reports unavailable and does not throw',
+    hap.unavailable === false && hap.threwWithoutApi === false);
+
+  // End to end through the game's own channels rather than the module's door.
+  // The window is shared across kinds on purpose — a crash that also hurts you
+  // is one event, not two — so clear it first. Settling the player can knock
+  // them about, and a buzz during that would arm the throttle invisibly and
+  // make this a test of the throttle instead of the hook.
+  var dmg = await page.evaluate(function () {
+    GAME.player.health = 100;
+    GAME.test.teleport(350, 300);
+    GAME.test.fastForward(0.5);
+    GAME.player.health = 100;   // whatever settling cost, this check is not about that
+    window.__buzz.length = 0;
+    GAME.haptics.testReset();
+    var before = { state: GAME.player.state, health: Math.round(GAME.player.health), armor: Math.round(GAME.player.armor) };
+    GAME.playerDamage(8, 'test');        // -> hud.damageFlash() -> haptics.hurt()
+    return { sent: window.__buzz.slice(), before: before };
+  });
+  check('haptics: the player is alive to be hurt (anchor sanity)',
+    dmg.before.state === 'alive', JSON.stringify(dmg.before));
+  check('haptics: taking damage buzzes through the flash it already shows',
+    dmg.sent.length === 1, 'sent=' + JSON.stringify(dmg.sent) + ' before=' + JSON.stringify(dmg.before));
+
+  // The shake hook must fire on the RISE, not for every frame the shake is
+  // still ringing. Throttling alone would hide the difference, so this runs
+  // over real wall time: buzzing per frame would slip one through every window
+  // and land several, while reading the rise lands exactly one.
+  await page.evaluate(function () {
+    GAME.player.health = 100;
+    GAME.test.fastForward(1);
+    window.__buzz.length = 0;
+    GAME.haptics.testReset();
+    GAME.cameraShake = 0.9;
+  });
+  await page.waitForTimeout(700);
+  var shake = await page.evaluate(function () {
+    return { sent: window.__buzz.slice(), left: GAME.cameraShake };
+  });
+  check('haptics: a knock buzzes once, not once per frame it rings for',
+    shake.sent.length === 1, 'sent=' + JSON.stringify(shake.sent) + ' shakeLeft=' + shake.left);
+  check('haptics: the shake was still ringing throughout (anchor sanity)',
+    shake.left > 0.01, 'left=' + shake.left);
+  check('haptics: the rumble switch is hidden where nothing could buzz',
+    (await page.evaluate(function () {
+      return document.getElementById('pause-haptic').style.display;
+    })) === 'none');
+  await page.evaluate(function () { navigator.vibrate = window.__realVibrate; });
+
+  // ---------- 8: the touch stick lets go when the viewport changes ----------
   // The stick is placed where the thumb lands and steers by the offset from
   // that point, in client coordinates. Turn the device mid-drag and that
   // origin belongs to a screen that no longer exists — it can sit off the new
@@ -434,10 +545,29 @@ function withTimeout(p, ms) {
     stick.after.x === 0 && stick.after.y === 0, 'x=' + stick.after.x + ' y=' + stick.after.y);
   check('touch: and puts the stick away with it', stick.after.base === 'none', 'base=' + stick.after.base);
   check('touch: a fresh grab still steers afterwards', Math.abs(stick.regrab) > 0.5, 'x=' + stick.regrab);
+  // Press it, rather than just look at it: the markup ships with the label
+  // already reading RUMBLE: ON, so a check that only reads the text passes
+  // with the wiring torn out.
+  var hapBtn = await tpage.evaluate(function () {
+    var b = document.getElementById('pause-haptic');
+    var shown = b.style.display !== 'none', before = GAME.haptics.on, text0 = b.textContent;
+    b.click();
+    var mid = { on: GAME.haptics.on, text: b.textContent, pref: !!(GAME.prefs && GAME.prefs.rumbleOff) };
+    b.click();
+    return { shown: shown, before: before, text0: text0, mid: mid,
+             back: GAME.haptics.on, text2: b.textContent };
+  });
+  check('touch: the rumble switch is offered on a touch device',
+    hapBtn.shown && /RUMBLE/.test(hapBtn.text0), 'shown=' + hapBtn.shown + ' text=' + hapBtn.text0);
+  check('touch: pressing it turns rumble off, relabels, and remembers',
+    hapBtn.before === true && hapBtn.mid.on === false && /OFF/.test(hapBtn.mid.text) && hapBtn.mid.pref === true,
+    'on=' + hapBtn.mid.on + ' text=' + hapBtn.mid.text + ' pref=' + hapBtn.mid.pref);
+  check('touch: and pressing it again turns it back on',
+    hapBtn.back === true && /ON/.test(hapBtn.text2), 'on=' + hapBtn.back + ' text=' + hapBtn.text2);
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
-  // ---------- 8: the broadphase survives a non-finite lookup ----------
+  // ---------- 9: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
   // cell loops spin forever and the frame loop stops dead. Every caller hands
   // these an entity position, so one bad number in the physics reaches them.

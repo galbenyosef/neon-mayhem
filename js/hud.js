@@ -99,6 +99,24 @@ GAME.hud = (function () {
       if (GAME.prefs.sfxOff) GAME.audio.setSfxOn(false);
     }
     paintAudioBtns();
+    // Rumble sits with the other outputs and is remembered the same way. The
+    // button only appears where a buzz could actually happen: a phone with the
+    // API. Desktop Chrome has navigator.vibrate and no motor to run it, and a
+    // switch for something that cannot occur is worse than no switch.
+    function paintHapticBtn() {
+      $('pause-haptic').textContent = GAME.haptics.on ? '📳 RUMBLE: ON' : '📳 RUMBLE: OFF';
+    }
+    if (GAME.isTouch && GAME.haptics.available) {
+      pauseBtn('pause-haptic', function () {
+        GAME.haptics.setOn(!GAME.haptics.on);
+        if (GAME.prefs) { GAME.prefs.rumbleOff = !GAME.haptics.on; GAME.save(); }
+        paintHapticBtn();
+      });
+      if (GAME.prefs && GAME.prefs.rumbleOff) GAME.haptics.setOn(false);
+      paintHapticBtn();
+    } else {
+      $('pause-haptic').style.display = 'none';
+    }
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
@@ -820,6 +838,7 @@ GAME.hud = (function () {
       radioT = 2.2;
     },
     damageFlash: function () {
+      GAME.haptics.hurt();
       dmgFlash.style.opacity = 1;
       setTimeout(function () { dmgFlash.style.opacity = 0; }, 120);
     },

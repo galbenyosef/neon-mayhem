@@ -840,6 +840,7 @@ function updateBikeRider(dt) {
   j.armL.rotation.x = -1.05; j.armR.rotation.x = -1.05; // hands on the handlebars
 }
 
+var shakePrev = 0;
 function updateCamera(dt) {
   var P = GAME.player, inp = GAME.input, cam = GAME.cam;
   var mdx = inp.mouseDX, mdy = inp.mouseDY;
@@ -898,11 +899,17 @@ function updateCamera(dt) {
   cy = fy + (cy - fy) * (0.4 + 0.6 * bestT);
 
   if (GAME.cameraShake > 0.01) {
+    // A rise means a fresh knock rather than the tail of the last one. The
+    // shake is the game's existing "this happened to YOU" signal — every
+    // caller already filtered for the player's own car, own fall, own
+    // airframe — so one read here covers all of them without a hook at each.
+    if (GAME.cameraShake > shakePrev + 0.05) GAME.haptics.knock(GAME.cameraShake - shakePrev);
     GAME.cameraShake *= Math.exp(-5 * dt);
     cx += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
     cy += (Math.random() - 0.5) * GAME.cameraShake * 0.5;
     cz += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
   }
+  shakePrev = GAME.cameraShake;
 
   cam.x = U.damp(cam.x || cx, cx, 20, dt);
   cam.y = U.damp(cam.y || cy, cy, 20, dt);
