@@ -396,49 +396,44 @@ function withTimeout(p, ms) {
   await tpage.waitForFunction(function () {
     return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
   }, null, { timeout: 30000 });
-  var held = await tpage.evaluate(function () {
+  var stick = await tpage.evaluate(function () {
     GAME.test.start();
     GAME.test.fastForward(1);
     var zone = document.getElementById('tstick-zone');
-    window.__touch = function (el, type, x, y) {
+    var base = document.getElementById('tstick-base');
+    function touch(el, type, x, y) {
       var t = new Touch({ identifier: 7, target: zone, clientX: x, clientY: y });
       el.dispatchEvent(new TouchEvent(type, {
         touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true
       }));
-    };
-    window.__touch(zone, 'touchstart', 120, 380);
-    window.__touch(window, 'touchmove', 172, 380);   // hard over, 52px = full deflection
-    return { onTouch: GAME.isTouch, zone: !!zone, x: GAME.input.touch.stickX,
-             base: document.getElementById('tstick-base').style.display };
+    }
+    touch(zone, 'touchstart', 120, 380);
+    touch(window, 'touchmove', 172, 380);        // 52 px over = full deflection
+    var held = { onTouch: GAME.isTouch, zone: !!zone, x: GAME.input.touch.stickX, base: base.style.display };
+
+    // The viewport changing under an active drag. Dispatched rather than
+    // physically resized: a CI runner launches Chromium maximized, where
+    // setViewportSize is a protocol error, and the listener is the thing under
+    // test — who fires it does not matter. It also removes a race the physical
+    // resize had, since setViewportSize resolves when the viewport is set and
+    // not when the page has run its listeners, while dispatchEvent returns
+    // only once they all have.
+    window.dispatchEvent(new Event('resize'));
+    var after = { x: GAME.input.touch.stickX, y: GAME.input.touch.stickY, base: base.style.display };
+
+    // a release that never re-arms would be no better than the bug
+    touch(zone, 'touchstart', 100, 300);
+    touch(window, 'touchmove', 152, 300);
+    var regrab = GAME.input.touch.stickX;
+    return { held: held, after: after, regrab: regrab };
   });
   check('touch: the layer is live and the stick is deflected (anchor sanity)',
-    held.onTouch && held.zone && Math.abs(held.x) > 0.5 && held.base === 'block',
-    'x=' + held.x + ' base=' + held.base);
-  // setViewportSize resolves when the viewport is set, NOT when the page has
-  // run its resize listeners — evaluating straight after races them. Listeners
-  // fire in registration order, so one added now runs after the game's: when
-  // it has fired, the handler under test has already had its turn.
-  await tpage.evaluate(function () {
-    window.__resized = false;
-    window.addEventListener('resize', function () { window.__resized = true; });
-  });
-  await tpage.setViewportSize({ width: 500, height: 900 });   // the device turns
-  await tpage.waitForFunction(function () { return window.__resized; }, null, { timeout: 5000 });
-  var afterTurn = await tpage.evaluate(function () {
-    return { x: GAME.input.touch.stickX, y: GAME.input.touch.stickY,
-             base: document.getElementById('tstick-base').style.display };
-  });
-  check('touch: turning the device lets the stick go', afterTurn.x === 0 && afterTurn.y === 0,
-    'x=' + afterTurn.x + ' y=' + afterTurn.y);
-  check('touch: and puts the stick away with it', afterTurn.base === 'none', 'base=' + afterTurn.base);
-  // it must still work afterwards — a release that never re-arms is no better
-  var regrab = await tpage.evaluate(function () {
-    var zone = document.getElementById('tstick-zone');
-    window.__touch(zone, 'touchstart', 100, 700);
-    window.__touch(window, 'touchmove', 152, 700);
-    return GAME.input.touch.stickX;
-  });
-  check('touch: a fresh grab still steers after the turn', Math.abs(regrab) > 0.5, 'x=' + regrab);
+    stick.held.onTouch && stick.held.zone && Math.abs(stick.held.x) > 0.5 && stick.held.base === 'block',
+    'x=' + stick.held.x + ' base=' + stick.held.base);
+  check('touch: a viewport change lets the stick go',
+    stick.after.x === 0 && stick.after.y === 0, 'x=' + stick.after.x + ' y=' + stick.after.y);
+  check('touch: and puts the stick away with it', stick.after.base === 'none', 'base=' + stick.after.base);
+  check('touch: a fresh grab still steers afterwards', Math.abs(stick.regrab) > 0.5, 'x=' + stick.regrab);
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
