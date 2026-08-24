@@ -29,6 +29,9 @@
 //   6. RIDING A ROOF  — a chassis that pitches has to carry its passenger
 //      with it, rather than leaving them on the roof it would have had
 //      sitting still.
+//   7. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//      group runs LAST and under a timeout of its own: without the guard the
+//      page does not fail, it stops answering.
 var http = require('http');
 var fs = require('fs');
 var path = require('path');
@@ -59,6 +62,17 @@ var OVERLAYS = [
   { name: 'pause', key: 'pause' },
   { name: 'map', key: 'map' }
 ];
+
+// A page that hangs never rejects, so the one group that can hang gets a
+// deadline in the runner rather than in the browser.
+function withTimeout(p, ms) {
+  var timer;
+  return Promise.race([
+    p.then(function (v) { clearTimeout(timer); return v; },
+           function (e) { clearTimeout(timer); throw e; }),
+    new Promise(function (_, reject) { timer = setTimeout(function () { reject(new Error('hung')); }, ms); })
+  ]);
+}
 
 (async function () {
   var failures = [];
@@ -365,6 +379,42 @@ var OVERLAYS = [
   await page.evaluate(function () { GAME.test.fastForward(5); });
   check('clean: zero page errors', pageErrors.length === 0, pageErrors[0]);
   check('clean: zero console.error', consoleErrors.length === 0, consoleErrors[0]);
+
+  // ---------- 7: the broadphase survives a non-finite lookup ----------
+  // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
+  // cell loops spin forever and the frame loop stops dead. Every caller hands
+  // these an entity position, so one bad number in the physics reaches them.
+  // NaN was never the problem — NaN <= NaN is false, so those loops run zero
+  // times. If this group times out, the guard is gone.
+  var hash = null;
+  try {
+    hash = await withTimeout(page.evaluate(function () {
+      var P = GAME.player, h = GAME.city.hash;
+      return {
+        normal: h.query(P.pos.x, P.pos.z, 60).length,
+        infX: h.query(Infinity, P.pos.z, 10).length,
+        negInfZ: h.query(P.pos.x, -Infinity, 10).length,
+        nan: h.query(NaN, P.pos.z, 10).length,
+        infR: h.query(P.pos.x, P.pos.z, Infinity).length,
+        segFinite: h.segmentClear(P.pos.x, P.pos.z, P.pos.x + 0.1, P.pos.z + 0.1),
+        segInf: h.segmentClear(P.pos.x, P.pos.z, Infinity, P.pos.z),
+        segNan: h.segmentClear(P.pos.x, P.pos.z, NaN, P.pos.z)
+      };
+    }), 15000);
+  } catch (e) { /* hung */ }
+  check('broadphase: it answered at all (a timeout here means no guard)', !!hash);
+  if (hash) {
+    check('broadphase: an ordinary query still finds the city (anchor sanity)',
+      hash.normal > 0, 'boxes=' + hash.normal);
+    check('broadphase: an ordinary segment test still answers (anchor sanity)',
+      typeof hash.segFinite === 'boolean', 'got=' + hash.segFinite);
+    check('broadphase: an infinite coordinate returns nothing',
+      hash.infX === 0 && hash.negInfZ === 0, '+x=' + hash.infX + ' -z=' + hash.negInfZ);
+    check('broadphase: an infinite radius returns nothing', hash.infR === 0, 'boxes=' + hash.infR);
+    check('broadphase: NaN returns nothing, as it always did', hash.nan === 0, 'boxes=' + hash.nan);
+    check('broadphase: an infinite segment endpoint answers like a NaN one',
+      hash.segInf === hash.segNan, 'inf=' + hash.segInf + ' nan=' + hash.segNan);
+  }
 
   await browser.close();
   srv.close();

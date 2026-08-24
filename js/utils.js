@@ -215,8 +215,18 @@ SpatialHash.prototype.insert = function (box) {
     (this.map[k] || (this.map[k] = [])).push(box);
   }
 };
+// A non-finite lookup is a bug wherever it came from, but it must not take
+// the tab down with it. Math.floor(±Infinity) is ±Infinity and `i++` on an
+// infinity never advances, so `for (i = i0; i <= i1; i++)` spins forever and
+// the frame loop simply stops — a hang, not a glitch, with nothing on screen
+// to say why. Every caller feeds this an entity position (a car, a ped, the
+// camera), so one bad number anywhere in the physics reaches it.
+//
+// NaN needs no guard and never did: NaN <= NaN is false, so those loops run
+// zero times and return nothing. Infinity is the case that hangs.
 SpatialHash.prototype.query = function (x, z, r) {
   var c = this.cell, out = [], seen = null;
+  if (!isFinite(x) || !isFinite(z) || !isFinite(r)) return out;
   var i0 = Math.floor((x - r) / c), i1 = Math.floor((x + r) / c);
   var j0 = Math.floor((z - r) / c), j1 = Math.floor((z + r) / c);
   var multi = (i1 > i0 || j1 > j0);
@@ -238,6 +248,10 @@ SpatialHash.prototype.query = function (x, z, r) {
 // it is seen over (a parapet, a kerb), and anything that only STARTS above it
 // (a bridge deck overhead) is seen under. Without it the check stays flat-2D.
 SpatialHash.prototype.segmentClear = function (x0, z0, x1, z1, aboveY) {
+  // the same trap one level up: an infinite endpoint makes `len` infinite,
+  // `steps` infinite, and `for (s = 0; s <= steps; s++)` never ends. Answer
+  // the way a NaN endpoint already does — nothing measurable in the way.
+  if (!isFinite(x0) || !isFinite(z0) || !isFinite(x1) || !isFinite(z1)) return true;
   var dx = x1 - x0, dz = z1 - z0;
   var len = Math.sqrt(dx * dx + dz * dz);
   var steps = Math.max(1, Math.ceil(len / (this.cell * 0.8)));
