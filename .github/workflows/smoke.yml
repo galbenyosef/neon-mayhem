@@ -1,5 +1,6 @@
-# The smoke test, on every push and pull request: the README's headless-
-# verification promise held by a machine. See test/smoke.js for what it checks.
+# The headless tests, on every push and pull request: the README's
+# verification promise held by a machine. smoke.js asks whether the game
+# still runs; regressions.js asks whether specific fixed bugs stay dead.
 name: smoke
 on:
   push:
@@ -15,3 +16,4 @@ jobs:
       - run: npm install --no-save playwright
       - run: npx playwright install --with-deps chromium
       - run: node test/smoke.js
+      - run: node test/regressions.js
