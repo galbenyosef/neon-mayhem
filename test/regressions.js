@@ -655,7 +655,7 @@ function withTimeout(p, ms) {
     var def = GAME.missions.DEFS.filter(function (d) { return d.id === 'race0'; })[0];
     GAME.test.teleport(def.start.x, def.start.z - 40);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('sports', 4, 0);
+    GAME.test.spawnCar('taxi', 4, 0);
     GAME.test.fastForward(0.3);
     GAME.test.enterNearestCar();
     GAME.test.fastForward(1.5);
@@ -695,7 +695,9 @@ function withTimeout(p, ms) {
     rear.cpIndex = front.cpIndex = a.cpIndex;
     GAME.test.fastForward(1);            // let the race controller drive them once
     var out = { racing: true, aheadOf: aheadOf, state: a.state,
-                rearEdge: rear.raceEdge, frontEdge: front.raceEdge };
+                rearEdge: rear.raceEdge, frontEdge: front.raceEdge,
+                myType: P.car.type, rivalType: a.racers[0].type,
+                mySpeed: P.car.spec.maxSpeed, rivalSpeed: a.racers[0].spec.maxSpeed };
     // Call the race off. Left running it followed the groups below out of
     // here — the suspension checks drive a car of their own, and a live race
     // scratches the moment they step out of it.
@@ -720,9 +722,42 @@ function withTimeout(p, ms) {
       race.rearEdge > 1.05, 'edge=' + race.rearEdge);
     check('race: and one out in front is reined in',
       race.frontEdge < 1, 'edge=' + race.frontEdge);
+    check('race: the field turns up in something quicker than the player brought',
+      race.rivalType !== race.myType && race.rivalSpeed > race.mySpeed,
+      'player=' + race.myType + '(' + race.mySpeed + ') rivals=' + race.rivalType + '(' + race.rivalSpeed + ')');
     check('race: the race is called off before the next group drives (anchor sanity)',
       race.cleared === true);
   }
+
+  // the whole upgrade table at once, without running a race for each
+  var up = await page.evaluate(function () {
+    var f = GAME.missions.testRivalUpgrade, T = GAME.vehicles.TYPES;
+    return ['icecream', 'van', 'ambulance', 'sedan', 'taxi', 'pickup', 'limo', 'buggy',
+      'monster', 'sports', 'motorcycle', 'superbike'].map(function (t) {
+      var r = f(t), to = T[r.type];
+      return { from: t, to: r.type, edge: r.edge,
+               faster: to.maxSpeed * r.edge > T[t].maxSpeed,
+               sameClass: !!to.bike === !!T[t].bike,
+               ground: !to.heli && !to.plane,
+               law: r.type === 'police',
+               ratio: Math.round(to.maxSpeed / T[t].maxSpeed * 100) / 100 };
+    });
+  });
+  function every(fn) { return up.length === 12 && up.every(fn); }
+  check('rivals: whatever you bring, the field is quicker',
+    every(function (r) { return r.faster; }),
+    JSON.stringify(up.filter(function (r) { return !r.faster; })));
+  check('rivals: and always from your own class — a bike race stays a bike race',
+    every(function (r) { return r.sameClass && r.ground; }),
+    JSON.stringify(up.filter(function (r) { return !r.sameClass || !r.ground; })));
+  check('rivals: never the law', every(function (r) { return !r.law; }));
+  check('rivals: the upgrade is capped, so the race stays winnable',
+    every(function (r) { return r.ratio <= 1.25; }),
+    JSON.stringify(up.map(function (r) { return r.from + '->' + r.to + ' x' + r.ratio; })));
+  check('rivals: bringing the best of a class buys an engine edge instead',
+    up.filter(function (r) { return r.to === r.from; }).length === 2 &&
+    up.filter(function (r) { return r.to === r.from; }).every(function (r) { return r.edge > 1; }),
+    JSON.stringify(up.filter(function (r) { return r.to === r.from; })));
 
   // ---------- 11: suspension carries the load ----------
   var susp = await page.evaluate(function () {

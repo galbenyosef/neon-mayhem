@@ -813,10 +813,20 @@ GAME.missions = (function () {
       }
       if (first) faceToward(first[0], first[1]);
       if (def.type === 'race') {
-        // The field races what YOU race: turn up on a bike and the rivals are
-        // on bikes, turn up in a limo and it's a limo race. Rivals in sports
-        // cars against a player's motorcycle decided the race at the start line.
-        var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
+        // The field turns up in something QUICKER than you brought, so the
+        // rivals start with an edge rather than having to be handed one.
+        //
+        // Still within your own class, though. Matching the player's exact car
+        // was a fix for rivals in sports cars against a player's motorcycle,
+        // which decided the race at the start line — so a bike race is still a
+        // bike race, it is just their bike that is better. And the upgrade is
+        // capped: a quarter quicker is an edge, twice as quick is a cutscene.
+        var rival = rivalUpgrade(P.car && P.car.type);
+        var rivalType = rival.type;
+        // nothing in the class was faster (you brought the best of it) — then
+        // the edge has to come from the engine instead, so they are quicker
+        // whatever you arrive in
+        active.rivalEdge = rival.edge;
         // The grid forms in FRONT of you and you start on the back row. Lined
         // up behind, all three sat in the chase camera's blind spot: the field
         // was invisible from the lights to the flag, and a race you never see
@@ -1031,6 +1041,25 @@ GAME.missions = (function () {
     }
   }
 
+  // The quickest thing in the player's own class that is not more than a
+  // quarter faster than what they brought. Aircraft are never rivals in a
+  // street race, and neither is a police cruiser — it is the law, not a rival,
+  // and a white car with a lightbar in the field reads as a chase.
+  var RIVAL_CAP = 1.25, RIVAL_ENGINE_EDGE = 1.08;
+  function rivalUpgrade(playerType) {
+    var T = GAME.vehicles.TYPES;
+    var mine = T[playerType];
+    if (!mine) return { type: 'sports', edge: 1 };
+    var best = playerType, bestSp = mine.maxSpeed;
+    for (var k in T) {
+      var s = T[k];
+      if (s.heli || s.plane || k === 'police') continue;
+      if (!!s.bike !== !!mine.bike) continue;
+      if (s.maxSpeed > bestSp && s.maxSpeed <= mine.maxSpeed * RIVAL_CAP) { best = k; bestSp = s.maxSpeed; }
+    }
+    return { type: best, edge: best === playerType ? RIVAL_ENGINE_EDGE : 1 };
+  }
+
   function racerControls(car, dt) {
     var d = active.def;
     var cp = d.cps[Math.min(car.cpIndex, d.cps.length - 1)];
@@ -1096,7 +1125,8 @@ GAME.missions = (function () {
       var yours = pc ? U.dist(pc.pos.x, pc.pos.z, cpNow[0], cpNow[1]) : mine;
       edge = 1 + U.clamp((mine - yours) / 320, -0.05, 0.13);
     }
-    car.raceEdge = edge;
+    // the band rides on top of whatever edge the field started with
+    car.raceEdge = edge * (active.rivalEdge || 1);
     // the handbrake is for genuine hairpins only; using it mid-corner spins them
     var handbrake = ad > 1.5 && Math.abs(car.speed) > 30;
 
@@ -1488,6 +1518,7 @@ GAME.missions = (function () {
     testRollCourier: rollCourierStops,
     testCollect: collectTarget,
     testStartRound: startRound,
+    testRivalUpgrade: rivalUpgrade,
     init: init,
     update: update,
     failActive: failActive,
