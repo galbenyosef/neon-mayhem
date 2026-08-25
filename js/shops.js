@@ -425,11 +425,23 @@ GAME.shops = (function () {
   function buyShowroom(loc, id) {
     var at = loc.forecourt;
     var spot = clearSpot(at.x, at.z);
-    var car = GAME.vehicles.spawnCar(id, spot.x, spot.z, loc.heading || 0, {});
     if (id === 'monster') GAME.city.unlockMonsterTruck();
     if (garage().indexOf(id) < 0) garage().push(id);
     GAME.save();
+    // Register the type first, so the forecourt bay this car belongs in
+    // exists before the car does.
     refreshGarageSpots();
+    // The delivered car IS this type's garage car at the showroom, and has to
+    // be spawned as that bay's occupant rather than as a loose extra. Left
+    // unlinked the bay reads empty, and the parked spawner drops a second
+    // identical vehicle into it within a few frames, in plain sight — the
+    // restock guard cannot help, because it matches on fromSpot, which only
+    // the spawner itself ever sets. Same wiring the spawner uses, so boarding
+    // frees the bay and driving off restocks it exactly as it always did.
+    var bay = garageSpots['showroom:' + id];
+    var opts = bay && !bay.live ? { parkedSpot: bay, ai: { mode: 'parked' } } : {};
+    var car = GAME.vehicles.spawnCar(id, spot.x, spot.z, loc.heading || 0, opts);
+    if (bay && !bay.live) { bay.live = car; car.fromSpot = bay; }
     GAME.fx.flash(spot.x, 1.5, spot.z, 5);
     GAME.audio.sting('win');
     GAME.track('showroom-' + id);

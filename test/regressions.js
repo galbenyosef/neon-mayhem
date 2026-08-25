@@ -33,12 +33,13 @@
 //      a browser with no motor at all.
 //   8. FRAME BUDGET   — the crowd thins when frames run late and, more to
 //      the point, comes BACK when they do not.
-//   9. SUSPENSION     — weight moves when speed does: the nose lifts under
+//   9. SHOWROOM       — a bought vehicle is delivered once, not twice.
+//  10. SUSPENSION     — weight moves when speed does: the nose lifts under
 //      power and dives under the brakes, on TOP of whatever grade the wheels
 //      are on, and settles back to it.
-//  10. TOUCH STICK    — a viewport change mid-drag must let the stick go
+//  11. TOUCH STICK    — a viewport change mid-drag must let the stick go
 //      rather than keep steering from an origin on the old screen.
-//  11. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//  12. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
 var http = require('http');
@@ -479,6 +480,12 @@ function withTimeout(p, ms) {
   // and land several, while reading the rise lands exactly one.
   await page.evaluate(function () {
     GAME.player.health = 100;
+    // This window runs on the wall clock with the world live around a player
+    // standing in the street. Traffic clipping them lands a hurt() buzz on top
+    // of the knock being measured, which is a second buzz from a second cause
+    // and read here as the shake hook firing twice. Seen once in a dozen runs;
+    // godMode closes the door rather than leaving it to the traffic.
+    GAME.godMode = true;
     GAME.test.fastForward(1);
     window.__buzz.length = 0;
     GAME.haptics.testReset();
@@ -486,6 +493,7 @@ function withTimeout(p, ms) {
   });
   await page.waitForTimeout(700);
   var shake = await page.evaluate(function () {
+    GAME.godMode = false;
     return { sent: window.__buzz.slice(), left: GAME.cameraShake };
   });
   check('haptics: a knock buzzes once, not once per frame it rings for',
@@ -574,7 +582,69 @@ function withTimeout(p, ms) {
     wired.traffic && wired.peds && wired.parked,
     'traffic=' + wired.traffic + ' peds=' + wired.peds + ' parked=' + wired.parked + ' calls=' + wired.n);
 
-  // ---------- 9: suspension carries the load ----------
+  // ---------- 9: a purchase is delivered once ----------
+  // The forecourt bay a bought vehicle belongs in is created by the same
+  // purchase, so the delivered car has to be its occupant. Unlinked, the bay
+  // reads empty and the parked spawner fills it with a twin a few frames
+  // later — right next to you, since a garage bay is 'special' and has no
+  // distance floor.
+  var buy = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys;
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(64, 384);            // the showroom forecourt
+    GAME.test.fastForward(1);
+    var before = GAME.world.cars.filter(function (c) { return c.type === 'buggy'; }).length;
+    GAME.test.addCash(200000);
+    var opened = GAME.shops.open('showroom0');
+    var bought = GAME.shops.buy('buggy');
+    GAME.shops.close();
+    if (GAME.share.isOpen) GAME.share.hide();
+    GAME.test.fastForward(4);
+    function nearBay(excl) {
+      return GAME.world.cars.filter(function (c) {
+        return c.type === 'buggy' && c !== excl && U.dist2(c.pos.x, c.pos.z, 64, 384) < 70 * 70;
+      });
+    }
+    var onDelivery = nearBay(null);
+    var bay = GAME.shops.garageSpot('buggy');
+    var linked = !!(bay && bay.live && onDelivery.indexOf(bay.live) >= 0);
+
+    // Now TAKE IT OUT, which is when the twin turns up: the bay sits ~7 m from
+    // the forecourt, inside the spawner's clearance check, so nothing can
+    // restock it while the delivered car is still standing on it. Drive clear
+    // and the check passes — and with nothing linking car to bay, the bay
+    // reads empty and is refilled on the spot, in view.
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(2);
+    var driving = !!(P.car && P.car.type === 'buggy');
+    // Driven out under throttle it only manages a few metres: the dealer lot
+    // is a narrow strip between the road and the glass hall, and the delivery
+    // heading points at the building. Move it instead — what the bug needs is
+    // the car out of the bay's clearance radius while still aboard, not a
+    // demonstration that the lot is tight.
+    GAME.test.teleport(64, 444);
+    GAME.test.fastForward(3);
+    var away = P.car ? Math.sqrt(U.dist2(P.car.pos.x, P.car.pos.z, 64, 384)) : 0;
+    var twins = nearBay(P.car).length;
+    return { opened: !!opened, bought: !!bought, before: before, delivered: onDelivery.length,
+             linked: linked, driving: driving, away: away, twins: twins,
+             inGarage: GAME.shops.garage().indexOf('buggy') >= 0 };
+  });
+  check('showroom: the shop opened and the purchase went through (anchor sanity)',
+    buy.opened && buy.bought && buy.inGarage && buy.before === 0,
+    'opened=' + buy.opened + ' bought=' + buy.bought + ' inGarage=' + buy.inGarage + ' before=' + buy.before);
+  check('showroom: exactly one of the bought vehicle is delivered',
+    buy.delivered === 1, 'found=' + buy.delivered);
+  check('showroom: and it is parked as the occupant of its own forecourt bay',
+    buy.linked === true, 'linked=' + buy.linked);
+  check('showroom: it is out of the bay with the player aboard (anchor sanity)',
+    buy.driving && buy.away > 25, 'driving=' + buy.driving + ' away=' + (buy.away || 0).toFixed(1));
+  check('showroom: taking it out does not leave a twin behind',
+    buy.twins === 0, 'twins=' + buy.twins);
+
+  // ---------- 10: suspension carries the load ----------
   var susp = await page.evaluate(function () {
     var P = GAME.player, K = GAME.input.keys;
     function clear() { K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false; }
@@ -658,7 +728,7 @@ function withTimeout(p, ms) {
     bike.onBike === true && bike.speed > 3, 'speed=' + (bike.speed || 0).toFixed(1));
   check('suspension: a bike gets none of it', Math.abs(bike.p) < 0.005, 'susp=' + (bike.p || 0).toFixed(4));
 
-  // ---------- 10: the touch stick lets go when the viewport changes ----------
+  // ---------- 11: the touch stick lets go when the viewport changes ----------
   // The stick is placed where the thumb lands and steers by the offset from
   // that point, in client coordinates. Turn the device mid-drag and that
   // origin belongs to a screen that no longer exists — it can sit off the new
@@ -795,7 +865,7 @@ function withTimeout(p, ms) {
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
-  // ---------- 11: the broadphase survives a non-finite lookup ----------
+  // ---------- 12: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
   // cell loops spin forever and the frame loop stops dead. Every caller hands
   // these an entity position, so one bad number in the physics reaches them.
