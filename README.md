@@ -34,7 +34,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 ## Work
 
-- **Street races** against rivals who drive what *you* drive, **timed couriers** with fresh drops every run, and **rampages** — each opening with a fade-out and a big 3-2-1 countdown before you're let loose.
+- **Street races** against rivals who drive what *you* drive and line up on the grid ahead of you — you start on the back row, and they get a rubber band with real teeth, so the field is something you have to pass rather than something you leave at the lights — **timed couriers** with fresh drops every run, and **rampages** — each opening with a fade-out and a big 3-2-1 countdown before you're let loose.
 - Continuous **taxi, paramedic and ice-cream shifts** that level up: more people, further out, marked by floating arrows. The clocks are tuned as a high-score run, not a loop you can hold forever — early fares bank a little, the mid-shift breaks even, the deep shift bleeds. The ice-cream round works backwards: nobody waits for you, the chimes pull them to the hatch.
 - Isla Verde carries four missions of its own, and they stay on the island — nothing asks you to cross mid-run.
 - Finish something worth finishing and a shareable **result card** is drawn for it — save it, copy it, or send it to your phone's share sheet.

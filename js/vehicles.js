@@ -474,8 +474,12 @@ GAME.vehicles = (function () {
     car.boostT = Math.max(0, (car.boostT || 0) - dt);
     car.hitCd = Math.max(0, (car.hitCd || 0) - dt);
     var boost = car.boostT > 0 ? (spec.bike ? 2 : 3) : 1;
-    var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
-    var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1);
+    // a rival's rubber band (missions.js) moves what the car can DO rather
+    // than what its driver asks for — they race the same machine you do, so
+    // more pedal could only ever match your speed, never close on you
+    var edge = car.raceEdge || 1;
+    var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1) * edge;
+    var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1) * edge;
     if (car.stage >= 2) { maxSp *= 0.6; accel *= 0.5; }
 
     if (c.throttle > 0) car.speed += accel * c.throttle * dt;

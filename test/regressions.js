@@ -34,12 +34,14 @@
 //   8. FRAME BUDGET   — the crowd thins when frames run late and, more to
 //      the point, comes BACK when they do not.
 //   9. SHOWROOM       — a bought vehicle is delivered once, not twice.
-//  10. SUSPENSION     — weight moves when speed does: the nose lifts under
+//  10. RACE GRID      — the field lines up where you can see it, and the
+//      rubber band moves something that can actually close a gap.
+//  11. SUSPENSION     — weight moves when speed does: the nose lifts under
 //      power and dives under the brakes, on TOP of whatever grade the wheels
 //      are on, and settles back to it.
-//  11. TOUCH STICK    — a viewport change mid-drag must let the stick go
+//  12. TOUCH STICK    — a viewport change mid-drag must let the stick go
 //      rather than keep steering from an origin on the old screen.
-//  12. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//  13. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
 var http = require('http');
@@ -644,7 +646,85 @@ function withTimeout(p, ms) {
   check('showroom: taking it out does not leave a twin behind',
     buy.twins === 0, 'twins=' + buy.twins);
 
-  // ---------- 10: suspension carries the load ----------
+  // ---------- 10: the race grid and the rubber band ----------
+  var race = await page.evaluate(function () {
+    var P = GAME.player;
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    var def = GAME.missions.DEFS.filter(function (d) { return d.id === 'race0'; })[0];
+    GAME.test.teleport(def.start.x, def.start.z - 40);
+    GAME.test.fastForward(0.5);
+    GAME.test.spawnCar('sports', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(1.5);
+    if (!P.inCar || !P.car) return { racing: false };
+    GAME.test.teleport(def.start.x, def.start.z);   // onto the start line
+    // Step to the GO and measure the GRID, not the race. Run on for a few
+    // seconds first and the rivals have simply driven off up the road, which
+    // reads as "ahead" whether they lined up in front of the player or behind
+    // — the check would pass on either.
+    var a = null;
+    for (var f = 0; f < 900; f++) {
+      GAME.test.fastForward(1 / 60);
+      a = GAME.missions.active;
+      if (a && a.racers && a.racers.length) break;
+    }
+    if (!a || a.def.id !== 'race0' || !a.racers.length) return { racing: false, state: a && a.state };
+
+    // every rival must be in front of the player, along the way they face
+    var fx = Math.sin(P.car.heading), fz = Math.cos(P.car.heading);
+    var aheadOf = a.racers.map(function (r) {
+      return Math.round(((r.pos.x - P.car.pos.x) * fx + (r.pos.z - P.car.pos.z) * fz) * 10) / 10;
+    });
+
+    // The grid is measured during the countdown, where the cars are still
+    // sitting on it. The BAND only runs once the flag drops, so carry on to
+    // 'run' before touching it.
+    for (var g2 = 0; g2 < 900 && a.state !== 'run'; g2++) GAME.test.fastForward(1 / 60);
+    if (a.state !== 'run') return { racing: true, aheadOf: aheadOf, state: a.state };
+
+    // the band: drop one far back and pull one far forward, then read the edge
+    var rear = a.racers[0], front = a.racers[1];
+    var cp = a.def.cps[a.cpIndex];
+    var toCp = Math.sqrt(U.dist2(P.car.pos.x, P.car.pos.z, cp[0], cp[1]));
+    var ux = (cp[0] - P.car.pos.x) / toCp, uz = (cp[1] - P.car.pos.z) / toCp;
+    rear.pos.x = P.car.pos.x - ux * 60; rear.pos.z = P.car.pos.z - uz * 60;
+    front.pos.x = P.car.pos.x + ux * 60; front.pos.z = P.car.pos.z + uz * 60;
+    rear.cpIndex = front.cpIndex = a.cpIndex;
+    GAME.test.fastForward(1);            // let the race controller drive them once
+    var out = { racing: true, aheadOf: aheadOf, state: a.state,
+                rearEdge: rear.raceEdge, frontEdge: front.raceEdge };
+    // Call the race off. Left running it followed the groups below out of
+    // here — the suspension checks drive a car of their own, and a live race
+    // scratches the moment they step out of it.
+    // Call the race off AND get off the start line. cleanup() clears `active`
+    // on the spot, but the trigger is proximity: sat on the marker in a car
+    // with no heat, the next tick simply starts the race again — which is
+    // what carried a live race into the groups below.
+    GAME.missions.failActive('checked');
+    GAME.test.teleport(356, 60);
+    GAME.test.fastForward(1);
+    if (GAME.share.isOpen) GAME.share.hide();
+    out.cleared = !GAME.missions.active;
+    return out;
+  });
+  check('race: a race is running with a full field (anchor sanity)', race.racing === true,
+    'state=' + race.state);
+  if (race.racing) {
+    check('race: the whole grid forms in front of the player, within sight',
+      race.aheadOf.length === 3 && race.aheadOf.every(function (d) { return d > 2 && d < 30; }),
+      'along-heading=' + JSON.stringify(race.aheadOf));
+    check('race: a rival left behind is given more car, not more pedal',
+      race.rearEdge > 1.05, 'edge=' + race.rearEdge);
+    check('race: and one out in front is reined in',
+      race.frontEdge < 1, 'edge=' + race.frontEdge);
+    check('race: the race is called off before the next group drives (anchor sanity)',
+      race.cleared === true);
+  }
+
+  // ---------- 11: suspension carries the load ----------
   var susp = await page.evaluate(function () {
     var P = GAME.player, K = GAME.input.keys;
     function clear() { K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false; }
@@ -728,7 +808,7 @@ function withTimeout(p, ms) {
     bike.onBike === true && bike.speed > 3, 'speed=' + (bike.speed || 0).toFixed(1));
   check('suspension: a bike gets none of it', Math.abs(bike.p) < 0.005, 'susp=' + (bike.p || 0).toFixed(4));
 
-  // ---------- 11: the touch stick lets go when the viewport changes ----------
+  // ---------- 12: the touch stick lets go when the viewport changes ----------
   // The stick is placed where the thumb lands and steers by the offset from
   // that point, in client coordinates. Turn the device mid-drag and that
   // origin belongs to a screen that no longer exists — it can sit off the new
@@ -865,7 +945,7 @@ function withTimeout(p, ms) {
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
-  // ---------- 12: the broadphase survives a non-finite lookup ----------
+  // ---------- 13: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
   // cell loops spin forever and the frame loop stops dead. Every caller hands
   // these an entity position, so one bad number in the physics reaches them.

@@ -817,10 +817,15 @@ GAME.missions = (function () {
         // on bikes, turn up in a limo and it's a limo race. Rivals in sports
         // cars against a player's motorcycle decided the race at the start line.
         var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
+        // The grid forms in FRONT of you and you start on the back row. Lined
+        // up behind, all three sat in the chase camera's blind spot: the field
+        // was invisible from the lights to the flag, and a race you never see
+        // is just a drive. Staggered left and right of the racing line so the
+        // lane you launch into is open.
         for (var i = 0; i < 3; i++) {
-          var off = (i + 1) * 5;
-          var rx = def.start.x - Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-          var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var off = (i + 1) * 6;
+          var rx = def.start.x + Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var rz = def.start.z + Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
           var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
           car.cpIndex = 0;
           // rivals shrug off scrapes — a race should be decided on the road, not by
@@ -1069,11 +1074,29 @@ GAME.missions = (function () {
     else if (ad > 0.3) throttle = 0.78;
     // ease off on the approach so they arrive at a sane speed
     else if (dist < 26 && Math.abs(car.speed) > 30) throttle = 0.5;
-    // two-way rubber band: leaders ease a little, stragglers get a push, so the
-    // pack stays on your bumper instead of falling away
+    // Two-way rubber band: leaders ease a little, stragglers get a push, so
+    // the pack stays on your bumper instead of falling away.
+    //
+    // It used to scale THROTTLE and clamp the result at 1, which handed a
+    // trailing rival nothing whatsoever — on a straight they are already flat
+    // out, so the boost was thrown away by the clamp. And every rival trails,
+    // because they all start behind you. Worse, rivals drive the same car you
+    // do by design, so matching your throttle can only ever match your speed:
+    // no amount of pedal closes a gap. The band moves what the car is CAPABLE
+    // of instead, which is the only lever that can.
     var lead = car.cpIndex - active.cpIndex;
-    if (lead > 0) throttle *= 0.94;
-    else if (lead < 0) throttle = Math.min(1, throttle * 1.16);
+    var edge;
+    if (lead > 0) edge = 0.95;
+    else if (lead < 0) edge = 1.13;
+    else {
+      // same checkpoint, so whoever is further from it is the one behind
+      var pc = GAME.player.car;
+      var cpNow = d.cps[Math.min(active.cpIndex, d.cps.length - 1)];
+      var mine = U.dist(car.pos.x, car.pos.z, cpNow[0], cpNow[1]);
+      var yours = pc ? U.dist(pc.pos.x, pc.pos.z, cpNow[0], cpNow[1]) : mine;
+      edge = 1 + U.clamp((mine - yours) / 320, -0.05, 0.13);
+    }
+    car.raceEdge = edge;
     // the handbrake is for genuine hairpins only; using it mid-corner spins them
     var handbrake = ad > 1.5 && Math.abs(car.speed) > 30;
 
