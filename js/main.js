@@ -524,6 +524,10 @@
         // height isn't mistaken for a fall (and scored as a jump)
         P.car.pos.set(x, GAME.city.groundY(x, z), z);
         P.car.speed = 0; P.car.lat = 0; P.car.vy = 0; P.car.air = 0; P.car.jumpRamp = null;
+        // and drop the held trajectory with it — set down out of a jump
+        // without this and the car keeps flying the old one on the ground,
+        // deaf to the pedals, because nothing else clears it but a landing
+        P.car.airVX = P.car.airVZ = undefined;
       } else {
         P.pos.set(x, GAME.city.groundY(x, z), z);
         P.velY = 0; P.airborne = false;

@@ -36,12 +36,13 @@
 //   9. SHOWROOM       — a bought vehicle is delivered once, not twice.
 //  10. RACE GRID      — the field lines up where you can see it, and the
 //      rubber band moves something that can actually close a gap.
-//  11. SUSPENSION     — weight moves when speed does: the nose lifts under
+//  11. AIR CONTROL    — the pedals stop at the lip and the wheel does not.
+//  12. SUSPENSION     — weight moves when speed does: the nose lifts under
 //      power and dives under the brakes, on TOP of whatever grade the wheels
 //      are on, and settles back to it.
-//  12. TOUCH STICK    — a viewport change mid-drag must let the stick go
+//  13. TOUCH STICK    — a viewport change mid-drag must let the stick go
 //      rather than keep steering from an origin on the old screen.
-//  13. BROADPHASE     — a non-finite lookup has to return, not spin. This
+//  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
 var http = require('http');
@@ -759,7 +760,135 @@ function withTimeout(p, ms) {
     up.filter(function (r) { return r.to === r.from; }).every(function (r) { return r.edge > 1; }),
     JSON.stringify(up.filter(function (r) { return r.to === r.from; })));
 
-  // ---------- 11: suspension carries the load ----------
+  // ---------- 11: nothing you do with the pedals steers a jump ----------
+  var air = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys;
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(356, 60);            // the strip: long, flat, straight
+    GAME.test.fastForward(0.5);
+    GAME.test.spawnCar('sedan', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(1.5);
+    var car = P.car;
+    if (!car) return { flew: false };
+    // Straight down the strip, PARALLEL to the kerb that runs along x=370.
+    // Angle the launch into it instead and the last few frames of the descent
+    // clip it — and since a car turned broadside covers more ground in x than
+    // one pointing along the strip, the collider pushes the steered flight out
+    // and the coast one not at all. That is the wall doing its job, not the
+    // wheel steering the jump, but it lands in the same measurement. Fly clear
+    // of it; the corridor anchor below is what keeps this honest.
+    var H = 0;
+
+    // Launch identically every time and fly it to the ground. The trajectory
+    // is set at the lip, so every one of these should land in the same place
+    // however the pedals are worked on the way.
+    function flight(keys) {
+      K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false;
+      car.pos.set(356, GAME.city.groundY(356, 60), 60);
+      car.air = 0; car.airVX = car.airVZ = undefined;
+      GAME.test.fastForward(1 / 60);        // let the world settle around it
+      // Pin the launch state hard, immediately before the lip. Set any earlier
+      // and a tick of drag, a nudge from collideStatic, or the damage the last
+      // landing did all get a say, and the flights stop being comparable —
+      // which is what the launch anchor below caught.
+      car.pos.set(356, GAME.city.groundY(356, 60) + 6, 60);
+      car.heading = H; car.speed = 26; car.lat = 0; car.vy = 9; car.air = 0;
+      car.airVX = car.airVZ = undefined;
+      car.jumpRamp = null; car.jumpSpin = 0;
+      car.hp = car.spec.hp; car.stage = 0; car.boostT = 0; car.spiked = false;
+      // One tick to leave the ground, THEN the inputs. The frame the wheels
+      // come off is still a frame on the ramp and the pedals are meant to
+      // count for it; what is being measured here is the flight after that.
+      GAME.test.fastForward(1 / 60);
+      var frozen = Math.round(Math.sqrt((car.airVX || 0) * (car.airVX || 0) +
+        (car.airVZ || 0) * (car.airVZ || 0)) * 1000) / 1000;
+      for (var k in keys) K[k] = keys[k];
+      var x0 = car.pos.x, z0 = car.pos.z, ticks = 0, spin = 0;
+      var lx = x0, lz = z0;                 // last sample with the wheels still up
+      var path = [[x0, z0, car.pos.y]];
+      while (ticks < 400) {
+        GAME.test.fastForward(1 / 60);
+        ticks++;
+        // landStunt zeroes the spin as it scores it, so catch it in flight
+        spin = Math.max(spin, Math.abs(car.jumpSpin || 0));
+        path.push([car.pos.x, car.pos.z, car.pos.y]);
+        if (!car.air) break;                // wheels back down
+        lx = car.pos.x; lz = car.pos.z;     // still flying, so this tick counts
+      }
+      K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false;
+      // Measure to the last AIRBORNE sample, not to where it ends up. The tick
+      // that breaks the loop is already a ground tick: the wheels are back on
+      // and it drives on the speed/lat that landStunt just decomposed out of
+      // the frozen trajectory — which legitimately differ when the body landed
+      // rotated. Including it would be measuring how a sideways car scrubs
+      // speed, not whether the pedals moved the jump.
+      return { dist: Math.round(Math.sqrt(U.dist2(x0, z0, lx, lz)) * 1000) / 1000,
+               frozen: frozen, ticks: ticks, spin: spin, path: path,
+               turned: Math.abs(U.wrapPI(car.heading - H)) };
+    }
+    var coast = flight({});
+    var braked = flight({ KeyS: true });
+    var floored = flight({ KeyW: true });
+    var steered = flight({ KeyA: true });
+    // Is there anything along the flight the body could have hit? Same cull
+    // collideStatic uses — a box only counts as a wall while its top is above
+    // the car. If the city ever grows something into this corridor these
+    // checks would start measuring the collider instead, so say so out loud
+    // rather than let the invariant fail for a reason that is not the code's.
+    var blockers = 0;
+    for (var pi = 0; pi < coast.path.length; pi++) {
+      var pt = coast.path[pi];
+      var bx = GAME.city.hash.query(pt[0], pt[1], car.spec.l);
+      for (var bj = 0; bj < bx.length; bj++) {
+        var bb = bx[bj];
+        if (bb.h !== undefined && bb.h <= pt[2] + 0.3) continue;
+        if (bb.minY !== undefined && pt[2] < bb.minY - 1) continue;
+        blockers++;
+      }
+    }
+    delete coast.path; delete braked.path; delete floored.path; delete steered.path;
+    // leave the world tidy: the group below drives a car of its own, and
+    // enterNearestCar() hands back the one you are already sitting in
+    GAME.exitCar();
+    GAME.test.fastForward(0.5);
+    return { flew: true, coast: coast, braked: braked, floored: floored, steered: steered,
+             blockers: blockers, onFoot: !GAME.player.inCar };
+  });
+  check('air: the car left the ground and came back (anchor sanity)',
+    air.flew && air.coast.ticks > 20 && air.coast.dist > 15,
+    'ticks=' + (air.coast || {}).ticks + ' dist=' + (air.coast || {}).dist);
+  if (air.flew) {
+    check('air: standing on the brakes mid-jump changes nothing',
+      Math.abs(air.braked.dist - air.coast.dist) < 0.01,
+      'coast=' + air.coast.dist + ' braked=' + air.braked.dist);
+    check('air: and neither does holding the throttle — no free metres',
+      Math.abs(air.floored.dist - air.coast.dist) < 0.01,
+      'coast=' + air.coast.dist + ' floored=' + air.floored.dist);
+    check('air: every launch is identical (anchor sanity)',
+      // frozen > 0 matters: read this off a build with no held trajectory at
+      // all and every flight reports 0, and the anchor would agree they match
+      air.coast.frozen > 0 &&
+      air.braked.frozen === air.coast.frozen && air.floored.frozen === air.coast.frozen &&
+      air.steered.frozen === air.coast.frozen && air.braked.ticks === air.coast.ticks &&
+      air.floored.ticks === air.coast.ticks && air.steered.ticks === air.coast.ticks,
+      'speed ' + [air.coast, air.braked, air.floored, air.steered].map(function (f) { return f.frozen; }).join('/') +
+      '  hang ' + [air.coast, air.braked, air.floored, air.steered].map(function (f) { return f.ticks; }).join('/'));
+    check('air: the wheel still turns the body, so spins still score',
+      air.steered.turned > 0.3 && air.steered.spin > 0.3,
+      'turned=' + air.steered.turned.toFixed(2) + ' spin=' + air.steered.spin.toFixed(2));
+    check('air: the corridor is clear, so nothing but the pedals is in play (anchor sanity)',
+      air.blockers === 0, 'walls along the flight=' + air.blockers);
+    check('air: and the group leaves the player on foot (anchor sanity)', air.onFoot === true);
+    check('air: but turning in the air does not steer the jump either',
+      Math.abs(air.steered.dist - air.coast.dist) < 0.01,
+      'coast=' + air.coast.dist + ' steered=' + air.steered.dist);
+  }
+
+  // ---------- 12: suspension carries the load ----------
   var susp = await page.evaluate(function () {
     var P = GAME.player, K = GAME.input.keys;
     function clear() { K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false; }
@@ -843,7 +972,7 @@ function withTimeout(p, ms) {
     bike.onBike === true && bike.speed > 3, 'speed=' + (bike.speed || 0).toFixed(1));
   check('suspension: a bike gets none of it', Math.abs(bike.p) < 0.005, 'susp=' + (bike.p || 0).toFixed(4));
 
-  // ---------- 12: the touch stick lets go when the viewport changes ----------
+  // ---------- 13: the touch stick lets go when the viewport changes ----------
   // The stick is placed where the thumb lands and steers by the offset from
   // that point, in client coordinates. Turn the device mid-drag and that
   // origin belongs to a screen that no longer exists — it can sit off the new
@@ -980,7 +1109,7 @@ function withTimeout(p, ms) {
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 
-  // ---------- 13: the broadphase survives a non-finite lookup ----------
+  // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
   // cell loops spin forever and the frame loop stops dead. Every caller hands
   // these an entity position, so one bad number in the physics reaches them.

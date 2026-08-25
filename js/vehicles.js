@@ -482,28 +482,43 @@ GAME.vehicles = (function () {
     var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1) * edge;
     if (car.stage >= 2) { maxSp *= 0.6; accel *= 0.5; }
 
-    if (c.throttle > 0) car.speed += accel * c.throttle * dt;
-    else if (c.throttle < 0) {
-      car.speed += (car.speed > 1 ? accel * 1.6 : accel * 0.6) * c.throttle * dt;
+    // Wheels off the ground, nothing to push against. The trajectory is the
+    // one the lip gave you and the pedals stop mattering until you land: you
+    // could brake in mid-jump, and — because a stunt jump pays by the metre —
+    // hold the throttle to buy distance that was never earned on the ramp.
+    // Tyres have nothing to grip either, so speed and slip are held rather
+    // than left to drag and decay, which also keeps the steering authority you
+    // took off with.
+    //
+    // The WHEEL still works. Spins are scored off heading (see jumpSpin
+    // below), and you want to be able to straighten up before you land.
+    var flying = car.airVX !== undefined;
+    if (!flying) {
+      if (c.throttle > 0) car.speed += accel * c.throttle * dt;
+      else if (c.throttle < 0) {
+        car.speed += (car.speed > 1 ? accel * 1.6 : accel * 0.6) * c.throttle * dt;
+      }
+      car.speed = U.clamp(car.speed, -maxSp * 0.4, maxSp);
+      car.speed *= Math.exp(-0.25 * dt);
+      if (Math.abs(car.speed) < 0.06 && c.throttle === 0) car.speed = 0;
     }
-    car.speed = U.clamp(car.speed, -maxSp * 0.4, maxSp);
-    car.speed *= Math.exp(-0.25 * dt);
-    if (Math.abs(car.speed) < 0.06 && c.throttle === 0) car.speed = 0;
 
     var steerFactor = Math.min(1, Math.abs(car.speed) / 7) / (1 + Math.abs(car.speed) * 0.022);
     var dir = car.speed < -0.5 ? -1 : 1;
     car.heading += c.steer * spec.turn * steerFactor * dir * dt;
 
-    var grip = spec.grip * surf * (c.handbrake ? 0.22 : 1) * (car.spiked ? 0.5 : 1);
-    if (c.handbrake) car.speed *= Math.exp(-0.9 * dt);
-    // lateral slip decays toward zero; handbrake keeps it alive for drifts
-    var slip = c.steer * car.speed * 0.16 * (c.handbrake ? 2.4 : 1);
-    car.lat = (car.lat + slip * dt * 8) * Math.exp(-grip * dt);
+    if (!flying) {
+      var grip = spec.grip * surf * (c.handbrake ? 0.22 : 1) * (car.spiked ? 0.5 : 1);
+      if (c.handbrake) car.speed *= Math.exp(-0.9 * dt);
+      // lateral slip decays toward zero; handbrake keeps it alive for drifts
+      var slip = c.steer * car.speed * 0.16 * (c.handbrake ? 2.4 : 1);
+      car.lat = (car.lat + slip * dt * 8) * Math.exp(-grip * dt);
+    }
 
     var fx = fwdX(car), fz = fwdZ(car);
     var sx = fz, sz = -fx;
-    var vx = fx * car.speed + sx * car.lat;
-    var vz = fz * car.speed + sz * car.lat;
+    var vx = flying ? car.airVX : fx * car.speed + sx * car.lat;
+    var vz = flying ? car.airVZ : fz * car.speed + sz * car.lat;
     car.vx = vx; car.vz = vz;
     car.pos.x += vx * dt;
     car.pos.z += vz * dt;
@@ -516,6 +531,8 @@ GAME.vehicles = (function () {
     var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
     if (car.pos.y > gy + stickTol) {
       if (!car.air) {
+        // the velocity the lip handed over, held until the wheels are back down
+        car.airVX = vx; car.airVZ = vz;
         car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0;
         // A stunt jump is EARNED at the lip: the launch only carries the
         // ramp's credit if the car left over the TOP edge, roughly along the
@@ -626,6 +643,16 @@ GAME.vehicles = (function () {
   function landStunt(car, impact) {
     var airT = car.air || 0;
     car.air = 0;
+    // Touching down, the held trajectory becomes the car's motion again, split
+    // along wherever the body finished up pointing: what lines up with the nose
+    // is speed, what does not is slip. Land straight and you keep everything;
+    // land sideways and the difference is exactly the scrub that costs you.
+    if (car.airVX !== undefined) {
+      var lfx = Math.sin(car.heading), lfz = Math.cos(car.heading);
+      car.speed = car.airVX * lfx + car.airVZ * lfz;
+      car.lat = car.airVX * lfz - car.airVZ * lfx;
+      car.airVX = car.airVZ = undefined;
+    }
     var isPlayer = car === GAME.player.car && GAME.player.inCar;
     var earned = car.jumpRamp !== undefined && car.jumpRamp !== null;
     var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
