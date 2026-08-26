@@ -30,6 +30,7 @@ GAME.stunts = (function () {
     var bonus = 250 + n * 50;
     GAME.addCash(bonus);
     GAME.audio.sting('win');
+    GAME.haptics.win();
     var left = total - n;
     GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
       (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
@@ -303,6 +304,7 @@ GAME.missions = (function () {
     active.earned += pay;
     active.sales++; active.jobCount++;
     GAME.audio.pickup();
+    GAME.haptics.pickup();
     if (active.sales >= active.quota) {
       active.level++;
       active.sales = 0;
@@ -310,6 +312,7 @@ GAME.missions = (function () {
       active.timeLeft += 30;
       GAME.hud.message('ROUND ' + active.level + ' — +30s, sell ' + active.quota + '  ·  +$' + pay, 3.4);
       GAME.audio.sting('win');
+      GAME.haptics.win();
     } else {
       GAME.hud.message('Sold — +$' + pay + '  ·  ' + active.sales + ' / ' + active.quota, 2);
     }
@@ -626,6 +629,7 @@ GAME.missions = (function () {
     if (tgt.ped && !tgt.ped.dead) GAME.peds.removePed(tgt.ped);
     active.aboard++;
     GAME.audio.pickup();
+    GAME.haptics.pickup();
     var kind = active.def.id;
     var who = kind === 'ambulance' ? 'Patient' : 'Fare';
     // head for the drop-off once we're full or there's nobody else left
@@ -654,6 +658,7 @@ GAME.missions = (function () {
     var fare = per * n;
     GAME.addCash(fare); active.earned += fare;
     GAME.audio.sting('win');
+    GAME.haptics.win();
     for (var i = 0; i < n; i++) {
       var out = GAME.peds.spawnPed(tgt[0] + (i - n / 2) * 1.4, tgt[1] + 1.5);
       out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z;
@@ -727,6 +732,7 @@ GAME.missions = (function () {
     active.targets = [];
     if (count > 0) {
       GAME.audio.sting('win');
+      GAME.haptics.win();
       GAME.hud.message('SHIFT OVER — level ' + lv + ', ' + count + ' ' + unit + (count === 1 ? '' : 's') +
         ', $' + earned + ' earned' + (reason ? '  (' + reason + ')' : ''), 4.5);
       var id = active.def.id;
@@ -956,6 +962,7 @@ GAME.missions = (function () {
       // finishing enough work is what opens the channel
       var opened = GAME.isla && GAME.isla.checkUnlock();
       GAME.audio.sting('win');
+      GAME.haptics.win();
       var head = d.job ? 'JOB DONE! +$' : 'MISSION PASSED! +$';
       // races report the finishing place and time alongside the payout
       if (d.type === 'race') {
@@ -1271,6 +1278,7 @@ GAME.missions = (function () {
           active.state = 'run'; active.t = 0;
           GAME.hud.bigCount('GO!');
           GAME.audio.pickup();
+          GAME.haptics.checkpoint();
           if (active.goSetup) { active.goSetup(); active.goSetup = null; }
         } else {
           var num = Math.max(1, Math.ceil(active.countdown));
@@ -1294,6 +1302,7 @@ GAME.missions = (function () {
       if (cp && U.dist2(P.car.pos.x, P.car.pos.z, cp[0], cp[1]) < 100) {
         active.cpIndex++;
         GAME.audio.pickup();
+        GAME.haptics.checkpoint();
         if (active.cpIndex >= d2.cps.length) { finish(true); return; }
         GAME.hud.missionObjective(objectiveText());
         updateCp();
@@ -1322,6 +1331,7 @@ GAME.missions = (function () {
       if (stop && U.dist2(px2, pz2, stop[0], stop[1]) < 25) {
         active.cpIndex++;
         GAME.audio.pickup();
+        GAME.haptics.checkpoint();
         if (active.cpIndex >= active.stops.length) { finish(true); return; }
         GAME.hud.message('Delivered! Next stop is marked.', 2);
         GAME.hud.missionObjective(objectiveText());
@@ -1454,6 +1464,7 @@ GAME.missions = (function () {
     applyComplete();
     GAME.track('game-complete');
     GAME.audio.sting('win');
+    GAME.haptics.win();
     GAME.hud.dialog({
       title: 'COSTA ROSA, COMPLETE',
       body: 'Every mission, every race, every jump — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and money is no longer a question.',

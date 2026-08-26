@@ -725,6 +725,7 @@ GAME.isla = (function () {
     GAME.hud.message('THE BRIDGES ARE OPEN — Isla Verde is east across the channel.', 6);
     GAME.audio.sting('win');
     GAME.track('isla-unlocked');
+    GAME.haptics.win();
     // when the stunt reward's own card is already up, don't paint over it —
     // the message above carries the news
     if (!GAME.shareOpen) GAME.share.show({

@@ -185,6 +185,7 @@ GAME.playerWasted = function (cause) {
   var show = function () {
     if (P.state !== 'wasted' || P.respawnQueued) return;
     GAME.audio.sting('wasted');
+    GAME.haptics.wasted();
     GAME.hud.showBig('wasted', body);
   };
   if (delay) setTimeout(show, delay); else show();
@@ -200,6 +201,7 @@ GAME.playerBusted = function () {
   killLoopingAudio();
   stowParachute();
   GAME.audio.sting('busted');
+  GAME.haptics.busted();
   var fine = Math.min(P.cash, 200);
   P.pendingFine = fine;
   GAME.hud.showBig('busted', 'Released with a $' + fine + ' fine. Weapons confiscated.');

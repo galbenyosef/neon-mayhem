@@ -166,8 +166,10 @@ GAME.combat = (function () {
       if (res.hit) {
         var hx = m.x + dx * t, hz = m.z + dz * t;
         if (res.hit.kind === 'ped') {
+          GAME.haptics.hit();
           GAME.peds.damage(res.hit.obj, wd.damage, true);
         } else if (res.hit.kind === 'car') {
+          GAME.haptics.hit();
           GAME.vehicles.damageCar(res.hit.obj, wd.damage * 0.8, 'gun');
           GAME.fx.spawn(hx, 0.8, hz, { count: 3, color: 0xffe0a0, spread: 2, life: 0.3 });
           if (res.hit.obj.isPolice && !res.hit.obj.mission) GAME.police.reportCrime('hit_cop_car', P.pos);
@@ -507,6 +509,7 @@ GAME.combat = (function () {
       else if (p.type === 'cash') { var amt = 10 + Math.floor(Math.random() * 30); GAME.addCash(amt); label = '$' + amt; }
       else giveWeapon(p.type, p.type === 'pistol' ? 24 : p.type === 'smg' ? 50 : p.type === 'rifle' ? 20 : 10);
       GAME.audio.pickup();
+      GAME.haptics.pickup();
       GAME.hud.message(label, 1.2);
       // Off the street means off the street: a fixed pickup stays gone for a
       // full in-game day (one whole day/night cycle). The old 45 seconds made

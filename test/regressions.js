@@ -30,7 +30,10 @@
 //      with it, rather than leaving them on the roof it would have had
 //      sitting still.
 //   7. HAPTICS        — a buzz per knock, rationed, silenceable, and safe on
-//      a browser with no motor at all.
+//      a browser with no motor at all. Then the vocabulary on top of that: no
+//      two kinds may feel the same, the tiers must preempt in one direction
+//      only, and the events with a body behind them — a run-over, a star, a
+//      fire — are driven through the game rather than through the module door.
 //   8. FRAME BUDGET   — the crowd thins when frames run late and, more to
 //      the point, comes BACK when they do not.
 //   9. SHOWROOM       — a bought vehicle is delivered once, not twice.
@@ -430,6 +433,10 @@ function withTimeout(p, ms) {
     window.__buzz.length = 0;
     GAME.haptics.testBuzz(9999);
     r.capped = window.__buzz.slice();
+    GAME.haptics.testReset();
+    window.__buzz.length = 0;
+    GAME.haptics.knock(99);
+    r.knockCapped = window.__buzz.slice();
     // off means off
     GAME.haptics.setOn(false);
     window.__buzz.length = 0;
@@ -450,8 +457,11 @@ function withTimeout(p, ms) {
     hap.first === true && hap.repeat === false, 'first=' + hap.first + ' repeat=' + hap.repeat);
   check('haptics: a harder knock preempts inside the window',
     hap.harder === true && hap.sent.length === 2, 'sent=' + JSON.stringify(hap.sent));
-  check('haptics: nothing outruns the cap', hap.capped.length === 1 && hap.capped[0] <= 60,
+  check('haptics: nothing outruns the pulse cap', hap.capped.length === 1 && hap.capped[0] <= 120,
     'sent=' + JSON.stringify(hap.capped));
+  check('haptics: and the shake channel keeps its own, tighter ceiling',
+    hap.knockCapped.length === 1 && hap.knockCapped[0] <= 60,
+    'sent=' + JSON.stringify(hap.knockCapped));
   check('haptics: switched off sends nothing', hap.whileOff.length === 0, 'sent=' + JSON.stringify(hap.whileOff));
   check('haptics: a browser with no vibrate reports unavailable and does not throw',
     hap.unavailable === false && hap.threwWithoutApi === false);
@@ -481,6 +491,12 @@ function withTimeout(p, ms) {
   // still ringing. Throttling alone would hide the difference, so this runs
   // over real wall time: buzzing per frame would slip one through every window
   // and land several, while reading the rise lands exactly one.
+  //
+  // It waits on FRAMES rather than on a stopwatch. Headless Chromium schedules
+  // rAF off a compositor that is not drawing anything, so the callbacks are
+  // sparse and uneven — a fixed 700 ms landed four of them on one run and none
+  // on the next, and a window with no frames in it reports zero buzzes and
+  // reads exactly like the hook being broken.
   await page.evaluate(function () {
     GAME.player.health = 100;
     // This window runs on the wall clock with the world live around a player
@@ -492,17 +508,220 @@ function withTimeout(p, ms) {
     GAME.test.fastForward(1);
     window.__buzz.length = 0;
     GAME.haptics.testReset();
+    window.__frames = 0;
+    (function count() { window.__frames++; requestAnimationFrame(count); })();
     GAME.cameraShake = 0.9;
   });
-  await page.waitForTimeout(700);
+  // enough frames for a per-frame hook to slip several past the 90 ms window
+  await page.waitForFunction(function () { return window.__frames >= 8; }, null, { timeout: 20000 });
   var shake = await page.evaluate(function () {
     GAME.godMode = false;
-    return { sent: window.__buzz.slice(), left: GAME.cameraShake };
+    return { sent: window.__buzz.slice(), left: GAME.cameraShake, frames: window.__frames };
   });
   check('haptics: a knock buzzes once, not once per frame it rings for',
-    shake.sent.length === 1, 'sent=' + JSON.stringify(shake.sent) + ' shakeLeft=' + shake.left);
-  check('haptics: the shake was still ringing throughout (anchor sanity)',
-    shake.left > 0.01, 'left=' + shake.left);
+    shake.sent.length === 1,
+    'sent=' + JSON.stringify(shake.sent) + ' shakeLeft=' + shake.left + ' frames=' + shake.frames);
+  // Both halves matter. Below 0.9 proves the camera update actually ran, so a
+  // window that drew nothing cannot pass this by holding the value it was
+  // handed; above 0.01 proves the shake was still ringing the whole time, so
+  // "buzzed once" is not just "the shake ended before it could buzz twice".
+  check('haptics: the shake ran down but was still ringing throughout (anchor sanity)',
+    shake.left < 0.9 && shake.left > 0.01, 'left=' + shake.left + ' frames=' + shake.frames);
+  // ---- the vocabulary itself ----
+  // Length alone cannot say anything specific, so the value of the whole
+  // channel rests on the patterns being distinguishable from one another.
+  // Assert that directly rather than trusting the table to stay tidy.
+  //
+  // Every one of these reaches for a method by name, so a build without them
+  // would throw inside the page and take the runner down with it rather than
+  // report anything. A missing method is a finding, not a crash: name it and
+  // let the check below fail on it.
+  await page.evaluate(function () {
+    window.__missing = [];
+    window.__hap = function (name, arg) {
+      var f = GAME.haptics[name];
+      if (typeof f !== 'function') { window.__missing.push(name); return false; }
+      return f.call(GAME.haptics, arg);
+    };
+  });
+  var vocab = await page.evaluate(function () {
+    var H = GAME.haptics, out = {}, seen = {};
+    var kinds = ['uiTap', 'pickup', 'hit', 'shot', 'checkpoint', 'deny', 'hurt',
+                 'win', 'stunt', 'wantedClear', 'smoking', 'onFire', 'wasted', 'busted'];
+    var dupes = [];
+    for (var i = 0; i < kinds.length; i++) {
+      H.testReset();
+      window.__buzz.length = 0;
+      window.__hap(kinds[i]);
+      out[kinds[i]] = { sent: window.__buzz.slice() };
+      var key = JSON.stringify(window.__buzz);
+      if (seen[key]) dupes.push(seen[key] + '=' + kinds[i] + ' ' + key);
+      seen[key] = kinds[i];
+    }
+    // the star count is spoken in taps, so the shapes have to differ by level
+    var stars = [];
+    for (var n = 1; n <= 5; n++) {
+      H.testReset(); window.__buzz.length = 0;
+      window.__hap('wantedUp', n);
+      stars.push(JSON.stringify(window.__buzz[0]));
+    }
+    return { out: out, dupes: dupes, stars: stars, missing: window.__missing.slice(),
+             distinctStars: stars.filter(function (v, i) { return stars.indexOf(v) === i; }).length };
+  });
+  check('haptics: every kind exists and actually sends something (anchor sanity)',
+    vocab.missing.length === 0 &&
+    Object.keys(vocab.out).every(function (k) { return vocab.out[k].sent.length === 1; }),
+    'missing=' + JSON.stringify(vocab.missing) + ' silent=' +
+    JSON.stringify(Object.keys(vocab.out).filter(function (k) { return vocab.out[k].sent.length !== 1; })));
+  check('haptics: no two kinds feel the same', vocab.dupes.length === 0, vocab.dupes.join(' | '));
+  check('haptics: a pattern is a pattern, not a duration',
+    Array.isArray(vocab.out.onFire.sent[0]) &&
+    vocab.out.onFire.sent[0].length >= 3 && typeof vocab.out.pickup.sent[0] === 'number',
+    'onFire=' + JSON.stringify(vocab.out.onFire.sent[0]) + ' pickup=' + JSON.stringify(vocab.out.pickup.sent[0]));
+  check('haptics: the star count is spoken in taps, and five differs from one',
+    vocab.distinctStars === 5, JSON.stringify(vocab.stars));
+
+  // ---- who may interrupt whom ----
+  var pri = await page.evaluate(function () {
+    var H = GAME.haptics, r = {}, hap = window.__hap;
+    window.__missing.length = 0;
+    // a thumb on a button must never be able to talk over a crash
+    H.testReset(); window.__buzz.length = 0;
+    H.knock(0.9); r.tapAfterKnock = hap('uiTap'); r.afterTap = window.__buzz.slice();
+    // and the alarm gets through whatever is already playing
+    H.testReset(); window.__buzz.length = 0;
+    H.knock(0.9); r.alarmAfterKnock = hap('onFire'); r.afterAlarm = window.__buzz.slice();
+    // a long pattern is not cut short by a lighter one landing mid-play
+    H.testReset(); window.__buzz.length = 0;
+    hap('wasted'); r.tapAfterWasted = hap('uiTap'); r.winAfterWasted = hap('win');
+    r.afterWasted = window.__buzz.slice();
+    // and a connect outranks the trigger it arrived with
+    H.testReset(); window.__buzz.length = 0;
+    H.shot(); r.hitAfterShot = hap('hit'); r.afterHit = window.__buzz.slice();
+    // switched off, none of it goes anywhere
+    H.setOn(false);
+    H.testReset(); window.__buzz.length = 0;
+    hap('splat', 1); hap('wantedUp', 5); hap('onFire'); hap('wasted'); hap('busted'); hap('win'); hap('uiTap');
+    r.whileOff = window.__buzz.slice();
+    H.setOn(true);
+    return r;
+  });
+  check('haptics: a button tap cannot talk over a crash',
+    pri.tapAfterKnock === false && pri.afterTap.length === 1,
+    'sent=' + JSON.stringify(pri.afterTap));
+  check('haptics: but the alarm gets through one',
+    pri.alarmAfterKnock === true && pri.afterAlarm.length === 2,
+    'sent=' + JSON.stringify(pri.afterAlarm));
+  check('haptics: and nothing below it cuts a death short',
+    pri.tapAfterWasted === false && pri.winAfterWasted === false && pri.afterWasted.length === 1,
+    'sent=' + JSON.stringify(pri.afterWasted));
+  check('haptics: a round connecting preempts the trigger it left with',
+    pri.hitAfterShot === true && pri.afterHit.length === 2,
+    'sent=' + JSON.stringify(pri.afterHit));
+  check('haptics: RUMBLE off silences every one of them',
+    pri.whileOff.length === 0, 'sent=' + JSON.stringify(pri.whileOff));
+
+  // ---- and through the game, for the ones with a body behind them ----
+  var world = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(356, 40);
+    GAME.test.fastForward(0.5);
+    GAME.test.spawnCar('sedan', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(1);
+    var car = P.car;
+    r.driving = !!car;
+    if (!car) return r;
+
+    // Somebody under the wheels. Put them where the car is about to be and
+    // give it real pace: under 4 m/s the run-over check does not even look.
+    //
+    // Already at five stars for this one, and it is not a dodge. Killing a
+    // pedestrian is also a CRIME, and the star it earns outranks the body on
+    // the bonnet — deliberately, since the more consequential news wins a
+    // channel this narrow. Pinned at the ceiling the level cannot move, so
+    // what is measured here is the run-over on its own. The masking is worth
+    // knowing about too, so it gets a check of its own below.
+    function runOver() {
+      car.heading = 0; car.speed = 20; car.lat = 0;
+      var ped = GAME.test.spawnPed(0, 0);
+      ped.pos.set(car.pos.x, car.pos.y, car.pos.z + 2);
+      GAME.haptics.testReset(); window.__buzz.length = 0;
+      GAME.test.fastForward(0.2);
+      return { sent: window.__buzz.slice(), dead: !!ped.dead };
+    }
+    // godMode for the window: at five stars the cops shoot, and a hurt() buzz
+    // landing on top would be a second buzz from a second cause
+    GAME.godMode = true;
+    GAME.police.setWanted(5);
+    GAME.test.fastForward(0.3);
+    var over = runOver();
+    r.splat = over.sent; r.pedDead = over.dead;
+
+    // And the same act from clean, where the star it earns takes the channel.
+    // Two conditions before that star exists at all, and missing either would
+    // have left this comparing one splat against another: reportCrime holds a
+    // 1.2 s cooldown per crime type, and an unwitnessed one draws nothing —
+    // so wait the cooldown out and leave somebody standing there to see it.
+    GAME.police.clearWanted();
+    GAME.test.fastForward(1.5);
+    GAME.test.spawnPed(6, 6);
+    var first = runOver();
+    r.firstKill = first.sent; r.firstDead = first.dead;
+    r.firstStars = GAME.test.getState().wanted;
+    GAME.godMode = false;
+
+    // The law changing gear, both ways.
+    GAME.police.clearWanted();
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    GAME.police.setWanted(3);
+    r.wantedUp = window.__buzz.slice();
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    GAME.police.clearWanted();
+    r.wantedClear = window.__buzz.slice();
+
+    // The ride catching fire — the one warning with a deadline on it.
+    car.stage = 0; car.stageWarn = 0; car.hp = car.spec.hp;
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    GAME.vehicles.damageCar(car, car.spec.hp * 0.9, 'test');
+    r.onFire = window.__buzz.slice();
+    r.stage = car.stage;
+
+    car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0;
+
+    // tidy up behind: the groups below drive a car and read the star count
+    GAME.exitCar();
+    GAME.police.clearWanted();
+    P.health = 100;
+    GAME.test.fastForward(0.4);
+    r.onFoot = !GAME.player.inCar;
+    return r;
+  });
+  check('haptics: the player is driving and both bodies went under (anchor sanity)',
+    world.driving === true && world.pedDead === true && world.firstDead === true,
+    'driving=' + world.driving + ' dead=' + world.pedDead + '/' + world.firstDead);
+  check('haptics: running someone over is felt, not silent',
+    world.splat.length === 1 && Array.isArray(world.splat[0]) && world.splat[0].length === 3,
+    'sent=' + JSON.stringify(world.splat));
+  check('haptics: the same kill from clean actually draws a star (anchor sanity)',
+    world.firstStars >= 1, 'stars=' + world.firstStars);
+  check('haptics: and that star takes the channel from the body under the wheels',
+    world.firstKill.length === 1 && JSON.stringify(world.firstKill) !== JSON.stringify(world.splat),
+    'firstKill=' + JSON.stringify(world.firstKill) + ' splat=' + JSON.stringify(world.splat));
+  check('haptics: a star going up buzzes, and going clear buzzes differently',
+    world.wantedUp.length === 1 && world.wantedClear.length === 1 &&
+    JSON.stringify(world.wantedUp) !== JSON.stringify(world.wantedClear),
+    'up=' + JSON.stringify(world.wantedUp) + ' clear=' + JSON.stringify(world.wantedClear));
+  check('haptics: the ride catching fire sounds the alarm (anchor sanity: it caught)',
+    world.stage >= 2 && world.onFire.length === 1 && world.onFire[0].length === 5,
+    'stage=' + world.stage + ' sent=' + JSON.stringify(world.onFire));
+  check('haptics: and the group leaves the player on foot and clean (anchor sanity)',
+    world.onFoot === true);
+
   check('haptics: the handedness switch is hidden off a touch device',
     (await page.evaluate(function () {
       return document.getElementById('pause-lefty').style.display;
@@ -1024,6 +1243,43 @@ function withTimeout(p, ms) {
     stick.after.x === 0 && stick.after.y === 0, 'x=' + stick.after.x + ' y=' + stick.after.y);
   check('touch: and puts the stick away with it', stick.after.base === 'none', 'base=' + stick.after.base);
   check('touch: a fresh grab still steers afterwards', Math.abs(stick.regrab) > 0.5, 'x=' + stick.regrab);
+  // The thumb buttons themselves. A virtual button has no travel and no click
+  // of its own, so this is the one piece of feedback that has to come from the
+  // motor or it does not exist — and it is the cheapest to leave unwired,
+  // since nothing on screen looks any different without it.
+  var tap = await tpage.evaluate(function () {
+    var sent = [];
+    navigator.vibrate = function (ms) { sent.push(ms); return true; };
+    var btn = null, all = document.querySelectorAll('.tbtn');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].style.display !== 'none' && all[i].offsetParent !== null) { btn = all[i]; break; }
+    }
+    if (!btn) return { found: false };
+    function press(el) {
+      var t = new Touch({ identifier: 11, target: el, clientX: 10, clientY: 10 });
+      el.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true
+      }));
+    }
+    GAME.haptics.testReset(); sent.length = 0;
+    press(btn);
+    var onPress = sent.slice();
+    // and the switch beside it means what it says, for these too
+    GAME.haptics.setOn(false);
+    GAME.haptics.testReset(); sent.length = 0;
+    press(btn);
+    var whileOff = sent.slice();
+    GAME.haptics.setOn(true);
+    return { found: true, label: btn.textContent, onPress: onPress, whileOff: whileOff };
+  });
+  check('touch: there is a thumb button on screen to press (anchor sanity)',
+    tap.found === true, 'label=' + tap.label);
+  check('touch: pressing one ticks, so it feels pressed at all',
+    tap.onPress.length === 1 && tap.onPress[0] > 0,
+    'label=' + tap.label + ' sent=' + JSON.stringify(tap.onPress));
+  check('touch: and with RUMBLE off it does not',
+    tap.whileOff.length === 0, 'sent=' + JSON.stringify(tap.whileOff));
+
   // Press it, rather than just look at it: the markup ships with the label
   // already reading RUMBLE: ON, so a check that only reads the text passes
   // with the wiring torn out.

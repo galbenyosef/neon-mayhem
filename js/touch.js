@@ -32,6 +32,10 @@ GAME.touch = (function () {
     b.addEventListener('touchstart', function (e) {
       e.preventDefault(); e.stopPropagation();
       b.classList.add('held');
+      // a virtual button has no travel and no click of its own, so without
+      // this it never feels pressed at all. Bottom tier: a thumb resting on
+      // GAS must never be able to talk over a crash.
+      GAME.haptics.uiTap();
       if (opts.toggle) {
         T[opts.flag] = !T[opts.flag];
         b.style.background = T[opts.flag] ? 'rgba(140,255,210,.4)' : '';

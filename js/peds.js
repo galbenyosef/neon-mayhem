@@ -288,8 +288,12 @@ GAME.peds = (function () {
           var ccar = world.cars[cc];
           if (Math.abs(ccar.speed) < 4) continue;
           if (U.dist2(ped.pos.x, ped.pos.z, ccar.pos.x, ccar.pos.z) < 5.2) {
-            kill(ped, 'car', ccar === P.car && P.inCar);
+            var copByPlayer = (ccar === P.car && P.inCar);
+            kill(ped, 'car', copByPlayer);
             GAME.audio.crash(0.4, ped.pos.x, ped.pos.z);
+            // nothing here touches cameraShake, so the knock channel never saw
+            // this: a body on the bonnet used to register as exactly nothing
+            if (copByPlayer) GAME.haptics.splat(Math.min(1, Math.abs(ccar.speed) / 26));
             break;
           }
         }
@@ -517,6 +521,7 @@ GAME.peds = (function () {
         if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 5.2) {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
+          if (byPlayer) GAME.haptics.splat(Math.min(1, sp2 / 26));
           // thrown along the bonnet rather than dropping on the spot
           var kf = Math.min(1, sp2 / 26);
           ped.knockX = Math.sin(car2.heading) * (4 + sp2 * 0.35);

@@ -4,6 +4,9 @@ GAME.hud = (function () {
   var shownCash = 0, targetCash = 0;
   var msgT = 0, countT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
+  // the star count as the HUD last drew it, so wantedChanged can tell going up
+  // from coming down — nothing that calls it passes the level you were on
+  var wantedShown = 0;
   var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 560;
   var MAP_W = 1020, MAP_H = 560;   // world -520..1520 by -560..560, at 0.5 px/m
   var dmgFlash = null;
@@ -829,6 +832,12 @@ GAME.hud = (function () {
     wantedChanged: function (n) {
       var spans = el['wanted-stars'].children;
       for (var i = 0; i < 5; i++) spans[i].className = i < n ? 'lit' : '';
+      // Both police.js paths already funnel through here, so this is the one
+      // place that sees every change — but neither of them passes the level
+      // you were ON, and the direction is the whole message. Keep it here.
+      if (n > wantedShown) GAME.haptics.wantedUp(n);
+      else if (n === 0 && wantedShown > 0) GAME.haptics.wantedClear();
+      wantedShown = n;
     },
     setWeapon: function (name, ammo) {
       if (!el['weapon-line']) return; // may fire before the HUD is wired up
@@ -1042,6 +1051,7 @@ GAME.nav = (function () {
         dest = null; path = [];
         GAME.hud.message('You have arrived.', 2.5);
         GAME.audio.pickup();
+        GAME.haptics.checkpoint();
       }
     }
   };

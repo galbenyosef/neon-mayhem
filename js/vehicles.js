@@ -665,6 +665,7 @@ GAME.vehicles = (function () {
         : airT > 1.6 ? 'INSANE JUMP!' : airT > 1.0 ? 'BIG AIR!' : 'NICE JUMP!';
       GAME.addCash(cash);
       GAME.audio.sting('win');
+      GAME.haptics.stunt();
       GAME.hud.message(label + '   ' + airT.toFixed(1) + 's · ' + Math.round(dist) + 'm · +$' + cash, 3);
       GAME.missions.notifyChaos(60);
       // a jump launched off one of the city's ramps also logs it as found
@@ -822,9 +823,11 @@ GAME.vehicles = (function () {
         car.stageWarn = 2;
         GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
         GAME.audio.sting('busted');
+        GAME.haptics.onFire();
       } else if (car.stage === 1 && !car.stageWarn && !car.spec.heli && !car.spec.plane) {
         car.stageWarn = 1;
         GAME.hud.message('Your ride is smoking — it won\'t take much more.', 3);
+        GAME.haptics.smoking();
       }
     }
     if (car.hp <= 0) {
@@ -841,6 +844,7 @@ GAME.vehicles = (function () {
           car.stageWarn = 2;
           GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
           GAME.audio.sting('busted');
+          GAME.haptics.onFire();
         }
       } else explodeCar(car, source, car.byPlayer);
     }
