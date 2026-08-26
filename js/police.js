@@ -214,7 +214,7 @@ GAME.police = (function () {
         h.fireT = (h.fireT || 0) - dt;
         if (d < 85 && h.fireT <= 0) {
           h.fireT = 1.35;
-          GAME.audio.gunshot('smg');
+          GAME.audio.gunshot('smg', h.pos.x, h.pos.z);
           // a fast target is hard to hit from a hovering doorway — and a
           // runner on foot gets suppressing fire, not a firing squad (the
           // sprint to a parked getaway plane must stay survivable)
@@ -554,7 +554,7 @@ GAME.police = (function () {
         if (U.dist2(P.car.pos.x, P.car.pos.z, spikes[sp].x, spikes[sp].z) < 27) {
           P.car.spiked = true;
           GAME.fx.spawn(P.car.pos.x, 0.4, P.car.pos.z, { count: 10, color: 0xffe0a0, spread: 3, life: 0.4 });
-          GAME.audio.crash(0.5);
+          GAME.audio.crash(0.5, P.car.pos.x, P.car.pos.z);
           GAME.hud.message('Tires shredded!', 2);
         }
       }
@@ -617,14 +617,14 @@ GAME.police = (function () {
     } else pinTimer = 0;
 
     // siren from nearest active car
-    var nd = 1e9;
+    var nd = 1e9, nx = 0, nz = 0;
     for (var n = 0; n < chasing.length; n++) {
       var d2s = U.dist2(chasing[n].pos.x, chasing[n].pos.z, px, pz);
-      if (d2s < nd) nd = d2s;
+      if (d2s < nd) { nd = d2s; nx = chasing[n].pos.x; nz = chasing[n].pos.z; }
     }
     if (nd < 1e9) {
       var dd = Math.sqrt(nd);
-      GAME.audio.siren(U.clamp(1 - dd / 130, 0, 1), 1 + U.clamp((60 - dd) / 400, -0.1, 0.15));
+      GAME.audio.siren(U.clamp(1 - dd / 130, 0, 1), 1 + U.clamp((60 - dd) / 400, -0.1, 0.15), nx, nz);
     } else GAME.audio.siren(0);
   }
 

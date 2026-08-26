@@ -4,6 +4,9 @@ GAME.hud = (function () {
   var shownCash = 0, targetCash = 0;
   var msgT = 0, countT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
+  // the star count as the HUD last drew it, so wantedChanged can tell going up
+  // from coming down — nothing that calls it passes the level you were on
+  var wantedShown = 0;
   var mapBuffer = null, MAP_S = 0.5, MAP_OX = 520, MAP_OY = 560;
   var MAP_W = 1020, MAP_H = 560;   // world -520..1520 by -560..560, at 0.5 px/m
   var dmgFlash = null;
@@ -99,6 +102,41 @@ GAME.hud = (function () {
       if (GAME.prefs.sfxOff) GAME.audio.setSfxOn(false);
     }
     paintAudioBtns();
+    // Rumble sits with the other outputs and is remembered the same way. The
+    // button only appears where a buzz could actually happen: a phone with the
+    // API. Desktop Chrome has navigator.vibrate and no motor to run it, and a
+    // switch for something that cannot occur is worse than no switch.
+    function paintHapticBtn() {
+      $('pause-haptic').textContent = GAME.haptics.on ? '📳 RUMBLE: ON' : '📳 RUMBLE: OFF';
+    }
+    if (GAME.isTouch && GAME.haptics.available) {
+      pauseBtn('pause-haptic', function () {
+        GAME.haptics.setOn(!GAME.haptics.on);
+        if (GAME.prefs) { GAME.prefs.rumbleOff = !GAME.haptics.on; GAME.save(); }
+        paintHapticBtn();
+      });
+      if (GAME.prefs && GAME.prefs.rumbleOff) GAME.haptics.setOn(false);
+      paintHapticBtn();
+    } else {
+      $('pause-haptic').style.display = 'none';
+    }
+    // Handedness, remembered like the rest. touch.init() runs before the save
+    // is read, so the stored choice can only be applied from here — the same
+    // reason the rumble switch above reads its pref at this point.
+    function paintLeftyBtn() {
+      $('pause-lefty').textContent = GAME.touch.lefty ? '🎮 CONTROLS: LEFT' : '🎮 CONTROLS: RIGHT';
+    }
+    if (GAME.isTouch) {
+      pauseBtn('pause-lefty', function () {
+        GAME.touch.setLefty(!GAME.touch.lefty);
+        if (GAME.prefs) { GAME.prefs.lefty = GAME.touch.lefty; GAME.save(); }
+        paintLeftyBtn();
+      });
+      if (GAME.prefs && GAME.prefs.lefty) GAME.touch.setLefty(true);
+      paintLeftyBtn();
+    } else {
+      $('pause-lefty').style.display = 'none';
+    }
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
@@ -768,8 +806,9 @@ GAME.hud = (function () {
       var open = force !== undefined ? force : !GAME.mapOpen;
       GAME.mapOpen = open;
       el['map-screen'].style.display = open ? 'flex' : 'none';
-      // the sim loop halts while the map is open; silence the engine drone
-      if (open) { GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0); drawBigMap(); }
+      // the sim loop halts while the map is open; syncOverlayMusic below
+      // silences every voice the halted tick would otherwise leave held
+      if (open) drawBigMap();
       else if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
       // the map is a mouse screen: hand the cursor back without touching
       // fullscreen (Esc would drop both, which is why we never make the
@@ -793,6 +832,12 @@ GAME.hud = (function () {
     wantedChanged: function (n) {
       var spans = el['wanted-stars'].children;
       for (var i = 0; i < 5; i++) spans[i].className = i < n ? 'lit' : '';
+      // Both police.js paths already funnel through here, so this is the one
+      // place that sees every change — but neither of them passes the level
+      // you were ON, and the direction is the whole message. Keep it here.
+      if (n > wantedShown) GAME.haptics.wantedUp(n);
+      else if (n === 0 && wantedShown > 0) GAME.haptics.wantedClear();
+      wantedShown = n;
     },
     setWeapon: function (name, ammo) {
       if (!el['weapon-line']) return; // may fire before the HUD is wired up
@@ -819,6 +864,7 @@ GAME.hud = (function () {
       radioT = 2.2;
     },
     damageFlash: function () {
+      GAME.haptics.hurt();
       dmgFlash.style.opacity = 1;
       setTimeout(function () { dmgFlash.style.opacity = 0; }, 120);
     },
@@ -1005,6 +1051,7 @@ GAME.nav = (function () {
         dest = null; path = [];
         GAME.hud.message('You have arrived.', 2.5);
         GAME.audio.pickup();
+        GAME.haptics.checkpoint();
       }
     }
   };

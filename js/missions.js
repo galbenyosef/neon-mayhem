@@ -30,6 +30,7 @@ GAME.stunts = (function () {
     var bonus = 250 + n * 50;
     GAME.addCash(bonus);
     GAME.audio.sting('win');
+    GAME.haptics.win();
     var left = total - n;
     GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
       (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
@@ -303,6 +304,7 @@ GAME.missions = (function () {
     active.earned += pay;
     active.sales++; active.jobCount++;
     GAME.audio.pickup();
+    GAME.haptics.pickup();
     if (active.sales >= active.quota) {
       active.level++;
       active.sales = 0;
@@ -310,6 +312,7 @@ GAME.missions = (function () {
       active.timeLeft += 30;
       GAME.hud.message('ROUND ' + active.level + ' — +30s, sell ' + active.quota + '  ·  +$' + pay, 3.4);
       GAME.audio.sting('win');
+      GAME.haptics.win();
     } else {
       GAME.hud.message('Sold — +$' + pay + '  ·  ' + active.sales + ' / ' + active.quota, 2);
     }
@@ -626,6 +629,7 @@ GAME.missions = (function () {
     if (tgt.ped && !tgt.ped.dead) GAME.peds.removePed(tgt.ped);
     active.aboard++;
     GAME.audio.pickup();
+    GAME.haptics.pickup();
     var kind = active.def.id;
     var who = kind === 'ambulance' ? 'Patient' : 'Fare';
     // head for the drop-off once we're full or there's nobody else left
@@ -654,6 +658,7 @@ GAME.missions = (function () {
     var fare = per * n;
     GAME.addCash(fare); active.earned += fare;
     GAME.audio.sting('win');
+    GAME.haptics.win();
     for (var i = 0; i < n; i++) {
       var out = GAME.peds.spawnPed(tgt[0] + (i - n / 2) * 1.4, tgt[1] + 1.5);
       out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z;
@@ -727,6 +732,7 @@ GAME.missions = (function () {
     active.targets = [];
     if (count > 0) {
       GAME.audio.sting('win');
+      GAME.haptics.win();
       GAME.hud.message('SHIFT OVER — level ' + lv + ', ' + count + ' ' + unit + (count === 1 ? '' : 's') +
         ', $' + earned + ' earned' + (reason ? '  (' + reason + ')' : ''), 4.5);
       var id = active.def.id;
@@ -813,14 +819,29 @@ GAME.missions = (function () {
       }
       if (first) faceToward(first[0], first[1]);
       if (def.type === 'race') {
-        // The field races what YOU race: turn up on a bike and the rivals are
-        // on bikes, turn up in a limo and it's a limo race. Rivals in sports
-        // cars against a player's motorcycle decided the race at the start line.
-        var rivalType = P.car && GAME.vehicles.TYPES[P.car.type] ? P.car.type : 'sports';
+        // The field turns up in something QUICKER than you brought, so the
+        // rivals start with an edge rather than having to be handed one.
+        //
+        // Still within your own class, though. Matching the player's exact car
+        // was a fix for rivals in sports cars against a player's motorcycle,
+        // which decided the race at the start line — so a bike race is still a
+        // bike race, it is just their bike that is better. And the upgrade is
+        // capped: a quarter quicker is an edge, twice as quick is a cutscene.
+        var rival = rivalUpgrade(P.car && P.car.type);
+        var rivalType = rival.type;
+        // nothing in the class was faster (you brought the best of it) — then
+        // the edge has to come from the engine instead, so they are quicker
+        // whatever you arrive in
+        active.rivalEdge = rival.edge;
+        // The grid forms in FRONT of you and you start on the back row. Lined
+        // up behind, all three sat in the chase camera's blind spot: the field
+        // was invisible from the lights to the flag, and a race you never see
+        // is just a drive. Staggered left and right of the racing line so the
+        // lane you launch into is open.
         for (var i = 0; i < 3; i++) {
-          var off = (i + 1) * 5;
-          var rx = def.start.x - Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-          var rz = def.start.z - Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var off = (i + 1) * 6;
+          var rx = def.start.x + Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          var rz = def.start.z + Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
           var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
           car.cpIndex = 0;
           // rivals shrug off scrapes — a race should be decided on the road, not by
@@ -941,6 +962,7 @@ GAME.missions = (function () {
       // finishing enough work is what opens the channel
       var opened = GAME.isla && GAME.isla.checkUnlock();
       GAME.audio.sting('win');
+      GAME.haptics.win();
       var head = d.job ? 'JOB DONE! +$' : 'MISSION PASSED! +$';
       // races report the finishing place and time alongside the payout
       if (d.type === 'race') {
@@ -1026,6 +1048,25 @@ GAME.missions = (function () {
     }
   }
 
+  // The quickest thing in the player's own class that is not more than a
+  // quarter faster than what they brought. Aircraft are never rivals in a
+  // street race, and neither is a police cruiser — it is the law, not a rival,
+  // and a white car with a lightbar in the field reads as a chase.
+  var RIVAL_CAP = 1.25, RIVAL_ENGINE_EDGE = 1.08;
+  function rivalUpgrade(playerType) {
+    var T = GAME.vehicles.TYPES;
+    var mine = T[playerType];
+    if (!mine) return { type: 'sports', edge: 1 };
+    var best = playerType, bestSp = mine.maxSpeed;
+    for (var k in T) {
+      var s = T[k];
+      if (s.heli || s.plane || k === 'police') continue;
+      if (!!s.bike !== !!mine.bike) continue;
+      if (s.maxSpeed > bestSp && s.maxSpeed <= mine.maxSpeed * RIVAL_CAP) { best = k; bestSp = s.maxSpeed; }
+    }
+    return { type: best, edge: best === playerType ? RIVAL_ENGINE_EDGE : 1 };
+  }
+
   function racerControls(car, dt) {
     var d = active.def;
     var cp = d.cps[Math.min(car.cpIndex, d.cps.length - 1)];
@@ -1069,11 +1110,30 @@ GAME.missions = (function () {
     else if (ad > 0.3) throttle = 0.78;
     // ease off on the approach so they arrive at a sane speed
     else if (dist < 26 && Math.abs(car.speed) > 30) throttle = 0.5;
-    // two-way rubber band: leaders ease a little, stragglers get a push, so the
-    // pack stays on your bumper instead of falling away
+    // Two-way rubber band: leaders ease a little, stragglers get a push, so
+    // the pack stays on your bumper instead of falling away.
+    //
+    // It used to scale THROTTLE and clamp the result at 1, which handed a
+    // trailing rival nothing whatsoever — on a straight they are already flat
+    // out, so the boost was thrown away by the clamp. And every rival trails,
+    // because they all start behind you. Worse, rivals drive the same car you
+    // do by design, so matching your throttle can only ever match your speed:
+    // no amount of pedal closes a gap. The band moves what the car is CAPABLE
+    // of instead, which is the only lever that can.
     var lead = car.cpIndex - active.cpIndex;
-    if (lead > 0) throttle *= 0.94;
-    else if (lead < 0) throttle = Math.min(1, throttle * 1.16);
+    var edge;
+    if (lead > 0) edge = 0.95;
+    else if (lead < 0) edge = 1.13;
+    else {
+      // same checkpoint, so whoever is further from it is the one behind
+      var pc = GAME.player.car;
+      var cpNow = d.cps[Math.min(active.cpIndex, d.cps.length - 1)];
+      var mine = U.dist(car.pos.x, car.pos.z, cpNow[0], cpNow[1]);
+      var yours = pc ? U.dist(pc.pos.x, pc.pos.z, cpNow[0], cpNow[1]) : mine;
+      edge = 1 + U.clamp((mine - yours) / 320, -0.05, 0.13);
+    }
+    // the band rides on top of whatever edge the field started with
+    car.raceEdge = edge * (active.rivalEdge || 1);
     // the handbrake is for genuine hairpins only; using it mid-corner spins them
     var handbrake = ad > 1.5 && Math.abs(car.speed) > 30;
 
@@ -1218,6 +1278,7 @@ GAME.missions = (function () {
           active.state = 'run'; active.t = 0;
           GAME.hud.bigCount('GO!');
           GAME.audio.pickup();
+          GAME.haptics.checkpoint();
           if (active.goSetup) { active.goSetup(); active.goSetup = null; }
         } else {
           var num = Math.max(1, Math.ceil(active.countdown));
@@ -1241,6 +1302,7 @@ GAME.missions = (function () {
       if (cp && U.dist2(P.car.pos.x, P.car.pos.z, cp[0], cp[1]) < 100) {
         active.cpIndex++;
         GAME.audio.pickup();
+        GAME.haptics.checkpoint();
         if (active.cpIndex >= d2.cps.length) { finish(true); return; }
         GAME.hud.missionObjective(objectiveText());
         updateCp();
@@ -1269,6 +1331,7 @@ GAME.missions = (function () {
       if (stop && U.dist2(px2, pz2, stop[0], stop[1]) < 25) {
         active.cpIndex++;
         GAME.audio.pickup();
+        GAME.haptics.checkpoint();
         if (active.cpIndex >= active.stops.length) { finish(true); return; }
         GAME.hud.message('Delivered! Next stop is marked.', 2);
         GAME.hud.missionObjective(objectiveText());
@@ -1401,6 +1464,7 @@ GAME.missions = (function () {
     applyComplete();
     GAME.track('game-complete');
     GAME.audio.sting('win');
+    GAME.haptics.win();
     GAME.hud.dialog({
       title: 'COSTA ROSA, COMPLETE',
       body: 'Every mission, every race, every jump — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and money is no longer a question.',
@@ -1465,6 +1529,7 @@ GAME.missions = (function () {
     testRollCourier: rollCourierStops,
     testCollect: collectTarget,
     testStartRound: startRound,
+    testRivalUpgrade: rivalUpgrade,
     init: init,
     update: update,
     failActive: failActive,

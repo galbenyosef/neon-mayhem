@@ -62,7 +62,52 @@ GAME.audio = (function () {
     radio.start();
   }
 
-  function noiseBurst(dur, filterFreq, gain, type, when) {
+  // ---------- where the ears are ----------
+  // Position from the player, heading from the camera. The game already
+  // measures every distance from the player, and a third-person camera
+  // orbits its subject — so taking the origin from one and the facing from
+  // the other is what keeps a siren behind you sounding behind you while the
+  // camera swings around.
+  var lisX = 0, lisZ = 0, lisSin = 0, lisCos = 1;
+  function setListener(x, z, yaw) {
+    lisX = x; lisZ = z;
+    lisSin = Math.sin(yaw); lisCos = Math.cos(yaw);
+  }
+
+  // Screen-relative pan for a world point: the direction to it projected
+  // onto the camera's right vector. Forward is (sin yaw, cos yaw) — the
+  // basis updateOnFoot turns WASD through, and the one updateCamera aims
+  // lookAt down — so right is cross(forward, up) = (-cos yaw, sin yaw).
+  //
+  // Straight ahead and straight behind both land on centre, which two
+  // speakers cannot tell apart anyway; the callers' own distance falloff
+  // carries the rest. The cap keeps a little of every sound in both ears,
+  // because a voice pinned entirely to one is a headphone artifact rather
+  // than a direction.
+  function panAt(x, z) {
+    var dx = x - lisX, dz = z - lisZ;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.5) return 0;   // on top of the listener: centred, and no jitter
+    return U.clamp((dx * -lisCos + dz * lisSin) / d * 0.85, -1, 1);
+  }
+
+  // A one-shot somewhere in the world: its voices are routed through a panner
+  // of their own, which lets go once they have all finished. `life` is the
+  // longest of them, and the only reason this has to be told — the voices
+  // disconnect themselves on ended, but the panner between them and the bus
+  // has no callback to hang that on, and a graph that only grows crackles.
+  // No position (a UI buzz, your own fists) or no StereoPanner in this
+  // browser: straight to the bus, centred, exactly as before.
+  function spatialBus(x, z, life) {
+    if (x === undefined || x === null || !ctx.createStereoPanner) return sfxBus;
+    var p = ctx.createStereoPanner();
+    p.pan.value = panAt(x, z);
+    p.connect(sfxBus);
+    setTimeout(function () { try { p.disconnect(); } catch (e) { } }, (life + 0.3) * 1000);
+    return p;
+  }
+
+  function noiseBurst(dur, filterFreq, gain, type, when, bus) {
     if (!ctx) return;
     var t = when || ctx.currentTime;
     var src = ctx.createBufferSource(); src.buffer = noiseBuf;
@@ -70,7 +115,7 @@ GAME.audio = (function () {
     var g = ctx.createGain();
     g.gain.setValueAtTime(gain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f); f.connect(g); g.connect(sfxBus);
+    src.connect(f); f.connect(g); g.connect(bus || sfxBus);
     src.start(t); src.stop(t + dur + 0.05);
     // drop the nodes out of the graph as soon as they've played; a busy scene
     // makes a lot of these and a graph that only grows starts to crackle
@@ -136,9 +181,13 @@ GAME.audio = (function () {
     // roll off the top so the wail reads as distant rather than piercing
     var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
     var g = ctx.createGain(); g.gain.value = 0;
-    o.connect(lp); lp.connect(g); g.connect(sfxBus);
+    o.connect(lp); lp.connect(g);
+    // the one continuous voice that belongs to somebody else, so the one
+    // that keeps a panner rather than borrowing one per shot
+    var pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (pan) { g.connect(pan); pan.connect(sfxBus); } else g.connect(sfxBus);
     o.start(); lfo.start();
-    sirenNode = { g: g, o: o };
+    sirenNode = { g: g, o: o, pan: pan };
   }
 
   // ---------- generative radio ----------
@@ -294,6 +343,9 @@ GAME.audio = (function () {
   return {
     get ctx() { return ctx; },
     init: init,
+    setListener: setListener,
+    // headless hook, so the stereo image can be sampled without ears
+    testPan: panAt,
     radio: radio,
     titleMusic: function (on) { if (on) title.start(); else title.stop(); },
     get titleMusicOn() { return title.on; },
@@ -351,27 +403,33 @@ GAME.audio = (function () {
       if (!ctx) return;
       skidNode.g.gain.setTargetAtTime(U.clamp(amount, 0, 1) * 0.16, ctx.currentTime, 0.05);
     },
-    siren: function (vol, pitchShift) {
+    siren: function (vol, pitchShift, x, z) {
       if (!ctx) return;
       sirenNode.g.gain.setTargetAtTime(U.clamp(vol, 0, 1) * 0.1, ctx.currentTime, 0.15);
       sirenNode.o.frequency.setTargetAtTime(700 * (pitchShift || 1), ctx.currentTime, 0.2);
+      // glide the pan instead of jumping it: a cruiser overtaking you crosses
+      // from one side to the other in a frame or two, and a hard cut on the
+      // frame it passes your nose reads as a glitch rather than a pass
+      if (sirenNode.pan && x !== undefined) sirenNode.pan.pan.setTargetAtTime(panAt(x, z), ctx.currentTime, 0.08);
     },
-    gunshot: function (type) {
+    gunshot: function (type, x, z) {
       if (!ctx) return;
-      if (type === 'pistol') { noiseBurst(0.12, 2500, 0.5); tone(160, 0.08, 0.4, 'square', 60); }
-      else if (type === 'smg') { noiseBurst(0.07, 3200, 0.35); tone(220, 0.05, 0.3, 'square', 90); }
-      else if (type === 'shotgun') { noiseBurst(0.3, 1200, 0.8); tone(90, 0.2, 0.6, 'square', 40); }
-      else { tone(120, 0.07, 0.3, 'square', 70); }
+      var b = spatialBus(x, z, 0.35);
+      if (type === 'pistol') { noiseBurst(0.12, 2500, 0.5, null, null, b); tone(160, 0.08, 0.4, 'square', 60, null, b); }
+      else if (type === 'smg') { noiseBurst(0.07, 3200, 0.35, null, null, b); tone(220, 0.05, 0.3, 'square', 90, null, b); }
+      else if (type === 'shotgun') { noiseBurst(0.3, 1200, 0.8, null, null, b); tone(90, 0.2, 0.6, 'square', 40, null, b); }
+      else { tone(120, 0.07, 0.3, 'square', 70, null, b); }
     },
     ricochet: function () { if (ctx) tone(2400, 0.09, 0.12, 'sine', 700); },
     punch: function () { if (ctx) { noiseBurst(0.06, 500, 0.4); tone(90, 0.07, 0.4, 'sine', 45); } },
-    explosion: function () {
+    explosion: function (x, z) {
       if (!ctx) return;
-      noiseBurst(1.1, 900, 0.7);
-      tone(110, 0.9, 0.55, 'sine', 28);
-      noiseBurst(0.35, 4000, 0.2, 'highpass');
+      var b = spatialBus(x, z, 1.15);
+      noiseBurst(1.1, 900, 0.7, null, null, b);
+      tone(110, 0.9, 0.55, 'sine', 28, null, b);
+      noiseBurst(0.35, 4000, 0.2, 'highpass', null, b);
     },
-    crash: function (v) {
+    crash: function (v, x, z) {
       if (!ctx) return;
       // A pile-up reports contact from several pairs on every frame, and a car
       // wedged against a wall reports one for as long as it stays there. Without
@@ -381,10 +439,11 @@ GAME.audio = (function () {
       if (now - lastCrashT < 0.07) { if (v > lastCrashV) lastCrashV = v; return; }
       lastCrashT = now; lastCrashV = v;
       var a = U.clamp(v, 0.1, 1);
-      noiseBurst(0.18 * a + 0.08, 1400, 0.5 * a);
-      tone(140, 0.1, 0.3 * a, 'square', 50);
+      var b = spatialBus(x, z, 0.3);
+      noiseBurst(0.18 * a + 0.08, 1400, 0.5 * a, null, null, b);
+      tone(140, 0.1, 0.3 * a, 'square', 50, null, b);
     },
-    yelp: function () { if (ctx) tone(500 + Math.random() * 300, 0.18, 0.14, 'triangle', 900); },
+    yelp: function (x, z) { if (ctx) tone(500 + Math.random() * 300, 0.18, 0.14, 'triangle', 900, null, spatialBus(x, z, 0.25)); },
     pickup: function () { if (ctx) { tone(880, 0.09, 0.2, 'sine'); tone(1320, 0.14, 0.2, 'sine', 0, ctx.currentTime + 0.08); } },
     // the ice cream chimes: a little run of bells, thin and carrying
     chime: function () {

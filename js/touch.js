@@ -6,6 +6,7 @@ GAME.touch = (function () {
   var btns = {};
   var enabled = false;
   var lastCarRef = null;   // the vehicle (or null) the flags were last cleared for
+  var lefty = false;       // stick under the right thumb, buttons under the left
 
   function detect() {
     if ('ontouchstart' in window) return true;
@@ -18,6 +19,7 @@ GAME.touch = (function () {
     var b = document.createElement('div');
     b.className = 'tbtn';
     b.textContent = label;
+    b.__inset = right;   // authored as an inset from the thumb's own edge
     b.style.right = right + 'px';
     b.style.bottom = bottom + 'px';
     b.style.width = size + 'px';
@@ -30,6 +32,10 @@ GAME.touch = (function () {
     b.addEventListener('touchstart', function (e) {
       e.preventDefault(); e.stopPropagation();
       b.classList.add('held');
+      // a virtual button has no travel and no click of its own, so without
+      // this it never feels pressed at all. Bottom tier: a thumb resting on
+      // GAS must never be able to talk over a crash.
+      GAME.haptics.uiTap();
       if (opts.toggle) {
         T[opts.flag] = !T[opts.flag];
         b.style.background = T[opts.flag] ? 'rgba(140,255,210,.4)' : '';
@@ -162,15 +168,16 @@ GAME.touch = (function () {
     }, { passive: true });
     // release the stick / camera finger on lift OR on an OS-cancelled touch,
     // otherwise the stick can stay deflected (car drives itself) after an interruption
+    function releaseStick() {
+      stickId = null;
+      T.stickX = 0; T.stickY = 0;
+      stickBase.style.display = 'none';
+      stickNub.style.display = 'none';
+    }
     function endTouch(e) {
       for (var i = 0; i < e.changedTouches.length; i++) {
         var t = e.changedTouches[i];
-        if (t.identifier === stickId) {
-          stickId = null;
-          T.stickX = 0; T.stickY = 0;
-          stickBase.style.display = 'none';
-          stickNub.style.display = 'none';
-        }
+        if (t.identifier === stickId) releaseStick();
         if (t.identifier === camId) camId = null;
       }
     }
@@ -179,14 +186,29 @@ GAME.touch = (function () {
     // camera drag on the game canvas outside the stick zone / buttons
     document.getElementById('game-canvas').addEventListener('touchstart', function (e) {
       var t = e.changedTouches[0];
-      if (t.clientX > window.innerWidth * 0.45 && camId === null && stickId !== t.identifier) {
+      if (camHalf(t.clientX) && camId === null && stickId !== t.identifier) {
         camId = t.identifier;
         camLX = t.clientX; camLY = t.clientY;
       }
     }, { passive: true });
 
+    applyHandedness();
     checkOrientation();
-    window.addEventListener('resize', checkOrientation);
+    // A viewport change is an interruption like any other, and the one the
+    // release above did not cover. The stick is placed where your thumb
+    // landed and steers by the offset from that point, in client
+    // coordinates — turn the device (or gain and lose the browser's chrome,
+    // or enter fullscreen) mid-drag and the origin it is measuring from
+    // belongs to a screen that no longer exists. It can end up off the new
+    // viewport entirely, which reads as a stick pinned hard over that no
+    // amount of thumb movement can bring back. Let go instead: a neutral
+    // stick and a re-touch is a moment's interruption, a stuck one drives
+    // you into the sea.
+    window.addEventListener('resize', function () {
+      checkOrientation();
+      if (stickId !== null) releaseStick();
+      camId = null;
+    });
 
     function moveNub(x, y) {
       var dx = x - baseX, dy = y - baseY;
@@ -198,6 +220,34 @@ GAME.touch = (function () {
       T.stickX = dx / max;
       T.stickY = dy / max;
     }
+  }
+
+  // Left-handed layout. Every button is authored as an inset from the edge its
+  // thumb comes from, so mirroring is a matter of applying that same inset to
+  // the other side. The stick zone and the camera-drag half have to travel
+  // with them: leave either behind and both thumbs end up on the same side of
+  // the screen, arguing over it.
+  //
+  // The radar and PAUSE stay where they are. They sit along the top, out of
+  // either thumb's way, and the comment above them says why they were moved
+  // there in the first place.
+  function applyHandedness() {
+    if (!enabled) return;
+    var all = footBtns.concat(carBtns);
+    for (var i = 0; i < all.length; i++) {
+      var b = all[i];
+      if (b.__inset === undefined) continue;
+      b.style.right = lefty ? 'auto' : b.__inset + 'px';
+      b.style.left = lefty ? b.__inset + 'px' : 'auto';
+    }
+    if (stickZone) {
+      stickZone.style.left = lefty ? 'auto' : '0';
+      stickZone.style.right = lefty ? '0' : 'auto';
+    }
+  }
+  // the half of the screen the stick does NOT own
+  function camHalf(x) {
+    return lefty ? x < window.innerWidth * 0.55 : x > window.innerWidth * 0.45;
   }
 
   function checkOrientation() {
@@ -287,5 +337,9 @@ GAME.touch = (function () {
     } else { T.driveByL = false; T.driveByR = false; }
   }
 
-  return { init: init, update: update };
+  return {
+    init: init, update: update,
+    get lefty() { return lefty; },
+    setLefty: function (v) { lefty = !!v; applyHandedness(); return lefty; }
+  };
 })();

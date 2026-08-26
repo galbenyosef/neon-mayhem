@@ -153,6 +153,7 @@ GAME.combat = (function () {
     }
     if (!GAME.unlimitedAmmo) inv.ammo--;
     GAME.audio.gunshot(w);
+    GAME.haptics.shot();
     GAME.fx.flash(m.x + Math.sin(dirYaw) * 0.6, m.y, m.z + Math.cos(dirYaw) * 0.6, 0.8);
     var pellets = wd.pellets || 1;
     for (var p = 0; p < pellets; p++) {
@@ -165,8 +166,10 @@ GAME.combat = (function () {
       if (res.hit) {
         var hx = m.x + dx * t, hz = m.z + dz * t;
         if (res.hit.kind === 'ped') {
+          GAME.haptics.hit();
           GAME.peds.damage(res.hit.obj, wd.damage, true);
         } else if (res.hit.kind === 'car') {
+          GAME.haptics.hit();
           GAME.vehicles.damageCar(res.hit.obj, wd.damage * 0.8, 'gun');
           GAME.fx.spawn(hx, 0.8, hz, { count: 3, color: 0xffe0a0, spread: 2, life: 0.3 });
           if (res.hit.obj.isPolice && !res.hit.obj.mission) GAME.police.reportCrime('hit_cop_car', P.pos);
@@ -378,7 +381,12 @@ GAME.combat = (function () {
     var P = GAME.player;
     var wd = WEAPONS[P.currentWeapon];
     var inv = P.weapons[P.currentWeapon];
-    GAME.hud.setWeapon(wd.name, P.currentWeapon === 'fist' ? '' : (inv ? inv.ammo : 0));
+    // the reward for all 25 jumps stops the decrement but leaves the count
+    // parked on its starting 999, which reads as "999 bullets left", not
+    // "never reload again". Say what it actually is.
+    GAME.hud.setWeapon(wd.name, P.currentWeapon === 'fist' ? ''
+      : GAME.unlimitedAmmo ? '∞'
+      : (inv ? inv.ammo : 0));
   }
 
   // ---------- pickups ----------
@@ -501,6 +509,7 @@ GAME.combat = (function () {
       else if (p.type === 'cash') { var amt = 10 + Math.floor(Math.random() * 30); GAME.addCash(amt); label = '$' + amt; }
       else giveWeapon(p.type, p.type === 'pistol' ? 24 : p.type === 'smg' ? 50 : p.type === 'rifle' ? 20 : 10);
       GAME.audio.pickup();
+      GAME.haptics.pickup();
       GAME.hud.message(label, 1.2);
       // Off the street means off the street: a fixed pickup stays gone for a
       // full in-game day (one whole day/night cycle). The old 45 seconds made
@@ -518,7 +527,7 @@ GAME.combat = (function () {
     var yaw = Math.atan2(tx - fromX, tz - fromZ) + (Math.random() - 0.5) * (1 - accuracy) * 0.5;
     var dx = Math.sin(yaw), dz = Math.cos(yaw);
     var d = U.dist(fromX, fromZ, tx, tz);
-    GAME.audio.gunshot('pistol');
+    GAME.audio.gunshot('pistol', fromX, fromZ);
     GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * d, 1.2, fromZ + dz * d);
     if (Math.random() < accuracy) {
       if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');

@@ -22,6 +22,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 ## Drive, fly, fall
 
 - Arcade driving with handbrake drifts across a garage's worth of machines: cars, vans, taxis, ambulances, cruisers, a motorcycle and superbike, a dune buggy, a stretch limo, an ice-cream truck, a monster truck — all with 3-stage damage (smoke → fire → boom) and honest fire warnings before anything explodes.
+- Cars sit on their springs. Open the throttle and the nose lifts; stand on the brakes and it dives — added on top of whatever grade the wheels are on, so a car climbing a ramp still squats under power instead of picking one angle or the other.
 - A **helicopter** and a **light plane**, flyable with loops and barrel rolls. The plane's takeoff run is real — about 66 meters of engine haul before the nose comes up, so you'll want the actual runway — and a stalled airframe recovers by *diving*, not throttling. Bail out of either mid-air and a **parachute** opens.
 - **25 hidden stunt jumps** on roadside ramps, a third of them boosted. Air time, distance and spins all pay. Find all 25 for $50,000, the full arsenal with unlimited ammo, and a monster truck that jumps on command.
 
@@ -33,7 +34,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 ## Work
 
-- **Street races** against rivals who drive what *you* drive, **timed couriers** with fresh drops every run, and **rampages** — each opening with a fade-out and a big 3-2-1 countdown before you're let loose.
+- **Street races** against a field that turns up in something quicker than you brought — the best of your own class, so a bike race is still a bike race — lined up on the grid ahead of you. You start on the back row, and the rubber band has real teeth, so the field is something you have to pass rather than something you leave at the lights. **Timed couriers** with fresh drops every run, and **rampages** — each opening with a fade-out and a big 3-2-1 countdown before you're let loose.
 - Continuous **taxi, paramedic and ice-cream shifts** that level up: more people, further out, marked by floating arrows. The clocks are tuned as a high-score run, not a loop you can hold forever — early fares bank a little, the mid-shift breaks even, the deep shift bleeds. The ice-cream round works backwards: nobody waits for you, the chimes pull them to the hatch.
 - Isla Verde carries four missions of its own, and they stay on the island — nothing asks you to cross mid-run.
 - Finish something worth finishing and a shareable **result card** is drawn for it — save it, copy it, or send it to your phone's share sheet.
@@ -49,6 +50,9 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 ## The feel
 
 - 3 procedurally generated radio stations — every note synthesized at runtime with the Web Audio API, with slow synth pads over the title screen.
+- The crowd is spent against the frame, not a fixed number: when frames start arriving late — a deep chase, a slow machine — the city quietly thins the traffic and pavement it spawns, and fills back in when the frames recover. It never culls what is already on screen, so the street thins out rather than blinking.
+- On a phone with a motor for it, the knocks you can see are ones you can **feel**: a short buzz for impacts, for taking a hit, and for your own trigger — rationed so a pile-up cannot turn it into a drone, and switchable from the pause screen.
+- The world is **audible in stereo**: sirens, crashes, gunfire, explosions and the people you startle all play from where they happen, panned across the direction the camera is facing — so a cruiser closing on your left is heard on your left before it is seen. Your own car and radio stay where they belong, centred.
 - The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
 - A heading-up radar minimap; a full map (`P`) with legend, POI badges, pickups and street-following mission routes — click anywhere to set a destination.
 - CRT filter, separate music/SFX switches, and a day/night pin if you want the city permanently at golden hour or midnight (a night's sleep politely overrules it).
@@ -73,7 +77,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 **In the air:** helicopter — climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Plane — `W` to roll down the runway, `Space` to rotate once you're fast, `Q/E` to barrel-roll, and pull hard enough on the elevator for a full loop. `F` bails out with a parachute.
 
-📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape.
+📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape. **Left-handed?** One tap on the pause screen mirrors the whole cluster — stick to the right thumb, buttons to the left, and the camera drag swaps sides to match — and it is remembered.
 
 ## Run it locally
 
@@ -88,7 +92,7 @@ The only network request the game ever makes is an anonymous visit count (see [A
 
 ## Tech
 
-Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. The world is a *list of landmasses*: every water test, height lookup, spawner and route asks the list, so Costa Rosa's grid and Isla Verde's curves are the same thing to everything above them. Island roads are polylines with a grading solver — sample the terrain, relax along each road and across every junction, cap the grade — so a road laid down later is drivable by construction rather than hand-tuning. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, a spawn/despawn bubble, and a z-fight-audited ground stack keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test`, and every change ships only after headless verification through it — a claim `test/smoke.js` (run by CI on every push) holds the game to: boot, a clean console, zero network requests when served locally, and a geometry count that stays flat under heavy spawn churn.
+Plain non-module scripts sharing globals, loaded in dependency order — runs from `file://` or any static host. The world is a *list of landmasses*: every water test, height lookup, spawner and route asks the list, so Costa Rosa's grid and Isla Verde's curves are the same thing to everything above them. Island roads are polylines with a grading solver — sample the terrain, relax along each road and across every junction, cap the grade — so a road laid down later is drivable by construction rather than hand-tuning. Three.js r128 (MIT, see [THREE.LICENSE](THREE.LICENSE)) is vendored at `js/lib/three.min.js`. Instanced/merged geometry, distance fog, a spawn/despawn bubble, and a z-fight-audited ground stack keep it at 60 fps on mid-range hardware. A scriptable test API is exposed at `GAME.test`, and every change ships only after headless verification through it — a claim `test/smoke.js` (run by CI on every push) holds the game to: boot, a clean console, zero network requests when served locally, and a geometry count that stays flat under heavy spawn churn. Beside it, `test/regressions.js` keeps one check per fixed bug — each written so that it fails on the code as it stood before its fix, because a regression check that cannot fail is decoration.
 
 ## Analytics
 

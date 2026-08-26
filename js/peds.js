@@ -190,7 +190,7 @@ GAME.peds = (function () {
     // jack doesn't raise him from the pavement
     if (ped.stolenCar && ped.stolenCar.lastDriver) ped.stolenCar.lastDriver = null;
     GAME.fx.spawn(ped.pos.x, 1.1, ped.pos.z, { count: 7, color: 0xc42848, spread: 1.6, vy: 1.5, life: 0.4, grav: -3 });
-    GAME.audio.yelp();
+    GAME.audio.yelp(ped.pos.x, ped.pos.z);
     ped.mesh.rotation.x = Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2;
     ped.mesh.position.y = GAME.city.groundY(ped.pos.x, ped.pos.z) + 0.35;
     if (byPlayer) {
@@ -214,7 +214,7 @@ GAME.peds = (function () {
         p.state = 'flee';
         p.fleeT = U.randRange(Math.random, 4, 8);
         p.fleeX = x; p.fleeZ = z;
-        if (Math.random() < 0.4) GAME.audio.yelp();
+        if (Math.random() < 0.4) GAME.audio.yelp(p.pos.x, p.pos.z);
       }
     }
   }
@@ -288,8 +288,12 @@ GAME.peds = (function () {
           var ccar = world.cars[cc];
           if (Math.abs(ccar.speed) < 4) continue;
           if (U.dist2(ped.pos.x, ped.pos.z, ccar.pos.x, ccar.pos.z) < 5.2) {
-            kill(ped, 'car', ccar === P.car && P.inCar);
-            GAME.audio.crash(0.4);
+            var copByPlayer = (ccar === P.car && P.inCar);
+            kill(ped, 'car', copByPlayer);
+            GAME.audio.crash(0.4, ped.pos.x, ped.pos.z);
+            // nothing here touches cameraShake, so the knock channel never saw
+            // this: a body on the bonnet used to register as exactly nothing
+            if (copByPlayer) GAME.haptics.splat(Math.min(1, Math.abs(ccar.speed) / 26));
             break;
           }
         }
@@ -322,7 +326,7 @@ GAME.peds = (function () {
           var side = (dx * fz - dz * fx) > 0 ? 1 : -1;
           ped.diveX = (fz * side) * 6.2; ped.diveZ = (-fx * side) * 6.2;
           ped.speed = 0;
-          GAME.audio.yelp();
+          GAME.audio.yelp(ped.pos.x, ped.pos.z);
           break;
         }
         if (!threat) ped.reactT = 0;
@@ -388,13 +392,13 @@ GAME.peds = (function () {
               if (mine && !ped.yankWarned && ped.yankT > 0.7) {
                 ped.yankWarned = true;
                 GAME.hud.message('He’s got the door handle — floor it or lose the seat.', 2);
-                GAME.audio.yelp();
+                GAME.audio.yelp(ped.pos.x, ped.pos.z);
               }
               if (ped.yankT > 1.7) {
                 if (mine) {
                   GAME.exitCar();
                   GAME.hud.message('He wants his ride back.', 2.5);
-                  GAME.audio.yelp();
+                  GAME.audio.yelp(ped.pos.x, ped.pos.z);
                   ped.yankT = 0;
                   ped.yankWarned = false;
                 } else if (!boarding) {
@@ -408,14 +412,14 @@ GAME.peds = (function () {
               } else if (ped.punchT <= 0) {
                 ped.punchT = 0.5;
                 GAME.vehicles.damageCar(myCar, 2, 'fists', false);
-                GAME.audio.crash(0.15);
+                GAME.audio.crash(0.15, ped.pos.x, ped.pos.z);
               }
             } else if (ped.punchT <= 0) {
               ped.punchT = 0.55;
               ped.punchArm = !ped.punchArm;
               if (tcar) { GAME.vehicles.damageCar(tcar, 2, 'fists', false); GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12); }
               else GAME.playerDamage(6, 'fists');
-              GAME.audio.crash(0.18);
+              GAME.audio.crash(0.18, ped.pos.x, ped.pos.z);
             }
           }
           // quick jabs off alternating hands, not a slow-motion haymaker
@@ -517,6 +521,7 @@ GAME.peds = (function () {
         if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 5.2) {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
+          if (byPlayer) GAME.haptics.splat(Math.min(1, sp2 / 26));
           // thrown along the bonnet rather than dropping on the spot
           var kf = Math.min(1, sp2 / 26);
           ped.knockX = Math.sin(car2.heading) * (4 + sp2 * 0.35);
@@ -524,7 +529,7 @@ GAME.peds = (function () {
           ped.knockY = 2.2 + kf * 3.2;
           ped.knockSpin = (Math.random() < 0.5 ? -1 : 1) * (4 + kf * 7);
           if (byPlayer) GAME.police.reportCrime('hit_ped', ped.pos);
-          GAME.audio.crash(0.4);
+          GAME.audio.crash(0.4, ped.pos.x, ped.pos.z);
           break;
         }
       }
@@ -536,7 +541,7 @@ GAME.peds = (function () {
     var fc = GAME.focus();
     var live = 0;
     for (var i = 0; i < world.peds.length; i++) if (!world.peds[i].isCop && !world.peds[i].dead) live++;
-    var maxP = GAME.settings.maxPeds;
+    var maxP = GAME.perf.budget(GAME.settings.maxPeds);
     for (var tries = 0; tries < 5 && live < maxP; tries++) {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 60, GAME.settings.bubbleRadius);
@@ -578,7 +583,7 @@ GAME.peds = (function () {
       if (fights) {
         ped.state = 'attack';
         ped.attackT = 9;
-        GAME.audio.yelp();
+        GAME.audio.yelp(ped.pos.x, ped.pos.z);
       } else {
         ped.state = 'flee';
         ped.fleeT = 6;

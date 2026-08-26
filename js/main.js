@@ -213,6 +213,7 @@
     // is anything the browser synthesizes right behind it (ghost clicks on
     // touch): open the same settle window the pointer lock uses
     GAME.input.keys = {};
+    GAME.input.pressed = {};
     GAME.input.lmb = false; GAME.input.lmbPressed = false; GAME.input.rmb = false;
     GAME.input.lockGraceT = performance.now();
     // start sunny (~late afternoon); sunset ~18s in, night ~55s. A pinned
@@ -272,9 +273,30 @@
   // The soothing pads from the title also play under every overlay — pause,
   // the map, a result card. One place decides; everyone who opens or closes
   // an overlay calls it.
+  //
+  // It silences the live world too. Every looping voice is a held gain node
+  // that the tick keeps current, and the tick STOPS behind an overlay — so
+  // whatever was playing when one opened holds that level until it closes.
+  // Each caller used to silence its own, and the result card silenced
+  // nothing at all: finishing a mission in a car left the engine, the skid,
+  // the siren, the rotor and the radio droning under the pads. Doing it here
+  // means no overlay can forget. Engine, skid and siren are re-armed by the
+  // next tick; the radio's level is set once on boarding, so it is restored
+  // by hand — and only to a living driver, or closing the map over your own
+  // corpse would undo the silence death just asked for.
   GAME.syncOverlayMusic = function () {
     if (!GAME.audio.ctx) return;
-    GAME.audio.titleMusic(!GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen);
+    var P = GAME.player;
+    var over = !GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen;
+    GAME.audio.titleMusic(over);
+    if (over) {
+      GAME.audio.engineState(false, 0);
+      GAME.audio.skid(0);
+      GAME.audio.siren(0);
+      GAME.audio.radio.setVolume(0);
+    } else if (P && P.inCar && P.car && P.state === 'alive') {
+      GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
+    }
   };
 
   GAME.togglePause = function () {
@@ -282,11 +304,10 @@
     GAME.paused = !GAME.paused;
     GAME.hud.setPaused(GAME.paused);
     if (GAME.paused) {
-      GAME.audio.engineState(false, 0);
-      GAME.audio.skid(0);
-      GAME.audio.siren(0);
-      // the context stays running: the title pads keep the pause screen warm
-      // (the radio and engines are tick-driven, so they fall silent on their own)
+      // the context stays running so the title pads keep the pause screen
+      // warm; syncOverlayMusic below stops the looping voices. They do NOT
+      // stop on their own — a held gain node with no tick to update it just
+      // sustains, and the radio's scheduler is an interval, not the tick.
       GAME.releasePointer();
     } else {
       GAME.audio.resume();
@@ -342,6 +363,9 @@
   GAME.tick = function (dt) {
     GAME.time += dt;
     GAME.frame++;
+    // set the ears before anything this tick has a chance to make a noise
+    var ears = GAME.focus();
+    GAME.audio.setListener(ears.x, ears.z, GAME.cam.yaw);
     GAME.advanceDayCycle(dt);
     GAME.city.update(dt, GAME.time);
     GAME.vehicles.update(dt);
@@ -367,7 +391,69 @@
     updateHeadlight();
     GAME.touch.update();
     GAME.hud.update(dt);
+    // every press since the last tick has now been offered to everyone who
+    // wanted it; anything unclaimed was for a mode that is not running and
+    // must not survive into one that is
+    GAME.clearPressed();
   };
+
+  // ---------- what the frame can afford ----------
+  // The crowd costs what it costs, and on a slow machine — or in a five star
+  // chase, where every cruiser is another body, another driver and another
+  // pair of eyes — the frame stops fitting in its 16 ms. Rather than let the
+  // whole simulation go soft, spend fewer bodies.
+  //
+  // GAME.settings stays the authored ceiling: the desktop numbers, or the
+  // lower ones touch.js writes for a phone. This scales what is actually
+  // spawned underneath whichever of those is in force, and never writes to
+  // them — a live measurement must not overwrite a considered choice.
+  //
+  // Nothing is ever culled. All three caps gate NEW spawns only, so a cut
+  // budget drains through the bubble's own despawn rather than popping cars
+  // out of the street in front of you, and a restored one refills the same
+  // way. That is also why it moves in small steps on a slow clock: the street
+  // should thin out and fill back in, not blink.
+  GAME.perf = (function () {
+    var TARGET = 1000 / 60;
+    var SHRINK_AT = 22;   // ~45 fps: late enough to see
+    var GROW_AT = 18;     // ~55 fps: only climb back with room to spare, so
+                          // the two thresholds cannot chase each other
+    var FLOOR = 0.35;     // an empty city is a worse bug than a slow one
+    var STEP = 0.08;
+    var EVERY = 0.5;      // seconds between adjustments
+    var WARMUP = 3;       // boot, shader compiles and texture uploads are not
+                          // evidence about the crowd
+    var ema = TARGET, scale = 1, since = 0, warm = 0;
+
+    function sample(ms) {
+      // a stalled frame — tab switch, GC, a breakpoint — says nothing about
+      // what the crowd costs, and folding it in would drag the average for
+      // seconds afterwards
+      if (!(ms > 0) || ms > 80) return;
+      ema += (ms - ema) * 0.06;
+    }
+    function update(dt) {
+      warm += dt;
+      if (warm < WARMUP) return;
+      since += dt;
+      if (since < EVERY) return;
+      since = 0;
+      if (ema > SHRINK_AT) scale = Math.max(FLOOR, scale - STEP);
+      else if (ema < GROW_AT) scale = Math.min(1, scale + STEP);
+    }
+    return {
+      get scale() { return scale; },
+      get frameMs() { return ema; },
+      sample: sample,
+      update: update,
+      // how many of a thing the budget currently allows. Never zero: a street
+      // with nobody on it reads as broken, not as thrifty.
+      budget: function (n) { return Math.max(1, Math.round(n * scale)); },
+      // headless hooks: pretend the frames have been this long, and start over
+      testFrames: function (ms) { ema = ms; warm = WARMUP; since = EVERY; },
+      testReset: function () { ema = TARGET; scale = 1; since = 0; warm = 0; }
+    };
+  })();
 
   // Catch-up is capped at TWO sim ticks per rendered frame. The old cap of
   // five meant a machine that fell behind (an integrated GPU with other tabs
@@ -378,7 +464,8 @@
   var STEP = 1 / 60, MAX_TICKS = 2;
   function loop(now) {
     requestAnimationFrame(loop);
-    var real = Math.min(0.1, (now - lastT) / 1000);
+    var rawMs = now - lastT;
+    var real = Math.min(0.1, rawMs / 1000);
     lastT = now;
     if (!GAME.started) {
       accumulator += real;
@@ -390,6 +477,10 @@
       }
       if (g0 === MAX_TICKS) accumulator = 0;
     } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
+      // only while the sim is actually running: a paused or overlaid frame
+      // draws a still city and says nothing about what the crowd costs
+      GAME.perf.sample(rawMs);
+      GAME.perf.update(real);
       accumulator += real * GAME.timeScale;
       var guard = 0;
       while (accumulator >= STEP && guard < MAX_TICKS) {
@@ -398,6 +489,11 @@
         guard++;
       }
       if (guard === MAX_TICKS) accumulator = 0;
+    } else {
+      // behind pause, the map, a shop or a result card nothing ticks, so
+      // nothing would drain the buffer: keystrokes on an overlay are not
+      // gameplay input and must not fire the moment it closes
+      GAME.clearPressed();
     }
     // From altitude the road layers sat closer together than the depth buffer
     // could tell apart (0.03m of separation against ~0.2m of precision at half
@@ -428,6 +524,10 @@
         // height isn't mistaken for a fall (and scored as a jump)
         P.car.pos.set(x, GAME.city.groundY(x, z), z);
         P.car.speed = 0; P.car.lat = 0; P.car.vy = 0; P.car.air = 0; P.car.jumpRamp = null;
+        // and drop the held trajectory with it — set down out of a jump
+        // without this and the car keeps flying the old one on the ground,
+        // deaf to the pedals, because nothing else clears it but a landing
+        P.car.airVX = P.car.airVZ = undefined;
       } else {
         P.pos.set(x, GAME.city.groundY(x, z), z);
         P.velY = 0; P.airborne = false;
@@ -460,7 +560,11 @@
       for (var i = 0; i < steps; i++) GAME.tick(STEP);
       return GAME.test.getState();
     },
-    pressKey: function (code, down) { GAME.input.keys[code] = down !== false; },
+    pressKey: function (code, down) {
+      var d = down !== false;
+      GAME.input.keys[code] = d;
+      if (d) GAME.input.pressed[code] = true;   // same edge a real keydown leaves
+    },
     getState: function () {
       var P = GAME.player;
       var info = GAME.renderer ? GAME.renderer.info.render : { calls: 0, triangles: 0 };

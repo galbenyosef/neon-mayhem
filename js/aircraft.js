@@ -44,9 +44,11 @@ GAME.aircraft = (function () {
       car.airframeWarn = 2;
       GAME.hud.message('The airframe is coming apart — one more knock ends it.', 3.5);
       GAME.audio.sting('busted');
+      GAME.haptics.onFire();
     } else if (f <= 0.45 && f > 0.2 && car.airframeWarn !== 1) {
       car.airframeWarn = 1;
       GAME.hud.message('The airframe is damaged — land gently.', 3);
+      GAME.haptics.smoking();
     }
   }
 
@@ -192,7 +194,7 @@ GAME.aircraft = (function () {
         var ey = Math.max(r.y, sy + 0.6);
         GAME.fx.spawn(r.x, ey, r.z, { count: 26, color: 0xff8030, spread: 4, vy: 4, life: 0.7, grav: 0.4 });
         GAME.fx.flash(r.x, ey + 0.6, r.z, 8);
-        GAME.audio.crash(1);
+        GAME.audio.crash(1, r.x, r.z);
         GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.55);
         // rockets in this array only ever leave the player's TALON
         hitAt(r.x, r.z, 7, 85, true);
@@ -443,6 +445,7 @@ GAME.aircraft = (function () {
     updatePlane: updatePlane,
     startParachute: startParachute,
     updateParachute: updateParachute,
+    land: land,
     enforceAirspace: enforceAirspace,
     get parachuting() { return GAME.player.parachuting; }
   };

@@ -474,32 +474,51 @@ GAME.vehicles = (function () {
     car.boostT = Math.max(0, (car.boostT || 0) - dt);
     car.hitCd = Math.max(0, (car.hitCd || 0) - dt);
     var boost = car.boostT > 0 ? (spec.bike ? 2 : 3) : 1;
-    var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1);
-    var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1);
+    // a rival's rubber band (missions.js) moves what the car can DO rather
+    // than what its driver asks for — they race the same machine you do, so
+    // more pedal could only ever match your speed, never close on you
+    var edge = car.raceEdge || 1;
+    var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1) * edge;
+    var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1) * edge;
     if (car.stage >= 2) { maxSp *= 0.6; accel *= 0.5; }
 
-    if (c.throttle > 0) car.speed += accel * c.throttle * dt;
-    else if (c.throttle < 0) {
-      car.speed += (car.speed > 1 ? accel * 1.6 : accel * 0.6) * c.throttle * dt;
+    // Wheels off the ground, nothing to push against. The trajectory is the
+    // one the lip gave you and the pedals stop mattering until you land: you
+    // could brake in mid-jump, and — because a stunt jump pays by the metre —
+    // hold the throttle to buy distance that was never earned on the ramp.
+    // Tyres have nothing to grip either, so speed and slip are held rather
+    // than left to drag and decay, which also keeps the steering authority you
+    // took off with.
+    //
+    // The WHEEL still works. Spins are scored off heading (see jumpSpin
+    // below), and you want to be able to straighten up before you land.
+    var flying = car.airVX !== undefined;
+    if (!flying) {
+      if (c.throttle > 0) car.speed += accel * c.throttle * dt;
+      else if (c.throttle < 0) {
+        car.speed += (car.speed > 1 ? accel * 1.6 : accel * 0.6) * c.throttle * dt;
+      }
+      car.speed = U.clamp(car.speed, -maxSp * 0.4, maxSp);
+      car.speed *= Math.exp(-0.25 * dt);
+      if (Math.abs(car.speed) < 0.06 && c.throttle === 0) car.speed = 0;
     }
-    car.speed = U.clamp(car.speed, -maxSp * 0.4, maxSp);
-    car.speed *= Math.exp(-0.25 * dt);
-    if (Math.abs(car.speed) < 0.06 && c.throttle === 0) car.speed = 0;
 
     var steerFactor = Math.min(1, Math.abs(car.speed) / 7) / (1 + Math.abs(car.speed) * 0.022);
     var dir = car.speed < -0.5 ? -1 : 1;
     car.heading += c.steer * spec.turn * steerFactor * dir * dt;
 
-    var grip = spec.grip * surf * (c.handbrake ? 0.22 : 1) * (car.spiked ? 0.5 : 1);
-    if (c.handbrake) car.speed *= Math.exp(-0.9 * dt);
-    // lateral slip decays toward zero; handbrake keeps it alive for drifts
-    var slip = c.steer * car.speed * 0.16 * (c.handbrake ? 2.4 : 1);
-    car.lat = (car.lat + slip * dt * 8) * Math.exp(-grip * dt);
+    if (!flying) {
+      var grip = spec.grip * surf * (c.handbrake ? 0.22 : 1) * (car.spiked ? 0.5 : 1);
+      if (c.handbrake) car.speed *= Math.exp(-0.9 * dt);
+      // lateral slip decays toward zero; handbrake keeps it alive for drifts
+      var slip = c.steer * car.speed * 0.16 * (c.handbrake ? 2.4 : 1);
+      car.lat = (car.lat + slip * dt * 8) * Math.exp(-grip * dt);
+    }
 
     var fx = fwdX(car), fz = fwdZ(car);
     var sx = fz, sz = -fx;
-    var vx = fx * car.speed + sx * car.lat;
-    var vz = fz * car.speed + sz * car.lat;
+    var vx = flying ? car.airVX : fx * car.speed + sx * car.lat;
+    var vz = flying ? car.airVZ : fz * car.speed + sz * car.lat;
     car.vx = vx; car.vz = vz;
     car.pos.x += vx * dt;
     car.pos.z += vz * dt;
@@ -512,6 +531,8 @@ GAME.vehicles = (function () {
     var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
     if (car.pos.y > gy + stickTol) {
       if (!car.air) {
+        // the velocity the lip handed over, held until the wheels are back down
+        car.airVX = vx; car.airVZ = vz;
         car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0;
         // A stunt jump is EARNED at the lip: the launch only carries the
         // ramp's credit if the car left over the TOP edge, roughly along the
@@ -581,7 +602,36 @@ GAME.vehicles = (function () {
     // takes the new grade immediately instead of easing out of its flight pose
     // and burying the nose in the ramp it just landed on
     var justLanded = wasAirborne && !((car.air || 0) > 0.05);
-    car.mesh.rotation.x = justLanded ? pitch : U.lerp(car.mesh.rotation.x, pitch, Math.min(1, dt * 22));
+    // The angle above is the GROUND's — the grade under the wheels, or the
+    // flight pose in the air — so it is tracked on its own rather than read
+    // back off the mesh. What the body does ON TOP of it is load transfer,
+    // and adding the two is what lets a car climbing a ramp still squat under
+    // power instead of one angle overwriting the other.
+    car.bodyPitch = justLanded || car.bodyPitch === undefined
+      ? pitch : U.lerp(car.bodyPitch, pitch, Math.min(1, dt * 22));
+
+    // Weight moves when speed does: open the throttle and it goes to the back
+    // and the nose lifts, stand on the brakes and it goes to the front and the
+    // nose dives. A spring rather than an ease, because the overshoot as it
+    // settles is the part that reads as suspension and not as a slider —
+    // about 1.9 Hz at a damping ratio near 0.7, so it is done in half a
+    // second. Nothing loads the springs in mid-air, so the targets go to zero
+    // there and the body simply hangs at its flight pose.
+    var susp = car.susp || (car.susp = { p: 0, v: 0 });
+    var airborne = (car.air || 0) > 0.05;
+    var accel = (car.speed - (car.suspSpeed === undefined ? car.speed : car.suspSpeed)) / Math.max(dt, 1e-4);
+    car.suspSpeed = car.speed;
+    // bikes lean, they do not sit on a body that pitches on its springs, and
+    // the rider code owns their attitude anyway
+    var load = (airborne || spec.bike) ? 0 : U.clamp(-accel * 0.0045, -0.07, 0.07);
+    susp.v += (-140 * (susp.p - load) - 16 * susp.v) * dt;
+    susp.p += susp.v * dt;
+
+    car.mesh.rotation.x = car.bodyPitch + susp.p;
+    // Roll is left exactly as it was. Leaning out of a corner already exists
+    // here — lateral slip IS the cornering load — and swapping its ease for a
+    // spring would change how the car reads in a direction change without
+    // adding anything the body was not already doing.
     car.mesh.rotation.z = U.lerp(car.mesh.rotation.z, -car.lat * 0.02, dt * 6);
     car.lastHeading = car.heading;
 
@@ -593,6 +643,16 @@ GAME.vehicles = (function () {
   function landStunt(car, impact) {
     var airT = car.air || 0;
     car.air = 0;
+    // Touching down, the held trajectory becomes the car's motion again, split
+    // along wherever the body finished up pointing: what lines up with the nose
+    // is speed, what does not is slip. Land straight and you keep everything;
+    // land sideways and the difference is exactly the scrub that costs you.
+    if (car.airVX !== undefined) {
+      var lfx = Math.sin(car.heading), lfz = Math.cos(car.heading);
+      car.speed = car.airVX * lfx + car.airVZ * lfz;
+      car.lat = car.airVX * lfz - car.airVZ * lfx;
+      car.airVX = car.airVZ = undefined;
+    }
     var isPlayer = car === GAME.player.car && GAME.player.inCar;
     var earned = car.jumpRamp !== undefined && car.jumpRamp !== null;
     var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
@@ -605,6 +665,7 @@ GAME.vehicles = (function () {
         : airT > 1.6 ? 'INSANE JUMP!' : airT > 1.0 ? 'BIG AIR!' : 'NICE JUMP!';
       GAME.addCash(cash);
       GAME.audio.sting('win');
+      GAME.haptics.stunt();
       GAME.hud.message(label + '   ' + airT.toFixed(1) + 's · ' + Math.round(dist) + 'm · +$' + cash, 3);
       GAME.missions.notifyChaos(60);
       // a jump launched off one of the city's ramps also logs it as found
@@ -614,7 +675,7 @@ GAME.vehicles = (function () {
     // hard landings still hurt
     if (impact > 16) {
       damageCar(car, Math.min(40, (impact - 16) * 2.2), 'wall');
-      GAME.audio.crash(Math.min(1, impact / 30));
+      GAME.audio.crash(Math.min(1, impact / 30), car.pos.x, car.pos.z);
       if (isPlayer) GAME.cameraShake = Math.min(1, impact / 26);
       // Wheels-down off a real ramp is a landing, not a crash: a jump earned
       // at the lip keeps its rider short of the truly catastrophic, however
@@ -683,7 +744,7 @@ GAME.vehicles = (function () {
       if (impact > 4 && (car.hitCd || 0) <= 0) {
         car.hitCd = 0.25;
         damageCar(car, Math.min(32, impact * 1.5), 'wall');
-        GAME.audio.crash(impact / 18);
+        GAME.audio.crash(impact / 18, car.pos.x, car.pos.z);
         GAME.fx.spawn(car.pos.x + nx, car.pos.y + 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
         if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
         // riders get thrown off in a hard wall hit
@@ -720,7 +781,7 @@ GAME.vehicles = (function () {
           a.hitCd = 0.25; b.hitCd = 0.25;
           var dmg = Math.min(26, rel * 1.3);
           damageCar(a, dmg * 0.6, b); damageCar(b, dmg * 0.6, a);
-          GAME.audio.crash(rel / 20);
+          GAME.audio.crash(rel / 20, (a.pos.x + b.pos.x) / 2, (a.pos.z + b.pos.z) / 2);
           GAME.fx.spawn((a.pos.x + b.pos.x) / 2, (a.pos.y + b.pos.y) / 2 + 0.8, (a.pos.z + b.pos.z) / 2, { count: 6, color: 0xffe0a0, spread: 3, life: 0.35 });
           if (a === GAME.player.car || b === GAME.player.car) GAME.cameraShake = Math.min(1, rel / 18);
           var pc = GAME.player.car;
@@ -762,9 +823,11 @@ GAME.vehicles = (function () {
         car.stageWarn = 2;
         GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
         GAME.audio.sting('busted');
+        GAME.haptics.onFire();
       } else if (car.stage === 1 && !car.stageWarn && !car.spec.heli && !car.spec.plane) {
         car.stageWarn = 1;
         GAME.hud.message('Your ride is smoking — it won\'t take much more.', 3);
+        GAME.haptics.smoking();
       }
     }
     if (car.hp <= 0) {
@@ -781,6 +844,7 @@ GAME.vehicles = (function () {
           car.stageWarn = 2;
           GAME.hud.message('YOUR RIDE IS ON FIRE — get out before it blows!', 4);
           GAME.audio.sting('busted');
+          GAME.haptics.onFire();
         }
       } else explodeCar(car, source, car.byPlayer);
     }
@@ -791,7 +855,7 @@ GAME.vehicles = (function () {
     car.dead = true; car.stage = 3;
     // player-caused if this blast (or the damage that led to it) traces to the player
     var byPlayer = !!(byPlayerIn || car.byPlayer);
-    GAME.audio.explosion();
+    GAME.audio.explosion(car.pos.x, car.pos.z);
     // the blast happens where the CAR is — at world height 1.5 a car
     // exploding on a bridge deck flashed under the roadway, unseen
     GAME.fx.flash(car.pos.x, car.pos.y + 1.5, car.pos.z, 9);
@@ -948,7 +1012,7 @@ GAME.vehicles = (function () {
     for (var i = 0; i < world.cars.length; i++) {
       if (world.cars[i].ai && world.cars[i].ai.mode === 'traffic') live++;
     }
-    var maxT = GAME.settings.maxTraffic;
+    var maxT = GAME.perf.budget(GAME.settings.maxTraffic);
     if (live >= maxT) return;
     var city = GAME.city;
     for (var tries = 0; tries < 6 && live < maxT; tries++) {
@@ -984,6 +1048,7 @@ GAME.vehicles = (function () {
     var fc = GAME.focus();
     var P = GAME.player;
     var spots = GAME.city.parkedSpots;
+    var maxParked = GAME.perf.budget(GAME.settings.maxParked);
     var live = 0;
     for (var i = 0; i < spots.length; i++) if (spots[i].live) live++;
     for (var s = 0; s < spots.length; s++) {
@@ -1008,7 +1073,7 @@ GAME.vehicles = (function () {
       // at that distance reads as "there is no helicopter in this game"
       var range = sp.range || (special ? 210 : 140);
       var despawnR = sp.despawn || (special ? 260 : 190);
-      if (!sp.live && (special || live < GAME.settings.maxParked) && d2 < range * range && d2 >= minD) {
+      if (!sp.live && (special || live < maxParked) && d2 < range * range && d2 >= minD) {
         var clear = true;
         // The check is height-aware — street traffic far below a rooftop pad
         // must not block it — but it has to measure against the spot's OWN

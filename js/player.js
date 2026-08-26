@@ -150,6 +150,15 @@ function killLoopingAudio() {
   GAME.audio.radio.setVolume(0);
 }
 
+// the canopy is held open the same way, and nothing else puts it away: dying
+// under it (a 4-star bird strafes a glider, and a bailed-out airframe blows up
+// beneath one) left P.parachuting set through the whole wasted screen, so the
+// chute hung in the air over the body — and then the first living frame at the
+// hospital ran a glide step and reported "Feet dry." on solid ground.
+function stowParachute() {
+  if (GAME.player.parachuting && GAME.aircraft) GAME.aircraft.land();
+}
+
 GAME.playerWasted = function (cause) {
   var P = GAME.player;
   if (P.state !== 'alive') return;
@@ -157,6 +166,7 @@ GAME.playerWasted = function (cause) {
   GAME.track('wasted');
   GAME.timeScale = 0.35;
   killLoopingAudio();
+  stowParachute();
   // the card tells the truth about THIS death: a bed only counts on the
   // island you went down on — and if you own one elsewhere, say why it
   // didn't help, so the rule teaches itself
@@ -175,6 +185,7 @@ GAME.playerWasted = function (cause) {
   var show = function () {
     if (P.state !== 'wasted' || P.respawnQueued) return;
     GAME.audio.sting('wasted');
+    GAME.haptics.wasted();
     GAME.hud.showBig('wasted', body);
   };
   if (delay) setTimeout(show, delay); else show();
@@ -188,7 +199,9 @@ GAME.playerBusted = function () {
   GAME.track('busted');
   GAME.timeScale = 0.4;
   killLoopingAudio();
+  stowParachute();
   GAME.audio.sting('busted');
+  GAME.haptics.busted();
   var fine = Math.min(P.cash, 200);
   P.pendingFine = fine;
   GAME.hud.showBig('busted', 'Released with a $' + fine + ' fine. Weapons confiscated.');
@@ -512,6 +525,29 @@ function carRoofY(c, lx, lz) {
   return top;
 }
 // the LOWEST standable level, for deciding when someone is "above" the car
+// The world height of a point on a car's deck, given that point in the body's
+// own frame. carRoofY answers in that frame, and the body is not level:
+// vehicles.js pitches the chassis over ramps and rolls it through corners
+// (mesh.rotation.x / .z), so adding car.pos.y alone stood a rider on the flat
+// roof the car would have had sitting still — hanging in the air off the back
+// of a nose-up truck, or sunk into the front of it.
+//
+// The heading is deliberately zeroed rather than reused: lx/lz arrive already
+// turned into the body frame, so putting it back would apply it twice.
+// Rebuilding through the mesh's OWN euler order matters — ground cars are set
+// to YXZ (so a ramp pitches them whichever way they face) while aircraft keep
+// the default XYZ, and the two do not compose alike.
+var _deckE = null, _deckQ = null, _deckV = null;
+function deckWorldY(c, lx, ly, lz) {
+  var r = c.mesh.rotation;
+  if (!r.x && !r.z) return c.pos.y + ly;   // sitting level: nothing to turn
+  if (!_deckV) { _deckV = new THREE.Vector3(); _deckE = new THREE.Euler(); _deckQ = new THREE.Quaternion(); }
+  _deckE.set(r.x, 0, r.z, r.order);
+  _deckQ.setFromEuler(_deckE);
+  _deckV.set(lx, ly, lz).applyQuaternion(_deckQ);
+  return c.pos.y + _deckV.y;
+}
+
 function carBodyTop(c) {
   var s = c.spec;
   return s.icecream ? 2.6 : s.monster ? 2.3 : s.plane ? 1.4 : s.heli ? 1.9 : s.bike ? 1.0 : 0.42 + s.bodyH / 2;
@@ -624,7 +660,7 @@ function updateOnFoot(dt) {
     if (Math.abs(rlx) > rcc.spec.w / 2 + 0.12 || Math.abs(rlz) > rcc.spec.l / 2 + 0.12) continue;
     var rY = carRoofY(rcc, rlx, rlz);
     if (rY === null) continue;
-    rY += rcc.pos.y;
+    rY = deckWorldY(rcc, rlx, rY, rlz);
     if (P.pos.y >= rY - 0.5 && rY > surf) { surf = rY; roofCar = rcc; }
   }
   // Space jumps when you're on your feet (running gives you a longer hop)
@@ -763,7 +799,7 @@ function updateDriving(dt) {
       if (wantHop && !P.hopLatch && car.pos.y <= mgy + 0.1) {
         car.vy = 13.5;
         car.pos.y = mgy + 0.12;
-        GAME.audio.crash(0.35);
+        GAME.audio.crash(0.35, car.pos.x, car.pos.z);
         GAME.cameraShake = 0.4;
       }
       P.hopLatch = wantHop;
@@ -806,14 +842,7 @@ function updateBikeRider(dt) {
   j.armL.rotation.x = -1.05; j.armR.rotation.x = -1.05; // hands on the handlebars
 }
 
-var pressedCache = {};
-GAME.keyPressed = function (code) {
-  var down = GAME.key(code);
-  var fired = down && !pressedCache[code];
-  pressedCache[code] = down;
-  return fired;
-};
-
+var shakePrev = 0;
 function updateCamera(dt) {
   var P = GAME.player, inp = GAME.input, cam = GAME.cam;
   var mdx = inp.mouseDX, mdy = inp.mouseDY;
@@ -872,11 +901,17 @@ function updateCamera(dt) {
   cy = fy + (cy - fy) * (0.4 + 0.6 * bestT);
 
   if (GAME.cameraShake > 0.01) {
+    // A rise means a fresh knock rather than the tail of the last one. The
+    // shake is the game's existing "this happened to YOU" signal — every
+    // caller already filtered for the player's own car, own fall, own
+    // airframe — so one read here covers all of them without a hook at each.
+    if (GAME.cameraShake > shakePrev + 0.05) GAME.haptics.knock(GAME.cameraShake - shakePrev);
     GAME.cameraShake *= Math.exp(-5 * dt);
     cx += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
     cy += (Math.random() - 0.5) * GAME.cameraShake * 0.5;
     cz += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
   }
+  shakePrev = GAME.cameraShake;
 
   cam.x = U.damp(cam.x || cx, cx, 20, dt);
   cam.y = U.damp(cam.y || cy, cy, 20, dt);

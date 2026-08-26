@@ -425,13 +425,26 @@ GAME.shops = (function () {
   function buyShowroom(loc, id) {
     var at = loc.forecourt;
     var spot = clearSpot(at.x, at.z);
-    var car = GAME.vehicles.spawnCar(id, spot.x, spot.z, loc.heading || 0, {});
     if (id === 'monster') GAME.city.unlockMonsterTruck();
     if (garage().indexOf(id) < 0) garage().push(id);
     GAME.save();
+    // Register the type first, so the forecourt bay this car belongs in
+    // exists before the car does.
     refreshGarageSpots();
+    // The delivered car IS this type's garage car at the showroom, and has to
+    // be spawned as that bay's occupant rather than as a loose extra. Left
+    // unlinked the bay reads empty, and the parked spawner drops a second
+    // identical vehicle into it within a few frames, in plain sight — the
+    // restock guard cannot help, because it matches on fromSpot, which only
+    // the spawner itself ever sets. Same wiring the spawner uses, so boarding
+    // frees the bay and driving off restocks it exactly as it always did.
+    var bay = garageSpots['showroom:' + id];
+    var opts = bay && !bay.live ? { parkedSpot: bay, ai: { mode: 'parked' } } : {};
+    var car = GAME.vehicles.spawnCar(id, spot.x, spot.z, loc.heading || 0, opts);
+    if (bay && !bay.live) { bay.live = car; car.fromSpot = bay; }
     GAME.fx.flash(spot.x, 1.5, spot.z, 5);
     GAME.audio.sting('win');
+    GAME.haptics.win();
     GAME.track('showroom-' + id);
     var spec = GAME.vehicles.TYPES[id];
     note('Keys in the ignition, right outside.');
@@ -483,8 +496,8 @@ GAME.shops = (function () {
           tick(55 + Math.pow(step / steps, 2) * 300);
         } else {
           spinning = false;
-          if (win > 0) { GAME.addCash(win); GAME.audio.sting('win'); }
-          else GAME.audio.crash(0.2);
+          if (win > 0) { GAME.addCash(win); GAME.audio.sting('win'); GAME.haptics.win(); }
+          else { GAME.audio.crash(0.2); GAME.haptics.deny(); }
           GAME.track(win > 0 ? 'casino-win' : 'casino-loss');
           if (inCasino) {
             note(label + (win > 0 ? '  +$' + win.toLocaleString() : '') + '  (stake included)');
@@ -1298,7 +1311,7 @@ GAME.shops = (function () {
     // "buy this? Free" — the exact wording the condo bug shipped. Act directly.
     if (it.noPrice) { buy(it.id); return; }
     var P = GAME.player;
-    if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); return; }
+    if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); GAME.haptics.deny(); return; }
     pendingBuy = it.id;
     $('shop-confirm-name').textContent = it.name;
     $('shop-confirm-price').textContent = it.price > 0 ? 'Price: $' + it.price.toLocaleString() : 'Free';
@@ -1322,7 +1335,7 @@ GAME.shops = (function () {
     for (var i = 0; i < list.length; i++) if (list[i].id === id) { it = list[i]; break; }
     if (!it || it.owned || it.off) { render(); return false; }
     var P = GAME.player;
-    if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); return false; }
+    if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); GAME.haptics.deny(); return false; }
     GAME.addCash(-it.price);
     switch (openShop.kind) {
       case 'hardware': buyHardware(id); break;
@@ -1356,7 +1369,6 @@ GAME.shops = (function () {
     GAME.shopOpen = true;
     GAME.releasePointer();
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
-    GAME.audio.engineState(false, 0); GAME.audio.skid(0); GAME.audio.siren(0);
     render();
     GAME.track('shop-open-' + loc.kind);
     return true;
