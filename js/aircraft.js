@@ -348,6 +348,16 @@ GAME.aircraft = (function () {
     }
 
     GAME.audio.engineState(true, 0.35 + Math.min(0.6, car.speed / car.spec.maxSpeed * 0.6), 'plane');
+    // The airframe on tarmac. Speed is what actually shakes it, so one number
+    // covers both ends of a flight: the run building up to rotation and the
+    // rollout bleeding off after touchdown. The throttle floor is on top of
+    // that for the run-up — stood on the brakes with the engine open, a plane
+    // is not still. Called every frame this is true and not otherwise, which
+    // is the whole of turning it off: step out, pause, or leave the ground and
+    // the keepalive lapses on its own.
+    GAME.haptics.rumble(onGround
+      ? Math.max(Math.abs(car.speed) / car.spec.stall, thr > 0 ? 0.25 : 0)
+      : 0);
     // bank into turns on top of any barrel roll the pilot is holding
     car.mesh.rotation.set(-car.pitch, car.heading, car.roll - yawIn * 0.4);
     warnAirframe(car);
@@ -426,6 +436,9 @@ GAME.aircraft = (function () {
     if (P.pos.y <= gy + 0.05) {
       land();
       P.pos.y = gy; P.velY = 0;
+      // touchdown, not the other two ways out of a canopy: land() is also what
+      // drowning and dying call, and neither of those is a landing
+      GAME.haptics.chuteLand();
       GAME.hud.message('Feet dry.', 1.5);
     }
   }

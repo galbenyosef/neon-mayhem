@@ -27,6 +27,7 @@
 GAME.haptics = (function () {
   var enabled = true;
   var lastT = -1e9, lastPri = -1, lastEnergy = 0, busyUntil = -1e9;
+  var rumbleV = 0, rumbleUntil = -1e9, rumbleTimer = null, rumbleOn = false, rumbleSent = null;
   var last = null;         // what was last sent, for the headless checks
   var WINDOW = 90;         // ms of quiet after a buzz before an equal one may follow
   var MIN_PULSE = 8;       // shorter than a motor can render as anything
@@ -65,6 +66,68 @@ GAME.haptics = (function () {
     return out.length ? { p: out, span: span, energy: energy } : null;
   }
 
+  // ---- the one sustained channel, and why it is allowed to exist ----
+  //
+  // Everything above is a one-shot, and the note at the top of this file says
+  // why: vibrate() fires once, so holding a texture means re-arming it every
+  // few hundred ms, and something that never stops reads as a fault rather
+  // than as feedback. A takeoff run is the exception that proves it — it is
+  // not a texture without end, it is an EVENT with a beginning and an end
+  // (wheels down, at speed, on tarmac) that happens to last ten seconds.
+  //
+  // Two properties keep it honest:
+  //  - It is a KEEPALIVE, not a switch. The caller says "still rolling" every
+  //    frame and the pump stops on its own the moment they stop saying it. So
+  //    stepping out of the plane, pausing, dying, or losing the tick for any
+  //    reason ends it, with nothing to remember to turn off.
+  //  - It never takes the channel. The pump writes only when nothing else is
+  //    playing and the quiet window is clear, and it does not touch lastT, so
+  //    a one-shot always cuts straight through it and the rumble picks back up
+  //    afterwards.
+  var RUMBLE_KEEPALIVE = 200;   // ms without a caller before it winds down
+
+  function rumblePattern(v) {
+    // more pulses closer together as it builds: a light flutter at taxi speed
+    // and a hard shake at rotation, without any single pulse growing long
+    // enough to read as one continuous buzz
+    var on = Math.round(8 + v * 13);
+    var gap = Math.round(72 - v * 30);
+    var p = [];
+    for (var i = 0; i < 4; i++) { if (i) p.push(gap); p.push(on); }
+    return p;
+  }
+
+  function stopRumble() {
+    if (rumbleTimer) { clearTimeout(rumbleTimer); rumbleTimer = null; }
+    if (!rumbleOn) return;
+    rumbleOn = false; rumbleSent = null;
+    // Only silence the motor if the rumble is what is playing. A crash that
+    // preempted it a moment ago is mid-pattern, and cutting that short to
+    // tidy up after ourselves would be the tail wagging the dog.
+    if (available() && performance.now() >= busyUntil) {
+      try { navigator.vibrate(0); } catch (e) { }
+    }
+  }
+
+  function pumpRumble() {
+    rumbleTimer = null;
+    var now = performance.now();
+    if (!enabled || !available() || now > rumbleUntil) { stopRumble(); return; }
+    var p = rumblePattern(rumbleV), span = 0;
+    for (var i = 0; i < p.length; i++) span += p[i];
+    // yield to anything playing or still inside its quiet window, and come
+    // back for the next slot rather than queueing behind it
+    if (now >= busyUntil && now - lastT >= WINDOW) {
+      rumbleOn = true; rumbleSent = p;
+      try { navigator.vibrate(p); } catch (e) { }
+      // land the next train exactly where this one ends: a gap would be felt
+      // as the airframe settling, and an overlap just replaces the tail
+      rumbleTimer = setTimeout(pumpRumble, Math.max(40, span - 10));
+    } else {
+      rumbleTimer = setTimeout(pumpRumble, 40);
+    }
+  }
+
   function send(pattern, pri) {
     if (!enabled || !available()) return false;
     var c = clean(pattern);
@@ -92,7 +155,11 @@ GAME.haptics = (function () {
     PRI: PRI,
     setOn: function (v) {
       enabled = !!v;
-      if (!enabled && available()) { try { navigator.vibrate(0); } catch (e) { } }
+      if (!enabled) {
+        rumbleUntil = -1e9;
+        stopRumble();
+        if (available()) { try { navigator.vibrate(0); } catch (e) { } }
+      }
       return enabled;
     },
 
@@ -116,6 +183,18 @@ GAME.haptics = (function () {
     // double-tap would read better still, but at automatic rates its span
     // outlasts the gap between rounds and the motor never gets to stop.
     hit: function () { return send(26, PRI.NOTE); },
+    // A blast, 0..1 by how close you were standing to it. explodeCar never
+    // touched cameraShake, so until now the only thing the hand got from a car
+    // going up beside it was the generic damage tick — the same 22 ms a stray
+    // punch earns. The crack, then the boom rolling out after it.
+    blast: function (s) {
+      s = U.clamp(s, 0, 1);
+      return send([40 + s * 50, 60, 22 + s * 38], PRI.BODY);
+    },
+    // Feet back on the ground under a canopy. Deliberately gentle and single:
+    // the whole point of the chute is that this is the landing that does not
+    // hurt, and a thump here would say the opposite.
+    chuteLand: function () { return send(18, PRI.NOTE); },
     // somebody went under the wheels. A body is not a wall, so it is not the
     // wall's single sharp thud: the bonnet, then the weight of it passing
     // beneath, the second scaled by how fast you were going. 0..1.
@@ -164,6 +243,24 @@ GAME.haptics = (function () {
     wasted: function () { return send([120, 80, 90, 80, 60], PRI.ALARM); },
     busted: function () { return send([70, 70, 70, 70, 70], PRI.ALARM); },
 
+    // ---- the runway ----
+
+    // Wheels down, at speed, on tarmac: the takeoff run and the landing
+    // rollout are the same thing to the airframe. Call it every frame while
+    // that is true and stop calling it when it is not — see the keepalive note
+    // above. 0..1; anything at or under 0.02 winds it down immediately.
+    rumble: function (v) {
+      v = U.clamp(v || 0, 0, 1);
+      if (!enabled || !available() || v <= 0.02) {
+        if (rumbleUntil > -1e8) { rumbleUntil = -1e9; stopRumble(); }
+        return false;
+      }
+      rumbleV = v;
+      rumbleUntil = performance.now() + RUMBLE_KEEPALIVE;
+      if (!rumbleTimer) pumpRumble();
+      return true;
+    },
+
     // ---- the screen you are touching ----
 
     // A virtual button has no travel and no click, so without this it never
@@ -171,11 +268,23 @@ GAME.haptics = (function () {
     // anything the world is trying to say.
     uiTap: function () { return send(9, PRI.UI); },
 
+    // Switching RUMBLE on and feeling nothing tells you nothing — the setting
+    // reads as a promise rather than a thing that happened. So the switch
+    // demonstrates itself: two taps and a firmer one, enough to show the
+    // channel speaks in shapes and not just in length.
+    demo: function () { return send([14, 60, 45], PRI.NOTE); },
+
     // headless hooks: the buzz that WOULD be sent without needing a motor, what
     // it was, and a clear window to send it in — otherwise a test of one hook
     // is really a test of whatever buzzed just before it
     testBuzz: function (ms, pri) { return send(ms, pri === undefined ? PRI.BODY : pri); },
     testLast: function () { return last; },
-    testReset: function () { lastT = -1e9; lastPri = -1; lastEnergy = 0; busyUntil = -1e9; last = null; }
+    testRumble: function () {
+      return { on: rumbleOn, armed: !!rumbleTimer, v: rumbleV, pattern: rumbleSent };
+    },
+    testReset: function () {
+      lastT = -1e9; lastPri = -1; lastEnergy = 0; busyUntil = -1e9; last = null;
+      rumbleUntil = -1e9; stopRumble();
+    }
   };
 })();

@@ -112,6 +112,9 @@ GAME.hud = (function () {
     if (GAME.isTouch && GAME.haptics.available) {
       pauseBtn('pause-haptic', function () {
         GAME.haptics.setOn(!GAME.haptics.on);
+        // switching it on and feeling nothing reads as a promise rather than
+        // as a thing that happened, so show what was just switched on
+        if (GAME.haptics.on) GAME.haptics.demo();
         if (GAME.prefs) { GAME.prefs.rumbleOff = !GAME.haptics.on; GAME.save(); }
         paintHapticBtn();
       });

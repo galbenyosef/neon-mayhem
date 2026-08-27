@@ -872,6 +872,16 @@ GAME.vehicles = (function () {
     car.speed *= 0.2;
     // area damage
     var p = GAME.player;
+    // Felt further than it hurts, which is the point: the damage radius below
+    // is 8 m, and a wreck going up thirty metres away is still the loudest
+    // physical thing in the street. Gated on the player being alive so a
+    // cascade under the wasted screen cannot buzz a corpse.
+    if (p.state === 'alive') {
+      var bd = U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z);
+      var bdy = Math.abs(p.pos.y - car.pos.y);
+      if (p.inCar && p.car === car) GAME.haptics.blast(1);
+      else if (bd < 900 && bdy < 12) GAME.haptics.blast(1 - Math.sqrt(bd) / 30);
+    }
     if (!p.inCar || p.car !== car) {
       // altitude counts: a wreck going up underneath you shouldn't catch you
       // while you're hanging off a parachute or standing on a roof

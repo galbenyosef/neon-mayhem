@@ -33,7 +33,10 @@
 //      a browser with no motor at all. Then the vocabulary on top of that: no
 //      two kinds may feel the same, the tiers must preempt in one direction
 //      only, and the events with a body behind them — a run-over, a star, a
-//      fire — are driven through the game rather than through the module door.
+//      fire, a blast, a canopy touching down — are driven through the game
+//      rather than through the module door. Then the one SUSTAINED channel,
+//      which runs on its own timer: it has to keep pulsing, stop itself when
+//      the caller goes quiet, and never take the channel from a one-shot.
 //   8. FRAME BUDGET   — the crowd thins when frames run late and, more to
 //      the point, comes BACK when they do not.
 //   9. SHOWROOM       — a bought vehicle is delivered once, not twice.
@@ -546,8 +549,8 @@ function withTimeout(p, ms) {
   });
   var vocab = await page.evaluate(function () {
     var H = GAME.haptics, out = {}, seen = {};
-    var kinds = ['uiTap', 'pickup', 'hit', 'shot', 'checkpoint', 'deny', 'hurt',
-                 'win', 'stunt', 'wantedClear', 'smoking', 'onFire', 'wasted', 'busted'];
+    var kinds = ['uiTap', 'pickup', 'hit', 'shot', 'checkpoint', 'deny', 'hurt', 'chuteLand',
+                 'demo', 'win', 'stunt', 'wantedClear', 'smoking', 'onFire', 'wasted', 'busted'];
     var dupes = [];
     for (var i = 0; i < kinds.length; i++) {
       H.testReset();
@@ -601,7 +604,8 @@ function withTimeout(p, ms) {
     // switched off, none of it goes anywhere
     H.setOn(false);
     H.testReset(); window.__buzz.length = 0;
-    hap('splat', 1); hap('wantedUp', 5); hap('onFire'); hap('wasted'); hap('busted'); hap('win'); hap('uiTap');
+    hap('splat', 1); hap('wantedUp', 5); hap('onFire'); hap('wasted'); hap('busted'); hap('win');
+    hap('uiTap'); hap('blast', 1); hap('chuteLand'); hap('demo');
     r.whileOff = window.__buzz.slice();
     H.setOn(true);
     return r;
@@ -721,6 +725,233 @@ function withTimeout(p, ms) {
     'stage=' + world.stage + ' sent=' + JSON.stringify(world.onFire));
   check('haptics: and the group leaves the player on foot and clean (anchor sanity)',
     world.onFoot === true);
+
+  // ---- the blast ----
+  // explodeCar never touched cameraShake, so the knock channel could not see
+  // it: everything a car going up beside you used to send was the generic
+  // damage tick, and that only if the blast reached far enough to hurt.
+  var blast = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100; P.state = 'alive';
+    GAME.test.teleport(356, 120);
+    GAME.test.fastForward(0.5);
+    GAME.godMode = true;             // the blast damages, and hurt() is a second cause
+    var mine = [];
+
+    function blow(dx) {
+      GAME.test.spawnCar('sedan', dx, 0);
+      GAME.test.fastForward(0.2);
+      var cars = GAME.world.cars, car = null, best = 1e9;
+      for (var i = 0; i < cars.length; i++) {
+        var d = U.dist2(cars[i].pos.x, cars[i].pos.z, P.pos.x, P.pos.z);
+        if (!cars[i].dead && d < best) { best = d; car = cars[i]; }
+      }
+      if (!car) return { none: true };
+      mine.push(car);
+      GAME.haptics.testReset(); window.__buzz.length = 0;
+      GAME.vehicles.explodeCar(car, 'test');
+      return { sent: window.__buzz.slice(), dist: Math.round(Math.sqrt(best)), dead: !!car.dead };
+    }
+    r.near = blow(5);
+    GAME.test.fastForward(1);
+    r.far = blow(22);
+    // and one over the horizon must not reach the hand at all
+    var far = GAME.vehicles.spawnCar('sedan', 356, -400, 0);
+    mine.push(far);
+    GAME.test.fastForward(0.2);
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    GAME.vehicles.explodeCar(far, 'test');
+    r.offscreen = window.__buzz.slice();
+    GAME.godMode = false;
+    P.health = 100;
+    // Clear the wrecks away. explodeCar blackens a car and leaves it standing
+    // — the bubble collects it eventually, but "eventually" is three groups
+    // later, and the showroom below counts cars and the race needs a field.
+    for (var m = 0; m < mine.length; m++) GAME.vehicles.removeCar(mine[m]);
+    GAME.test.fastForward(0.3);
+    // Assert what this group CONTROLS. Counting the world's cars instead
+    // failed one run in two: the spawn bubble is filling the street back in
+    // over the same window, so the total can rise however tidy we were.
+    r.left = mine.filter(function (c) { return GAME.world.cars.indexOf(c) !== -1; }).length;
+    r.spawned = mine.length;
+    return r;
+  });
+  check('haptics: two cars blew up at different ranges (anchor sanity)',
+    blast.near.dead === true && blast.far.dead === true && blast.near.dist < blast.far.dist,
+    'near=' + blast.near.dist + 'm far=' + blast.far.dist + 'm');
+  check('haptics: a blast is felt, and it is not the generic damage tick',
+    blast.near.sent.length === 1 && Array.isArray(blast.near.sent[0]) &&
+    blast.near.sent[0][0] > 22,
+    'sent=' + JSON.stringify(blast.near.sent));
+  check('haptics: and it fades with range rather than being on or off',
+    blast.far.sent.length === 1 && Array.isArray(blast.far.sent[0]) &&
+    blast.far.sent[0][0] < blast.near.sent[0][0],
+    'near=' + JSON.stringify(blast.near.sent[0]) + ' far=' + JSON.stringify(blast.far.sent[0]));
+  check('haptics: a wreck across the map does not reach the hand',
+    blast.offscreen.length === 0, 'sent=' + JSON.stringify(blast.offscreen));
+  check('haptics: and every wreck it made is cleared behind it (anchor sanity)',
+    blast.spawned === 3 && blast.left === 0,
+    'spawned=' + blast.spawned + ' still in the world=' + blast.left);
+
+  // ---- the canopy ----
+  var chute = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.test.teleport(356, 160);
+    GAME.test.fastForward(0.5);
+    P.health = 100; P.state = 'alive';
+    // Put them under a canopy three metres up and let it fly into the ground.
+    // startParachute takes the position to open AT — called bare it runs
+    // Vector3.set(undefined...), which Three assigns raw, and the whole glide
+    // then happens at an undefined coordinate.
+    var cy = GAME.city.surfaceY(P.pos.x, P.pos.z);
+    GAME.aircraft.startParachute(P.pos.x, cy + 3, P.pos.z, 0);
+    r.opened = !!P.parachuting;
+    r.openedAt = Math.round((P.pos.y - cy) * 10) / 10;
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    for (var i = 0; i < 90 && P.parachuting; i++) GAME.test.fastForward(1 / 60);
+    r.landed = !P.parachuting;
+    r.sent = window.__buzz.slice();
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('haptics: the canopy opened above the ground and came down (anchor sanity)',
+    chute.opened === true && chute.landed === true && chute.openedAt > 1,
+    'opened=' + chute.opened + ' at=' + chute.openedAt + 'm landed=' + chute.landed);
+  check('haptics: touching down under a canopy is felt, and felt gently',
+    chute.sent.length === 1 && typeof chute.sent[0] === 'number' && chute.sent[0] < 30,
+    'sent=' + JSON.stringify(chute.sent));
+
+  // ---- the runway ----
+  // The one sustained channel, and the only thing here that runs on its own
+  // timer rather than on a call from the game. Three things have to hold or it
+  // is worse than nothing: it has to keep pulsing, it has to stop on its own
+  // when the caller goes quiet, and it must never take the channel from a
+  // one-shot.
+  //
+  // Counted in PULSES rather than over a stopwatch. The pump asks for its next
+  // slot 200 ms out, and on a real device that is 200 ms — but here the page
+  // renders a whole city through swiftshader and one frame can hold the main
+  // thread for half a second, so the timer lands whenever the thread next
+  // frees up. Measured against a clock this reads as a broken pump; measured
+  // in pulses it is exactly the pump working.
+  async function waitFor(fn, ms) {
+    return page.waitForFunction(fn, null, { timeout: ms || 25000 })
+      .then(function () { return true; }, function () { return false; });
+  }
+  await page.evaluate(function () {
+    GAME.haptics.testReset();
+    window.__buzz.length = 0;
+    // Same guard as the one-shots above, for the same reason: these reach for
+    // the channel by name, and a build without it would throw in the page and
+    // take the runner down rather than report anything. It cost a control run
+    // to learn that once already.
+    window.__rumbleState = function () {
+      return typeof GAME.haptics.testRumble === 'function'
+        ? GAME.haptics.testRumble() : { missing: true, on: null, armed: null };
+    };
+    // Drive the keepalive from a timer rather than from the plane, so this is
+    // a test of the channel and not of whether a Skywhistle can be found and
+    // got up to speed inside a headless frame budget. The wiring in
+    // updatePlane is covered on its own, below.
+    window.__roll = setInterval(function () { window.__hap('rumble', 0.8); }, 30);
+  });
+  // Count the rumble's own trains, not everything in the recorder. The world
+  // is live around a player standing in the street, and a one-shot landing
+  // mid-roll — traffic clipping them, anything — is a bare number rather than
+  // a pattern. Requiring every entry to be a train made an EXPECTED event fail
+  // the check, which is the opposite of what it is for: there is a check just
+  // below asserting a one-shot does cut through.
+  await page.evaluate(function () {
+    window.__trains = function () {
+      return window.__buzz.filter(function (v) { return Array.isArray(v); });
+    };
+  });
+  var pulsed = await waitFor(function () { return window.__trains().length >= 3; });
+  var roll = await page.evaluate(function () {
+    var mid = { sent: window.__trains() };
+    // a crash mid-roll has to cut straight through it
+    window.__buzz.length = 0;
+    GAME.haptics.knock(1);
+    mid.knockGotThrough = window.__buzz.slice();
+    return mid;
+  });
+  var resumed = await waitFor(function () { return window.__trains().length >= 2; });
+  await page.evaluate(function () {
+    // the caller going quiet is the whole of switching it off — there is no
+    // off switch to forget, which is the point of the keepalive
+    clearInterval(window.__roll);
+    window.__buzz.length = 0;
+  });
+  var woundDown = await waitFor(function () { return !window.__rumbleState().armed; }, 8000);
+  var rollOff = await page.evaluate(function () {
+    return { sent: window.__buzz.slice(), state: window.__rumbleState() };
+  });
+  check('haptics: the runway rumble keeps pulsing, and in a pattern',
+    pulsed && roll.sent.length >= 3 &&
+    roll.sent.every(function (v) { return v.length >= 5; }),
+    'pulses=' + roll.sent.length + ' first=' + JSON.stringify(roll.sent[0]));
+  check('haptics: a crash mid-roll cuts straight through it',
+    roll.knockGotThrough.length === 1 && roll.knockGotThrough[0] === 55,
+    'sent=' + JSON.stringify(roll.knockGotThrough));
+  check('haptics: and the rumble picks back up behind it', resumed === true);
+  check('haptics: the caller going quiet winds it down, with nothing to remember',
+    woundDown && !rollOff.state.missing && rollOff.state.on === false &&
+    rollOff.sent.filter(function (v) { return Array.isArray(v); }).length === 0,
+    'state=' + JSON.stringify(rollOff.state) + ' sentAfter=' + JSON.stringify(rollOff.sent));
+
+  // and the wiring: a plane on its wheels with the throttle open arms it
+  var plane = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys, r = {};
+    window.__hap('rumble', 0);
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.teleport(356, 200);
+    GAME.test.fastForward(0.5);
+    GAME.test.spawnCar('airplane', 5, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(0.6);
+    var car = P.car;
+    r.inPlane = !!(car && car.spec.plane);
+    if (!r.inPlane) return r;
+    car.pos.y = GAME.city.surfaceY(car.pos.x, car.pos.z) + car.spec.wheelH;
+    car.speed = 0; car.pitch = 0;
+    GAME.haptics.testReset();
+    K['KeyW'] = true;                       // throttle open on the wheels
+    GAME.test.fastForward(0.5);
+    r.rolling = window.__rumbleState();
+    r.speed = Math.round(car.speed * 10) / 10;
+    r.onGround = car.pos.y <= GAME.city.surfaceY(car.pos.x, car.pos.z) + car.spec.wheelH + 0.35;
+    K['KeyW'] = false;
+    // lift it off and the same call stops arming
+    car.pos.y = GAME.city.surfaceY(car.pos.x, car.pos.z) + 40;
+    car.speed = 40; car.pitch = 0.2;
+    GAME.test.fastForward(0.3);
+    r.flying = window.__rumbleState();
+    GAME.exitCar();
+    window.__hap('rumble', 0);
+    // and take the plane with us: it was left forty metres up, and the groups
+    // below want a tidy world rather than an airliner hanging over the city
+    GAME.vehicles.removeCar(car);
+    GAME.test.fastForward(0.4);
+    r.onFoot = !GAME.player.inCar;
+    r.planeGone = GAME.world.cars.indexOf(car) === -1;
+    return r;
+  });
+  check('haptics: a plane is on the runway with the throttle open (anchor sanity)',
+    plane.inPlane === true && plane.onGround === true && plane.speed > 0,
+    'inPlane=' + plane.inPlane + ' onGround=' + plane.onGround + ' speed=' + plane.speed);
+  check('haptics: the takeoff run arms the rumble',
+    plane.rolling && plane.rolling.armed === true && plane.rolling.v > 0.2,
+    'state=' + JSON.stringify(plane.rolling));
+  check('haptics: and leaving the ground disarms it',
+    plane.flying && !plane.flying.missing && plane.flying.armed === false,
+    'state=' + JSON.stringify(plane.flying));
+  check('haptics: and the group leaves the player on foot and the sky empty (anchor sanity)',
+    plane.onFoot === true && plane.planeGone === true,
+    'onFoot=' + plane.onFoot + ' planeGone=' + plane.planeGone);
 
   check('haptics: the handedness switch is hidden off a touch device',
     (await page.evaluate(function () {
@@ -1284,19 +1515,35 @@ function withTimeout(p, ms) {
   // already reading RUMBLE: ON, so a check that only reads the text passes
   // with the wiring torn out.
   var hapBtn = await tpage.evaluate(function () {
+    var sent = [];
+    navigator.vibrate = function (ms) { sent.push(ms); return true; };
     var b = document.getElementById('pause-haptic');
     var shown = b.style.display !== 'none', before = GAME.haptics.on, text0 = b.textContent;
     b.click();
     var mid = { on: GAME.haptics.on, text: b.textContent, pref: !!(GAME.prefs && GAME.prefs.rumbleOff) };
+    var offSent = sent.slice();
+    // and back on, which is the press that has to demonstrate itself
+    GAME.haptics.testReset();
+    sent.length = 0;
     b.click();
-    return { shown: shown, before: before, text0: text0, mid: mid,
-             back: GAME.haptics.on, text2: b.textContent };
+    return { shown: shown, before: before, text0: text0, mid: mid, offSent: offSent,
+             onSent: sent.slice(), back: GAME.haptics.on, text2: b.textContent };
   });
   check('touch: the rumble switch is offered on a touch device',
     hapBtn.shown && /RUMBLE/.test(hapBtn.text0), 'shown=' + hapBtn.shown + ' text=' + hapBtn.text0);
   check('touch: pressing it turns rumble off, relabels, and remembers',
     hapBtn.before === true && hapBtn.mid.on === false && /OFF/.test(hapBtn.mid.text) && hapBtn.mid.pref === true,
     'on=' + hapBtn.mid.on + ' text=' + hapBtn.mid.text + ' pref=' + hapBtn.mid.pref);
+  // Switching it on and feeling nothing tells you nothing — the setting reads
+  // as a promise rather than as something that happened.
+  check('touch: switching RUMBLE on demonstrates what was just switched on',
+    hapBtn.onSent.length === 1 && Array.isArray(hapBtn.onSent[0]) && hapBtn.onSent[0].length >= 3,
+    'sent=' + JSON.stringify(hapBtn.onSent));
+  // vibrate(0) is not a buzz, it is the cancel setOn(false) sends to stop a
+  // motor that might be mid-pattern — so filter it out rather than count it
+  check('touch: and switching it OFF stays silent, which is the whole point',
+    hapBtn.offSent.filter(function (v) { return Array.isArray(v) ? v.length : v > 0; }).length === 0,
+    'sent=' + JSON.stringify(hapBtn.offSent));
   check('touch: and pressing it again turns it back on',
     hapBtn.back === true && /ON/.test(hapBtn.text2), 'on=' + hapBtn.back + ' text=' + hapBtn.text2);
   // Handedness: the buttons, the stick's half and the camera's half all have
