@@ -1188,6 +1188,12 @@ function withTimeout(p, ms) {
     // and a connect outranks the trigger it arrived with
     H.testReset(); window.__buzz.length = 0;
     H.shot(); r.hitAfterShot = hap('hit'); r.afterHit = window.__buzz.slice();
+    // The pair the world check below cannot test: a body under the wheels and
+    // the star that same kill earns. Driven back to back here, with no sim
+    // clock between them, so the ration is the only thing deciding.
+    H.testReset(); window.__buzz.length = 0;
+    hap('wantedUp', 1); r.splatAfterStar = hap('splat', 1);
+    r.afterStar = window.__buzz.slice();
     // switched off, none of it goes anywhere
     H.setOn(false);
     H.testReset(); window.__buzz.length = 0;
@@ -1209,6 +1215,10 @@ function withTimeout(p, ms) {
   check('haptics: a round connecting preempts the trigger it left with',
     pri.hitAfterShot === true && pri.afterHit.length === 2,
     'sent=' + JSON.stringify(pri.afterHit));
+  check('haptics: a star rations away the body under the wheels that earned it',
+    pri.splatAfterStar === false && pri.afterStar.length === 1 &&
+    typeof pri.afterStar[0] === 'number',
+    'sent=' + JSON.stringify(pri.afterStar));
   check('haptics: RUMBLE off silences every one of them',
     pri.whileOff.length === 0, 'sent=' + JSON.stringify(pri.whileOff));
 
@@ -1340,9 +1350,32 @@ function withTimeout(p, ms) {
   check('haptics: running them down does eventually draw a star (anchor sanity)',
     world.firstStars >= 1 && world.firstTries <= 6,
     'stars=' + world.firstStars + ' after ' + world.firstTries + ' bodies');
-  check('haptics: and that star takes the channel from the body under the wheels',
-    world.firstKill.length === 1 && JSON.stringify(world.firstKill) !== JSON.stringify(world.splat),
-    'firstKill=' + JSON.stringify(world.firstKill) + ' splat=' + JSON.stringify(world.splat));
+  // WHICH buzz reaches you first, and only that.
+  //
+  // This asked for exactly one buzz, which is the preemption property — and it
+  // is not testable here. The ration is keyed to the wall clock while
+  // fastForward moves only the sim clock, so on a slow machine the dozen ticks
+  // of a run-over outlast the 90 ms window and the splat lands after it. That
+  // is the harness being slow, not the channel misbehaving, and it failed in
+  // CI while passing everywhere else.
+  //
+  // Nor would counting have tested what it looked like it tested. The tiers
+  // only decide the SECOND buzz of a pair, and which of these two is second is
+  // not fixed: the star fires inside kill() and the splat right after it, so a
+  // window holding one kill sends star-then-splat — but a window can hold two,
+  // the earlier one splatting before the heat crosses, and then the order is
+  // the other way round. Flipping splat above the star leaves an order-based
+  // check passing regardless.
+  //
+  // So the preemption is pinned at the module door, driven back to back with
+  // no clock in the way, and what belongs here is the wiring: run somebody
+  // down for the star and the star reaches your hand. It is a single pulse
+  // where the splat is a pattern, and godMode rules out the other scalars.
+  check('haptics: and the star that kill earns reaches the hand too',
+    world.firstKill.some(function (v) { return typeof v === 'number'; }) &&
+    Array.isArray(world.splat[0]),
+    'buzzes from the kill that lit it=' + JSON.stringify(world.firstKill) +
+    ' splat=' + JSON.stringify(world.splat[0]));
   check('haptics: a star going up buzzes, and going clear buzzes differently',
     world.wantedUp.length === 1 && world.wantedClear.length === 1 &&
     JSON.stringify(world.wantedUp) !== JSON.stringify(world.wantedClear),
@@ -2004,13 +2037,27 @@ function withTimeout(p, ms) {
     GAME.test.fastForward(1.5);
     var rest = { p: car.susp.p, grade: car.bodyPitch, mesh: car.mesh.rotation.x };
 
-    K['KeyW'] = true;                         // open the throttle
-    GAME.test.fastForward(0.5);
-    var squat = { p: car.susp.p, speed: car.speed };
-
-    clear(); K['KeyS'] = true;                // and stand on the brakes
-    GAME.test.fastForward(0.5);
-    var dive = { p: car.susp.p, speed: car.speed };
+    // Watch the whole window, not the instant it ends.
+    //
+    // susp.p is a SPRING — about 1.9 Hz at a damping ratio near 0.7, settled
+    // inside half a second — so reading it once, half a second in, samples a
+    // damped oscillator at whatever phase it happens to be in. Catch it past
+    // its peak and on the way back through zero and the deflection reads as
+    // nothing. What "braking dives it" means is that the nose went down at
+    // some point in the braking, so take the extremes over the window.
+    function phase(secs, key) {
+      clear();
+      K[key] = true;
+      var lo = 0, hi = 0, n = Math.round(secs * 60);
+      for (var f = 0; f < n; f++) {
+        GAME.test.fastForward(1 / 60);
+        lo = Math.min(lo, car.susp.p);
+        hi = Math.max(hi, car.susp.p);
+      }
+      return { lo: lo, hi: hi, p: car.susp.p, speed: car.speed };
+    }
+    var squat = phase(0.5, 'KeyW');           // open the throttle
+    var dive = phase(0.5, 'KeyS');            // and stand on the brakes
 
     clear();
     GAME.test.fastForward(3);                 // let it settle
@@ -2032,10 +2079,12 @@ function withTimeout(p, ms) {
     check('suspension: at rest the body sits on the grade and nothing else',
       Math.abs(susp.rest.p) < 0.005, 'susp=' + susp.rest.p);
     check('suspension: opening the throttle lifts the nose',
-      susp.squat.p < -0.01 && susp.squat.speed > 3,
-      'susp=' + susp.squat.p.toFixed(4) + ' speed=' + susp.squat.speed.toFixed(1));
+      susp.squat.lo < -0.01 && susp.squat.speed > 3,
+      'furthest the nose came up=' + susp.squat.lo.toFixed(4) + ' speed=' + susp.squat.speed.toFixed(1));
     check('suspension: braking dives it the other way',
-      susp.dive.p > 0.01, 'susp=' + susp.dive.p.toFixed(4) + ' speed=' + susp.dive.speed.toFixed(1));
+      susp.dive.hi > 0.01 && susp.dive.speed < susp.squat.speed,
+      'furthest it dived=' + susp.dive.hi.toFixed(4) +
+      ' speed ' + susp.squat.speed.toFixed(1) + ' -> ' + susp.dive.speed.toFixed(1));
     check('suspension: and it settles back to the grade',
       Math.abs(susp.settled) < 0.005, 'susp=' + susp.settled.toFixed(4));
     check('suspension: nothing loads the springs in mid-air',
