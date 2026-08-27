@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3d. POLICE AIM — the round lands where the tracer put it, and range,
+//       speed and the officer holding the gun all decide where that is.
 //   3c. WANTED LADDER — each star has to cost more offences than the last.
 //   3b. CANOPY OVER WATER — open sea BELOW a glide is not the sea you are in.
 //   4. UNLIMITED AMMO — the all-jumps reward must read as ∞, not as the
@@ -430,6 +432,114 @@ function withTimeout(p, ms) {
     ladder.oneCop === 2, 'stars=' + ladder.oneCop);
   check('wanted: and the group hands the world back clean (anchor sanity)',
     ladder.clean === 0, 'stars=' + ladder.clean);
+
+  // ---------- 3d: a police round goes where it was drawn ----------
+  // npcShoot drew a tracer along a scattered yaw and then decided the hit with
+  // a Math.random() < accuracy roll taken beside it. So the round you watched
+  // fly wide still hurt you, the one drawn straight through you might not, and
+  // because the roll was a flat constant the hit rate was the same at five
+  // metres as at forty, standing still or at a sprint. Nothing the player did
+  // changed it.
+  var aim = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.teleport(-60, 120);
+    GAME.test.fastForward(0.5);
+    GAME.godMode = true;          // two thousand rounds, and a live player
+
+    // Record where each round was DRAWN and whether it hurt. Audio and the
+    // tracer geometry are stubbed for the duration: this measures ballistics,
+    // and two thousand real gunshots would be measuring the allocator.
+    var ends = [], gun0 = GAME.audio.gunshot, tr0 = GAME.fx.tracer;
+    GAME.audio.gunshot = function () { };
+    GAME.fx.tracer = function (x1, y1, z1, x2, y2, z2) { ends.push([x2, z2]); };
+    // A hit is a round that HURT, watched at the door where the hurting
+    // happens — not npcShoot's return value. The version this replaces
+    // returned true whatever it did, so measuring the return would have made
+    // every check below pass on the very code they exist to catch. godMode
+    // stops the damage landing; it does not stop the call.
+    var hurt = false, dmg0 = GAME.playerDamage;
+    GAME.playerDamage = function () { hurt = true; return dmg0.apply(null, arguments); };
+
+    // one officer, with their personal steadiness pinned, so the comparisons
+    // below are about range and speed rather than about who is holding the gun
+    function volley(dist, speed, n) {
+      var shooter = { aimSkill: 1 };
+      var hits = 0, worstHit = 0, bestMiss = 1e9;
+      P.moveSpeed = speed;
+      GAME.combat.npcShoot(P.pos.x + dist, 1.35, P.pos.z, 0.42, 5, shooter);  // settle them
+      ends.length = 0;
+      for (var i = 0; i < n; i++) {
+        hurt = false;
+        GAME.combat.npcShoot(P.pos.x + dist, 1.35, P.pos.z, 0.42, 5, shooter);
+        var hit = hurt;
+        if (hit) hits++;
+        var e = ends[ends.length - 1];
+        // The tracer ends at the player's own range, so how far its end lands
+        // from the player IS how far the round passed them by.
+        //
+        // Assert the ORDER rather than a threshold: the worst round that hurt
+        // must have passed closer than the best round that did not. That is
+        // the whole property — the outcome follows the geometry — and it needs
+        // no tolerance, where comparing against a fixed half-width did. (It
+        // also does not hard-code the target's width, so a retune of that is
+        // not a broken check.)
+        var by = Math.sqrt(U.dist2(e[0], e[1], P.pos.x, P.pos.z));
+        if (hit) worstHit = Math.max(worstHit, by);
+        else bestMiss = Math.min(bestMiss, by);
+      }
+      return { rate: hits / n, worstHit: worstHit, bestMiss: bestMiss, n: n };
+    }
+    var N = 600;
+    r.near = volley(6, 0, N);
+    r.far = volley(34, 0, N);
+    r.still = volley(12, 0, N);
+    r.running = volley(12, 8, N);
+    var volleys = [r.near, r.far, r.still, r.running];
+    r.ordered = volleys.every(function (v) { return v.worstHit <= v.bestMiss; });
+    r.worst = volleys.map(function (v) {
+      return v.worstHit.toFixed(2) + '/' + (v.bestMiss === 1e9 ? '-' : v.bestMiss.toFixed(2));
+    });
+    r.shots = N * 4;
+
+    // and officers are individuals rather than four copies of one machine
+    var skills = {};
+    for (var k = 0; k < 60; k++) {
+      var fresh = {};
+      GAME.combat.npcShoot(P.pos.x + 10, 1.35, P.pos.z, 0.42, 5, fresh);
+      skills[Math.round(fresh.aimSkill * 100)] = 1;
+    }
+    r.distinctSkills = Object.keys(skills).length;
+
+    GAME.audio.gunshot = gun0; GAME.fx.tracer = tr0; GAME.playerDamage = dmg0;
+    GAME.godMode = false;
+    P.moveSpeed = 0; P.health = 100;
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.5);
+    r.alive = P.state === 'alive';
+    return r;
+  });
+  check('police: they can still hit you at close range (anchor sanity)',
+    aim.near.rate > 0.5, 'close range hit rate=' + aim.near.rate.toFixed(2));
+  check('police: both outcomes actually occur in every volley (anchor sanity)',
+    aim.near.rate > 0 && aim.near.rate < 1 && aim.far.rate > 0 && aim.far.rate < 1,
+    'rates=' + [aim.near, aim.far, aim.still, aim.running].map(function (v) {
+      return v.rate.toFixed(2); }).join('/'));
+  check('police: every round that hurt you passed closer than every one that did not',
+    aim.ordered === true,
+    'worst hit / best miss, per volley: ' + JSON.stringify(aim.worst) + ' over ' + aim.shots + ' rounds');
+  check('police: range is worth something — a pistol at 34 m is not one at 6 m',
+    aim.near.rate > aim.far.rate + 0.25,
+    '6m=' + aim.near.rate.toFixed(2) + ' 34m=' + aim.far.rate.toFixed(2));
+  check('police: and so is not standing still while they shoot at you',
+    aim.still.rate > aim.running.rate + 0.05,
+    'still=' + aim.still.rate.toFixed(2) + ' running=' + aim.running.rate.toFixed(2));
+  check('police: officers are individuals, not four copies of one machine',
+    aim.distinctSkills > 20, 'distinct steadiness over 60 officers=' + aim.distinctSkills);
+  check('police: and the group leaves the player alive and clean (anchor sanity)',
+    aim.alive === true);
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {

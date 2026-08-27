@@ -396,7 +396,7 @@ GAME.police = (function () {
         // no shooting at someone a storey above or below you
         if (d2 < 40 * 40 && Math.abs(py2 - car.pos.y) < 3
             && GAME.city.hash.segmentClear(car.pos.x, car.pos.z, px2, pz2)) {
-          GAME.combat.npcShoot(car.pos.x, 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5);
+          GAME.combat.npcShoot(car.pos.x, 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5, car);
         }
         car.shootT = U.randRange(Math.random, 1.1, 2.2) / Math.max(1, s * 0.5);
       }
@@ -458,7 +458,7 @@ GAME.police = (function () {
       j.armR.rotation.x = -Math.PI / 2;
       cop.shootT -= dt;
       if (cop.shootT <= 0) {
-        GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s);
+        GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s, cop);
         cop.shootT = U.randRange(Math.random, 0.9, 1.8);
       }
     } else {
