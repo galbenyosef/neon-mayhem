@@ -191,6 +191,11 @@ GAME.haptics = (function () {
       s = U.clamp(s, 0, 1);
       return send([40 + s * 50, 60, 22 + s * 38], PRI.BODY);
     },
+    // The canopy filling. One hard deceleration is the whole of an opening
+    // shock, so this is a single pulse and the heaviest single here — it pairs
+    // with the landing below on purpose: same shape, opposite weight. Open
+    // hard, land soft.
+    chuteOpen: function () { return send(70, PRI.BODY); },
     // Feet back on the ground under a canopy. Deliberately gentle and single:
     // the whole point of the chute is that this is the landing that does not
     // hurt, and a thump here would say the opposite.

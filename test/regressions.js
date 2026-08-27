@@ -616,7 +616,8 @@ function withTimeout(p, ms) {
   var vocab = await page.evaluate(function () {
     var H = GAME.haptics, out = {}, seen = {};
     var kinds = ['uiTap', 'pickup', 'hit', 'shot', 'checkpoint', 'deny', 'hurt', 'chuteLand',
-                 'demo', 'win', 'stunt', 'wantedClear', 'smoking', 'onFire', 'wasted', 'busted'];
+                 'chuteOpen', 'demo', 'win', 'stunt', 'wantedClear', 'smoking', 'onFire',
+                 'wasted', 'busted'];
     var dupes = [];
     for (var i = 0; i < kinds.length; i++) {
       H.testReset();
@@ -871,7 +872,9 @@ function withTimeout(p, ms) {
     // Vector3.set(undefined...), which Three assigns raw, and the whole glide
     // then happens at an undefined coordinate.
     var cy = GAME.city.surfaceY(P.pos.x, P.pos.z);
+    GAME.haptics.testReset(); window.__buzz.length = 0;
     GAME.aircraft.startParachute(P.pos.x, cy + 3, P.pos.z, 0);
+    r.openSent = window.__buzz.slice();
     r.opened = !!P.parachuting;
     r.openedAt = Math.round((P.pos.y - cy) * 10) / 10;
     GAME.haptics.testReset(); window.__buzz.length = 0;
@@ -884,9 +887,15 @@ function withTimeout(p, ms) {
   check('haptics: the canopy opened above the ground and came down (anchor sanity)',
     chute.opened === true && chute.landed === true && chute.openedAt > 1,
     'opened=' + chute.opened + ' at=' + chute.openedAt + 'm landed=' + chute.landed);
+  check('haptics: the canopy filling is felt, and felt hard',
+    chute.openSent.length === 1 && typeof chute.openSent[0] === 'number' && chute.openSent[0] >= 60,
+    'sent=' + JSON.stringify(chute.openSent));
   check('haptics: touching down under a canopy is felt, and felt gently',
     chute.sent.length === 1 && typeof chute.sent[0] === 'number' && chute.sent[0] < 30,
     'sent=' + JSON.stringify(chute.sent));
+  check('haptics: open hard, land soft — the pair reads as a pair',
+    chute.openSent[0] > chute.sent[0] * 2,
+    'open=' + chute.openSent[0] + ' land=' + chute.sent[0]);
 
   // ---- the runway ----
   // The one sustained channel, and the only thing here that runs on its own
