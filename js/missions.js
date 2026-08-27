@@ -118,6 +118,9 @@ GAME.missions = (function () {
       var rp = GAME.city.nearestRoadPoint(x, z);
       return [Math.round(rp.x), Math.round(rp.z)];
     }
+    // a point a fraction of the way along a road's polyline, by length rather
+    // than by vertex count — the switchback legs are sampled evenly in ANGLE,
+    // so their outer vertices are further apart than their inner ones
     function ringLoop(f, a0, n) {
       var out = [];
       for (var i = 0; i < n; i++) {

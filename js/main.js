@@ -538,13 +538,18 @@
     setWanted: function (n) { GAME.police.setWanted(n); },
     setHealth: function (h) { GAME.player.health = h; },
     addCash: function (n) { GAME.addCash(n); },
+    // Offsets are from wherever the player IS, which behind a wheel is the
+    // car. P.pos does not follow you into one — the whole game reads position
+    // through GAME.focus() for that reason — so these used to place things
+    // relative to the spot you last got OUT at, quietly, and a caller who had
+    // driven anywhere since got them somewhere else entirely.
     spawnCar: function (type, dx, dz) {
-      var P = GAME.player;
-      return GAME.vehicles.spawnCar(type || 'sedan', P.pos.x + (dx || 5), P.pos.z + (dz || 0), 0, {});
+      var f = GAME.focus();
+      return GAME.vehicles.spawnCar(type || 'sedan', f.x + (dx || 5), f.z + (dz || 0), 0, {});
     },
     spawnPed: function (dx, dz) {
-      var P = GAME.player;
-      return GAME.peds.spawnPed(P.pos.x + (dx || 5), P.pos.z + (dz || 0));
+      var f = GAME.focus();
+      return GAME.peds.spawnPed(f.x + (dx || 5), f.z + (dz || 0));
     },
     enterNearestCar: function () {
       var P = GAME.player;

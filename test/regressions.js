@@ -962,6 +962,22 @@ function withTimeout(p, ms) {
 
     car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0;
 
+    // The witnesses above only count if they land near the CAR, and that is
+    // the hook's job: offsets are from where the player IS, and behind a wheel
+    // that is the car. It read P.pos instead, which does not follow you into
+    // one — so things landed near wherever the player last got OUT, and
+    // whether a crime had a witness at all came down to how far they had
+    // driven since. Taken here rather than on boarding, because that is the
+    // only state where the two answers differ: fresh out of the door they are
+    // the same point, and the check would pass on either.
+    r.stale = Math.round(Math.sqrt(U.dist2(P.pos.x, P.pos.z, car.pos.x, car.pos.z)));
+    var probePed = GAME.test.spawnPed(6, 0);
+    var probeCar = GAME.test.spawnCar('sedan', -9, 0);
+    r.pedFromCar = Math.round(Math.sqrt(U.dist2(probePed.pos.x, probePed.pos.z, car.pos.x, car.pos.z)));
+    r.carFromCar = Math.round(Math.sqrt(U.dist2(probeCar.pos.x, probeCar.pos.z, car.pos.x, car.pos.z)));
+    GAME.peds.removePed(probePed);
+    GAME.vehicles.removeCar(probeCar);
+
     // tidy up behind: the groups below drive a car and read the star count
     GAME.exitCar();
     GAME.police.clearWanted();
@@ -970,6 +986,12 @@ function withTimeout(p, ms) {
     r.onFoot = !GAME.player.inCar;
     return r;
   });
+  check('haptics: the player had driven away from where they got out (anchor sanity)',
+    world.stale > 20, 'the car was ' + world.stale + 'm from P.pos');
+  check('haptics: the spawn hooks place things by the car you are in, not the kerb you left',
+    world.pedFromCar <= 8 && world.carFromCar <= 11,
+    'ped ' + world.pedFromCar + 'm and car ' + world.carFromCar + 'm from the car');
+
   check('haptics: the player is driving and both bodies went under (anchor sanity)',
     world.driving === true && world.pedDead === true && world.firstDead === true,
     'driving=' + world.driving + ' dead=' + world.pedDead + '/' + world.firstDead);
