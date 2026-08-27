@@ -760,10 +760,12 @@ GAME.vehicles = (function () {
     var cars = world.cars;
     for (var i = 0; i < cars.length; i++) {
       var a = cars[i];
-      if (a.spec.heli || a.spec.plane) continue; // aircraft don't shove ground traffic
+      var aAir = !!(a.spec.heli || a.spec.plane);
       for (var j = i + 1; j < cars.length; j++) {
         var b = cars[j];
-        if (b.spec.heli || b.spec.plane) continue;
+        var bAir = !!(b.spec.heli || b.spec.plane);
+        // two airframes are each other's business, and nobody else's
+        if (aAir && bAir) continue;
         // one of them is up on a roof and the other at street level — they
         // pass each other, they don't crash
         if (Math.abs(a.pos.y - b.pos.y) > 3) continue;
@@ -773,6 +775,36 @@ GAME.vehicles = (function () {
         if (d2 > rr * rr || d2 < 0.0001) continue;
         var d = Math.sqrt(d2), nx = dx / d, nz = dz / d;
         var overlap = rr - d;
+        // A parked airframe is a solid thing to drive into.
+        //
+        // Aircraft used to be skipped here outright, so a helicopter setting
+        // down would not bulldoze the street it landed on — but skipping them
+        // meant traffic drove straight THROUGH one, and the Alta Verde summit
+        // road ends at a helipad with a helicopter standing on it. Cars went
+        // in one side and out the other, all afternoon.
+        //
+        // Mixed pairs resolve ONE WAY instead: the car is pushed clear, the
+        // airframe never moves. That keeps the reason the skip existed — an
+        // aircraft still shoves nothing — while making it something you stop
+        // against. It also takes no damage from being bumped: traffic nudging
+        // a parked helicopter for long enough should not eventually blow it up
+        // and leave a wreck on the pad.
+        if (aAir || bAir) {
+          var ground = aAir ? b : a;
+          var sign = aAir ? 1 : -1;   // push the car away from the airframe
+          ground.pos.x += nx * overlap * sign;
+          ground.pos.z += nz * overlap * sign;
+          var gv = ((ground.vx || 0) * nx + (ground.vz || 0) * nz) * sign;
+          if (gv < 0) {
+            ground.speed *= 0.3; ground.lat *= 0.3;
+            if ((ground.hitCd || 0) <= 0 && -gv > 3) {
+              ground.hitCd = 0.25;
+              damageCar(ground, Math.min(20, -gv * 1.1), 'wall');
+              GAME.audio.crash(Math.min(1, -gv / 20), ground.pos.x, ground.pos.z);
+            }
+          }
+          continue;
+        }
         a.pos.x -= nx * overlap / 2; a.pos.z -= nz * overlap / 2;
         b.pos.x += nx * overlap / 2; b.pos.z += nz * overlap / 2;
         var avx = a.vx || 0, avz = a.vz || 0, bvx = b.vx || 0, bvz = b.vz || 0;

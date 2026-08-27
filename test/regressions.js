@@ -22,6 +22,7 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3f. PARKED AIRFRAME — solid to drive into, and still shoves nobody.
 //   3e. ISLAND RACES — the gates follow the road they are named for, and sit
 //       close enough together that the line between two of them stays on it.
 //   3d. POLICE AIM — the round lands where the tracer put it, and range,
@@ -710,6 +711,98 @@ function withTimeout(p, ms) {
     (drive.highest || 0).toFixed(1) + 'm against a foot at ' + (drive.footY || 0).toFixed(1) + 'm');
   check('climb: and the group hands the world back clean (anchor sanity)',
     drive.clean === true);
+
+  // ---------- 3f: a parked airframe is something you stop against ----------
+  // Aircraft were skipped outright in the car-to-car pass, so a helicopter
+  // setting down would not bulldoze the street it landed on. The cost was that
+  // ground traffic drove straight THROUGH one — and the Alta Verde summit road
+  // ends at a helipad with a helicopter standing on it, so cars went in one
+  // side and out the other all afternoon.
+  var pad = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys, H = GAME.city.helipad, r = {};
+    r.wasOpen = GAME.isla.isOpen();
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.isla.setOpen(true);
+    GAME.godMode = true;
+    GAME.test.teleport(H.x - 45, H.z - 45);
+    GAME.test.fastForward(5);                 // let the pad's parked spot fill
+    var heli = GAME.world.cars.filter(function (c) {
+      return c.spec.heli && c.ai && c.ai.mode === 'parked';
+    })[0];
+    r.parked = !!heli;
+    if (!heli) return r;
+    var heliHome = [heli.pos.x, heli.pos.z];
+
+    var van = GAME.test.spawnCar('van', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(van);
+    GAME.test.fastForward(1.2);
+    r.driving = !!P.inCar;
+    if (!P.inCar) return r;
+    var car = P.car;
+
+    // line it up thirty metres out, pointing straight at the airframe
+    function run(heliY) {
+      heli.pos.y = heliY;
+      car.pos.set(heli.pos.x - 30, GAME.city.groundY(heli.pos.x - 30, heli.pos.z), heli.pos.z);
+      car.heading = Math.atan2(heli.pos.x - car.pos.x, heli.pos.z - car.pos.z);
+      car.speed = 0; car.lat = 0; car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0;
+      var closest = 1e9, inside = 0, passed = false;
+      K['KeyW'] = true;
+      for (var i = 0; i < 60 * 7; i++) {
+        // pinned every frame: an unpowered airframe FALLS — the aircraft
+        // branch drops any that nobody is flying — so a helicopter set ten
+        // metres up was back on the pad long before the van reached it, and
+        // the overhead case was really the on-the-ground case again
+        heli.pos.y = heliY; heli.vy = 0;
+        GAME.test.fastForward(1 / 60);
+        var d = Math.sqrt(U.dist2(car.pos.x, car.pos.z, heli.pos.x, heli.pos.z));
+        closest = Math.min(closest, d);
+        if (d < heli.radius + car.radius - 0.3) inside++;
+        if (car.pos.x > heli.pos.x + 2) passed = true;    // out the far side
+      }
+      K['KeyW'] = false;
+      return { closest: +closest.toFixed(1), inside: inside, passed: passed };
+    }
+
+    var groundY = GAME.city.groundY(heliHome[0], heliHome[1]);
+    r.radii = +(heli.radius + car.radius).toFixed(1);
+    r.intoIt = run(groundY + 0.05);
+    r.heliShifted = +Math.sqrt(U.dist2(heli.pos.x, heli.pos.z, heliHome[0], heliHome[1])).toFixed(1);
+    // and one hovering overhead is not a roadblock — the height rule that let
+    // the blanket skip be removed at all
+    r.underIt = run(groundY + 10);
+    heli.pos.y = groundY + 0.05;
+
+    GAME.exitCar();
+    if (van) GAME.vehicles.removeCar(van);
+    GAME.godMode = false;
+    GAME.isla.setOpen(r.wasOpen);
+    GAME.test.teleport(-60, 40);
+    GAME.police.clearWanted();
+    P.health = 100;
+    GAME.test.fastForward(1);
+    r.clean = !GAME.player.inCar;
+    return r;
+  });
+  check('helipad: a helicopter is parked on the pad and a van is driving at it (anchor sanity)',
+    pad.parked === true && pad.driving === true && pad.radii > 3,
+    'parked=' + pad.parked + ' driving=' + pad.driving + ' radii sum=' + pad.radii + 'm');
+  if (pad.parked && pad.driving) {
+    check('helipad: driving into it stops you, rather than taking you through it',
+      pad.intoIt.inside === 0 && pad.intoIt.passed === false &&
+      pad.intoIt.closest >= pad.radii - 0.4,
+      'closest=' + pad.intoIt.closest + 'm against ' + pad.radii +
+      'm of radii, frames inside=' + pad.intoIt.inside + ', came out the far side=' + pad.intoIt.passed);
+    check('helipad: and the airframe is not shoved by it — it never was, and still is not',
+      pad.heliShifted < 0.5, 'the helicopter moved ' + pad.heliShifted + 'm');
+    check('helipad: while one hovering overhead is not a roadblock',
+      pad.underIt.passed === true,
+      'drove under it=' + pad.underIt.passed + ' closest=' + pad.underIt.closest + 'm');
+    check('helipad: and the group hands the world back clean (anchor sanity)', pad.clean === true);
+  }
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
