@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3e. HILL CLIMB — the race's gates follow the switchback, and the line
+//       between them stays on it.
 //   3d. POLICE AIM — the round lands where the tracer put it, and range,
 //       speed and the officer holding the gun all decide where that is.
 //   3c. WANTED LADDER — each star has to cost more offences than the last.
@@ -540,6 +542,122 @@ function withTimeout(p, ms) {
     aim.distinctSkills > 20, 'distinct steadiness over 60 officers=' + aim.distinctSkills);
   check('police: and the group leaves the player alive and clean (anchor sanity)',
     aim.alive === true);
+
+  // ---------- 3e: the hill climb follows the hill road ----------
+  // The climb's route was five hand-written points snapped with
+  // nearestRoadPoint, and snapping cannot tell you it picked the wrong road.
+  // The start landed on a PORT road at sea level three hundred metres from the
+  // hill; the second checkpoint missed its mark by forty metres and landed on
+  // the COAST RING. The route it described was port, up to a hill connector,
+  // back down to the shore, then up — and the gates were far enough apart that
+  // the hillside between them was a shorter drive than the switchback.
+  //
+  // Pure geometry: this reads the route, touches nothing, and leaves nothing
+  // behind, so it can sit anywhere in the file.
+  var climb = await page.evaluate(function () {
+    var I = GAME.city.isla;
+    var d = null, defs = GAME.missions.DEFS;
+    for (var i = 0; i < defs.length; i++) if (defs[i].id === 'race3') d = defs[i];
+    if (!I || !d || !d.cps || !d.start) return { ready: false, isla: !!I, def: !!d };
+    var seq = [[d.start.x, d.start.z]].concat(d.cps);
+
+    function offRoad(x, z) {
+      var rp = GAME.city.nearestRoadPoint(x, z);
+      return { d: Math.sqrt(U.dist2(x, z, rp.x, rp.z)), kind: rp.kind };
+    }
+    // how far the straight line between two gates strays from ANY road: the
+    // shortcut the report was about, measured rather than eyeballed
+    function stray(a, b) {
+      var n = Math.max(8, Math.round(Math.sqrt(U.dist2(a[0], a[1], b[0], b[1])) / 6)), worst = 0;
+      for (var k = 1; k < n; k++) {
+        var t = k / n;
+        worst = Math.max(worst, offRoad(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t).d);
+      }
+      return worst;
+    }
+    var kinds = {}, worstOff = 0, ys = [], strays = [];
+    for (var j = 0; j < seq.length; j++) {
+      var o = offRoad(seq[j][0], seq[j][1]);
+      kinds[o.kind || '(mainland)'] = 1;
+      worstOff = Math.max(worstOff, o.d);
+      ys.push(GAME.city.groundY(seq[j][0], seq[j][1]));
+      if (j) strays.push(stray(seq[j - 1], seq[j]));
+    }
+    return { ready: true, gates: d.cps.length, kinds: Object.keys(kinds),
+             worstOff: +worstOff.toFixed(1), worstStray: +Math.max.apply(null, strays).toFixed(1),
+             rise: +(ys[ys.length - 1] - ys[0]).toFixed(1),
+             drops: ys.filter(function (y, k) { return k > 0 && y < ys[k - 1] - 0.5; }).length,
+             legs: (I.climb || []).length };
+  });
+  check('climb: the island registered and the race has a route (anchor sanity)',
+    climb.ready === true && climb.gates >= 5 && climb.legs === 5,
+    'gates=' + climb.gates + ' switchback legs=' + climb.legs);
+  if (climb.ready) {
+    check('climb: every gate is on the hill road, not the port or the coast ring',
+      climb.kinds.length === 1 && climb.kinds[0] === 'hill',
+      'roads used=' + JSON.stringify(climb.kinds));
+    check('climb: and on it, rather than near it',
+      climb.worstOff < 3, 'furthest gate from a road centreline=' + climb.worstOff + 'm');
+    check('climb: it climbs, without doubling back down the hill on the way',
+      climb.rise > 15 && climb.drops === 0,
+      'rise=' + climb.rise + 'm  descents between gates=' + climb.drops);
+    // The road is 11 m wide. Under about that, the straight line between two
+    // gates IS the road and there is no shortcut to take; the route this
+    // replaces strayed 65 m off it.
+    check('climb: the line between gates stays on the tarmac, so there is nothing to cut',
+      climb.worstStray < 12, 'furthest a straight line between gates strays=' + climb.worstStray + 'm');
+  }
+
+  // Geometry says the route is sane; only driving it says it is drivable. The
+  // rivals path along the road between gates, so where they have got to after
+  // a dozen seconds is the road's own report on itself.
+  var drive = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    r.wasOpen = GAME.isla.isOpen();
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.isla.setOpen(true);
+    var d = null, defs = GAME.missions.DEFS;
+    for (var i = 0; i < defs.length; i++) if (defs[i].id === 'race3') d = defs[i];
+    if (!d || !d.start) return r;
+    r.footY = GAME.city.groundY(d.start.x, d.start.z);
+    GAME.test.teleport(d.start.x, d.start.z);
+    GAME.test.fastForward(0.5);
+    var mine = GAME.test.spawnCar('sports', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar();
+    GAME.test.fastForward(2);
+    var a = GAME.missions.active;
+    r.started = !!(a && a.def && a.def.id === 'race3');
+    GAME.test.fastForward(12);                 // countdown, then a dozen seconds of climbing
+    var rivals = GAME.world.cars.filter(function (c) { return c.mission && !c.dead; });
+    r.rivals = rivals.length;
+    r.bestCp = rivals.reduce(function (m, c) { return Math.max(m, c.cpIndex || 0); }, 0);
+    r.highest = rivals.reduce(function (m, c) { return Math.max(m, c.pos.y); }, 0);
+
+    // Teardown, and thoroughly: this group runs before the race checks below,
+    // and calling the race off is not enough on its own — the trigger is
+    // proximity, so sitting on the start line restarts it on the next tick.
+    GAME.missions.failActive('test teardown');
+    GAME.exitCar();
+    if (mine) GAME.vehicles.removeCar(mine);
+    GAME.test.teleport(-60, 40);
+    GAME.isla.setOpen(r.wasOpen);
+    GAME.police.clearWanted();
+    P.health = 100;
+    GAME.test.fastForward(1);
+    r.clean = !GAME.missions.active && !GAME.player.inCar;
+    return r;
+  });
+  check('climb: the race starts at the foot of the switchback (anchor sanity)',
+    drive.started === true && drive.rivals === 3 && drive.footY < 8,
+    'started=' + drive.started + ' rivals=' + drive.rivals + ' foot at ' + drive.footY + 'm');
+  check('climb: and a field can actually drive it up the hill',
+    drive.bestCp >= 2 && drive.highest > drive.footY + 3,
+    'best gate reached=' + drive.bestCp + ' highest rival=' + (drive.highest || 0).toFixed(1) + 'm');
+  check('climb: and the group hands the world back clean (anchor sanity)',
+    drive.clean === true);
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
