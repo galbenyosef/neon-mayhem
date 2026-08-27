@@ -902,6 +902,10 @@ function withTimeout(p, ms) {
       car.heading = 0; car.speed = 20; car.lat = 0;
       var ped = GAME.test.spawnPed(0, 0);
       ped.pos.set(car.pos.x, car.pos.y, car.pos.z + 2);
+      // Somebody to see it, planted fresh each time and well clear of the
+      // bonnet. The car travels four metres a run, so one witness left at the
+      // start of a sequence walks out of civilian earshot partway through.
+      GAME.test.spawnPed(8, -6);
       GAME.haptics.testReset(); window.__buzz.length = 0;
       GAME.test.fastForward(0.2);
       return { sent: window.__buzz.slice(), dead: !!ped.dead };
@@ -921,13 +925,22 @@ function withTimeout(p, ms) {
     // so wait the cooldown out and leave somebody standing there to see it.
     GAME.police.clearWanted();
     GAME.test.fastForward(1.5);
-    GAME.test.spawnPed(6, 6);
-    // TWO bodies, because one is no longer a star: the ladder costs two
-    // offences to light the first one (see the wanted-ladder group). The star
-    // arrives with the second, which is the buzz being measured here.
-    runOver();
-    var first = runOver();
-    r.firstKill = first.sent; r.firstDead = first.dead;
+    // Run them down until a star LIGHTS, and read the buzz off the one that
+    // did it. Two is the ladder's price from nothing (see the wanted group),
+    // but this cannot assume it starts from nothing: clearWanted only zeroes
+    // the level, and the seconds either side of it are a live world — one
+    // stray offence in there and the star arrives on the first body instead
+    // of the second, which is how this passed three times locally and failed
+    // in CI. Whichever body lights it is the one being measured.
+    var was = GAME.test.getState().wanted, first = null, tries = 0;
+    while (tries < 6 && !first) {
+      var attempt = runOver();
+      tries++;
+      if (GAME.test.getState().wanted > was) first = attempt;
+    }
+    r.firstKill = first ? first.sent : [];
+    r.firstDead = !!(first && first.dead);
+    r.firstTries = tries;
     r.firstStars = GAME.test.getState().wanted;
     GAME.godMode = false;
 
@@ -963,8 +976,9 @@ function withTimeout(p, ms) {
   check('haptics: running someone over is felt, not silent',
     world.splat.length === 1 && Array.isArray(world.splat[0]) && world.splat[0].length === 3,
     'sent=' + JSON.stringify(world.splat));
-  check('haptics: the same kill from clean actually draws a star (anchor sanity)',
-    world.firstStars >= 1, 'stars=' + world.firstStars);
+  check('haptics: running them down does eventually draw a star (anchor sanity)',
+    world.firstStars >= 1 && world.firstTries <= 6,
+    'stars=' + world.firstStars + ' after ' + world.firstTries + ' bodies');
   check('haptics: and that star takes the channel from the body under the wheels',
     world.firstKill.length === 1 && JSON.stringify(world.firstKill) !== JSON.stringify(world.splat),
     'firstKill=' + JSON.stringify(world.firstKill) + ' splat=' + JSON.stringify(world.splat));
