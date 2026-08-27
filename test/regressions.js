@@ -22,6 +22,7 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3c. WANTED LADDER — each star has to cost more offences than the last.
 //   3b. CANOPY OVER WATER — open sea BELOW a glide is not the sea you are in.
 //   4. UNLIMITED AMMO — the all-jumps reward must read as ∞, not as the
 //      frozen 999 the stopped decrement leaves behind.
@@ -359,6 +360,76 @@ function withTimeout(p, ms) {
     washed && ashore.dry === true && ashore.state === 'alive' &&
     ashore.msgs.some(function (m) { return m.indexOf('soaked') >= 0; }),
     'dry=' + ashore.dry + ' state=' + ashore.state + ' msgs=' + JSON.stringify(ashore.msgs.slice(-2)));
+
+  // ---------- 3c: each star costs more than the last ----------
+  // The ladder used to be one body per star: kill_ped is 70 heat against a
+  // first threshold of 50, and the gaps grew by twenty a level while every
+  // offence was worth 22% MORE per star already held. Five pedestrians was a
+  // five-star manhunt and one you never meant to hit was already a star.
+  //
+  // Counted, not sampled: reportCrime is driven directly with a witness stood
+  // next to it, so this is the ladder itself rather than whatever the traffic
+  // happened to be doing.
+  var ladder = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.teleport(-60, 40);
+    GAME.test.fastForward(0.5);
+    GAME.godMode = true;                       // 20 crimes' worth of response
+    var witness = GAME.test.spawnPed(3, 0);    // somebody has to see it
+    r.witness = !!witness && !witness.dead;
+    r.start = GAME.police.wanted;
+
+    // one body, from clean
+    GAME.police.reportCrime('kill_ped', P.pos);
+    r.afterOne = GAME.police.wanted;
+    r.heatAfterOne = Math.round(GAME.police.heat);
+
+    // then count what each rung actually costs
+    GAME.police.clearWanted();
+    var costs = [], n = 0, at = 0;
+    for (var i = 0; i < 200 && costs.length < 5; i++) {
+      GAME.police.reportCrime('kill_ped', P.pos);
+      n++;
+      var s = GAME.police.wanted;
+      if (s > at) { costs.push(n); n = 0; at = s; }
+    }
+    r.costs = costs;
+    r.total = costs.reduce(function (a, b) { return a + b; }, 0);
+    r.reached = at;
+
+    // and the law: one officer down should be serious at once without being
+    // most of the way to a manhunt
+    GAME.police.clearWanted();
+    GAME.police.reportCrime('kill_cop', P.pos);
+    r.oneCop = GAME.police.wanted;
+
+    GAME.police.clearWanted();
+    GAME.godMode = false;
+    P.health = 100;
+    GAME.test.fastForward(0.5);
+    r.clean = GAME.police.wanted;
+    return r;
+  });
+  check('wanted: somebody is there to see it, from a standing start (anchor sanity)',
+    ladder.witness === true && ladder.start === 0,
+    'witness=' + ladder.witness + ' start=' + ladder.start);
+  check('wanted: one body you did not mean to hit is heat, not a star',
+    ladder.afterOne === 0 && ladder.heatAfterOne > 0,
+    'stars=' + ladder.afterOne + ' heat=' + ladder.heatAfterOne);
+  check('wanted: and every rung costs more than the one below it',
+    ladder.costs.length === 5 &&
+    ladder.costs.every(function (c, i) { return i === 0 || c > ladder.costs[i - 1]; }),
+    'offences per star=' + JSON.stringify(ladder.costs));
+  check('wanted: five stars is a manhunt you have to earn',
+    ladder.reached === 5 && ladder.total >= 18,
+    'reached=' + ladder.reached + ' after ' + ladder.total + ' offences');
+  check('wanted: killing an officer is serious at once, but not a manhunt',
+    ladder.oneCop === 2, 'stars=' + ladder.oneCop);
+  check('wanted: and the group hands the world back clean (anchor sanity)',
+    ladder.clean === 0, 'stars=' + ladder.clean);
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
@@ -741,6 +812,10 @@ function withTimeout(p, ms) {
     GAME.police.clearWanted();
     GAME.test.fastForward(1.5);
     GAME.test.spawnPed(6, 6);
+    // TWO bodies, because one is no longer a star: the ladder costs two
+    // offences to light the first one (see the wanted-ladder group). The star
+    // arrives with the second, which is the buzz being measured here.
+    runOver();
     var first = runOver();
     r.firstKill = first.sent; r.firstDead = first.dead;
     r.firstStars = GAME.test.getState().wanted;

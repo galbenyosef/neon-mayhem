@@ -2,7 +2,26 @@ GAME.police = (function () {
   var heat = 0, lastSeen = 0, pinTimer = 0, grabTimer = 0, lastCrime = -99;
   var crimeCooldown = {};
   var roadblockT = 0, spikes = [];
-  var THRESH = [0, 50, 120, 210, 320, 440];
+  // What each star COSTS, in offences. The gaps used to be 50/70/90/110/120
+  // against a 70-heat pedestrian death, so every level was one more body: run
+  // down five people and you had five stars, and a single one you never meant
+  // to hit was already a star. Worse, an offence was worth MORE the higher you
+  // were flying (see ESCALATION), so the ladder got easier as it went up —
+  // exactly backwards.
+  //
+  // These gaps are set so a serious street crime (kill_ped, 70) takes
+  //
+  //     2 offences to reach 1 star, then 3, then 4, then 5, then 6
+  //
+  // — twenty to earn a five-star manhunt from a standing start, against five
+  // before. The escalation below is folded into the arithmetic, so those are
+  // the counts you actually get and not the counts before it is applied.
+  var THRESH = [0, 138, 366, 698, 1148, 1730];
+  var HEAT_CEIL = 2200;
+  // Offending while already wanted still counts for a little more — the
+  // response is ramping up and so is their patience — but at 0.22 it was
+  // undoing the ladder faster than the gaps built it.
+  var ESCALATION = 0.10;
   var CAR_CAP = [0, 1, 2, 3, 4, 6];
 
   function stars() {
@@ -44,21 +63,27 @@ GAME.police = (function () {
     lastCrime = now;
     var before = stars();
     // offending while already wanted escalates faster — the response ramps up
-    var gain = (CRIME_HEAT[type] || 20) * (1 + before * 0.22);
+    var gain = (CRIME_HEAT[type] || 20) * (1 + before * ESCALATION);
     if (type === 'kill_cop') {
       // a burst of cop kills is ONE firefight, not a ladder to five stars:
       // two officers stepping into your bumper used to jump 1 -> 5 in a
       // second. Kills inside the same eight seconds barely add heat; the
-      // floor still guarantees three stars for killing the law.
-      if (now - lastCopKillT < 8) gain = 26;
+      // floor still guarantees that killing the law is serious at once.
+      if (now - lastCopKillT < 8) gain = 60;
       lastCopKillT = now;
     }
-    heat = Math.min(560, heat + gain);
-    if (type === 'kill_cop') heat = Math.max(heat, THRESH[3] + 10);
+    heat = Math.min(HEAT_CEIL, heat + gain);
+    // TWO stars for the first officer, not three. Killing the law has to be
+    // instantly serious or the floor means nothing — but landing on three left
+    // one more offence of any kind sitting on the edge of a four-star response,
+    // which is how a single mistake at one star turned into a manhunt. It
+    // takes three officers to reach three stars now, five for four, eight for
+    // five.
+    if (type === 'kill_cop') heat = Math.max(heat, THRESH[2] + 10);
     if (type === 'steal_police') heat = Math.max(heat, THRESH[1] + 5);
     // and no single offence moves the needle more than one star past where
     // you stood (except that cop-kill floor) — five stars are EARNED
-    var capStar = Math.max(type === 'kill_cop' ? 3 : 0, Math.min(5, before + 1));
+    var capStar = Math.max(type === 'kill_cop' ? 2 : 0, Math.min(5, before + 1));
     if (capStar < 5) heat = Math.min(heat, THRESH[capStar + 1] - 8);
     lastSeen = 0;
     var after = stars();
@@ -79,8 +104,8 @@ GAME.police = (function () {
     crimeCooldown.gunfire = now;
     lastCrime = now;
     var before = stars();
-    heat = Math.max(heat + 14 * (1 + before * 0.22), THRESH[1] + 5);
-    heat = Math.min(560, heat);
+    heat = Math.max(heat + 55 * (1 + before * ESCALATION), THRESH[1] + 5);
+    heat = Math.min(HEAT_CEIL, heat);
     lastSeen = 0;
     if (stars() > before) GAME.hud.wantedChanged(stars());
   }
@@ -496,7 +521,7 @@ GAME.police = (function () {
 
     if (s === 0) {
       GAME.audio.siren(0);
-      if (heat > 0) heat = Math.max(0, heat - dt * 4);
+      if (heat > 0) heat = Math.max(0, heat - dt * 16);
       // stray cops wander off
       if (GAME.frame % 60 === 0) {
         var strays = copCars();
@@ -596,7 +621,7 @@ GAME.police = (function () {
     // sight means the heat never cools and a 1-star pursuit runs forever
     if (GAME.time - lastCrime > 8) {
       var before2 = stars();
-      heat = Math.max(0, heat - dt * (seen ? 4.5 : 14));
+      heat = Math.max(0, heat - dt * (seen ? 18 : 55));
       var after2 = stars();
       if (after2 < before2) {
         GAME.hud.wantedChanged(after2);
