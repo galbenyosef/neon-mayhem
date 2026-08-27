@@ -946,12 +946,33 @@ GAME.vehicles = (function () {
   }
 
   // ---------- traffic AI ----------
+  // keep right of the direction of travel
+  function setLane(ai, mx, mz) {
+    var ml = Math.sqrt(mx * mx + mz * mz) || 1;
+    ai.laneX = (mz / ml) * 3.1;
+    ai.laneZ = (-mx / ml) * 3.1;
+  }
+
   function trafficControls(car, dt) {
     var ai = car.ai;
     var city = GAME.city;
     if (!ai.node) {
       ai.node = city.nearestNode(car.pos.x, car.pos.z);
       ai.prev = null;
+      // Take a lane straight away, off the way the car is already pointing.
+      //
+      // The offset below is only worked out on ARRIVAL at a node, when the
+      // next one is chosen — and every driver starts life with laneX/laneZ at
+      // zero, so the whole first segment was driven at the centreline. That is
+      // not a rare state: it is every car the spawner puts down, every cruiser
+      // standing down after a chase, every owner taking their car back, every
+      // mission car handed to traffic. A quarter of the moving traffic was
+      // aiming down the middle of the road at any moment.
+      //
+      // Heading is the right thing to read it from: a car is put on the road
+      // pointing along it, so where its nose is IS its direction of travel
+      // before it has been anywhere.
+      setLane(ai, Math.sin(car.heading), Math.cos(car.heading));
     }
     var tx = ai.node.x + ai.laneX, tz = ai.node.z + ai.laneZ;
     var dx = tx - car.pos.x, dz = tz - car.pos.z;
@@ -985,10 +1006,7 @@ GAME.vehicles = (function () {
         next = options[1 + Math.floor(Math.random() * (options.length - 1))].n;
       } else next = options[0].n;
       ai.prev = ai.node; ai.node = next;
-      // lane offset: keep right of travel direction
-      var mx = next.x - ai.prev.x, mz = next.z - ai.prev.z;
-      var ml = Math.sqrt(mx * mx + mz * mz) || 1;
-      ai.laneX = (mz / ml) * 3.1; ai.laneZ = (-mx / ml) * 3.1;
+      setLane(ai, next.x - ai.prev.x, next.z - ai.prev.z);
       tx = ai.node.x + ai.laneX; tz = ai.node.z + ai.laneZ;
       dx = tx - car.pos.x; dz = tz - car.pos.z;
     }

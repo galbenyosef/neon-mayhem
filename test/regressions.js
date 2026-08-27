@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3g. LANE KEEPING — a driver takes its lane from the first metre, not
+//       from the first node it reaches.
 //   3f. PARKED AIRFRAME — solid to drive into, and still shoves nobody.
 //   3e. ISLAND RACES — the gates follow the road they are named for, and sit
 //       close enough together that the line between two of them stays on it.
@@ -803,6 +805,80 @@ function withTimeout(p, ms) {
       'drove under it=' + pad.underIt.passed + ' closest=' + pad.underIt.closest + 'm');
     check('helipad: and the group hands the world back clean (anchor sanity)', pad.clean === true);
   }
+
+  // ---------- 3g: traffic keeps its lane from the first metre ----------
+  // The lane offset was only worked out on ARRIVAL at a node, when the next
+  // one is chosen, and every driver starts with laneX/laneZ at zero — so the
+  // whole first segment was driven down the centreline. Not a rare state: it
+  // is every car the spawner puts down, every cruiser standing down after a
+  // chase, every owner taking their car back, every mission car handed over.
+  var lanes = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.godMode = true;
+    GAME.test.teleport(-60, 40);
+    GAME.test.fastForward(4);
+
+    // A driver handed to traffic with no lane yet, pointed along the road it
+    // is standing on — the state all four of those hand-overs create.
+    var rp = GAME.city.nearestRoadPoint(P.pos.x + 14, P.pos.z);
+    var head = rp.axis === 'x' ? 0 : Math.PI / 2;
+    var fresh = GAME.vehicles.spawnCar('sedan', rp.x, rp.z, head,
+      { occupied: 'ai', ai: { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 } });
+    r.spawned = !!fresh;
+    if (fresh) {
+      GAME.test.fastForward(1 / 60);          // one tick is all it should need
+      var lx = fresh.ai.laneX, lz = fresh.ai.laneZ;
+      r.freshLane = +Math.sqrt(lx * lx + lz * lz).toFixed(2);
+      // perpendicular to the way it is pointing, and on the right of it
+      var fx = Math.sin(fresh.heading), fz = Math.cos(fresh.heading);
+      r.alongTravel = +Math.abs(lx * fx + lz * fz).toFixed(2);   // want ~0
+      r.toTheRight = (lx * fz - lz * fx) > 0;
+      GAME.vehicles.removeCar(fresh);
+    }
+
+    // and the fleet at large, mid-segment where lane discipline is unambiguous
+    // (at a junction a car legitimately crosses the centre, and the road-point
+    // lookup measures against whichever line is nearest, which for a car
+    // properly in lane can be the CROSSING one)
+    var zero = 0, total = 0, offs = [];
+    for (var i = 0; i < 60 * 25; i++) {
+      GAME.test.fastForward(1 / 60);
+      if (i % 20) continue;
+      GAME.world.cars.forEach(function (c) {
+        if (c === P.car || c.dead || !c.ai || c.ai.mode !== 'traffic') return;
+        if (Math.abs(c.speed) < 2 || !c.ai.node) return;
+        if (U.dist2(c.pos.x, c.pos.z, c.ai.node.x, c.ai.node.z) < 11 * 11) return;
+        if (c.ai.prev && U.dist2(c.pos.x, c.pos.z, c.ai.prev.x, c.ai.prev.z) < 11 * 11) return;
+        total++;
+        if (!c.ai.laneX && !c.ai.laneZ) zero++;
+        var q = GAME.city.nearestRoadPoint(c.pos.x, c.pos.z);
+        offs.push(Math.sqrt(U.dist2(c.pos.x, c.pos.z, q.x, q.z)));
+      });
+    }
+    offs.sort(function (a, b) { return a - b; });
+    r.cars = total;
+    r.pctZeroLane = total ? Math.round(zero / total * 100) : -1;
+    r.median = offs.length ? +offs[Math.floor(offs.length / 2)].toFixed(2) : -1;
+
+    GAME.godMode = false;
+    P.health = 100;
+    GAME.test.fastForward(0.5);
+    return r;
+  });
+  check('lanes: a fresh traffic driver was put on the road (anchor sanity)',
+    lanes.spawned === true && lanes.cars > 100,
+    'spawned=' + lanes.spawned + ', ' + lanes.cars + ' mid-segment samples');
+  check('lanes: it takes a lane on its first tick, not on reaching a node',
+    lanes.freshLane > 2.5 && lanes.alongTravel < 0.2 && lanes.toTheRight === true,
+    'offset=' + lanes.freshLane + 'm, component along travel=' + lanes.alongTravel +
+    ', on the right=' + lanes.toTheRight);
+  check('lanes: and no moving driver is left aiming down the middle of the road',
+    lanes.pctZeroLane === 0, lanes.pctZeroLane + '% of moving traffic has no lane');
+  check('lanes: so the fleet sits a lane off the centreline rather than on it',
+    lanes.median > 2.5, 'median offset from the centreline=' + lanes.median + 'm');
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
