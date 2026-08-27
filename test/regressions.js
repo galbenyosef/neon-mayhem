@@ -22,6 +22,7 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3b. CANOPY OVER WATER — open sea BELOW a glide is not the sea you are in.
 //   4. UNLIMITED AMMO — the all-jumps reward must read as ∞, not as the
 //      frozen 999 the stopped decrement leaves behind.
 //   5. STEREO IMAGE   — a sound's pan must agree with the direction the
@@ -293,6 +294,71 @@ function withTimeout(p, ms) {
   check('parachute: no glide step ran at the hospital ("Feet dry.")',
     !respawn.msgs.some(function (m) { return m.indexOf('Feet dry') >= 0; }),
     JSON.stringify(respawn.msgs.slice(-3)));
+
+  // ---------- 3b: a canopy over the sea has not landed in it ----------
+  // isInWater answers for the whole column at (x, z): its y argument only
+  // rules out a deck or a crossing carried over the top, and never asks how
+  // high up the point is. Asked once a frame through a glide, that soaked you
+  // on the FIRST frame after stepping out over the bay — sixty metres up, with
+  // the beach still well inside the canopy's reach.
+  var sea = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    // open sea, no pier, nothing built over it
+    var wx = null, wz = null;
+    for (var x = 380; x <= 900 && wx === null; x += 8) {
+      for (var z = -240; z <= 240; z += 24) {
+        if (GAME.city.isInWater(x, z) && !GAME.city.isOnPier(x, z)) { wx = x; wz = z; break; }
+      }
+    }
+    r.found = wx !== null;
+    if (!r.found) return r;
+    r.at = [wx, wz];
+    r.seaLevel = GAME.city.surfaceY(wx, wz);
+
+    window.__msgs = [];
+    GAME.aircraft.startParachute(wx, 60, wz, 0);
+    r.opened = !!P.parachuting;
+    // two seconds of glide, high over open water
+    GAME.test.fastForward(2);
+    r.aloft = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!P.drowning };
+    // then all the way down onto it
+    for (var i = 0; i < 60 * 25 && P.parachuting; i++) GAME.test.fastForward(1 / 60);
+    r.down = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!P.drowning };
+    r.msgs = window.__msgs.slice();
+    return r;
+  });
+  check('parachute: there is open sea to glide over, at sea level (anchor sanity)',
+    sea.found === true && sea.seaLevel <= 0.05 && sea.opened === true,
+    'at=' + JSON.stringify(sea.at) + ' level=' + sea.seaLevel + ' opened=' + sea.opened);
+  check('parachute: gliding OVER the sea is not being in it',
+    sea.aloft && sea.aloft.para === true && sea.aloft.wet === false && sea.aloft.y > 40,
+    'after 2s: ' + JSON.stringify(sea.aloft));
+  check('parachute: but coming all the way down onto it still is',
+    sea.down && sea.down.para === false && sea.down.wet === true,
+    'at the end: ' + JSON.stringify(sea.down));
+  check('parachute: and it never claimed feet dry over open water',
+    !(sea.msgs || []).some(function (m) { return m.indexOf('Feet dry') >= 0; }),
+    JSON.stringify((sea.msgs || []).slice(-3)));
+
+  // Drowning is not a death here — hud.fade washes you ashore, and it fades on
+  // a real setTimeout, so only wall time gets to the other side of it.
+  var washed = true;
+  try {
+    await page.waitForFunction(function () { return !GAME.player.drowning; }, null, { timeout: 10000 });
+  } catch (e) { washed = false; }
+  var ashore = await page.evaluate(function () {
+    var P = GAME.player;
+    GAME.test.fastForward(0.5);
+    return { dry: !GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y), msgs: window.__msgs.slice(),
+             state: P.state };
+  });
+  check('parachute: and the sea does put you on the beach, soaked (anchor sanity)',
+    washed && ashore.dry === true && ashore.state === 'alive' &&
+    ashore.msgs.some(function (m) { return m.indexOf('soaked') >= 0; }),
+    'dry=' + ashore.dry + ' state=' + ashore.state + ' msgs=' + JSON.stringify(ashore.msgs.slice(-2)));
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
@@ -740,15 +806,14 @@ function withTimeout(p, ms) {
     GAME.godMode = true;             // the blast damages, and hurt() is a second cause
     var mine = [];
 
+    // Blow up the car we SPAWNED. Searching for the nearest instead made this
+    // a hostage of the traffic: an ordinary car happening to stop closer than
+    // the one placed here silently swapped which range was being measured.
     function blow(dx) {
-      GAME.test.spawnCar('sedan', dx, 0);
+      var car = GAME.test.spawnCar('sedan', dx, 0);
       GAME.test.fastForward(0.2);
-      var cars = GAME.world.cars, car = null, best = 1e9;
-      for (var i = 0; i < cars.length; i++) {
-        var d = U.dist2(cars[i].pos.x, cars[i].pos.z, P.pos.x, P.pos.z);
-        if (!cars[i].dead && d < best) { best = d; car = cars[i]; }
-      }
       if (!car) return { none: true };
+      var best = U.dist2(car.pos.x, car.pos.z, P.pos.x, P.pos.z);
       mine.push(car);
       GAME.haptics.testReset(); window.__buzz.length = 0;
       GAME.vehicles.explodeCar(car, 'test');

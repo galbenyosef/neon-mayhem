@@ -432,9 +432,16 @@ GAME.aircraft = (function () {
       rig.geometry.attributes.position.needsUpdate = true;
     }
 
-    if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { land(); GAME.playerDrown(); return; }
+    // Open sea BELOW you is not the same as being in it. isInWater answers for
+    // the whole column at (x, z) — its y argument only rules out a deck or a
+    // crossing carried over the top, it never asks how high up you are — so
+    // testing it every frame of a glide put you in the water the moment you
+    // stepped out over the bay, sixty metres up, with the whole beach still
+    // inside the canopy's reach. Come down first. What is under you when you
+    // get there is what decides which of the two it was.
     if (P.pos.y <= gy + 0.05) {
       land();
+      if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
       P.pos.y = gy; P.velY = 0;
       // touchdown, not the other two ways out of a canopy: land() is also what
       // drowning and dying call, and neither of those is a landing
