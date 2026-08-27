@@ -22,8 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
-//   3e. HILL CLIMB — the race's gates follow the switchback, and the line
-//       between them stays on it.
+//   3e. ISLAND RACES — the gates follow the road they are named for, and sit
+//       close enough together that the line between two of them stays on it.
 //   3d. POLICE AIM — the round lands where the tracer put it, and range,
 //       speed and the officer holding the gun all decide where that is.
 //   3c. WANTED LADDER — each star has to cost more offences than the last.
@@ -556,8 +556,12 @@ function withTimeout(p, ms) {
   // behind, so it can sit anywhere in the file.
   var climb = await page.evaluate(function () {
     var I = GAME.city.isla;
-    var d = null, defs = GAME.missions.DEFS;
-    for (var i = 0; i < defs.length; i++) if (defs[i].id === 'race3') d = defs[i];
+    var defs = GAME.missions.DEFS;
+    function defOf(id) {
+      for (var i = 0; i < defs.length; i++) if (defs[i].id === id) return defs[i];
+      return null;
+    }
+    var d = defOf('race3');
     if (!I || !d || !d.cps || !d.start) return { ready: false, isla: !!I, def: !!d };
     var seq = [[d.start.x, d.start.z]].concat(d.cps);
 
@@ -583,11 +587,32 @@ function withTimeout(p, ms) {
       ys.push(GAME.city.groundY(seq[j][0], seq[j][1]));
       if (j) strays.push(stray(seq[j - 1], seq[j]));
     }
+    // and the island's other race: a lap of the coastal ring, which had the
+    // same shortcut for the same reason — gates laid out around the compass
+    // rather than along the road
+    var m = defOf('race4'), lap = null;
+    if (m && m.cps && m.start) {
+      var mseq = [[m.start.x, m.start.z]].concat(m.cps);
+      var mkinds = {}, mstray = [], mworstOff = 0, len = 0;
+      for (var q = 0; q < mseq.length; q++) {
+        var mo = offRoad(mseq[q][0], mseq[q][1]);
+        mkinds[mo.kind || '(mainland)'] = 1;
+        mworstOff = Math.max(mworstOff, mo.d);
+        if (q) {
+          mstray.push(stray(mseq[q - 1], mseq[q]));
+          len += Math.sqrt(U.dist2(mseq[q - 1][0], mseq[q - 1][1], mseq[q][0], mseq[q][1]));
+        }
+      }
+      lap = { gates: m.cps.length, kinds: Object.keys(mkinds), worstOff: +mworstOff.toFixed(1),
+              worstStray: +Math.max.apply(null, mstray).toFixed(1), len: Math.round(len),
+              closes: Math.round(Math.sqrt(U.dist2(m.start.x, m.start.z,
+                m.cps[m.cps.length - 1][0], m.cps[m.cps.length - 1][1]))) };
+    }
     return { ready: true, gates: d.cps.length, kinds: Object.keys(kinds),
              worstOff: +worstOff.toFixed(1), worstStray: +Math.max.apply(null, strays).toFixed(1),
              rise: +(ys[ys.length - 1] - ys[0]).toFixed(1),
              drops: ys.filter(function (y, k) { return k > 0 && y < ys[k - 1] - 0.5; }).length,
-             legs: (I.climb || []).length };
+             legs: (I.climb || []).length, lap: lap };
   });
   check('climb: the island registered and the race has a route (anchor sanity)',
     climb.ready === true && climb.gates >= 5 && climb.legs === 5,
@@ -606,6 +631,19 @@ function withTimeout(p, ms) {
     // replaces strayed 65 m off it.
     check('climb: the line between gates stays on the tarmac, so there is nothing to cut',
       climb.worstStray < 12, 'furthest a straight line between gates strays=' + climb.worstStray + 'm');
+
+    // The ring race, which had the same hole. Its road is 14 m wide against
+    // the hill's 11, so it gets the wider allowance — the test is the same
+    // one either way: does the straight line between two gates leave the road.
+    var lap = climb.lap;
+    check('mirador: the ring lap is a lap, on the ring road (anchor sanity)',
+      !!lap && lap.kinds.length === 1 && lap.kinds[0] === 'ring' &&
+      lap.len > 1800 && lap.closes < 5,
+      lap ? lap.gates + ' gates over ' + lap.len + 'm, roads=' + JSON.stringify(lap.kinds) +
+            ', finishes ' + lap.closes + 'm from the start' : 'no route');
+    check('mirador: and its gates are close enough that cutting the corner saves nothing',
+      !!lap && lap.worstStray < 14,
+      lap ? 'furthest a straight line between gates strays=' + lap.worstStray + 'm' : 'no route');
   }
 
   // Geometry says the route is sane; only driving it says it is drivable. The

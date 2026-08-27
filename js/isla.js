@@ -86,6 +86,9 @@ GAME.isla = (function () {
   // the Alta Verde switchback's legs, foot to summit, for anything that needs
   // to follow the climb rather than guess at where it runs
   var ALTA = [];
+  // and the coastal ring, for the same reason: a circuit laid out by ANGLE
+  // around it is not laid out evenly along it
+  var RING = null;
   function iroad(pts, w, kind) { return road(pts.map(T), w, kind); }
 
   function arcp(cx, cz, r, a0, a1, n) { return spiral(cx, cz, r, r, a0, a1, n); }
@@ -134,7 +137,8 @@ GAME.isla = (function () {
     // halfway round is a dead end you drive into and sit at
     var ring = [];
     for (i = 0; i <= 200; i++) ring.push(ringPt(i / 200 * TAU, 0.845));
-    road(ring, 14, 'ring').closed = true;
+    RING = road(ring, 14, 'ring');
+    RING.closed = true;
 
     // Puerto Dorado — the island's only grid, because a port earns one.
     // The quay streets used to start at one fixed x, and the sea does not
@@ -805,7 +809,7 @@ GAME.isla = (function () {
     });
     city.isla = { bounds: C, contains: contains, net: NET, hills: HILLS, spans: SPANS,
       terrainY: terrainY, groundY: groundY, onRoad: onRoad, inland: inland,
-      ringPt: ringPt, tx: tx, tz: tz, climb: ALTA };
+      ringPt: ringPt, tx: tx, tz: tz, climb: ALTA, ring: RING };
     definePois();
   }
 

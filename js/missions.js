@@ -121,6 +121,10 @@ GAME.missions = (function () {
     // a point a fraction of the way along a road's polyline, by length rather
     // than by vertex count — the switchback legs are sampled evenly in ANGLE,
     // so their outer vertices are further apart than their inner ones
+    // Gate spacing, in metres of road. The hill wants them tight — its legs
+    // are short and its bends are 20-130 m radius — where the ring is one long
+    // sweep and can carry them further apart for the same straightness.
+    var CP_SPACING = 70, RING_SPACING = 110;
     function legLength(leg) {
       var pts = leg.pts, d = 0;
       for (var i = 1; i < pts.length; i++) {
@@ -175,7 +179,6 @@ GAME.missions = (function () {
         // leaves the same hole at the bottom — measured, the line strays 65 m
         // off-road with the old route, 14 m at two per leg, 7 m at this
         // spacing, and the road is 11 m wide.
-        var CP_SPACING = 70;
         var legs = I.climb || [];
         if (legs.length) {
           var cps = [];
@@ -188,9 +191,22 @@ GAME.missions = (function () {
           d.start = { x: foot[0], z: foot[1] };
         }
       } else if (d.isla === 'mirador') {
-        d.cps = ringLoop(0.845, Math.PI * 0.1, 7);
-        d.start = { x: d.cps[0][0], z: d.cps[0][1] };
-        d.cps = d.cps.slice(1).concat([d.cps[0]]);
+        // A lap of the coastal ring, gated along the road rather than around
+        // the compass. Seven points spread evenly in ANGLE over a 2.2 km ring
+        // put 320 m between gates, and the straight line between two of them
+        // cut 61 m inland — across ground that is open, dry and drivable, so
+        // the lap was quicker not driven. Same lesson as the hill climb: even
+        // in angle is not even along the road, and the gaps decide whether
+        // there is a shortcut to find.
+        var ring = I.ring;
+        if (ring) {
+          var n = Math.max(6, Math.round(legLength(ring) / RING_SPACING));
+          var lap = [];
+          // phase kept where the old start marker stood, a tenth of a turn in
+          for (var g = 0; g < n; g++) lap.push(alongLeg(ring, (g / n + 0.05) % 1));
+          d.start = { x: lap[0][0], z: lap[0][1] };
+          d.cps = lap.slice(1).concat([lap[0]]);
+        }
       } else if (d.isla === 'port') {
         var st = onRoad(tx(860), tz(100));
         d.start = { x: st[0], z: st[1] };
