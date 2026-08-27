@@ -153,9 +153,9 @@ function withTimeout(p, ms) {
 
   // ---------- 1: overlay audio ----------
   var driving = await page.evaluate(function () {
-    GAME.test.spawnCar('sedan', 4, 0);
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
     GAME.test.fastForward(0.2);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.2);
     return GAME.player.inCar === true;
   });
@@ -664,15 +664,28 @@ function withTimeout(p, ms) {
     GAME.test.fastForward(0.5);
     var mine = GAME.test.spawnCar('sports', 4, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(mine);
     GAME.test.fastForward(2);
     var a = GAME.missions.active;
     r.started = !!(a && a.def && a.def.id === 'race3');
-    GAME.test.fastForward(12);                 // countdown, then a dozen seconds of climbing
-    var rivals = GAME.world.cars.filter(function (c) { return c.mission && !c.dead; });
+    // Wait on PROGRESS rather than on a stopwatch. How far a field gets in a
+    // fixed twelve seconds depends on the countdown, on how they get off the
+    // line and on what traffic is in the way — measured against a clock this
+    // passed most runs and failed some, which says nothing about the road.
+    // Give them until they are three gates up, or thirty seconds to prove they
+    // cannot be.
+    function field() { return GAME.world.cars.filter(function (c) { return c.mission && !c.dead; }); }
+    function best(list, f) { return list.reduce(function (m, c) { return Math.max(m, f(c)); }, 0); }
+    var secs = 0;
+    while (secs < 30 && best(field(), function (c) { return c.cpIndex || 0; }) < 3) {
+      GAME.test.fastForward(1);
+      secs++;
+    }
+    var rivals = field();
     r.rivals = rivals.length;
-    r.bestCp = rivals.reduce(function (m, c) { return Math.max(m, c.cpIndex || 0); }, 0);
-    r.highest = rivals.reduce(function (m, c) { return Math.max(m, c.pos.y); }, 0);
+    r.secs = secs;
+    r.bestCp = best(rivals, function (c) { return c.cpIndex || 0; });
+    r.highest = best(rivals, function (c) { return c.pos.y; });
 
     // Teardown, and thoroughly: this group runs before the race checks below,
     // and calling the race off is not enough on its own — the trigger is
@@ -692,8 +705,9 @@ function withTimeout(p, ms) {
     drive.started === true && drive.rivals === 3 && drive.footY < 8,
     'started=' + drive.started + ' rivals=' + drive.rivals + ' foot at ' + drive.footY + 'm');
   check('climb: and a field can actually drive it up the hill',
-    drive.bestCp >= 2 && drive.highest > drive.footY + 3,
-    'best gate reached=' + drive.bestCp + ' highest rival=' + (drive.highest || 0).toFixed(1) + 'm');
+    drive.bestCp >= 3 && drive.highest > drive.footY + 3,
+    'three gates up in ' + drive.secs + 's, highest rival=' +
+    (drive.highest || 0).toFixed(1) + 'm against a foot at ' + (drive.footY || 0).toFixed(1) + 'm');
   check('climb: and the group hands the world back clean (anchor sanity)',
     drive.clean === true);
 
@@ -1037,9 +1051,9 @@ function withTimeout(p, ms) {
     if (P.inCar) GAME.exitCar();
     GAME.test.teleport(356, 40);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('sedan', 4, 0);
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1);
     var car = P.car;
     r.driving = !!car;
@@ -1360,12 +1374,23 @@ function withTimeout(p, ms) {
     P.health = 100;
     GAME.test.teleport(356, 200);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('airplane', 5, 0);
+    // Board the plane we just made, rather than hunting for the nearest car.
+    // enterNearestCar searches 10 m around the player, and an unpowered
+    // airframe does not sit still — the aircraft branch has it falling to
+    // whatever is under it from the moment it exists — so on some ground it
+    // had drifted out of reach by the time this asked. Four checks failed
+    // together when it did, because the block gives up here and returns.
+    //
+    // The wait is a full second either way: enterCar plays the door out before
+    // P.inCar turns over and that runs to about 35 frames, so the 0.6 s this
+    // replaces was two frames of margin.
+    var plane = GAME.test.spawnCar('airplane', 5, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
-    GAME.test.fastForward(0.6);
+    if (plane) GAME.enterCar(plane);
+    GAME.test.fastForward(1.2);
     var car = P.car;
     r.inPlane = !!(car && car.spec.plane);
+    r.spawned = !!plane;
     if (!r.inPlane) return r;
     car.pos.y = GAME.city.surfaceY(car.pos.x, car.pos.z) + car.spec.wheelH;
     car.speed = 0; car.pitch = 0;
@@ -1393,7 +1418,8 @@ function withTimeout(p, ms) {
   });
   check('haptics: a plane is on the runway with the throttle open (anchor sanity)',
     plane.inPlane === true && plane.onGround === true && plane.speed > 0,
-    'inPlane=' + plane.inPlane + ' onGround=' + plane.onGround + ' speed=' + plane.speed);
+    'spawned=' + plane.spawned + ' inPlane=' + plane.inPlane +
+    ' onGround=' + plane.onGround + ' speed=' + plane.speed);
   check('haptics: the takeoff run arms the rumble',
     plane.rolling && plane.rolling.armed === true && plane.rolling.v > 0.2,
     'state=' + JSON.stringify(plane.rolling));
@@ -1520,7 +1546,9 @@ function withTimeout(p, ms) {
     // restock it while the delivered car is still standing on it. Drive clear
     // and the check passes — and with nothing linking car to bay, the bay
     // reads empty and is refilled on the spot, in view.
-    GAME.test.enterNearestCar();
+    // the delivered one specifically: "nearest" is a lottery on a live street,
+    // and this check is about the car that came out of the showroom
+    GAME.test.enterNearestCar(onDelivery[0] || null);
     GAME.test.fastForward(2);
     var driving = !!(P.car && P.car.type === 'buggy');
     // Driven out under throttle it only manages a few metres: the dealer lot
@@ -1557,9 +1585,9 @@ function withTimeout(p, ms) {
     var def = GAME.missions.DEFS.filter(function (d) { return d.id === 'race0'; })[0];
     GAME.test.teleport(def.start.x, def.start.z - 40);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('taxi', 4, 0);
+    var _ride = GAME.test.spawnCar('taxi', 4, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     if (!P.inCar || !P.car) return { racing: false };
     GAME.test.teleport(def.start.x, def.start.z);   // onto the start line
@@ -1669,9 +1697,9 @@ function withTimeout(p, ms) {
     if (P.inCar) GAME.exitCar();
     GAME.test.teleport(356, 60);            // the strip: long, flat, straight
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('sedan', 4, 0);
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car) return { flew: false };
@@ -1797,9 +1825,9 @@ function withTimeout(p, ms) {
     P.health = 100;
     GAME.test.teleport(356, 60);              // the strip: long, flat, straight
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('sedan', 3, 0);
+    var _ride = GAME.test.spawnCar('sedan', 3, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car || !car.susp) return { drove: false };
@@ -1856,9 +1884,9 @@ function withTimeout(p, ms) {
     // then this measures nothing at all
     GAME.test.teleport(356, 160);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('motorcycle', 5, 0);
+    var _ride = GAME.test.spawnCar('motorcycle', 5, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car || car.type !== 'motorcycle') return { onBike: false };
@@ -1961,6 +1989,84 @@ function withTimeout(p, ms) {
     'label=' + tap.label + ' sent=' + JSON.stringify(tap.onPress));
   check('touch: and with RUMBLE off it does not',
     tap.whileOff.length === 0, 'sent=' + JSON.stringify(tap.whileOff));
+
+  // RUN and AIM are TOGGLES: one press latches the flag until another press
+  // clears it. Nothing released them when the on-foot controls stopped
+  // applying, so boarding a car or dying kept them set behind the overlay and
+  // handed them back — you came round at the hospital already sprinting, with
+  // the button still lit, having pressed nothing.
+  var latch = await tpage.evaluate(function () {
+    var T = GAME.input.touch, P = GAME.player, r = {};
+    function press(el) {
+      var t = new Touch({ identifier: 21, target: el, clientX: 10, clientY: 10 });
+      el.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true
+      }));
+      el.dispatchEvent(new TouchEvent('touchend', {
+        touches: [], changedTouches: [t], targetTouches: [], bubbles: true, cancelable: true
+      }));
+    }
+    var run = null, all = document.querySelectorAll('.tbtn');
+    for (var i = 0; i < all.length; i++) if (all[i].textContent === 'RUN') run = all[i];
+    if (!run) return { found: false };
+
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(-60, 60);
+    GAME.test.fastForward(0.5);
+
+    // it latches, which is the whole point of a toggle
+    press(run);
+    r.held = { flag: !!T.run, lit: run.style.background !== '' };
+
+    // ...and getting into a car lets it go
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(_ride);
+    // a full second: enterCar plays the door out before P.inCar turns over, and
+    // it runs to about 35 frames — half a second lands just short of it and
+    // reads exactly like a boarding that never happened
+    GAME.test.fastForward(1);
+    r.boarded = { inCar: !!P.inCar, flag: !!T.run, lit: run.style.background !== '' };
+
+    // Back out, latch it again, and die on it. Pressed until it is actually
+    // ON rather than pressed once and assumed: a toggle left set by the last
+    // interruption is INVERTED from then on, so one press turns it off — which
+    // is what the control does here, and without this the death case would
+    // then pass on a flag that was already clear before anybody died.
+    GAME.exitCar();
+    GAME.test.fastForward(1);
+    press(run);
+    r.reheld = !!T.run;
+    if (!T.run) press(run);
+    r.armed = !!T.run;
+    GAME.playerWasted('test');
+    GAME.test.fastForward(0.5);
+    r.dead = { state: P.state, flag: !!T.run, lit: run.style.background !== '' };
+    return r;
+  });
+  var revivedRun = true;
+  try {
+    await tpage.evaluate(function () {
+      GAME.input.keys['KeyR'] = true;
+      GAME.test.fastForward(1.2);
+      GAME.input.keys['KeyR'] = false;
+    });
+    await tpage.waitForFunction(function () { return GAME.player.state === 'alive'; }, null, { timeout: 10000 });
+  } catch (e) { revivedRun = false; }
+  await tpage.evaluate(function () { GAME.player.health = 100; GAME.test.fastForward(0.5); });
+  check('touch: RUN latches when you press it, and stays a toggle (anchor sanity)',
+    latch.found !== false && latch.held.flag === true && latch.held.lit === true && latch.reheld === true,
+    'first press: ' + JSON.stringify(latch.held) + '  press after a boarding: ' + latch.reheld);
+  check('touch: and getting into a car lets it go, button and all',
+    latch.boarded && latch.boarded.inCar === true &&
+    latch.boarded.flag === false && latch.boarded.lit === false,
+    'after boarding: ' + JSON.stringify(latch.boarded));
+  check('touch: so does dying on it — you do not come round already sprinting',
+    latch.armed === true && latch.dead && latch.dead.state !== 'alive' &&
+    latch.dead.flag === false && latch.dead.lit === false,
+    'RUN on going in=' + latch.armed + ', after dying: ' + JSON.stringify(latch.dead));
+  check('touch: and the player is back on their feet afterwards (anchor sanity)', revivedRun);
 
   // Press it, rather than just look at it: the markup ships with the label
   // already reading RUMBLE: ON, so a check that only reads the text passes

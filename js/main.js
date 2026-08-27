@@ -551,10 +551,15 @@
       var f = GAME.focus();
       return GAME.peds.spawnPed(f.x + (dx || 5), f.z + (dz || 0));
     },
-    enterNearestCar: function () {
+    // Hand it the car you want and it takes that one. "Nearest" is a lottery
+    // on a live street — traffic spawns around the player, so a car passing by
+    // can be closer than the one you just put down, and you board that instead
+    // — and an unpowered aircraft does not even stay where it was made. Almost
+    // every caller has the car in its hand already.
+    enterNearestCar: function (car) {
       var P = GAME.player;
       if (P.inCar) return true;
-      var car = GAME.vehicles.findNearestCar(P.pos.x, P.pos.z, 10, null);
+      if (!car) car = GAME.vehicles.findNearestCar(P.pos.x, P.pos.z, 10, null);
       return car ? GAME.enterCar(car) : false;
     },
     exitCar: function () { GAME.exitCar(); },
