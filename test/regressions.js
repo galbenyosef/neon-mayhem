@@ -22,6 +22,15 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3g. LANE KEEPING — a driver takes its lane from the first metre, not
+//       from the first node it reaches.
+//   3f. PARKED AIRFRAME — solid to drive into, and still shoves nobody.
+//   3e. ISLAND RACES — the gates follow the road they are named for, and sit
+//       close enough together that the line between two of them stays on it.
+//   3d. POLICE AIM — the round lands where the tracer put it, and range,
+//       speed and the officer holding the gun all decide where that is.
+//   3c. WANTED LADDER — each star has to cost more offences than the last.
+//   3b. CANOPY OVER WATER — open sea BELOW a glide is not the sea you are in.
 //   4. UNLIMITED AMMO — the all-jumps reward must read as ∞, not as the
 //      frozen 999 the stopped decrement leaves behind.
 //   5. STEREO IMAGE   — a sound's pan must agree with the direction the
@@ -33,7 +42,10 @@
 //      a browser with no motor at all. Then the vocabulary on top of that: no
 //      two kinds may feel the same, the tiers must preempt in one direction
 //      only, and the events with a body behind them — a run-over, a star, a
-//      fire — are driven through the game rather than through the module door.
+//      fire, a blast, a canopy touching down — are driven through the game
+//      rather than through the module door. Then the one SUSTAINED channel,
+//      which runs on its own timer: it has to keep pulsing, stop itself when
+//      the caller goes quiet, and never take the channel from a one-shot.
 //   8. FRAME BUDGET   — the crowd thins when frames run late and, more to
 //      the point, comes BACK when they do not.
 //   9. SHOWROOM       — a bought vehicle is delivered once, not twice.
@@ -144,9 +156,9 @@ function withTimeout(p, ms) {
 
   // ---------- 1: overlay audio ----------
   var driving = await page.evaluate(function () {
-    GAME.test.spawnCar('sedan', 4, 0);
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
     GAME.test.fastForward(0.2);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.2);
     return GAME.player.inCar === true;
   });
@@ -290,6 +302,591 @@ function withTimeout(p, ms) {
   check('parachute: no glide step ran at the hospital ("Feet dry.")',
     !respawn.msgs.some(function (m) { return m.indexOf('Feet dry') >= 0; }),
     JSON.stringify(respawn.msgs.slice(-3)));
+
+  // ---------- 3b: a canopy over the sea has not landed in it ----------
+  // isInWater answers for the whole column at (x, z): its y argument only
+  // rules out a deck or a crossing carried over the top, and never asks how
+  // high up the point is. Asked once a frame through a glide, that soaked you
+  // on the FIRST frame after stepping out over the bay — sixty metres up, with
+  // the beach still well inside the canopy's reach.
+  var sea = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    // open sea, no pier, nothing built over it
+    var wx = null, wz = null;
+    for (var x = 380; x <= 900 && wx === null; x += 8) {
+      for (var z = -240; z <= 240; z += 24) {
+        if (GAME.city.isInWater(x, z) && !GAME.city.isOnPier(x, z)) { wx = x; wz = z; break; }
+      }
+    }
+    r.found = wx !== null;
+    if (!r.found) return r;
+    r.at = [wx, wz];
+    r.seaLevel = GAME.city.surfaceY(wx, wz);
+
+    window.__msgs = [];
+    GAME.aircraft.startParachute(wx, 60, wz, 0);
+    r.opened = !!P.parachuting;
+    // two seconds of glide, high over open water
+    GAME.test.fastForward(2);
+    r.aloft = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!P.drowning };
+    // then all the way down onto it
+    for (var i = 0; i < 60 * 25 && P.parachuting; i++) GAME.test.fastForward(1 / 60);
+    r.down = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!P.drowning };
+    r.msgs = window.__msgs.slice();
+    return r;
+  });
+  check('parachute: there is open sea to glide over, at sea level (anchor sanity)',
+    sea.found === true && sea.seaLevel <= 0.05 && sea.opened === true,
+    'at=' + JSON.stringify(sea.at) + ' level=' + sea.seaLevel + ' opened=' + sea.opened);
+  check('parachute: gliding OVER the sea is not being in it',
+    sea.aloft && sea.aloft.para === true && sea.aloft.wet === false && sea.aloft.y > 40,
+    'after 2s: ' + JSON.stringify(sea.aloft));
+  check('parachute: but coming all the way down onto it still is',
+    sea.down && sea.down.para === false && sea.down.wet === true,
+    'at the end: ' + JSON.stringify(sea.down));
+  check('parachute: and it never claimed feet dry over open water',
+    !(sea.msgs || []).some(function (m) { return m.indexOf('Feet dry') >= 0; }),
+    JSON.stringify((sea.msgs || []).slice(-3)));
+
+  // Drowning is not a death here — hud.fade washes you ashore, and it fades on
+  // a real setTimeout, so only wall time gets to the other side of it.
+  var washed = true;
+  try {
+    await page.waitForFunction(function () { return !GAME.player.drowning; }, null, { timeout: 10000 });
+  } catch (e) { washed = false; }
+  var ashore = await page.evaluate(function () {
+    var P = GAME.player;
+    GAME.test.fastForward(0.5);
+    return { dry: !GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y), msgs: window.__msgs.slice(),
+             state: P.state };
+  });
+  check('parachute: and the sea does put you on the beach, soaked (anchor sanity)',
+    washed && ashore.dry === true && ashore.state === 'alive' &&
+    ashore.msgs.some(function (m) { return m.indexOf('soaked') >= 0; }),
+    'dry=' + ashore.dry + ' state=' + ashore.state + ' msgs=' + JSON.stringify(ashore.msgs.slice(-2)));
+
+  // ---------- 3c: each star costs more than the last ----------
+  // The ladder used to be one body per star: kill_ped is 70 heat against a
+  // first threshold of 50, and the gaps grew by twenty a level while every
+  // offence was worth 22% MORE per star already held. Five pedestrians was a
+  // five-star manhunt and one you never meant to hit was already a star.
+  //
+  // Counted, not sampled: reportCrime is driven directly with a witness stood
+  // next to it, so this is the ladder itself rather than whatever the traffic
+  // happened to be doing.
+  var ladder = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.teleport(-60, 40);
+    GAME.test.fastForward(0.5);
+    GAME.godMode = true;                       // 20 crimes' worth of response
+    var witness = GAME.test.spawnPed(3, 0);    // somebody has to see it
+    r.witness = !!witness && !witness.dead;
+    r.start = GAME.police.wanted;
+
+    // one body, from clean
+    GAME.police.reportCrime('kill_ped', P.pos);
+    r.afterOne = GAME.police.wanted;
+    r.heatAfterOne = Math.round(GAME.police.heat);
+
+    // then count what each rung actually costs
+    GAME.police.clearWanted();
+    var costs = [], n = 0, at = 0;
+    for (var i = 0; i < 200 && costs.length < 5; i++) {
+      GAME.police.reportCrime('kill_ped', P.pos);
+      n++;
+      var s = GAME.police.wanted;
+      if (s > at) { costs.push(n); n = 0; at = s; }
+    }
+    r.costs = costs;
+    r.total = costs.reduce(function (a, b) { return a + b; }, 0);
+    r.reached = at;
+
+    // and the law: one officer down should be serious at once without being
+    // most of the way to a manhunt
+    GAME.police.clearWanted();
+    GAME.police.reportCrime('kill_cop', P.pos);
+    r.oneCop = GAME.police.wanted;
+
+    GAME.police.clearWanted();
+    GAME.godMode = false;
+    P.health = 100;
+    GAME.test.fastForward(0.5);
+    r.clean = GAME.police.wanted;
+    return r;
+  });
+  check('wanted: somebody is there to see it, from a standing start (anchor sanity)',
+    ladder.witness === true && ladder.start === 0,
+    'witness=' + ladder.witness + ' start=' + ladder.start);
+  check('wanted: one body you did not mean to hit is heat, not a star',
+    ladder.afterOne === 0 && ladder.heatAfterOne > 0,
+    'stars=' + ladder.afterOne + ' heat=' + ladder.heatAfterOne);
+  check('wanted: and every rung costs more than the one below it',
+    ladder.costs.length === 5 &&
+    ladder.costs.every(function (c, i) { return i === 0 || c > ladder.costs[i - 1]; }),
+    'offences per star=' + JSON.stringify(ladder.costs));
+  check('wanted: five stars is a manhunt you have to earn',
+    ladder.reached === 5 && ladder.total >= 18,
+    'reached=' + ladder.reached + ' after ' + ladder.total + ' offences');
+  check('wanted: killing an officer is serious at once, but not a manhunt',
+    ladder.oneCop === 2, 'stars=' + ladder.oneCop);
+  check('wanted: and the group hands the world back clean (anchor sanity)',
+    ladder.clean === 0, 'stars=' + ladder.clean);
+
+  // ---------- 3d: a police round goes where it was drawn ----------
+  // npcShoot drew a tracer along a scattered yaw and then decided the hit with
+  // a Math.random() < accuracy roll taken beside it. So the round you watched
+  // fly wide still hurt you, the one drawn straight through you might not, and
+  // because the roll was a flat constant the hit rate was the same at five
+  // metres as at forty, standing still or at a sprint. Nothing the player did
+  // changed it.
+  var aim = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.teleport(-60, 120);
+    GAME.test.fastForward(0.5);
+    GAME.godMode = true;          // two thousand rounds, and a live player
+
+    // Record where each round was DRAWN and whether it hurt. Audio and the
+    // tracer geometry are stubbed for the duration: this measures ballistics,
+    // and two thousand real gunshots would be measuring the allocator.
+    var ends = [], gun0 = GAME.audio.gunshot, tr0 = GAME.fx.tracer;
+    GAME.audio.gunshot = function () { };
+    GAME.fx.tracer = function (x1, y1, z1, x2, y2, z2) { ends.push([x2, z2]); };
+    // A hit is a round that HURT, watched at the door where the hurting
+    // happens — not npcShoot's return value. The version this replaces
+    // returned true whatever it did, so measuring the return would have made
+    // every check below pass on the very code they exist to catch. godMode
+    // stops the damage landing; it does not stop the call.
+    var hurt = false, dmg0 = GAME.playerDamage;
+    GAME.playerDamage = function () { hurt = true; return dmg0.apply(null, arguments); };
+
+    // one officer, with their personal steadiness pinned, so the comparisons
+    // below are about range and speed rather than about who is holding the gun
+    function volley(dist, speed, n) {
+      var shooter = { aimSkill: 1 };
+      var hits = 0, worstHit = 0, bestMiss = 1e9;
+      P.moveSpeed = speed;
+      GAME.combat.npcShoot(P.pos.x + dist, 1.35, P.pos.z, 0.42, 5, shooter);  // settle them
+      ends.length = 0;
+      for (var i = 0; i < n; i++) {
+        hurt = false;
+        GAME.combat.npcShoot(P.pos.x + dist, 1.35, P.pos.z, 0.42, 5, shooter);
+        var hit = hurt;
+        if (hit) hits++;
+        var e = ends[ends.length - 1];
+        // The tracer ends at the player's own range, so how far its end lands
+        // from the player IS how far the round passed them by.
+        //
+        // Assert the ORDER rather than a threshold: the worst round that hurt
+        // must have passed closer than the best round that did not. That is
+        // the whole property — the outcome follows the geometry — and it needs
+        // no tolerance, where comparing against a fixed half-width did. (It
+        // also does not hard-code the target's width, so a retune of that is
+        // not a broken check.)
+        var by = Math.sqrt(U.dist2(e[0], e[1], P.pos.x, P.pos.z));
+        if (hit) worstHit = Math.max(worstHit, by);
+        else bestMiss = Math.min(bestMiss, by);
+      }
+      return { rate: hits / n, worstHit: worstHit, bestMiss: bestMiss, n: n };
+    }
+    var N = 600;
+    r.near = volley(6, 0, N);
+    r.far = volley(34, 0, N);
+    r.still = volley(12, 0, N);
+    r.running = volley(12, 8, N);
+    var volleys = [r.near, r.far, r.still, r.running];
+    r.ordered = volleys.every(function (v) { return v.worstHit <= v.bestMiss; });
+    r.worst = volleys.map(function (v) {
+      return v.worstHit.toFixed(2) + '/' + (v.bestMiss === 1e9 ? '-' : v.bestMiss.toFixed(2));
+    });
+    r.shots = N * 4;
+
+    // and officers are individuals rather than four copies of one machine
+    var skills = {};
+    for (var k = 0; k < 60; k++) {
+      var fresh = {};
+      GAME.combat.npcShoot(P.pos.x + 10, 1.35, P.pos.z, 0.42, 5, fresh);
+      skills[Math.round(fresh.aimSkill * 100)] = 1;
+    }
+    r.distinctSkills = Object.keys(skills).length;
+
+    GAME.audio.gunshot = gun0; GAME.fx.tracer = tr0; GAME.playerDamage = dmg0;
+    GAME.godMode = false;
+    P.moveSpeed = 0; P.health = 100;
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.5);
+    r.alive = P.state === 'alive';
+    return r;
+  });
+  check('police: they can still hit you at close range (anchor sanity)',
+    aim.near.rate > 0.5, 'close range hit rate=' + aim.near.rate.toFixed(2));
+  check('police: both outcomes actually occur in every volley (anchor sanity)',
+    aim.near.rate > 0 && aim.near.rate < 1 && aim.far.rate > 0 && aim.far.rate < 1,
+    'rates=' + [aim.near, aim.far, aim.still, aim.running].map(function (v) {
+      return v.rate.toFixed(2); }).join('/'));
+  check('police: every round that hurt you passed closer than every one that did not',
+    aim.ordered === true,
+    'worst hit / best miss, per volley: ' + JSON.stringify(aim.worst) + ' over ' + aim.shots + ' rounds');
+  check('police: range is worth something — a pistol at 34 m is not one at 6 m',
+    aim.near.rate > aim.far.rate + 0.25,
+    '6m=' + aim.near.rate.toFixed(2) + ' 34m=' + aim.far.rate.toFixed(2));
+  check('police: and so is not standing still while they shoot at you',
+    aim.still.rate > aim.running.rate + 0.05,
+    'still=' + aim.still.rate.toFixed(2) + ' running=' + aim.running.rate.toFixed(2));
+  check('police: officers are individuals, not four copies of one machine',
+    aim.distinctSkills > 20, 'distinct steadiness over 60 officers=' + aim.distinctSkills);
+  check('police: and the group leaves the player alive and clean (anchor sanity)',
+    aim.alive === true);
+
+  // ---------- 3e: the hill climb follows the hill road ----------
+  // The climb's route was five hand-written points snapped with
+  // nearestRoadPoint, and snapping cannot tell you it picked the wrong road.
+  // The start landed on a PORT road at sea level three hundred metres from the
+  // hill; the second checkpoint missed its mark by forty metres and landed on
+  // the COAST RING. The route it described was port, up to a hill connector,
+  // back down to the shore, then up — and the gates were far enough apart that
+  // the hillside between them was a shorter drive than the switchback.
+  //
+  // Pure geometry: this reads the route, touches nothing, and leaves nothing
+  // behind, so it can sit anywhere in the file.
+  var climb = await page.evaluate(function () {
+    var I = GAME.city.isla;
+    var defs = GAME.missions.DEFS;
+    function defOf(id) {
+      for (var i = 0; i < defs.length; i++) if (defs[i].id === id) return defs[i];
+      return null;
+    }
+    var d = defOf('race3');
+    if (!I || !d || !d.cps || !d.start) return { ready: false, isla: !!I, def: !!d };
+    var seq = [[d.start.x, d.start.z]].concat(d.cps);
+
+    function offRoad(x, z) {
+      var rp = GAME.city.nearestRoadPoint(x, z);
+      return { d: Math.sqrt(U.dist2(x, z, rp.x, rp.z)), kind: rp.kind };
+    }
+    // how far the straight line between two gates strays from ANY road: the
+    // shortcut the report was about, measured rather than eyeballed
+    function stray(a, b) {
+      var n = Math.max(8, Math.round(Math.sqrt(U.dist2(a[0], a[1], b[0], b[1])) / 6)), worst = 0;
+      for (var k = 1; k < n; k++) {
+        var t = k / n;
+        worst = Math.max(worst, offRoad(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t).d);
+      }
+      return worst;
+    }
+    var kinds = {}, worstOff = 0, ys = [], strays = [];
+    for (var j = 0; j < seq.length; j++) {
+      var o = offRoad(seq[j][0], seq[j][1]);
+      kinds[o.kind || '(mainland)'] = 1;
+      worstOff = Math.max(worstOff, o.d);
+      ys.push(GAME.city.groundY(seq[j][0], seq[j][1]));
+      if (j) strays.push(stray(seq[j - 1], seq[j]));
+    }
+    // and the island's other race: a lap of the coastal ring, which had the
+    // same shortcut for the same reason — gates laid out around the compass
+    // rather than along the road
+    var m = defOf('race4'), lap = null;
+    if (m && m.cps && m.start) {
+      var mseq = [[m.start.x, m.start.z]].concat(m.cps);
+      var mkinds = {}, mstray = [], mworstOff = 0, len = 0;
+      for (var q = 0; q < mseq.length; q++) {
+        var mo = offRoad(mseq[q][0], mseq[q][1]);
+        mkinds[mo.kind || '(mainland)'] = 1;
+        mworstOff = Math.max(mworstOff, mo.d);
+        if (q) {
+          mstray.push(stray(mseq[q - 1], mseq[q]));
+          len += Math.sqrt(U.dist2(mseq[q - 1][0], mseq[q - 1][1], mseq[q][0], mseq[q][1]));
+        }
+      }
+      lap = { gates: m.cps.length, kinds: Object.keys(mkinds), worstOff: +mworstOff.toFixed(1),
+              worstStray: +Math.max.apply(null, mstray).toFixed(1), len: Math.round(len),
+              closes: Math.round(Math.sqrt(U.dist2(m.start.x, m.start.z,
+                m.cps[m.cps.length - 1][0], m.cps[m.cps.length - 1][1]))) };
+    }
+    return { ready: true, gates: d.cps.length, kinds: Object.keys(kinds),
+             worstOff: +worstOff.toFixed(1), worstStray: +Math.max.apply(null, strays).toFixed(1),
+             rise: +(ys[ys.length - 1] - ys[0]).toFixed(1),
+             drops: ys.filter(function (y, k) { return k > 0 && y < ys[k - 1] - 0.5; }).length,
+             legs: (I.climb || []).length, lap: lap };
+  });
+  check('climb: the island registered and the race has a route (anchor sanity)',
+    climb.ready === true && climb.gates >= 5 && climb.legs === 5,
+    'gates=' + climb.gates + ' switchback legs=' + climb.legs);
+  if (climb.ready) {
+    check('climb: every gate is on the hill road, not the port or the coast ring',
+      climb.kinds.length === 1 && climb.kinds[0] === 'hill',
+      'roads used=' + JSON.stringify(climb.kinds));
+    check('climb: and on it, rather than near it',
+      climb.worstOff < 3, 'furthest gate from a road centreline=' + climb.worstOff + 'm');
+    check('climb: it climbs, without doubling back down the hill on the way',
+      climb.rise > 15 && climb.drops === 0,
+      'rise=' + climb.rise + 'm  descents between gates=' + climb.drops);
+    // The road is 11 m wide. Under about that, the straight line between two
+    // gates IS the road and there is no shortcut to take; the route this
+    // replaces strayed 65 m off it.
+    check('climb: the line between gates stays on the tarmac, so there is nothing to cut',
+      climb.worstStray < 12, 'furthest a straight line between gates strays=' + climb.worstStray + 'm');
+
+    // The ring race, which had the same hole. Its road is 14 m wide against
+    // the hill's 11, so it gets the wider allowance — the test is the same
+    // one either way: does the straight line between two gates leave the road.
+    var lap = climb.lap;
+    check('mirador: the ring lap is a lap, on the ring road (anchor sanity)',
+      !!lap && lap.kinds.length === 1 && lap.kinds[0] === 'ring' &&
+      lap.len > 1800 && lap.closes < 5,
+      lap ? lap.gates + ' gates over ' + lap.len + 'm, roads=' + JSON.stringify(lap.kinds) +
+            ', finishes ' + lap.closes + 'm from the start' : 'no route');
+    check('mirador: and its gates are close enough that cutting the corner saves nothing',
+      !!lap && lap.worstStray < 14,
+      lap ? 'furthest a straight line between gates strays=' + lap.worstStray + 'm' : 'no route');
+  }
+
+  // Geometry says the route is sane; only driving it says it is drivable. The
+  // rivals path along the road between gates, so where they have got to after
+  // a dozen seconds is the road's own report on itself.
+  var drive = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    r.wasOpen = GAME.isla.isOpen();
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.isla.setOpen(true);
+    var d = null, defs = GAME.missions.DEFS;
+    for (var i = 0; i < defs.length; i++) if (defs[i].id === 'race3') d = defs[i];
+    if (!d || !d.start) return r;
+    r.footY = GAME.city.groundY(d.start.x, d.start.z);
+    GAME.test.teleport(d.start.x, d.start.z);
+    GAME.test.fastForward(0.5);
+    var mine = GAME.test.spawnCar('sports', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(mine);
+    GAME.test.fastForward(2);
+    var a = GAME.missions.active;
+    r.started = !!(a && a.def && a.def.id === 'race3');
+    // Wait on PROGRESS rather than on a stopwatch. How far a field gets in a
+    // fixed twelve seconds depends on the countdown, on how they get off the
+    // line and on what traffic is in the way — measured against a clock this
+    // passed most runs and failed some, which says nothing about the road.
+    // Give them until they are three gates up, or thirty seconds to prove they
+    // cannot be.
+    function field() { return GAME.world.cars.filter(function (c) { return c.mission && !c.dead; }); }
+    function best(list, f) { return list.reduce(function (m, c) { return Math.max(m, f(c)); }, 0); }
+    var secs = 0;
+    while (secs < 30 && best(field(), function (c) { return c.cpIndex || 0; }) < 3) {
+      GAME.test.fastForward(1);
+      secs++;
+    }
+    var rivals = field();
+    r.rivals = rivals.length;
+    r.secs = secs;
+    r.bestCp = best(rivals, function (c) { return c.cpIndex || 0; });
+    r.highest = best(rivals, function (c) { return c.pos.y; });
+
+    // Teardown, and thoroughly: this group runs before the race checks below,
+    // and calling the race off is not enough on its own — the trigger is
+    // proximity, so sitting on the start line restarts it on the next tick.
+    GAME.missions.failActive('test teardown');
+    GAME.exitCar();
+    if (mine) GAME.vehicles.removeCar(mine);
+    GAME.test.teleport(-60, 40);
+    GAME.isla.setOpen(r.wasOpen);
+    GAME.police.clearWanted();
+    P.health = 100;
+    GAME.test.fastForward(1);
+    r.clean = !GAME.missions.active && !GAME.player.inCar;
+    return r;
+  });
+  check('climb: the race starts at the foot of the switchback (anchor sanity)',
+    drive.started === true && drive.rivals === 3 && drive.footY < 8,
+    'started=' + drive.started + ' rivals=' + drive.rivals + ' foot at ' + drive.footY + 'm');
+  check('climb: and a field can actually drive it up the hill',
+    drive.bestCp >= 3 && drive.highest > drive.footY + 3,
+    'three gates up in ' + drive.secs + 's, highest rival=' +
+    (drive.highest || 0).toFixed(1) + 'm against a foot at ' + (drive.footY || 0).toFixed(1) + 'm');
+  check('climb: and the group hands the world back clean (anchor sanity)',
+    drive.clean === true);
+
+  // ---------- 3f: a parked airframe is something you stop against ----------
+  // Aircraft were skipped outright in the car-to-car pass, so a helicopter
+  // setting down would not bulldoze the street it landed on. The cost was that
+  // ground traffic drove straight THROUGH one — and the Alta Verde summit road
+  // ends at a helipad with a helicopter standing on it, so cars went in one
+  // side and out the other all afternoon.
+  var pad = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys, H = GAME.city.helipad, r = {};
+    r.wasOpen = GAME.isla.isOpen();
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.isla.setOpen(true);
+    GAME.godMode = true;
+    GAME.test.teleport(H.x - 45, H.z - 45);
+    GAME.test.fastForward(5);                 // let the pad's parked spot fill
+    var heli = GAME.world.cars.filter(function (c) {
+      return c.spec.heli && c.ai && c.ai.mode === 'parked';
+    })[0];
+    r.parked = !!heli;
+    if (!heli) return r;
+    var heliHome = [heli.pos.x, heli.pos.z];
+
+    var van = GAME.test.spawnCar('van', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(van);
+    GAME.test.fastForward(1.2);
+    r.driving = !!P.inCar;
+    if (!P.inCar) return r;
+    var car = P.car;
+
+    // line it up thirty metres out, pointing straight at the airframe
+    function run(heliY) {
+      heli.pos.y = heliY;
+      car.pos.set(heli.pos.x - 30, GAME.city.groundY(heli.pos.x - 30, heli.pos.z), heli.pos.z);
+      car.heading = Math.atan2(heli.pos.x - car.pos.x, heli.pos.z - car.pos.z);
+      car.speed = 0; car.lat = 0; car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0;
+      var closest = 1e9, inside = 0, passed = false;
+      K['KeyW'] = true;
+      for (var i = 0; i < 60 * 7; i++) {
+        // pinned every frame: an unpowered airframe FALLS — the aircraft
+        // branch drops any that nobody is flying — so a helicopter set ten
+        // metres up was back on the pad long before the van reached it, and
+        // the overhead case was really the on-the-ground case again
+        heli.pos.y = heliY; heli.vy = 0;
+        GAME.test.fastForward(1 / 60);
+        var d = Math.sqrt(U.dist2(car.pos.x, car.pos.z, heli.pos.x, heli.pos.z));
+        closest = Math.min(closest, d);
+        if (d < heli.radius + car.radius - 0.3) inside++;
+        if (car.pos.x > heli.pos.x + 2) passed = true;    // out the far side
+      }
+      K['KeyW'] = false;
+      return { closest: +closest.toFixed(1), inside: inside, passed: passed };
+    }
+
+    var groundY = GAME.city.groundY(heliHome[0], heliHome[1]);
+    r.radii = +(heli.radius + car.radius).toFixed(1);
+    r.intoIt = run(groundY + 0.05);
+    r.heliShifted = +Math.sqrt(U.dist2(heli.pos.x, heli.pos.z, heliHome[0], heliHome[1])).toFixed(1);
+    // and one hovering overhead is not a roadblock — the height rule that let
+    // the blanket skip be removed at all
+    r.underIt = run(groundY + 10);
+    heli.pos.y = groundY + 0.05;
+
+    GAME.exitCar();
+    if (van) GAME.vehicles.removeCar(van);
+    GAME.godMode = false;
+    GAME.isla.setOpen(r.wasOpen);
+    GAME.test.teleport(-60, 40);
+    GAME.police.clearWanted();
+    P.health = 100;
+    GAME.test.fastForward(1);
+    r.clean = !GAME.player.inCar;
+    return r;
+  });
+  check('helipad: a helicopter is parked on the pad and a van is driving at it (anchor sanity)',
+    pad.parked === true && pad.driving === true && pad.radii > 3,
+    'parked=' + pad.parked + ' driving=' + pad.driving + ' radii sum=' + pad.radii + 'm');
+  if (pad.parked && pad.driving) {
+    check('helipad: driving into it stops you, rather than taking you through it',
+      pad.intoIt.inside === 0 && pad.intoIt.passed === false &&
+      pad.intoIt.closest >= pad.radii - 0.4,
+      'closest=' + pad.intoIt.closest + 'm against ' + pad.radii +
+      'm of radii, frames inside=' + pad.intoIt.inside + ', came out the far side=' + pad.intoIt.passed);
+    check('helipad: and the airframe is not shoved by it — it never was, and still is not',
+      pad.heliShifted < 0.5, 'the helicopter moved ' + pad.heliShifted + 'm');
+    check('helipad: while one hovering overhead is not a roadblock',
+      pad.underIt.passed === true,
+      'drove under it=' + pad.underIt.passed + ' closest=' + pad.underIt.closest + 'm');
+    check('helipad: and the group hands the world back clean (anchor sanity)', pad.clean === true);
+  }
+
+  // ---------- 3g: traffic keeps its lane from the first metre ----------
+  // The lane offset was only worked out on ARRIVAL at a node, when the next
+  // one is chosen, and every driver starts with laneX/laneZ at zero — so the
+  // whole first segment was driven down the centreline. Not a rare state: it
+  // is every car the spawner puts down, every cruiser standing down after a
+  // chase, every owner taking their car back, every mission car handed over.
+  var lanes = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.godMode = true;
+    GAME.test.teleport(-60, 40);
+    GAME.test.fastForward(4);
+
+    // A driver handed to traffic with no lane yet, pointed along the road it
+    // is standing on — the state all four of those hand-overs create.
+    var rp = GAME.city.nearestRoadPoint(P.pos.x + 14, P.pos.z);
+    var head = rp.axis === 'x' ? 0 : Math.PI / 2;
+    var fresh = GAME.vehicles.spawnCar('sedan', rp.x, rp.z, head,
+      { occupied: 'ai', ai: { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 } });
+    r.spawned = !!fresh;
+    if (fresh) {
+      GAME.test.fastForward(1 / 60);          // one tick is all it should need
+      var lx = fresh.ai.laneX, lz = fresh.ai.laneZ;
+      r.freshLane = +Math.sqrt(lx * lx + lz * lz).toFixed(2);
+      // perpendicular to the way it is pointing, and on the right of it
+      var fx = Math.sin(fresh.heading), fz = Math.cos(fresh.heading);
+      r.alongTravel = +Math.abs(lx * fx + lz * fz).toFixed(2);   // want ~0
+      r.toTheRight = (lx * fz - lz * fx) > 0;
+      GAME.vehicles.removeCar(fresh);
+    }
+
+    // and the fleet at large, mid-segment where lane discipline is unambiguous
+    // (at a junction a car legitimately crosses the centre, and the road-point
+    // lookup measures against whichever line is nearest, which for a car
+    // properly in lane can be the CROSSING one)
+    var zero = 0, total = 0, offs = [];
+    for (var i = 0; i < 60 * 25; i++) {
+      GAME.test.fastForward(1 / 60);
+      if (i % 20) continue;
+      GAME.world.cars.forEach(function (c) {
+        if (c === P.car || c.dead || !c.ai || c.ai.mode !== 'traffic') return;
+        if (Math.abs(c.speed) < 2 || !c.ai.node) return;
+        if (U.dist2(c.pos.x, c.pos.z, c.ai.node.x, c.ai.node.z) < 11 * 11) return;
+        if (c.ai.prev && U.dist2(c.pos.x, c.pos.z, c.ai.prev.x, c.ai.prev.z) < 11 * 11) return;
+        total++;
+        if (!c.ai.laneX && !c.ai.laneZ) zero++;
+        var q = GAME.city.nearestRoadPoint(c.pos.x, c.pos.z);
+        offs.push(Math.sqrt(U.dist2(c.pos.x, c.pos.z, q.x, q.z)));
+      });
+    }
+    offs.sort(function (a, b) { return a - b; });
+    r.cars = total;
+    r.pctZeroLane = total ? Math.round(zero / total * 100) : -1;
+    r.median = offs.length ? +offs[Math.floor(offs.length / 2)].toFixed(2) : -1;
+
+    GAME.godMode = false;
+    P.health = 100;
+    GAME.test.fastForward(0.5);
+    return r;
+  });
+  check('lanes: a fresh traffic driver was put on the road (anchor sanity)',
+    lanes.spawned === true && lanes.cars > 100,
+    'spawned=' + lanes.spawned + ', ' + lanes.cars +
+    ' mid-segment samples, median offset ' + lanes.median + 'm');
+  check('lanes: it takes a lane on its first tick, not on reaching a node',
+    lanes.freshLane > 2.5 && lanes.alongTravel < 0.2 && lanes.toTheRight === true,
+    'offset=' + lanes.freshLane + 'm, component along travel=' + lanes.alongTravel +
+    ', on the right=' + lanes.toTheRight);
+  check('lanes: and no moving driver is left aiming down the middle of the road',
+    lanes.pctZeroLane === 0, lanes.pctZeroLane + '% of moving traffic has no lane');
+  // The fleet's median offset is REPORTED above and not asserted on. It ran
+  // 2.5-3.1 m across runs against 2.06 on the code this fixes, so the gap is
+  // smaller than the spread and a threshold anywhere in between fails on its
+  // own noise — which is what it did, once, an hour after being written. A
+  // number that cannot separate the two states is not a weak check, it is a
+  // coin toss with an opinion, and tuning it down would only have moved the
+  // toss. What actually pins this fix is deterministic and sits either side of
+  // this line: a driver takes a 3.1 m lane on its first tick, and no moving
+  // driver anywhere has none (0% here against 23%).
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
@@ -546,8 +1143,9 @@ function withTimeout(p, ms) {
   });
   var vocab = await page.evaluate(function () {
     var H = GAME.haptics, out = {}, seen = {};
-    var kinds = ['uiTap', 'pickup', 'hit', 'shot', 'checkpoint', 'deny', 'hurt',
-                 'win', 'stunt', 'wantedClear', 'smoking', 'onFire', 'wasted', 'busted'];
+    var kinds = ['uiTap', 'pickup', 'hit', 'shot', 'checkpoint', 'deny', 'hurt', 'chuteLand',
+                 'chuteOpen', 'demo', 'win', 'stunt', 'wantedClear', 'smoking', 'onFire',
+                 'wasted', 'busted'];
     var dupes = [];
     for (var i = 0; i < kinds.length; i++) {
       H.testReset();
@@ -598,10 +1196,17 @@ function withTimeout(p, ms) {
     // and a connect outranks the trigger it arrived with
     H.testReset(); window.__buzz.length = 0;
     H.shot(); r.hitAfterShot = hap('hit'); r.afterHit = window.__buzz.slice();
+    // The pair the world check below cannot test: a body under the wheels and
+    // the star that same kill earns. Driven back to back here, with no sim
+    // clock between them, so the ration is the only thing deciding.
+    H.testReset(); window.__buzz.length = 0;
+    hap('wantedUp', 1); r.splatAfterStar = hap('splat', 1);
+    r.afterStar = window.__buzz.slice();
     // switched off, none of it goes anywhere
     H.setOn(false);
     H.testReset(); window.__buzz.length = 0;
-    hap('splat', 1); hap('wantedUp', 5); hap('onFire'); hap('wasted'); hap('busted'); hap('win'); hap('uiTap');
+    hap('splat', 1); hap('wantedUp', 5); hap('onFire'); hap('wasted'); hap('busted'); hap('win');
+    hap('uiTap'); hap('blast', 1); hap('chuteLand'); hap('demo');
     r.whileOff = window.__buzz.slice();
     H.setOn(true);
     return r;
@@ -618,6 +1223,10 @@ function withTimeout(p, ms) {
   check('haptics: a round connecting preempts the trigger it left with',
     pri.hitAfterShot === true && pri.afterHit.length === 2,
     'sent=' + JSON.stringify(pri.afterHit));
+  check('haptics: a star rations away the body under the wheels that earned it',
+    pri.splatAfterStar === false && pri.afterStar.length === 1 &&
+    typeof pri.afterStar[0] === 'number',
+    'sent=' + JSON.stringify(pri.afterStar));
   check('haptics: RUMBLE off silences every one of them',
     pri.whileOff.length === 0, 'sent=' + JSON.stringify(pri.whileOff));
 
@@ -629,9 +1238,9 @@ function withTimeout(p, ms) {
     if (P.inCar) GAME.exitCar();
     GAME.test.teleport(356, 40);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('sedan', 4, 0);
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1);
     var car = P.car;
     r.driving = !!car;
@@ -650,6 +1259,10 @@ function withTimeout(p, ms) {
       car.heading = 0; car.speed = 20; car.lat = 0;
       var ped = GAME.test.spawnPed(0, 0);
       ped.pos.set(car.pos.x, car.pos.y, car.pos.z + 2);
+      // Somebody to see it, planted fresh each time and well clear of the
+      // bonnet. The car travels four metres a run, so one witness left at the
+      // start of a sequence walks out of civilian earshot partway through.
+      GAME.test.spawnPed(8, -6);
       GAME.haptics.testReset(); window.__buzz.length = 0;
       GAME.test.fastForward(0.2);
       return { sent: window.__buzz.slice(), dead: !!ped.dead };
@@ -669,9 +1282,22 @@ function withTimeout(p, ms) {
     // so wait the cooldown out and leave somebody standing there to see it.
     GAME.police.clearWanted();
     GAME.test.fastForward(1.5);
-    GAME.test.spawnPed(6, 6);
-    var first = runOver();
-    r.firstKill = first.sent; r.firstDead = first.dead;
+    // Run them down until a star LIGHTS, and read the buzz off the one that
+    // did it. Two is the ladder's price from nothing (see the wanted group),
+    // but this cannot assume it starts from nothing: clearWanted only zeroes
+    // the level, and the seconds either side of it are a live world — one
+    // stray offence in there and the star arrives on the first body instead
+    // of the second, which is how this passed three times locally and failed
+    // in CI. Whichever body lights it is the one being measured.
+    var was = GAME.test.getState().wanted, first = null, tries = 0;
+    while (tries < 6 && !first) {
+      var attempt = runOver();
+      tries++;
+      if (GAME.test.getState().wanted > was) first = attempt;
+    }
+    r.firstKill = first ? first.sent : [];
+    r.firstDead = !!(first && first.dead);
+    r.firstTries = tries;
     r.firstStars = GAME.test.getState().wanted;
     GAME.godMode = false;
 
@@ -693,6 +1319,22 @@ function withTimeout(p, ms) {
 
     car.hp = car.spec.hp; car.stage = 0; car.stageWarn = 0;
 
+    // The witnesses above only count if they land near the CAR, and that is
+    // the hook's job: offsets are from where the player IS, and behind a wheel
+    // that is the car. It read P.pos instead, which does not follow you into
+    // one — so things landed near wherever the player last got OUT, and
+    // whether a crime had a witness at all came down to how far they had
+    // driven since. Taken here rather than on boarding, because that is the
+    // only state where the two answers differ: fresh out of the door they are
+    // the same point, and the check would pass on either.
+    r.stale = Math.round(Math.sqrt(U.dist2(P.pos.x, P.pos.z, car.pos.x, car.pos.z)));
+    var probePed = GAME.test.spawnPed(6, 0);
+    var probeCar = GAME.test.spawnCar('sedan', -9, 0);
+    r.pedFromCar = Math.round(Math.sqrt(U.dist2(probePed.pos.x, probePed.pos.z, car.pos.x, car.pos.z)));
+    r.carFromCar = Math.round(Math.sqrt(U.dist2(probeCar.pos.x, probeCar.pos.z, car.pos.x, car.pos.z)));
+    GAME.peds.removePed(probePed);
+    GAME.vehicles.removeCar(probeCar);
+
     // tidy up behind: the groups below drive a car and read the star count
     GAME.exitCar();
     GAME.police.clearWanted();
@@ -701,17 +1343,47 @@ function withTimeout(p, ms) {
     r.onFoot = !GAME.player.inCar;
     return r;
   });
+  check('haptics: the player had driven away from where they got out (anchor sanity)',
+    world.stale > 20, 'the car was ' + world.stale + 'm from P.pos');
+  check('haptics: the spawn hooks place things by the car you are in, not the kerb you left',
+    world.pedFromCar <= 8 && world.carFromCar <= 11,
+    'ped ' + world.pedFromCar + 'm and car ' + world.carFromCar + 'm from the car');
+
   check('haptics: the player is driving and both bodies went under (anchor sanity)',
     world.driving === true && world.pedDead === true && world.firstDead === true,
     'driving=' + world.driving + ' dead=' + world.pedDead + '/' + world.firstDead);
   check('haptics: running someone over is felt, not silent',
     world.splat.length === 1 && Array.isArray(world.splat[0]) && world.splat[0].length === 3,
     'sent=' + JSON.stringify(world.splat));
-  check('haptics: the same kill from clean actually draws a star (anchor sanity)',
-    world.firstStars >= 1, 'stars=' + world.firstStars);
-  check('haptics: and that star takes the channel from the body under the wheels',
-    world.firstKill.length === 1 && JSON.stringify(world.firstKill) !== JSON.stringify(world.splat),
-    'firstKill=' + JSON.stringify(world.firstKill) + ' splat=' + JSON.stringify(world.splat));
+  check('haptics: running them down does eventually draw a star (anchor sanity)',
+    world.firstStars >= 1 && world.firstTries <= 6,
+    'stars=' + world.firstStars + ' after ' + world.firstTries + ' bodies');
+  // WHICH buzz reaches you first, and only that.
+  //
+  // This asked for exactly one buzz, which is the preemption property — and it
+  // is not testable here. The ration is keyed to the wall clock while
+  // fastForward moves only the sim clock, so on a slow machine the dozen ticks
+  // of a run-over outlast the 90 ms window and the splat lands after it. That
+  // is the harness being slow, not the channel misbehaving, and it failed in
+  // CI while passing everywhere else.
+  //
+  // Nor would counting have tested what it looked like it tested. The tiers
+  // only decide the SECOND buzz of a pair, and which of these two is second is
+  // not fixed: the star fires inside kill() and the splat right after it, so a
+  // window holding one kill sends star-then-splat — but a window can hold two,
+  // the earlier one splatting before the heat crosses, and then the order is
+  // the other way round. Flipping splat above the star leaves an order-based
+  // check passing regardless.
+  //
+  // So the preemption is pinned at the module door, driven back to back with
+  // no clock in the way, and what belongs here is the wiring: run somebody
+  // down for the star and the star reaches your hand. It is a single pulse
+  // where the splat is a pattern, and godMode rules out the other scalars.
+  check('haptics: and the star that kill earns reaches the hand too',
+    world.firstKill.some(function (v) { return typeof v === 'number'; }) &&
+    Array.isArray(world.splat[0]),
+    'buzzes from the kill that lit it=' + JSON.stringify(world.firstKill) +
+    ' splat=' + JSON.stringify(world.splat[0]));
   check('haptics: a star going up buzzes, and going clear buzzes differently',
     world.wantedUp.length === 1 && world.wantedClear.length === 1 &&
     JSON.stringify(world.wantedUp) !== JSON.stringify(world.wantedClear),
@@ -721,6 +1393,252 @@ function withTimeout(p, ms) {
     'stage=' + world.stage + ' sent=' + JSON.stringify(world.onFire));
   check('haptics: and the group leaves the player on foot and clean (anchor sanity)',
     world.onFoot === true);
+
+  // ---- the blast ----
+  // explodeCar never touched cameraShake, so the knock channel could not see
+  // it: everything a car going up beside you used to send was the generic
+  // damage tick, and that only if the blast reached far enough to hurt.
+  var blast = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100; P.state = 'alive';
+    GAME.test.teleport(356, 120);
+    GAME.test.fastForward(0.5);
+    GAME.godMode = true;             // the blast damages, and hurt() is a second cause
+    var mine = [];
+
+    // Blow up the car we SPAWNED. Searching for the nearest instead made this
+    // a hostage of the traffic: an ordinary car happening to stop closer than
+    // the one placed here silently swapped which range was being measured.
+    function blow(dx) {
+      var car = GAME.test.spawnCar('sedan', dx, 0);
+      GAME.test.fastForward(0.2);
+      if (!car) return { none: true };
+      var best = U.dist2(car.pos.x, car.pos.z, P.pos.x, P.pos.z);
+      mine.push(car);
+      GAME.haptics.testReset(); window.__buzz.length = 0;
+      GAME.vehicles.explodeCar(car, 'test');
+      return { sent: window.__buzz.slice(), dist: Math.round(Math.sqrt(best)), dead: !!car.dead };
+    }
+    r.near = blow(5);
+    GAME.test.fastForward(1);
+    r.far = blow(22);
+    // and one over the horizon must not reach the hand at all
+    var far = GAME.vehicles.spawnCar('sedan', 356, -400, 0);
+    mine.push(far);
+    GAME.test.fastForward(0.2);
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    GAME.vehicles.explodeCar(far, 'test');
+    r.offscreen = window.__buzz.slice();
+    GAME.godMode = false;
+    P.health = 100;
+    // Clear the wrecks away. explodeCar blackens a car and leaves it standing
+    // — the bubble collects it eventually, but "eventually" is three groups
+    // later, and the showroom below counts cars and the race needs a field.
+    for (var m = 0; m < mine.length; m++) GAME.vehicles.removeCar(mine[m]);
+    GAME.test.fastForward(0.3);
+    // Assert what this group CONTROLS. Counting the world's cars instead
+    // failed one run in two: the spawn bubble is filling the street back in
+    // over the same window, so the total can rise however tidy we were.
+    r.left = mine.filter(function (c) { return GAME.world.cars.indexOf(c) !== -1; }).length;
+    r.spawned = mine.length;
+    return r;
+  });
+  check('haptics: two cars blew up at different ranges (anchor sanity)',
+    blast.near.dead === true && blast.far.dead === true && blast.near.dist < blast.far.dist,
+    'near=' + blast.near.dist + 'm far=' + blast.far.dist + 'm');
+  check('haptics: a blast is felt, and it is not the generic damage tick',
+    blast.near.sent.length === 1 && Array.isArray(blast.near.sent[0]) &&
+    blast.near.sent[0][0] > 22,
+    'sent=' + JSON.stringify(blast.near.sent));
+  check('haptics: and it fades with range rather than being on or off',
+    blast.far.sent.length === 1 && Array.isArray(blast.far.sent[0]) &&
+    blast.far.sent[0][0] < blast.near.sent[0][0],
+    'near=' + JSON.stringify(blast.near.sent[0]) + ' far=' + JSON.stringify(blast.far.sent[0]));
+  check('haptics: a wreck across the map does not reach the hand',
+    blast.offscreen.length === 0, 'sent=' + JSON.stringify(blast.offscreen));
+  check('haptics: and every wreck it made is cleared behind it (anchor sanity)',
+    blast.spawned === 3 && blast.left === 0,
+    'spawned=' + blast.spawned + ' still in the world=' + blast.left);
+
+  // ---- the canopy ----
+  var chute = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.test.teleport(356, 160);
+    GAME.test.fastForward(0.5);
+    P.health = 100; P.state = 'alive';
+    // Put them under a canopy three metres up and let it fly into the ground.
+    // startParachute takes the position to open AT — called bare it runs
+    // Vector3.set(undefined...), which Three assigns raw, and the whole glide
+    // then happens at an undefined coordinate.
+    var cy = GAME.city.surfaceY(P.pos.x, P.pos.z);
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    GAME.aircraft.startParachute(P.pos.x, cy + 3, P.pos.z, 0);
+    r.openSent = window.__buzz.slice();
+    r.opened = !!P.parachuting;
+    r.openedAt = Math.round((P.pos.y - cy) * 10) / 10;
+    GAME.haptics.testReset(); window.__buzz.length = 0;
+    for (var i = 0; i < 90 && P.parachuting; i++) GAME.test.fastForward(1 / 60);
+    r.landed = !P.parachuting;
+    r.sent = window.__buzz.slice();
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('haptics: the canopy opened above the ground and came down (anchor sanity)',
+    chute.opened === true && chute.landed === true && chute.openedAt > 1,
+    'opened=' + chute.opened + ' at=' + chute.openedAt + 'm landed=' + chute.landed);
+  check('haptics: the canopy filling is felt, and felt hard',
+    chute.openSent.length === 1 && typeof chute.openSent[0] === 'number' && chute.openSent[0] >= 60,
+    'sent=' + JSON.stringify(chute.openSent));
+  check('haptics: touching down under a canopy is felt, and felt gently',
+    chute.sent.length === 1 && typeof chute.sent[0] === 'number' && chute.sent[0] < 30,
+    'sent=' + JSON.stringify(chute.sent));
+  check('haptics: open hard, land soft — the pair reads as a pair',
+    chute.openSent[0] > chute.sent[0] * 2,
+    'open=' + chute.openSent[0] + ' land=' + chute.sent[0]);
+
+  // ---- the runway ----
+  // The one sustained channel, and the only thing here that runs on its own
+  // timer rather than on a call from the game. Three things have to hold or it
+  // is worse than nothing: it has to keep pulsing, it has to stop on its own
+  // when the caller goes quiet, and it must never take the channel from a
+  // one-shot.
+  //
+  // Counted in PULSES rather than over a stopwatch. The pump asks for its next
+  // slot 200 ms out, and on a real device that is 200 ms — but here the page
+  // renders a whole city through swiftshader and one frame can hold the main
+  // thread for half a second, so the timer lands whenever the thread next
+  // frees up. Measured against a clock this reads as a broken pump; measured
+  // in pulses it is exactly the pump working.
+  async function waitFor(fn, ms) {
+    return page.waitForFunction(fn, null, { timeout: ms || 25000 })
+      .then(function () { return true; }, function () { return false; });
+  }
+  await page.evaluate(function () {
+    GAME.haptics.testReset();
+    window.__buzz.length = 0;
+    // Same guard as the one-shots above, for the same reason: these reach for
+    // the channel by name, and a build without it would throw in the page and
+    // take the runner down rather than report anything. It cost a control run
+    // to learn that once already.
+    window.__rumbleState = function () {
+      return typeof GAME.haptics.testRumble === 'function'
+        ? GAME.haptics.testRumble() : { missing: true, on: null, armed: null };
+    };
+    // Drive the keepalive from a timer rather than from the plane, so this is
+    // a test of the channel and not of whether a Skywhistle can be found and
+    // got up to speed inside a headless frame budget. The wiring in
+    // updatePlane is covered on its own, below.
+    window.__roll = setInterval(function () { window.__hap('rumble', 0.8); }, 30);
+  });
+  // Count the rumble's own trains, not everything in the recorder. The world
+  // is live around a player standing in the street, and a one-shot landing
+  // mid-roll — traffic clipping them, anything — is a bare number rather than
+  // a pattern. Requiring every entry to be a train made an EXPECTED event fail
+  // the check, which is the opposite of what it is for: there is a check just
+  // below asserting a one-shot does cut through.
+  await page.evaluate(function () {
+    window.__trains = function () {
+      return window.__buzz.filter(function (v) { return Array.isArray(v); });
+    };
+  });
+  var pulsed = await waitFor(function () { return window.__trains().length >= 3; });
+  var roll = await page.evaluate(function () {
+    var mid = { sent: window.__trains() };
+    // a crash mid-roll has to cut straight through it
+    window.__buzz.length = 0;
+    GAME.haptics.knock(1);
+    mid.knockGotThrough = window.__buzz.slice();
+    return mid;
+  });
+  var resumed = await waitFor(function () { return window.__trains().length >= 2; });
+  await page.evaluate(function () {
+    // the caller going quiet is the whole of switching it off — there is no
+    // off switch to forget, which is the point of the keepalive
+    clearInterval(window.__roll);
+    window.__buzz.length = 0;
+  });
+  var woundDown = await waitFor(function () { return !window.__rumbleState().armed; }, 8000);
+  var rollOff = await page.evaluate(function () {
+    return { sent: window.__buzz.slice(), state: window.__rumbleState() };
+  });
+  check('haptics: the runway rumble keeps pulsing, and in a pattern',
+    pulsed && roll.sent.length >= 3 &&
+    roll.sent.every(function (v) { return v.length >= 5; }),
+    'pulses=' + roll.sent.length + ' first=' + JSON.stringify(roll.sent[0]));
+  check('haptics: a crash mid-roll cuts straight through it',
+    roll.knockGotThrough.length === 1 && roll.knockGotThrough[0] === 55,
+    'sent=' + JSON.stringify(roll.knockGotThrough));
+  check('haptics: and the rumble picks back up behind it', resumed === true);
+  check('haptics: the caller going quiet winds it down, with nothing to remember',
+    woundDown && !rollOff.state.missing && rollOff.state.on === false &&
+    rollOff.sent.filter(function (v) { return Array.isArray(v); }).length === 0,
+    'state=' + JSON.stringify(rollOff.state) + ' sentAfter=' + JSON.stringify(rollOff.sent));
+
+  // and the wiring: a plane on its wheels with the throttle open arms it
+  var plane = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys, r = {};
+    window.__hap('rumble', 0);
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.teleport(356, 200);
+    GAME.test.fastForward(0.5);
+    // Board the plane we just made, rather than hunting for the nearest car.
+    // enterNearestCar searches 10 m around the player, and an unpowered
+    // airframe does not sit still — the aircraft branch has it falling to
+    // whatever is under it from the moment it exists — so on some ground it
+    // had drifted out of reach by the time this asked. Four checks failed
+    // together when it did, because the block gives up here and returns.
+    //
+    // The wait is a full second either way: enterCar plays the door out before
+    // P.inCar turns over and that runs to about 35 frames, so the 0.6 s this
+    // replaces was two frames of margin.
+    var plane = GAME.test.spawnCar('airplane', 5, 0);
+    GAME.test.fastForward(0.3);
+    if (plane) GAME.enterCar(plane);
+    GAME.test.fastForward(1.2);
+    var car = P.car;
+    r.inPlane = !!(car && car.spec.plane);
+    r.spawned = !!plane;
+    if (!r.inPlane) return r;
+    car.pos.y = GAME.city.surfaceY(car.pos.x, car.pos.z) + car.spec.wheelH;
+    car.speed = 0; car.pitch = 0;
+    GAME.haptics.testReset();
+    K['KeyW'] = true;                       // throttle open on the wheels
+    GAME.test.fastForward(0.5);
+    r.rolling = window.__rumbleState();
+    r.speed = Math.round(car.speed * 10) / 10;
+    r.onGround = car.pos.y <= GAME.city.surfaceY(car.pos.x, car.pos.z) + car.spec.wheelH + 0.35;
+    K['KeyW'] = false;
+    // lift it off and the same call stops arming
+    car.pos.y = GAME.city.surfaceY(car.pos.x, car.pos.z) + 40;
+    car.speed = 40; car.pitch = 0.2;
+    GAME.test.fastForward(0.3);
+    r.flying = window.__rumbleState();
+    GAME.exitCar();
+    window.__hap('rumble', 0);
+    // and take the plane with us: it was left forty metres up, and the groups
+    // below want a tidy world rather than an airliner hanging over the city
+    GAME.vehicles.removeCar(car);
+    GAME.test.fastForward(0.4);
+    r.onFoot = !GAME.player.inCar;
+    r.planeGone = GAME.world.cars.indexOf(car) === -1;
+    return r;
+  });
+  check('haptics: a plane is on the runway with the throttle open (anchor sanity)',
+    plane.inPlane === true && plane.onGround === true && plane.speed > 0,
+    'spawned=' + plane.spawned + ' inPlane=' + plane.inPlane +
+    ' onGround=' + plane.onGround + ' speed=' + plane.speed);
+  check('haptics: the takeoff run arms the rumble',
+    plane.rolling && plane.rolling.armed === true && plane.rolling.v > 0.2,
+    'state=' + JSON.stringify(plane.rolling));
+  check('haptics: and leaving the ground disarms it',
+    plane.flying && !plane.flying.missing && plane.flying.armed === false,
+    'state=' + JSON.stringify(plane.flying));
+  check('haptics: and the group leaves the player on foot and the sky empty (anchor sanity)',
+    plane.onFoot === true && plane.planeGone === true,
+    'onFoot=' + plane.onFoot + ' planeGone=' + plane.planeGone);
 
   check('haptics: the handedness switch is hidden off a touch device',
     (await page.evaluate(function () {
@@ -838,7 +1756,9 @@ function withTimeout(p, ms) {
     // restock it while the delivered car is still standing on it. Drive clear
     // and the check passes — and with nothing linking car to bay, the bay
     // reads empty and is refilled on the spot, in view.
-    GAME.test.enterNearestCar();
+    // the delivered one specifically: "nearest" is a lottery on a live street,
+    // and this check is about the car that came out of the showroom
+    GAME.test.enterNearestCar(onDelivery[0] || null);
     GAME.test.fastForward(2);
     var driving = !!(P.car && P.car.type === 'buggy');
     // Driven out under throttle it only manages a few metres: the dealer lot
@@ -875,9 +1795,9 @@ function withTimeout(p, ms) {
     var def = GAME.missions.DEFS.filter(function (d) { return d.id === 'race0'; })[0];
     GAME.test.teleport(def.start.x, def.start.z - 40);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('taxi', 4, 0);
+    var _ride = GAME.test.spawnCar('taxi', 4, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     if (!P.inCar || !P.car) return { racing: false };
     GAME.test.teleport(def.start.x, def.start.z);   // onto the start line
@@ -987,9 +1907,9 @@ function withTimeout(p, ms) {
     if (P.inCar) GAME.exitCar();
     GAME.test.teleport(356, 60);            // the strip: long, flat, straight
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('sedan', 4, 0);
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car) return { flew: false };
@@ -1115,26 +2035,49 @@ function withTimeout(p, ms) {
     P.health = 100;
     GAME.test.teleport(356, 60);              // the strip: long, flat, straight
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('sedan', 3, 0);
+    var _ride = GAME.test.spawnCar('sedan', 3, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car || !car.susp) return { drove: false };
-    clear();
-    GAME.test.fastForward(1.5);
-    var rest = { p: car.susp.p, grade: car.bodyPitch, mesh: car.mesh.rotation.x };
+    // Wait for the spring to SETTLE rather than assuming a second and a half
+    // is enough. It is a damped oscillator being asked to read as zero, and
+    // whatever the car is still doing after a spawn and a boarding — rolling
+    // off a kerb, taking a nudge from traffic — rides on top of it.
+    function settle(limit) {
+      var n = 0;
+      clear();
+      while (n < limit && Math.abs(car.susp.p) > 0.004) { GAME.test.fastForward(1 / 60); n++; }
+      GAME.test.fastForward(0.2);
+      return n;
+    }
+    var restTicks = settle(420);
+    var rest = { p: car.susp.p, grade: car.bodyPitch, mesh: car.mesh.rotation.x, ticks: restTicks };
 
-    K['KeyW'] = true;                         // open the throttle
-    GAME.test.fastForward(0.5);
-    var squat = { p: car.susp.p, speed: car.speed };
+    // Watch the whole window, not the instant it ends.
+    //
+    // susp.p is a SPRING — about 1.9 Hz at a damping ratio near 0.7, settled
+    // inside half a second — so reading it once, half a second in, samples a
+    // damped oscillator at whatever phase it happens to be in. Catch it past
+    // its peak and on the way back through zero and the deflection reads as
+    // nothing. What "braking dives it" means is that the nose went down at
+    // some point in the braking, so take the extremes over the window.
+    function phase(secs, key) {
+      clear();
+      K[key] = true;
+      var lo = 0, hi = 0, n = Math.round(secs * 60);
+      for (var f = 0; f < n; f++) {
+        GAME.test.fastForward(1 / 60);
+        lo = Math.min(lo, car.susp.p);
+        hi = Math.max(hi, car.susp.p);
+      }
+      return { lo: lo, hi: hi, p: car.susp.p, speed: car.speed };
+    }
+    var squat = phase(0.5, 'KeyW');           // open the throttle
+    var dive = phase(0.5, 'KeyS');            // and stand on the brakes
 
-    clear(); K['KeyS'] = true;                // and stand on the brakes
-    GAME.test.fastForward(0.5);
-    var dive = { p: car.susp.p, speed: car.speed };
-
-    clear();
-    GAME.test.fastForward(3);                 // let it settle
+    var settledTicks = settle(420);           // let it settle, however long that takes
     var settled = car.susp.p;
 
     // in the air nothing loads the springs
@@ -1146,19 +2089,24 @@ function withTimeout(p, ms) {
     clear();
     GAME.test.fastForward(2);
     return { drove: true, rest: rest, squat: squat, dive: dive, settled: settled, air: air,
+             settledTicks: settledTicks,
              sum: Math.abs(car.mesh.rotation.x - (car.bodyPitch + car.susp.p)) };
   });
   check('suspension: the player is driving a car with springs (anchor sanity)', susp.drove === true);
   if (susp.drove) {
     check('suspension: at rest the body sits on the grade and nothing else',
-      Math.abs(susp.rest.p) < 0.005, 'susp=' + susp.rest.p);
+      Math.abs(susp.rest.p) < 0.005 && susp.rest.ticks < 420,
+      'susp=' + susp.rest.p + ' after ' + susp.rest.ticks + ' ticks of settling');
     check('suspension: opening the throttle lifts the nose',
-      susp.squat.p < -0.01 && susp.squat.speed > 3,
-      'susp=' + susp.squat.p.toFixed(4) + ' speed=' + susp.squat.speed.toFixed(1));
+      susp.squat.lo < -0.01 && susp.squat.speed > 3,
+      'furthest the nose came up=' + susp.squat.lo.toFixed(4) + ' speed=' + susp.squat.speed.toFixed(1));
     check('suspension: braking dives it the other way',
-      susp.dive.p > 0.01, 'susp=' + susp.dive.p.toFixed(4) + ' speed=' + susp.dive.speed.toFixed(1));
+      susp.dive.hi > 0.01 && susp.dive.speed < susp.squat.speed,
+      'furthest it dived=' + susp.dive.hi.toFixed(4) +
+      ' speed ' + susp.squat.speed.toFixed(1) + ' -> ' + susp.dive.speed.toFixed(1));
     check('suspension: and it settles back to the grade',
-      Math.abs(susp.settled) < 0.005, 'susp=' + susp.settled.toFixed(4));
+      Math.abs(susp.settled) < 0.005 && susp.settledTicks < 420,
+      'susp=' + susp.settled.toFixed(4) + ' after ' + susp.settledTicks + ' ticks');
     check('suspension: nothing loads the springs in mid-air',
       Math.abs(susp.air) < 0.01, 'susp=' + susp.air.toFixed(4));
     check('suspension: the mesh angle is exactly grade plus spring (additive, not replaced)',
@@ -1174,9 +2122,9 @@ function withTimeout(p, ms) {
     // then this measures nothing at all
     GAME.test.teleport(356, 160);
     GAME.test.fastForward(0.5);
-    GAME.test.spawnCar('motorcycle', 5, 0);
+    var _ride = GAME.test.spawnCar('motorcycle', 5, 0);
     GAME.test.fastForward(0.3);
-    GAME.test.enterNearestCar();
+    GAME.test.enterNearestCar(_ride);
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car || car.type !== 'motorcycle') return { onBike: false };
@@ -1280,23 +2228,117 @@ function withTimeout(p, ms) {
   check('touch: and with RUMBLE off it does not',
     tap.whileOff.length === 0, 'sent=' + JSON.stringify(tap.whileOff));
 
+  // RUN and AIM are TOGGLES: one press latches the flag until another press
+  // clears it. Nothing released them when the on-foot controls stopped
+  // applying, so boarding a car or dying kept them set behind the overlay and
+  // handed them back — you came round at the hospital already sprinting, with
+  // the button still lit, having pressed nothing.
+  var latch = await tpage.evaluate(function () {
+    var T = GAME.input.touch, P = GAME.player, r = {};
+    function press(el) {
+      var t = new Touch({ identifier: 21, target: el, clientX: 10, clientY: 10 });
+      el.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true
+      }));
+      el.dispatchEvent(new TouchEvent('touchend', {
+        touches: [], changedTouches: [t], targetTouches: [], bubbles: true, cancelable: true
+      }));
+    }
+    var run = null, all = document.querySelectorAll('.tbtn');
+    for (var i = 0; i < all.length; i++) if (all[i].textContent === 'RUN') run = all[i];
+    if (!run) return { found: false };
+
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(-60, 60);
+    GAME.test.fastForward(0.5);
+
+    // it latches, which is the whole point of a toggle
+    press(run);
+    r.held = { flag: !!T.run, lit: run.style.background !== '' };
+
+    // ...and getting into a car lets it go
+    var _ride = GAME.test.spawnCar('sedan', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(_ride);
+    // a full second: enterCar plays the door out before P.inCar turns over, and
+    // it runs to about 35 frames — half a second lands just short of it and
+    // reads exactly like a boarding that never happened
+    GAME.test.fastForward(1);
+    r.boarded = { inCar: !!P.inCar, flag: !!T.run, lit: run.style.background !== '' };
+
+    // Back out, latch it again, and die on it. Pressed until it is actually
+    // ON rather than pressed once and assumed: a toggle left set by the last
+    // interruption is INVERTED from then on, so one press turns it off — which
+    // is what the control does here, and without this the death case would
+    // then pass on a flag that was already clear before anybody died.
+    GAME.exitCar();
+    GAME.test.fastForward(1);
+    press(run);
+    r.reheld = !!T.run;
+    if (!T.run) press(run);
+    r.armed = !!T.run;
+    GAME.playerWasted('test');
+    GAME.test.fastForward(0.5);
+    r.dead = { state: P.state, flag: !!T.run, lit: run.style.background !== '' };
+    return r;
+  });
+  var revivedRun = true;
+  try {
+    await tpage.evaluate(function () {
+      GAME.input.keys['KeyR'] = true;
+      GAME.test.fastForward(1.2);
+      GAME.input.keys['KeyR'] = false;
+    });
+    await tpage.waitForFunction(function () { return GAME.player.state === 'alive'; }, null, { timeout: 10000 });
+  } catch (e) { revivedRun = false; }
+  await tpage.evaluate(function () { GAME.player.health = 100; GAME.test.fastForward(0.5); });
+  check('touch: RUN latches when you press it, and stays a toggle (anchor sanity)',
+    latch.found !== false && latch.held.flag === true && latch.held.lit === true && latch.reheld === true,
+    'first press: ' + JSON.stringify(latch.held) + '  press after a boarding: ' + latch.reheld);
+  check('touch: and getting into a car lets it go, button and all',
+    latch.boarded && latch.boarded.inCar === true &&
+    latch.boarded.flag === false && latch.boarded.lit === false,
+    'after boarding: ' + JSON.stringify(latch.boarded));
+  check('touch: so does dying on it — you do not come round already sprinting',
+    latch.armed === true && latch.dead && latch.dead.state !== 'alive' &&
+    latch.dead.flag === false && latch.dead.lit === false,
+    'RUN on going in=' + latch.armed + ', after dying: ' + JSON.stringify(latch.dead));
+  check('touch: and the player is back on their feet afterwards (anchor sanity)', revivedRun);
+
   // Press it, rather than just look at it: the markup ships with the label
   // already reading RUMBLE: ON, so a check that only reads the text passes
   // with the wiring torn out.
   var hapBtn = await tpage.evaluate(function () {
+    var sent = [];
+    navigator.vibrate = function (ms) { sent.push(ms); return true; };
     var b = document.getElementById('pause-haptic');
     var shown = b.style.display !== 'none', before = GAME.haptics.on, text0 = b.textContent;
     b.click();
     var mid = { on: GAME.haptics.on, text: b.textContent, pref: !!(GAME.prefs && GAME.prefs.rumbleOff) };
+    var offSent = sent.slice();
+    // and back on, which is the press that has to demonstrate itself
+    GAME.haptics.testReset();
+    sent.length = 0;
     b.click();
-    return { shown: shown, before: before, text0: text0, mid: mid,
-             back: GAME.haptics.on, text2: b.textContent };
+    return { shown: shown, before: before, text0: text0, mid: mid, offSent: offSent,
+             onSent: sent.slice(), back: GAME.haptics.on, text2: b.textContent };
   });
   check('touch: the rumble switch is offered on a touch device',
     hapBtn.shown && /RUMBLE/.test(hapBtn.text0), 'shown=' + hapBtn.shown + ' text=' + hapBtn.text0);
   check('touch: pressing it turns rumble off, relabels, and remembers',
     hapBtn.before === true && hapBtn.mid.on === false && /OFF/.test(hapBtn.mid.text) && hapBtn.mid.pref === true,
     'on=' + hapBtn.mid.on + ' text=' + hapBtn.mid.text + ' pref=' + hapBtn.mid.pref);
+  // Switching it on and feeling nothing tells you nothing — the setting reads
+  // as a promise rather than as something that happened.
+  check('touch: switching RUMBLE on demonstrates what was just switched on',
+    hapBtn.onSent.length === 1 && Array.isArray(hapBtn.onSent[0]) && hapBtn.onSent[0].length >= 3,
+    'sent=' + JSON.stringify(hapBtn.onSent));
+  // vibrate(0) is not a buzz, it is the cancel setOn(false) sends to stop a
+  // motor that might be mid-pattern — so filter it out rather than count it
+  check('touch: and switching it OFF stays silent, which is the whole point',
+    hapBtn.offSent.filter(function (v) { return Array.isArray(v) ? v.length : v > 0; }).length === 0,
+    'sent=' + JSON.stringify(hapBtn.offSent));
   check('touch: and pressing it again turns it back on',
     hapBtn.back === true && /ON/.test(hapBtn.text2), 'on=' + hapBtn.back + ' text=' + hapBtn.text2);
   // Handedness: the buttons, the stick's half and the camera's half all have

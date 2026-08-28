@@ -118,6 +118,36 @@ GAME.missions = (function () {
       var rp = GAME.city.nearestRoadPoint(x, z);
       return [Math.round(rp.x), Math.round(rp.z)];
     }
+    // a point a fraction of the way along a road's polyline, by length rather
+    // than by vertex count — the switchback legs are sampled evenly in ANGLE,
+    // so their outer vertices are further apart than their inner ones
+    // Gate spacing, in metres of road. The hill wants them tight — its legs
+    // are short and its bends are 20-130 m radius — where the ring is one long
+    // sweep and can carry them further apart for the same straightness.
+    var CP_SPACING = 70, RING_SPACING = 110;
+    function legLength(leg) {
+      var pts = leg.pts, d = 0;
+      for (var i = 1; i < pts.length; i++) {
+        d += Math.sqrt(U.dist2(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]));
+      }
+      return d;
+    }
+    function alongLeg(leg, t) {
+      var pts = leg.pts, cum = [0], i;
+      for (i = 1; i < pts.length; i++) {
+        cum.push(cum[i - 1] + Math.sqrt(U.dist2(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1])));
+      }
+      var want = cum[cum.length - 1] * U.clamp(t, 0, 1);
+      for (i = 1; i < cum.length; i++) {
+        if (cum[i] >= want) {
+          var f = (want - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
+          return [Math.round(pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f),
+                  Math.round(pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f)];
+        }
+      }
+      var last = pts[pts.length - 1];
+      return [Math.round(last[0]), Math.round(last[1])];
+    }
     function ringLoop(f, a0, n) {
       var out = [];
       for (var i = 0; i < n; i++) {
@@ -129,17 +159,54 @@ GAME.missions = (function () {
     DEFS.forEach(function (d) {
       if (!d.isla) return;
       if (d.isla === 'climb') {
-        // up the switchback and back down the ring
-        var cps = [];
-        [[880, -110], [860, -170], [900, -230], [938, -200], [938, -164]].forEach(function (p) {
-          cps.push(onRoad(tx(p[0]), tz(p[1])));
-        });
-        d.cps = cps;
-        d.start = { x: onRoad(tx(850), tz(-60))[0], z: onRoad(tx(850), tz(-60))[1] };
+        // Straight off the switchback's own legs, foot to summit.
+        //
+        // These were five hand-written points snapped with nearestRoadPoint,
+        // and every one of them landed somewhere else: the start on a PORT
+        // road at sea level three hundred metres from the hill, the second
+        // checkpoint forty metres off its mark and out on the COAST RING. The
+        // route it described was port, up to a hill connector, back down to
+        // the shore, then up — which is the "wrong way and then no road" it
+        // played as. Snapping to the nearest road cannot tell you it picked
+        // the wrong road; it has no idea which one you meant.
+        //
+        // Spaced by LENGTH along each leg, so consecutive checkpoints sit on
+        // the same arc and the straight line between them stays on the tarmac.
+        // That is what stops the climb being skippable: with one gate per leg
+        // the hairpins land on opposite sides of the hill and the line between
+        // them runs straight across the hillside. The outer legs are nearly
+        // three times the length of the inner ones, so a fixed count per leg
+        // leaves the same hole at the bottom — measured, the line strays 65 m
+        // off-road with the old route, 14 m at two per leg, 7 m at this
+        // spacing, and the road is 11 m wide.
+        var legs = I.climb || [];
+        if (legs.length) {
+          var cps = [];
+          legs.forEach(function (leg, li) {
+            var n = Math.max(1, Math.ceil(legLength(leg) / CP_SPACING));
+            for (var k = 1; k <= n; k++) cps.push(alongLeg(leg, k / n));
+          });
+          d.cps = cps;
+          var foot = alongLeg(legs[0], 0);
+          d.start = { x: foot[0], z: foot[1] };
+        }
       } else if (d.isla === 'mirador') {
-        d.cps = ringLoop(0.845, Math.PI * 0.1, 7);
-        d.start = { x: d.cps[0][0], z: d.cps[0][1] };
-        d.cps = d.cps.slice(1).concat([d.cps[0]]);
+        // A lap of the coastal ring, gated along the road rather than around
+        // the compass. Seven points spread evenly in ANGLE over a 2.2 km ring
+        // put 320 m between gates, and the straight line between two of them
+        // cut 61 m inland — across ground that is open, dry and drivable, so
+        // the lap was quicker not driven. Same lesson as the hill climb: even
+        // in angle is not even along the road, and the gaps decide whether
+        // there is a shortcut to find.
+        var ring = I.ring;
+        if (ring) {
+          var n = Math.max(6, Math.round(legLength(ring) / RING_SPACING));
+          var lap = [];
+          // phase kept where the old start marker stood, a tenth of a turn in
+          for (var g = 0; g < n; g++) lap.push(alongLeg(ring, (g / n + 0.05) % 1));
+          d.start = { x: lap[0][0], z: lap[0][1] };
+          d.cps = lap.slice(1).concat([lap[0]]);
+        }
       } else if (d.isla === 'port') {
         var st = onRoad(tx(860), tz(100));
         d.start = { x: st[0], z: st[1] };

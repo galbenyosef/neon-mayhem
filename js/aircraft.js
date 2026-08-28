@@ -348,6 +348,16 @@ GAME.aircraft = (function () {
     }
 
     GAME.audio.engineState(true, 0.35 + Math.min(0.6, car.speed / car.spec.maxSpeed * 0.6), 'plane');
+    // The airframe on tarmac. Speed is what actually shakes it, so one number
+    // covers both ends of a flight: the run building up to rotation and the
+    // rollout bleeding off after touchdown. The throttle floor is on top of
+    // that for the run-up — stood on the brakes with the engine open, a plane
+    // is not still. Called every frame this is true and not otherwise, which
+    // is the whole of turning it off: step out, pause, or leave the ground and
+    // the keepalive lapses on its own.
+    GAME.haptics.rumble(onGround
+      ? Math.max(Math.abs(car.speed) / car.spec.stall, thr > 0 ? 0.25 : 0)
+      : 0);
     // bank into turns on top of any barrel roll the pilot is holding
     car.mesh.rotation.set(-car.pitch, car.heading, car.roll - yawIn * 0.4);
     warnAirframe(car);
@@ -378,6 +388,7 @@ GAME.aircraft = (function () {
     chute.visible = true;
     if (rig) rig.visible = true;
     GAME.audio.engineState(false, 0);
+    GAME.haptics.chuteOpen();
     GAME.hud.message('Parachute out — WASD to steer, glide to the ground', 3.5);
   }
 
@@ -422,10 +433,20 @@ GAME.aircraft = (function () {
       rig.geometry.attributes.position.needsUpdate = true;
     }
 
-    if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { land(); GAME.playerDrown(); return; }
+    // Open sea BELOW you is not the same as being in it. isInWater answers for
+    // the whole column at (x, z) — its y argument only rules out a deck or a
+    // crossing carried over the top, it never asks how high up you are — so
+    // testing it every frame of a glide put you in the water the moment you
+    // stepped out over the bay, sixty metres up, with the whole beach still
+    // inside the canopy's reach. Come down first. What is under you when you
+    // get there is what decides which of the two it was.
     if (P.pos.y <= gy + 0.05) {
       land();
+      if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
       P.pos.y = gy; P.velY = 0;
+      // touchdown, not the other two ways out of a canopy: land() is also what
+      // drowning and dying call, and neither of those is a landing
+      GAME.haptics.chuteLand();
       GAME.hud.message('Feet dry.', 1.5);
     }
   }

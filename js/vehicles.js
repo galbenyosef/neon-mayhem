@@ -760,10 +760,12 @@ GAME.vehicles = (function () {
     var cars = world.cars;
     for (var i = 0; i < cars.length; i++) {
       var a = cars[i];
-      if (a.spec.heli || a.spec.plane) continue; // aircraft don't shove ground traffic
+      var aAir = !!(a.spec.heli || a.spec.plane);
       for (var j = i + 1; j < cars.length; j++) {
         var b = cars[j];
-        if (b.spec.heli || b.spec.plane) continue;
+        var bAir = !!(b.spec.heli || b.spec.plane);
+        // two airframes are each other's business, and nobody else's
+        if (aAir && bAir) continue;
         // one of them is up on a roof and the other at street level — they
         // pass each other, they don't crash
         if (Math.abs(a.pos.y - b.pos.y) > 3) continue;
@@ -773,6 +775,36 @@ GAME.vehicles = (function () {
         if (d2 > rr * rr || d2 < 0.0001) continue;
         var d = Math.sqrt(d2), nx = dx / d, nz = dz / d;
         var overlap = rr - d;
+        // A parked airframe is a solid thing to drive into.
+        //
+        // Aircraft used to be skipped here outright, so a helicopter setting
+        // down would not bulldoze the street it landed on — but skipping them
+        // meant traffic drove straight THROUGH one, and the Alta Verde summit
+        // road ends at a helipad with a helicopter standing on it. Cars went
+        // in one side and out the other, all afternoon.
+        //
+        // Mixed pairs resolve ONE WAY instead: the car is pushed clear, the
+        // airframe never moves. That keeps the reason the skip existed — an
+        // aircraft still shoves nothing — while making it something you stop
+        // against. It also takes no damage from being bumped: traffic nudging
+        // a parked helicopter for long enough should not eventually blow it up
+        // and leave a wreck on the pad.
+        if (aAir || bAir) {
+          var ground = aAir ? b : a;
+          var sign = aAir ? 1 : -1;   // push the car away from the airframe
+          ground.pos.x += nx * overlap * sign;
+          ground.pos.z += nz * overlap * sign;
+          var gv = ((ground.vx || 0) * nx + (ground.vz || 0) * nz) * sign;
+          if (gv < 0) {
+            ground.speed *= 0.3; ground.lat *= 0.3;
+            if ((ground.hitCd || 0) <= 0 && -gv > 3) {
+              ground.hitCd = 0.25;
+              damageCar(ground, Math.min(20, -gv * 1.1), 'wall');
+              GAME.audio.crash(Math.min(1, -gv / 20), ground.pos.x, ground.pos.z);
+            }
+          }
+          continue;
+        }
         a.pos.x -= nx * overlap / 2; a.pos.z -= nz * overlap / 2;
         b.pos.x += nx * overlap / 2; b.pos.z += nz * overlap / 2;
         var avx = a.vx || 0, avz = a.vz || 0, bvx = b.vx || 0, bvz = b.vz || 0;
@@ -872,6 +904,16 @@ GAME.vehicles = (function () {
     car.speed *= 0.2;
     // area damage
     var p = GAME.player;
+    // Felt further than it hurts, which is the point: the damage radius below
+    // is 8 m, and a wreck going up thirty metres away is still the loudest
+    // physical thing in the street. Gated on the player being alive so a
+    // cascade under the wasted screen cannot buzz a corpse.
+    if (p.state === 'alive') {
+      var bd = U.dist2(p.pos.x, p.pos.z, car.pos.x, car.pos.z);
+      var bdy = Math.abs(p.pos.y - car.pos.y);
+      if (p.inCar && p.car === car) GAME.haptics.blast(1);
+      else if (bd < 900 && bdy < 12) GAME.haptics.blast(1 - Math.sqrt(bd) / 30);
+    }
     if (!p.inCar || p.car !== car) {
       // altitude counts: a wreck going up underneath you shouldn't catch you
       // while you're hanging off a parachute or standing on a roof
@@ -904,12 +946,33 @@ GAME.vehicles = (function () {
   }
 
   // ---------- traffic AI ----------
+  // keep right of the direction of travel
+  function setLane(ai, mx, mz) {
+    var ml = Math.sqrt(mx * mx + mz * mz) || 1;
+    ai.laneX = (mz / ml) * 3.1;
+    ai.laneZ = (-mx / ml) * 3.1;
+  }
+
   function trafficControls(car, dt) {
     var ai = car.ai;
     var city = GAME.city;
     if (!ai.node) {
       ai.node = city.nearestNode(car.pos.x, car.pos.z);
       ai.prev = null;
+      // Take a lane straight away, off the way the car is already pointing.
+      //
+      // The offset below is only worked out on ARRIVAL at a node, when the
+      // next one is chosen — and every driver starts life with laneX/laneZ at
+      // zero, so the whole first segment was driven at the centreline. That is
+      // not a rare state: it is every car the spawner puts down, every cruiser
+      // standing down after a chase, every owner taking their car back, every
+      // mission car handed to traffic. A quarter of the moving traffic was
+      // aiming down the middle of the road at any moment.
+      //
+      // Heading is the right thing to read it from: a car is put on the road
+      // pointing along it, so where its nose is IS its direction of travel
+      // before it has been anywhere.
+      setLane(ai, Math.sin(car.heading), Math.cos(car.heading));
     }
     var tx = ai.node.x + ai.laneX, tz = ai.node.z + ai.laneZ;
     var dx = tx - car.pos.x, dz = tz - car.pos.z;
@@ -943,10 +1006,7 @@ GAME.vehicles = (function () {
         next = options[1 + Math.floor(Math.random() * (options.length - 1))].n;
       } else next = options[0].n;
       ai.prev = ai.node; ai.node = next;
-      // lane offset: keep right of travel direction
-      var mx = next.x - ai.prev.x, mz = next.z - ai.prev.z;
-      var ml = Math.sqrt(mx * mx + mz * mz) || 1;
-      ai.laneX = (mz / ml) * 3.1; ai.laneZ = (-mx / ml) * 3.1;
+      setLane(ai, next.x - ai.prev.x, next.z - ai.prev.z);
       tx = ai.node.x + ai.laneX; tz = ai.node.z + ai.laneZ;
       dx = tx - car.pos.x; dz = tz - car.pos.z;
     }

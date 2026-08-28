@@ -83,6 +83,12 @@ GAME.isla = (function () {
   // list of axis lines. One shape means one grading solver and one lookup.
   var NET = [];
   function road(pts, w, kind) { NET.push({ pts: pts, w: w || 12, kind: kind || 'road' }); return NET[NET.length - 1]; }
+  // the Alta Verde switchback's legs, foot to summit, for anything that needs
+  // to follow the climb rather than guess at where it runs
+  var ALTA = [];
+  // and the coastal ring, for the same reason: a circuit laid out by ANGLE
+  // around it is not laid out evenly along it
+  var RING = null;
   function iroad(pts, w, kind) { return road(pts.map(T), w, kind); }
 
   function arcp(cx, cz, r, a0, a1, n) { return spiral(cx, cz, r, r, a0, a1, n); }
@@ -131,7 +137,8 @@ GAME.isla = (function () {
     // halfway round is a dead end you drive into and sit at
     var ring = [];
     for (i = 0; i <= 200; i++) ring.push(ringPt(i / 200 * TAU, 0.845));
-    road(ring, 14, 'ring').closed = true;
+    RING = road(ring, 14, 'ring');
+    RING.closed = true;
 
     // Puerto Dorado — the island's only grid, because a port earns one.
     // The quay streets used to start at one fixed x, and the sea does not
@@ -157,12 +164,18 @@ GAME.isla = (function () {
     // back passes within a few metres of itself at a very different height, and
     // a road can only report one height at a point, so the lookup snaps between
     // the two loops and puts a cliff down the middle of the hillside.
-    iroad(spiral(940, -160, 132, 104, TAU * 0.60, TAU * 0.93), 11, 'hill');
-    iroad(spiral(940, -160, 104, 76, TAU * 0.93, TAU * 0.60), 11, 'hill');
-    iroad(spiral(940, -160, 76, 48, TAU * 0.60, TAU * 0.92), 11, 'hill');
-    iroad(spiral(940, -160, 48, 20, TAU * 0.92, TAU * 0.63), 11, 'hill');
+    // Kept in order, foot to summit, and handed out on city.isla. The climb
+    // race used to carry its own hand-written list of points and snap each one
+    // to whatever road came nearest — which put its start down in the port and
+    // one of its checkpoints out on the coast ring, forty metres from where it
+    // was aimed. Nothing but this file knows where the switchback is; it should
+    // be the thing that says so.
+    ALTA.push(iroad(spiral(940, -160, 132, 104, TAU * 0.60, TAU * 0.93), 11, 'hill'));
+    ALTA.push(iroad(spiral(940, -160, 104, 76, TAU * 0.93, TAU * 0.60), 11, 'hill'));
+    ALTA.push(iroad(spiral(940, -160, 76, 48, TAU * 0.60, TAU * 0.92), 11, 'hill'));
+    ALTA.push(iroad(spiral(940, -160, 48, 20, TAU * 0.92, TAU * 0.63), 11, 'hill'));
     // the last leg turns in to the summit, where the lookout and the pad are
-    iroad(spiral(940, -160, 20, 4, TAU * 0.63, TAU * 0.30), 11, 'hill');
+    ALTA.push(iroad(spiral(940, -160, 20, 4, TAU * 0.63, TAU * 0.30), 11, 'hill'));
 
     // Mirador — the same shape at a gentler pitch, plus a level resort ring
     iroad(spiral(1150, 120, 150, 92, TAU * 0.52, TAU * 0.96), 11, 'hill');
@@ -796,7 +809,7 @@ GAME.isla = (function () {
     });
     city.isla = { bounds: C, contains: contains, net: NET, hills: HILLS, spans: SPANS,
       terrainY: terrainY, groundY: groundY, onRoad: onRoad, inland: inland,
-      ringPt: ringPt, tx: tx, tz: tz };
+      ringPt: ringPt, tx: tx, tz: tz, climb: ALTA, ring: RING };
     definePois();
   }
 

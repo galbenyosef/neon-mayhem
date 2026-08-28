@@ -520,20 +520,59 @@ GAME.combat = (function () {
   }
 
   // shots fired by police at the player
-  function npcShoot(fromX, fromY, fromZ, accuracy, damage) {
+  // An officer is not a turret. What decides whether a round lands is where
+  // the round actually WENT — the same yaw the tracer is drawn along — and not
+  // a dice roll taken beside it. That disconnect was the whole of the problem:
+  // the shot you watched fly wide still hurt you, the one drawn straight
+  // through you might not, and because the roll was a flat constant the hit
+  // rate was the same at five metres and at forty, standing still or at a
+  // sprint. Nothing you did changed it, so it read as a tax rather than as
+  // somebody shooting at you.
+  //
+  // Everything that should make a marksman worse widens the cone instead.
+  var NPC_AIM = {
+    base: 0.09,        // rad — a settled shooter at arm's length, about 5 degrees
+    perMetre: 0.0032,  // range: a pistol at forty metres is a different proposition
+    moving: 0.085,     // a target at speed has to be led, and they lead it badly
+    fresh: 0.07,       // the first shot of a burst, before they have settled on you
+    torso: 0.5,        // half-width of a person...
+    car: 1.15          // ...and of the car they might be sitting in
+  };
+  function npcShoot(fromX, fromY, fromZ, accuracy, damage, shooter) {
     var P = GAME.player;
-    var tx = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var tz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    var yaw = Math.atan2(tx - fromX, tz - fromZ) + (Math.random() - 0.5) * (1 - accuracy) * 0.5;
-    var dx = Math.sin(yaw), dz = Math.cos(yaw);
+    var inCar = !!(P.inCar && P.car);
+    var tx = inCar ? P.car.pos.x : P.pos.x;
+    var tz = inCar ? P.car.pos.z : P.pos.z;
     var d = U.dist(fromX, fromZ, tx, tz);
+
+    // Officers are individuals. One spawns a better shot than the next and
+    // stays that way for the whole chase, rather than being re-rolled at every
+    // trigger pull — without it a roadblock is four copies of the same machine.
+    if (shooter && shooter.aimSkill === undefined) shooter.aimSkill = 0.78 + Math.random() * 0.5;
+    var skill = (shooter ? shooter.aimSkill : 1) * (1.35 - U.clamp(accuracy, 0, 1));
+    // brought the gun up just now, or has been firing at you for a while?
+    var fresh = !shooter || GAME.time - (shooter.lastShotT || -99) > 2.5;
+    if (shooter) shooter.lastShotT = GAME.time;
+
+    var speed = inCar ? Math.abs(P.car.speed || 0) : (P.moveSpeed || 0);
+    var spread = (NPC_AIM.base
+      + d * NPC_AIM.perMetre
+      + Math.min(1, speed / 11) * NPC_AIM.moving
+      + (fresh ? NPC_AIM.fresh : 0)) * skill;
+
+    var err = (Math.random() * 2 - 1) * spread;
+    var yaw = Math.atan2(tx - fromX, tz - fromZ) + err;
+    var dx = Math.sin(yaw), dz = Math.cos(yaw);
     GAME.audio.gunshot('pistol', fromX, fromZ);
     GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * d, 1.2, fromZ + dz * d);
-    if (Math.random() < accuracy) {
-      if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');
+    // how far off it passes at your range, against how wide you are: what you
+    // saw happen is now what happened
+    if (Math.abs(Math.sin(err)) * d <= (inCar ? NPC_AIM.car : NPC_AIM.torso)) {
+      if (inCar) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');
       else GAME.playerDamage(damage, 'shot');
+      return true;
     }
-    return true;
+    return false;
   }
 
   return {

@@ -6,6 +6,7 @@ GAME.touch = (function () {
   var btns = {};
   var enabled = false;
   var lastCarRef = null;   // the vehicle (or null) the flags were last cleared for
+  var wasPlaying = false;  // were the on-foot/in-car controls applying last frame
   var lefty = false;       // stick under the right thumb, buttons under the left
 
   function detect() {
@@ -261,6 +262,29 @@ GAME.touch = (function () {
 
   function show(btn, on) { if (btn) btn.style.display = on ? 'flex' : 'none'; }
 
+  // Every flag the buttons own, let go together.
+  //
+  // A TOGGLE keeps its state in two places — the flag in GAME.input.touch and
+  // the lit background on the button — so anything that takes the controls
+  // away has to put both back. Miss the flag and it survives the interruption
+  // and starts applying again the moment control returns; miss the background
+  // and the button lies about what it is doing. RUN was surviving both a
+  // boarding and a death: you would step out of the car, or come round at the
+  // hospital, already sprinting and with the button still lit, having pressed
+  // nothing. It is the same rule endTouch states for the stick — release on
+  // any interruption — applied to the buttons beside it.
+  function releaseButtons() {
+    var T = GAME.input.touch;
+    T.gas = T.brake = T.handbrake = T.driveByAuto = false;
+    T.fire = T.jump = T.aim = T.run = T.enter = false;
+    T.firePressed = T.weaponCycle = T.job = false;
+    for (var k in btns) {
+      if (!btns[k]) continue;
+      btns[k].classList.remove('held');
+      btns[k].style.background = '';
+    }
+  }
+
   function update() {
     if (!enabled || !GAME.started) return;
     var T = GAME.input.touch;
@@ -269,20 +293,27 @@ GAME.touch = (function () {
     var playing = !GAME.paused && !GAME.mapOpen && P.state === 'alive' && !P.parachuting;
     layer.style.display = 'block';
     if (!playing) {
+      // Hiding a button is not releasing it. Dying, pausing or opening the map
+      // with a toggle on left the flag set behind the overlay and the button
+      // lit when it came back — which is how a death could hand you back a
+      // sprinting player. Once, on the way out, not every frame we are away.
+      if (wasPlaying) { wasPlaying = false; releaseButtons(); }
       for (var i = 0; i < footBtns.length; i++) footBtns[i].style.display = 'none';
       for (var j = 0; j < carBtns.length; j++) carBtns[j].style.display = 'none';
       return;
     }
+    wasPlaying = true;
     var inCar = P.inCar;
 
-    // stepping into or out of any vehicle drops the aim/fire flags: the foot
-    // AIM toggle must not fire the TALON's rockets on boarding, and a held
-    // RKT must not leave you stuck aiming when you step out
+    // Stepping into or out of any vehicle lets the whole set go. The two sides
+    // do not share a control scheme, so nothing held on one has any business
+    // still being held on the other: the foot AIM toggle must not fire the
+    // TALON's rockets on boarding, a held RKT must not leave you stuck aiming
+    // when you step out, and RUN must not be waiting for you at the kerb.
     var carNow = inCar ? P.car : null;
     if (carNow !== lastCarRef) {
       lastCarRef = carNow;
-      T.aim = false; T.fire = false;
-      if (btns.aim) btns.aim.style.background = '';
+      releaseButtons();
     }
 
     if (!inCar) {
