@@ -1931,12 +1931,31 @@ GAME.city = (function () {
   }
 
   function buildSpots() {
-    // parked cars hugging the curbs, clear of the driving lanes
+    // Parked cars hug the kerb of the road they are ON — but the grid crosses
+    // itself every hundred metres, and a spot dropped at a junction hugs
+    // nothing: it sits BROADSIDE in the middle of the road going the other
+    // way. A car parked along z presents its whole length across an east-west
+    // carriageway, which is a roadblock rather than a parked car, and traffic
+    // piles up behind it. Eleven percent of them landed there, up to 5.7 m
+    // past the crossing centreline.
+    //
+    // Clearance is measured to that centreline and has to cover the crossing
+    // road's half-width plus the parked car's own half-length, or the nose
+    // still pokes into the outside lane.
+    var CROSS_CLEAR = ROAD_HALF + 3.2;
+    function clearOfCrossings(along) {
+      for (var c = 0; c < R.length; c++) if (Math.abs(along - R[c]) < CROSS_CLEAR) return false;
+      return true;
+    }
     for (var i = 0; i < R.length; i++) {
       for (var d = -430; d < 440; d += U.randRange(rng, 45, 90)) {
-        if (rng() < 0.55) city.parkedSpots.push({ x: R[i] + (rng() < 0.5 ? 5.3 : -5.3), z: d, heading: 0 });
+        if (rng() < 0.55 && clearOfCrossings(d)) {
+          city.parkedSpots.push({ x: R[i] + (rng() < 0.5 ? 5.3 : -5.3), z: d, heading: 0 });
+        }
         var hx = d + U.randRange(rng, 0, 30);
-        if (hx < 340 && rng() < 0.45) city.parkedSpots.push({ x: hx, z: R[i] + (rng() < 0.5 ? 5.3 : -5.3), heading: Math.PI / 2 });
+        if (hx < 340 && rng() < 0.45 && clearOfCrossings(hx)) {
+          city.parkedSpots.push({ x: hx, z: R[i] + (rng() < 0.5 ? 5.3 : -5.3), heading: Math.PI / 2 });
+        }
       }
     }
     // pickups at seeded sidewalk corners

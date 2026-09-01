@@ -22,6 +22,7 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3h. KERBSIDE PARKING — a parked car is beside a road, never across one.
 //   3g. LANE KEEPING — a driver takes its lane from the first metre, not
 //       from the first node it reaches.
 //   3f. PARKED AIRFRAME — solid to drive into, and still shoves nobody.
@@ -888,6 +889,40 @@ function withTimeout(p, ms) {
   // this line: a driver takes a 3.1 m lane on its first tick, and no moving
   // driver anywhere has none (0% here against 23%).
 
+  // ---------- 3h: kerbside parking is beside the road, not across one ----------
+  // The grid crosses itself every hundred metres and the spot generator only
+  // knew about the road it was parking ON. A spot dropped at a junction hugs
+  // nothing: parked along z, the car presents its whole LENGTH across the
+  // east-west carriageway, which is a roadblock rather than a parked car.
+  var kerb = await page.evaluate(function () {
+    var R = GAME.city.R, H = GAME.city.ROAD_HALF;
+    var spots = GAME.city.parkedSpots.filter(function (s) {
+      return !s.vtype && !s.police && !s.isla && !s.special;
+    });
+    var worst = 0, inside = 0, where = null;
+    spots.forEach(function (s) {
+      // parked along z (heading 0) sits on a road at some x, so its position
+      // ALONG that road is z — and the roads it can block run at those same
+      // coordinates on the other axis
+      var along = Math.abs(s.heading) < 0.1 ? s.z : s.x;
+      var near = 1e9;
+      for (var c = 0; c < R.length; c++) near = Math.min(near, Math.abs(along - R[c]));
+      var into = H - near;
+      if (into > 0) {
+        inside++;
+        if (into > worst) { worst = into; where = [Math.round(s.x), Math.round(s.z)]; }
+      }
+    });
+    return { spots: spots.length, inside: inside, worst: +worst.toFixed(1), where: where,
+             offset: 5.3, roadHalf: H };
+  });
+  check('kerb: the streets are parked up (anchor sanity)',
+    kerb.spots > 80, kerb.spots + ' street spots');
+  check('kerb: and not one of them is standing in a crossing road',
+    kerb.inside === 0,
+    kerb.inside + ' spots inside a crossing carriageway' +
+    (kerb.where ? ', worst ' + kerb.worst + 'm in at ' + JSON.stringify(kerb.where) : ''));
+
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
     GAME.test.fastForward(1);
@@ -982,16 +1017,23 @@ function withTimeout(p, ms) {
       car.ai = null;
       car.controls = { throttle: 0, steer: 0, handbrake: true };
       car.heading = 0;                    // so +NOSE along z IS +NOSE along the body
+      // and no ROLL. The prediction below is pure pitch, but the body also
+      // leans on lateral slip — so one shove from passing traffic puts a roll
+      // under the rider and the measured height stops matching the trig. Pitch
+      // was pinned here and roll was not, which is a failure once in a while
+      // and nothing to do with what is being tested.
+      car.lat = 0; car.speed = 0;
+      car.mesh.rotation.z = 0;
       P.pos.x = car.pos.x; P.pos.z = car.pos.z + NOSE;
     }
     hold();
     P.pos.set(car.pos.x, car.pos.y + 4, car.pos.z + NOSE);
     P.velY = 0;
-    for (var i = 0; i < 60; i++) { hold(); car.mesh.rotation.x = 0; GAME.test.fastForward(1 / 60); }
+    for (var i = 0; i < 60; i++) { hold(); car.mesh.rotation.x = 0; GAME.test.fastForward(1 / 60); car.mesh.rotation.z = 0; }
     var level = P.pos.y - car.pos.y, riding = P.roofCar === car;
     // now lift the nose, a frame at a time
     var PITCH = 0.35;
-    for (var j = 0; j < 40; j++) { hold(); car.mesh.rotation.x = -PITCH * (j + 1) / 40; GAME.test.fastForward(1 / 60); }
+    for (var j = 0; j < 40; j++) { hold(); car.mesh.rotation.x = -PITCH * (j + 1) / 40; GAME.test.fastForward(1 / 60); car.mesh.rotation.z = 0; }
     var noseUp = P.pos.y - car.pos.y, stillRiding = P.roofCar === car;
     // what the geometry says it must be, derived here with plain trig rather
     // than by asking the code under test what it thinks
