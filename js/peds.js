@@ -454,10 +454,18 @@ GAME.peds = (function () {
         }
       }
 
+      var fx0 = ped.pos.x, fz0 = ped.pos.z;
       if (ped.state !== 'dive') {
         ped.pos.x += Math.sin(ped.heading) * ped.speed * dt;
         ped.pos.z += Math.cos(ped.heading) * ped.speed * dt;
         ped.mesh.rotation.y = ped.heading;
+      }
+      // no walking up a stunt ramp (see city.canWalkTo). Refusing the step
+      // leaves the body where it was, which is exactly what the stuck check
+      // below is looking for — so a ramp foot turns them around the same way
+      // a palm tree does.
+      if (!GAME.city.canWalkTo(fx0, fz0, ped.pos.x, ped.pos.z)) {
+        ped.pos.x = fx0; ped.pos.z = fz0;
       }
       var rp2 = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
       // walking into a palm tree forever is not a plan: when the legs move

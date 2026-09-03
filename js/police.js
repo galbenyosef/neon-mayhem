@@ -443,8 +443,14 @@ GAME.police = (function () {
     var wantShoot = s >= 2 && dist < 28 && playerSlow && los;
     var chaseSpeed = 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
+    var cx0 = cop.pos.x, cz0 = cop.pos.z;
     cop.pos.x += Math.sin(cop.heading) * cop.speed * dt;
     cop.pos.z += Math.cos(cop.heading) * cop.speed * dt;
+    // an officer is on foot too, and a ramp deck with walled flanks is as
+    // good a trap for the chase as it is for a stroller (city.canWalkTo)
+    if (!GAME.city.canWalkTo(cx0, cz0, cop.pos.x, cop.pos.z)) {
+      cop.pos.x = cx0; cop.pos.z = cz0;
+    }
     var rp = GAME.resolveCircle(cop.pos.x, cop.pos.z, 0.4);
     cop.pos.x = rp.x; cop.pos.z = rp.z;
     cop.pos.y = GAME.city.groundY(cop.pos.x, cop.pos.z);

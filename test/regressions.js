@@ -22,6 +22,9 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3i. ON FOOT, NOT UP THE RAMP — a stunt ramp is a drivable surface with
+//       walled flanks, so anyone who walks onto the deck is stuck up there.
+//       Nobody on foot climbs one, and no fare is set down on one.
 //   3h. KERBSIDE PARKING — a parked car is beside a road, never across one.
 //   3g. LANE KEEPING — a driver takes its lane from the first metre, not
 //       from the first node it reaches.
@@ -922,6 +925,242 @@ function withTimeout(p, ms) {
     kerb.inside === 0,
     kerb.inside + ' spots inside a crossing carriageway' +
     (kerb.where ? ', worst ' + kerb.worst + 'm in at ' + JSON.stringify(kerb.where) : ''));
+
+  // ---------- 3i: nobody on foot goes up a stunt ramp ----------
+  // Ramps are surfaces rather than solids — that is what lets a car ride up
+  // one — and feet ride up just as well. The raked flanks beside the deck ARE
+  // solid, so a stroller who wandered onto a wedge had nowhere to go but back
+  // down the way they came or off the lip: measured, seven of them did it in
+  // six minutes of play and stayed up there for as long as 39 seconds.
+  var walkRule = await page.evaluate(function () {
+    var C = GAME.city;
+    if (typeof C.canWalkTo !== 'function') return { missing: true, ramps: C.ramps.length };
+    // a ground-level wedge to reason about, and its two ends in world space
+    var r = null;
+    for (var i = 0; i < C.ramps.length; i++) if (!C.ramps[i].base) { r = C.ramps[i]; break; }
+    if (!r) return { noRamp: true };
+    function at(lx, lz) { return [r.x + lx * r.cos + lz * r.sin, r.z - lx * r.sin + lz * r.cos]; }
+    var foot = at(0, -r.len / 2 - 3);          // 3 m short of the low end
+    var low = at(0, -r.len / 2 + r.len * 0.3); // a third of the way up
+    var high = at(0, r.len / 2 - 0.5);         // just below the lip
+    var off = at(r.w / 2 + 14, 0);             // well clear, beside it
+    return {
+      ramps: C.ramps.length,
+      // the heights those points actually stand at, so the check is not
+      // asserting against a ramp it has mis-located
+      lowY: +((C.rampAt(low[0], low[1]) || {}).y || 0).toFixed(2),
+      highY: +((C.rampAt(high[0], high[1]) || {}).y || 0).toFixed(2),
+      footOn: !!C.rampAt(foot[0], foot[1]),
+      up: C.canWalkTo(foot[0], foot[1], low[0], low[1]),
+      further: C.canWalkTo(low[0], low[1], high[0], high[1]),
+      down: C.canWalkTo(high[0], high[1], low[0], low[1]),
+      away: C.canWalkTo(low[0], low[1], off[0], off[1]),
+      flat: C.canWalkTo(off[0], off[1], off[0] + 2, off[1] + 2),
+      // A walker heading straight up the wedge, advancing only where the rule
+      // allows. This is the one that matters: asking the rule about ONE step
+      // tells you nothing about a thousand of them, and the first version of
+      // this fix — which let through any step gaining under 2 cm — passed
+      // every single-step check above while letting a stroller climb the
+      // whole ramp a centimetre at a time.
+      //
+      // The stride has to be a walking ped's ACTUAL frame, ~1.6 m/s at 1/60,
+      // because that is the granularity the rule gets asked at and the whole
+      // point of a per-step tolerance is that a small enough step slips under
+      // it. A coarser 0.06 m stride gains 2.6 cm on this slope, clears the
+      // 2 cm slack on its own, and let the broken rule pass this check.
+      climbed: (function () {
+        var STRIDE = 1.6 / 60;
+        var lz = -r.len / 2 - 1, peak = 0;
+        var n = Math.ceil(r.len / STRIDE) + 300;   // enough to walk clear over the top
+        for (var k = 0; k < n; k++) {
+          var a = at(0, lz), b = at(0, lz + STRIDE);
+          if (!C.canWalkTo(a[0], a[1], b[0], b[1])) continue;   // refused: they stay put
+          lz += STRIDE;
+          var hit = C.rampAt(b[0], b[1]);
+          if (hit && hit.y > peak) peak = hit.y;
+        }
+        return +peak.toFixed(2);
+      })()
+    };
+  });
+  check('ramp: the rule exists at all',
+    !walkRule.missing, walkRule.missing ? 'city.canWalkTo is not defined' : 'city.canWalkTo');
+  if (!walkRule.missing && !walkRule.noRamp) {
+    check('ramp: the wedge under the test rises (anchor sanity)',
+      walkRule.highY > walkRule.lowY && walkRule.lowY > 0.45 && !walkRule.footOn,
+      'deck ' + walkRule.lowY + 'm -> ' + walkRule.highY + 'm, foot clear=' + !walkRule.footOn);
+    check('ramp: a step from the ground up onto the deck is refused',
+      walkRule.up === false, 'canWalkTo(ground -> deck) = ' + walkRule.up);
+    check('ramp: and so is one that climbs higher up it',
+      walkRule.further === false, 'canWalkTo(low -> high) = ' + walkRule.further);
+    check('ramp: but coming back DOWN is always allowed',
+      walkRule.down === true, 'canWalkTo(high -> low) = ' + walkRule.down);
+    check('ramp: and so is stepping off it onto the ground',
+      walkRule.away === true, 'canWalkTo(deck -> beside) = ' + walkRule.away);
+    check('ramp: level ground is untouched by the rule',
+      walkRule.flat === true, 'canWalkTo(flat -> flat) = ' + walkRule.flat);
+    check('ramp: and a thousand walking strides up it get no further than ankle deep',
+      walkRule.climbed <= 0.46,
+      'a walker striding at it reached ' + walkRule.climbed + 'm of a ' + walkRule.highY + 'm deck');
+  }
+
+  // and the same thing through the game. Three cases, because the first two
+  // fail on different broken rules: a crowd sent at a ramp from the ground
+  // catches "no rule at all", and one already standing on the foot of the
+  // wedge catches a rule with a per-step tolerance in it. That second one is
+  // not hypothetical — the first version of this allowed a step that gained
+  // less than 2 cm, and since a walking ped covers under 3 cm in a frame and
+  // gains barely more than a centimetre of height doing it, the whole ramp was
+  // climbed a centimetre at a time and THIS CHECK PASSED. The third pins the
+  // way back down, so the rule cannot be tightened into a trap of its own.
+  var walkWorld = await page.evaluate(function () {
+    var C = GAME.city, r = null;
+    for (var i = 0; i < C.ramps.length; i++) if (!C.ramps[i].base) { r = C.ramps[i]; break; }
+    if (!r) return { noRamp: true };
+    function at(lx, lz) { return [r.x + lx * r.cos + lz * r.sin, r.z - lx * r.sin + lz * r.cos]; }
+    function upAt(y) { return -r.len / 2 + (y / r.h) * r.len; }   // local z at deck height y
+    var top = at(0, r.len / 2 - 1);
+    GAME.test.teleport(r.x + 26, r.z + 26);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.5);
+    var out = { h: +r.h.toFixed(1), ramps: C.ramps.length };
+
+    // walk a crowd, hold them to an order every frame, and report how high
+    // they got and how far they moved
+    function drive(places, aim, secs) {
+      var f = GAME.focus(), crowd = [], peak = 0;
+      for (var k = 0; k < places.length; k++) {
+        var p = GAME.test.spawnPed(places[k][0] - f.x, places[k][1] - f.z);
+        p.state = 'walk'; p.speed = 1.6;
+        p.startX = p.pos.x; p.startZ = p.pos.z;
+        crowd.push(p);
+      }
+      var lastY = 0;
+      for (var t = 0; t < 60 * secs; t++) {
+        for (var c = 0; c < crowd.length; c++) {
+          var q = crowd[c];
+          if (q.dead) continue;
+          q.wpX = aim[0]; q.wpZ = aim[1]; q.wpT = 60;
+          var rp = C.rampAt(q.pos.x, q.pos.z);
+          lastY = rp ? rp.y : 0;
+          if (lastY > peak) peak = lastY;
+        }
+        GAME.test.fastForward(1 / 60);
+      }
+      var moved = 0, ended = 0;
+      for (var d = 0; d < crowd.length; d++) {
+        moved = Math.max(moved, Math.hypot(crowd[d].pos.x - crowd[d].startX, crowd[d].pos.z - crowd[d].startZ));
+        var er = C.rampAt(crowd[d].pos.x, crowd[d].pos.z);
+        ended = Math.max(ended, er ? er.y : 0);
+        GAME.peds.removePed(crowd[d]);
+      }
+      return { peak: +peak.toFixed(2), moved: +moved.toFixed(1), ended: +ended.toFixed(2) };
+    }
+
+    // 1. three abreast, 3 m short of the low end, told to go over the top
+    out.fromGround = drive([at(-2, -r.len / 2 - 3), at(0, -r.len / 2 - 3), at(2, -r.len / 2 - 3)], top, 12);
+    // 2. one already standing at ankle height on the slope, same order
+    out.fromFoot = drive([at(0, upAt(0.40))], top, 12);
+    // 3. one dropped two thirds of the way up: they have to get themselves off
+    var high = at(0, upAt(r.h * 0.66));
+    out.highY = +((C.rampAt(high[0], high[1]) || {}).y || 0).toFixed(2);
+    var f2 = GAME.focus();
+    var stranded = GAME.test.spawnPed(high[0] - f2.x, high[1] - f2.z);
+    stranded.state = 'walk'; stranded.speed = 1.6;
+    // Told to leave by the low end, every frame. Left to their own waypoints
+    // the time to get off is a lottery — measured at 4.8 s, 4.9 s and 8.3 s
+    // on the same code — and a bound inside that spread is not a check. With
+    // the order held, this asks the one thing it is for: does the rule let
+    // someone who WANTS to come down actually do it?
+    var exit = at(0, -r.len / 2 - 4);
+    out.downT = null;
+    for (var t2 = 0; t2 < 60 * 30; t2++) {
+      stranded.wpX = exit[0]; stranded.wpZ = exit[1]; stranded.wpT = 60;
+      GAME.test.fastForward(1 / 60);
+      var sr = C.rampAt(stranded.pos.x, stranded.pos.z);
+      if (!sr || sr.y <= 0.5) { out.downT = +(t2 / 60).toFixed(1); break; }
+    }
+    GAME.peds.removePed(stranded);
+    return out;
+  });
+  if (!walkWorld.noRamp) {
+    check('ramp: the crowd sent at it actually set off (anchor sanity)',
+      walkWorld.fromGround.moved > 2, 'furthest of the three moved ' + walkWorld.fromGround.moved + 'm');
+    check('ramp: twelve seconds of walking straight at one gets nobody up it',
+      walkWorld.fromGround.peak <= 0.5,
+      'highest anyone stood: ' + walkWorld.fromGround.peak + 'm on a ' + walkWorld.h + 'm ramp');
+    // the same thing through the AI. It moves the needle far less than the
+    // stride walk above does — 16 cm against a whole ramp — so treat this as
+    // the wiring check it is and leave the ratchet itself to the door.
+    check('ramp: nor does one who starts already standing on the foot of it',
+      walkWorld.fromFoot.peak <= 0.5,
+      'from ankle height they reached ' + walkWorld.fromFoot.peak + 'm, ending at ' + walkWorld.fromFoot.ended + 'm');
+    check('ramp: someone left up on the deck is up there (anchor sanity)',
+      walkWorld.highY > 1, 'dropped at ' + walkWorld.highY + 'm');
+    check('ramp: and they can walk back down off it',
+      walkWorld.downT !== null && walkWorld.downT < 20,
+      walkWorld.downT === null ? 'still on the deck after 30s' : 'off in ' + walkWorld.downT + 's');
+  }
+
+  // ---------- 3i (b): a fare is never set down on a wedge ----------
+  // kerbWaitSpot pushed 14 m out from the road centre and the verge ramps
+  // start at 11 m, so about one fare or casualty in fifty stood on a slope
+  // where the cab cannot pull up and — before the rule above — nobody on
+  // foot could be reached anyway.
+  var fares = await page.evaluate(function () {
+    var M = GAME.missions, C = GAME.city;
+    if (!M.testWaitSpot || !M.testRandomRoadPoint) return { missing: true };
+    function onRamp(x, z) { var r = C.rampAt(x, z); return !!r && r.y > 0.45; }
+    var res = { n: 0, marker: 0, body: 0, naive: 0, drifts: [] };
+    // 20k rolls, not a few hundred: the marker itself lands on a wedge about
+    // once in nine hundred, and a sample too small to see that is a check
+    // that would pass on the broken code. The whole sweep is arithmetic —
+    // it costs a second or two, no simulation at all.
+    for (var t = 0; t < 20000; t++) {
+      var fx = -440 + Math.random() * 780, fz = -440 + Math.random() * 880;
+      if (C.isInWater(fx, fz)) continue;
+      var m = M.testRandomRoadPoint(fx, fz, 60, 260);
+      var w = M.testWaitSpot(m[0], m[1]);
+      res.n++;
+      if (onRamp(m[0], m[1])) res.marker++;
+      if (onRamp(w[0], w[1])) res.body++;
+      res.drifts.push(Math.hypot(w[0] - m[0], w[1] - m[1]));
+      // what the old single push would have produced from the same marker:
+      // straight out 14 m on the marker's own side, no re-roll
+      var rp = C.nearestRoadPoint(m[0], m[1]);
+      var nx, nz;
+      if (rp.axis === 'net') {
+        var sgn = Math.hypot(m[0] - (rp.x + Math.cos(rp.heading)), m[1] - (rp.z - Math.sin(rp.heading))) <
+          Math.hypot(m[0] - (rp.x - Math.cos(rp.heading)), m[1] - (rp.z + Math.sin(rp.heading))) ? 1 : -1;
+        nx = rp.x + Math.cos(rp.heading) * 14 * sgn; nz = rp.z - Math.sin(rp.heading) * 14 * sgn;
+      } else if (rp.axis === 'z') { nx = rp.x + (m[0] >= rp.x ? 14 : -14); nz = m[1]; }
+      else { nx = m[0]; nz = rp.z + (m[1] >= rp.z ? 14 : -14); }
+      if (onRamp(nx, nz)) res.naive++;
+    }
+    res.drifts.sort(function (a, b) { return a - b; });
+    res.p99 = +res.drifts[Math.floor(res.drifts.length * 0.99)].toFixed(1);
+    res.drift = +res.drifts[res.drifts.length - 1].toFixed(1);
+    res.drifts = null;
+    return res;
+  });
+  check('fare: the pickup roller answers at all',
+    !fares.missing, fares.missing ? 'GAME.missions.testWaitSpot is not exposed' : 'hooks present');
+  if (!fares.missing) {
+    // Without this the two zeroes below could just mean "this world has no
+    // ramp anywhere near a kerb", which would make them free.
+    check('fare: the 14 m push does land on ramps (anchor sanity)',
+      fares.naive > 0,
+      fares.naive + '/' + fares.n + ' of the unrolled spots are on a wedge');
+    check('fare: no pickup marker sits part-way up a ramp',
+      fares.marker === 0, fares.marker + '/' + fares.n + ' markers on a wedge');
+    check('fare: and nobody is left standing on one waiting for you',
+      fares.body === 0, fares.body + '/' + fares.n + ' waiting bodies on a wedge');
+    // The re-roll moves people along the kerb, so this has to stay honest
+    // about how far: the everyday case, and the worst the kerb sweep does.
+    check('fare: the fare still stands beside their own marker',
+      fares.p99 < 12 && fares.drift < 30,
+      'p99 ' + fares.p99 + 'm, furthest ' + fares.drift + 'm from the marker');
+  }
 
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {

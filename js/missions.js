@@ -285,6 +285,8 @@ GAME.missions = (function () {
       var off = rp.axis === 'net' ? [Math.cos(rp.heading) * 9 * sgn, -Math.sin(rp.heading) * 9 * sgn]
         : rp.axis === 'z' ? [9 * sgn, 0] : [0, 9 * sgn];
       var px = Math.round(rp.x + off[0]), pz = Math.round(rp.z + off[1]);
+      // a marker part-way up a stunt ramp is a stop you cannot pull in at
+      if (!offRamp(px, pz)) continue;
       var d = U.dist(px, pz, fromX, fromZ);
       if (d >= minR && d <= maxR) return [px, pz];
       // keep the closest near-miss in case nothing lands inside the band
@@ -535,25 +537,63 @@ GAME.missions = (function () {
   }
 
   // a spot on the pavement beside the pickup marker, pushed clear of the
-  // carriageway on the same side of the road and jittered along the kerb
+  // carriageway on the same side of the road and jittered along the kerb.
+  //
+  // Stunt ramps stand on the verge from 11 m out (see city.js rollStuntSpots),
+  // and 14 m lands squarely inside that band: about one fare in fifty was set
+  // down on the slope of a wedge, where nobody on foot can reach them and the
+  // cab certainly cannot pull up. So the spot is rolled — a fresh place along
+  // the kerb first, then in against the pavement, which is inside the ramps —
+  // until it stands on something you can walk up to.
+  var WAIT_OUT = [14, 14, 14, 9.5, 9.5, 8];
   function kerbWaitSpot(x, z) {
     var rp = GAME.city.nearestRoadPoint(x, z);
-    var out = 14, jitter = U.randRange(Math.random, -5, 5);
-    var wx, wz;
-    if (rp.axis === 'net') {       // a curved road: step out along its normal
-      var sgn = U.dist2(x, z, rp.x + Math.cos(rp.heading), rp.z - Math.sin(rp.heading)) <
-        U.dist2(x, z, rp.x - Math.cos(rp.heading), rp.z + Math.sin(rp.heading)) ? 1 : -1;
-      wx = rp.x + Math.cos(rp.heading) * out * sgn + Math.sin(rp.heading) * jitter;
-      wz = rp.z - Math.sin(rp.heading) * out * sgn + Math.cos(rp.heading) * jitter;
-    } else if (rp.axis === 'z') {          // road runs along z; step out in x
-      wx = rp.x + (x >= rp.x ? out : -out);
-      wz = z + jitter;
-    } else {                        // road runs along x; step out in z
-      wx = x + jitter;
-      wz = rp.z + (z >= rp.z ? out : -out);
+    var first = null;
+    // one candidate: `out` metres off the road centre on the marker's own
+    // side, `along` metres up or down the kerb from it. Answers null if it
+    // came out on a wedge.
+    function candidate(out, along) {
+      var wx, wz;
+      if (rp.axis === 'net') {       // a curved road: step out along its normal
+        var sgn = U.dist2(x, z, rp.x + Math.cos(rp.heading), rp.z - Math.sin(rp.heading)) <
+          U.dist2(x, z, rp.x - Math.cos(rp.heading), rp.z + Math.sin(rp.heading)) ? 1 : -1;
+        wx = rp.x + Math.cos(rp.heading) * out * sgn + Math.sin(rp.heading) * along;
+        wz = rp.z - Math.sin(rp.heading) * out * sgn + Math.cos(rp.heading) * along;
+      } else if (rp.axis === 'z') {          // road runs along z; step out in x
+        wx = rp.x + (x >= rp.x ? out : -out);
+        wz = z + along;
+      } else {                        // road runs along x; step out in z
+        wx = x + along;
+        wz = rp.z + (z >= rp.z ? out : -out);
+      }
+      // resolveCircle can shove the point clear of a wall and onto a ramp, so
+      // the wedge test comes after the push-out, not before it
+      var s = GAME.resolveCircle(wx, wz, 0.5);
+      if (!first) first = [s.x, s.z];
+      return offRamp(s.x, s.z) ? [s.x, s.z] : null;
     }
-    var s = GAME.resolveCircle(wx, wz, 0.5);
-    return [s.x, s.z];
+    for (var t = 0; t < WAIT_OUT.length; t++) {
+      var got = candidate(WAIT_OUT[t], U.randRange(Math.random, -5, 5));
+      if (got) return got;
+    }
+    // Six rolls beaten means a wedge covering the whole width of this stretch
+    // of pavement — one of the hand-placed ramps by a landmark, not a verge
+    // one. Jittering again would just be more of the same luck, so walk ALONG
+    // the kerb in strides instead: a ramp is 34 m end to end at the longest,
+    // and two strides leave the longest of them behind for certain.
+    for (var d = 12; d <= 24; d += 12) {
+      for (var sd = -1; sd <= 1; sd += 2) {
+        var g2 = candidate(9.5, d * sd);
+        if (g2) return g2;
+      }
+    }
+    return first;
+  }
+
+  // flat enough to stand a fare on: the very foot of a wedge is still pavement
+  function offRamp(x, z) {
+    var r = GAME.city.rampAt(x, z);
+    return !r || r.y <= 0.45;
   }
 
   // someone standing at the kerb waiting — arm raised, and they stay put
@@ -1593,6 +1633,8 @@ GAME.missions = (function () {
     get active() { return active; },
     // headless hooks, so the generators can be sampled without playing a shift
     testDropBand: function (lv) { var a = active; active = { level: lv, def: { id: 'taxifare' } }; var r = dropBand(); active = a; return r; },
+    testWaitSpot: kerbWaitSpot,
+    testRandomRoadPoint: randomRoadPoint,
     testRollCourier: rollCourierStops,
     testCollect: collectTarget,
     testStartRound: startRound,
