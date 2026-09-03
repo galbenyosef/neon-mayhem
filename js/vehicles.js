@@ -808,7 +808,8 @@ GAME.vehicles = (function () {
   function ejectDriver(car) {
     if (!car || car.dead || car.occupied !== 'ai' || car.isPolice) return null;
     var side = car.heading + Math.PI / 2;
-    var d = GAME.peds.spawnPed(car.pos.x + Math.sin(side) * 1.7, car.pos.z + Math.cos(side) * 1.7,
+    var stepOut = car.spec.w / 2 + 1;      // clear of his own car's flank
+    var d = GAME.peds.spawnPed(car.pos.x + Math.sin(side) * stepOut, car.pos.z + Math.cos(side) * stepOut,
       car.lastDriver ? { look: car.lastDriver } : undefined);
     if (!d) return null;
     if (car.lastDriver) d.temper = car.lastDriver.temper;
@@ -1014,6 +1015,18 @@ GAME.vehicles = (function () {
     world.peds.forEach(function (ped) {
       if (!ped.dead && U.dist2(ped.pos.x, ped.pos.z, car.pos.x, car.pos.z) < 55) GAME.peds.kill(ped, 'explosion', byPlayer);
     });
+    // And everyone else runs. An explosion is the loudest thing that happens
+    // in this city and until now nobody looked up: the only scattering was
+    // indirect, because kill() panics a 26 m circle — so a blast that happened
+    // to catch somebody got a reaction, and one that caught nobody got none at
+    // all. It is felt far past where it hurts (the damage radius is 8 m), and
+    // an airframe going up is bigger again.
+    //
+    // Not rated by GAME.chaos. Running from a fireball is not the city picking
+    // fights with itself, it is what anybody would do, and it belongs at every
+    // setting including OFF.
+    var wide = (car.spec.plane || car.spec.heli) ? 85 : 55;
+    GAME.peds.panic(car.pos.x, car.pos.z, wide, true);
     world.cars.forEach(function (c2) {
       if (c2 !== car && !c2.dead && U.dist2(c2.pos.x, c2.pos.z, car.pos.x, car.pos.z) < 60) damageCar(c2, 40, 'explosion', byPlayer);
     });

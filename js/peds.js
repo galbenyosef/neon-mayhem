@@ -208,14 +208,18 @@ GAME.peds = (function () {
     panic(ped.pos.x, ped.pos.z, 26);
   }
 
-  function panic(x, z, r) {
+  // `force` overrides the mid-brawl exemption. Two men swinging at each other
+  // are past being scared off by a shout or a body hitting the pavement — but
+  // not by a car going up thirty metres away, which ends any argument.
+  function panic(x, z, r, force) {
     var r2 = r * r;
     for (var i = 0; i < world.peds.length; i++) {
       var p = world.peds[i];
       if (p.dead || p.isCop) continue;
-      if (p.state === 'attack') continue;   // mid-brawl, past being scared off
+      if (p.state === 'attack' && !force) continue;   // mid-brawl, past being scared off
       if (U.dist2(p.pos.x, p.pos.z, x, z) < r2) {
         p.state = 'flee';
+        p.foe = null;                        // whatever it was about, it is over
         p.fleeT = U.randRange(Math.random, 4, 8);
         p.fleeX = x; p.fleeZ = z;
         if (Math.random() < 0.4) GAME.audio.yelp(p.pos.x, p.pos.z);
@@ -330,7 +334,13 @@ GAME.peds = (function () {
         for (var cc = 0; cc < world.cars.length; cc++) {
           var ccar = world.cars[cc];
           if (Math.abs(ccar.speed) < 4) continue;
-          if (U.dist2(ped.pos.x, ped.pos.z, ccar.pos.x, ccar.pos.z) < 5.2) {
+          // the same body test the civilians get below — an officer standing
+          // clear of a passing car is standing clear of it
+          var cfx = Math.sin(ccar.heading), cfz = Math.cos(ccar.heading);
+          var cdx = ped.pos.x - ccar.pos.x, cdz = ped.pos.z - ccar.pos.z;
+          if (Math.abs(cdx * cfx + cdz * cfz) > ccar.spec.l / 2 + 0.45) continue;
+          if (Math.abs(cdx * cfz - cdz * cfx) > ccar.spec.w / 2 + 0.45) continue;
+          {
             var copByPlayer = (ccar === P.car && P.inCar);
             kill(ped, 'car', copByPlayer);
             GAME.audio.crash(0.4, ped.pos.x, ped.pos.z);
@@ -669,7 +679,17 @@ GAME.peds = (function () {
         var sp2 = Math.abs(car2.speed);
         if (sp2 < 4) continue;
         if (Math.abs(car2.pos.y - ped.pos.y) > 3) continue;   // it's up on a roof
-        if (U.dist2(ped.pos.x, ped.pos.z, car2.pos.x, car2.pos.z) < 5.2) {
+        // The bodywork, not a circle around it. This was `dist2 < 5.2` — a
+        // 2.28 m circle measured from the car's CENTRE — while a sedan is
+        // barely a metre from its centreline to its flank. So a metre and a
+        // half of clear air beside a moving car was fatal: people died brushing
+        // past cars that never touched them, and a driver pulled out of a
+        // moving one was killed by it the instant he appeared alongside.
+        var fx2 = Math.sin(car2.heading), fz2 = Math.cos(car2.heading);
+        var rdx = ped.pos.x - car2.pos.x, rdz = ped.pos.z - car2.pos.z;
+        if (Math.abs(rdx * fx2 + rdz * fz2) > car2.spec.l / 2 + 0.45) continue;
+        if (Math.abs(rdx * fz2 - rdz * fx2) > car2.spec.w / 2 + 0.45) continue;
+        {
           var byPlayer = (car2 === P.car && P.inCar);
           kill(ped, 'car', byPlayer);
           if (byPlayer) GAME.haptics.splat(Math.min(1, sp2 / 26));

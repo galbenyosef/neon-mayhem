@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3m. A BLAST CLEARS THE STREET — an explosion is felt far past where it
+//       hurts, it ends whatever anyone was doing, and an airframe is bigger.
 //   3l. THE LAW OFF THE PLAYER'S BACK — there are police on the street when
 //       you are clean, they attend other people's trouble, and none of it
 //       reaches your wanted level. A drawn gun is pointed at another NPC.
@@ -516,7 +518,14 @@ function withTimeout(p, ms) {
       }
       return { rate: hits / n, worstHit: worstHit, bestMiss: bestMiss, n: n };
     }
-    var N = 600;
+    // 4000 rounds a volley, not 600. Two of the checks below compare hit
+    // RATES, and at 600 shots with rates near 0.3 the standard error on the
+    // difference between two of them is about 0.026 — against a threshold of
+    // 0.05. That is an under-powered check, and it duly failed on a run where
+    // the numbers came out 0.32 against 0.27: a real effect that the sample
+    // was too small to resolve. Firing four times as many rounds halves the
+    // error again, and it is all arithmetic — no simulation, no frames.
+    var N = 4000;
     r.near = volley(6, 0, N);
     r.far = volley(34, 0, N);
     r.still = volley(12, 0, N);
@@ -962,6 +971,13 @@ function withTimeout(p, ms) {
     GAME.world.peds.forEach(function (p) {
       if (p !== a && p !== b && p.state === 'attack') { p.state = 'walk'; p.foe = null; }
     });
+    // and clear the traffic around them. These two stand and trade punches in
+    // a live street for twenty seconds; a car finding the victim first kills
+    // him, the loop breaks, and it reads as "he never fought back".
+    var ff = GAME.focus();
+    GAME.world.cars.slice().forEach(function (c) {
+      if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, ff.x, ff.z) < 60 * 60) GAME.vehicles.removeCar(c);
+    });
     var x = GAME.test.spawnPed(-16, 4), y = GAME.test.spawnPed(-16, 7);
     if (x && y) { x.temper = 1; y.temper = 1; GAME.peds.startFight(x, { kind: 'ped', ped: y }, 30); }
     var cap = C.maxFights, fillers = GAME.peds.fightCount();
@@ -975,6 +991,9 @@ function withTimeout(p, ms) {
       // and this check is about how he looks getting there
       if (a.state !== 'attack') { a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; }
       a.attackT = 25;
+      if (t % 30 === 0) GAME.world.cars.slice().forEach(function (c) {
+        if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, ff.x, ff.z) < 60 * 60) GAME.vehicles.removeCar(c);
+      });
       GAME.test.fastForward(1 / 60);
       if (a.dead || b.dead || a.gone || b.gone) break;
       // the charge: arms must swing, not sit frozen overhead
@@ -1057,6 +1076,209 @@ function withTimeout(p, ms) {
     shunt.got > 0, shunt.got ? 'a driver got out within ' + shunt.tries + ' staged crashes'
                              : 'nobody got out of a car in ' + shunt.tries + ' staged crashes');
 
+  // ---------- 3n: a car kills with its bodywork, not with an aura ----------
+  // The run-over test was `dist2 < 5.2` — a 2.28 m circle measured from the
+  // CAR'S CENTRE — while a sedan is 0.95 m from its centreline to its flank.
+  // So more than a metre of clear air beside a moving car was fatal: people
+  // died brushing past cars that never touched them, and the driver you pulled
+  // out of a moving one appeared inside that circle and was killed by his own
+  // car. Measured on the old code, lethal all the way out to 2.2 m.
+  var runover = await page.evaluate(function () {
+    GAME.test.teleport(-150, 0);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.8);
+    var rows = [], spec = null;
+    // 1.7, not 1.4. The margin is w/2 + 0.45 = exactly 1.4 for a sedan, so
+    // standing there put the pedestrian ON the threshold and floating point
+    // decided each run — the check failed half the time against code that was
+    // behaving perfectly. Never sample a boundary you are trying to assert
+    // across.
+    [0.6, 1.7, 2.2].forEach(function (off) {
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      var f = GAME.focus();
+      // Empty the corridor first. The pedestrian stands still for four seconds
+      // in the middle of a live street, and ANY car that finds him kills him —
+      // three runs in four failed on a passing stranger rather than on the car
+      // this is about.
+      GAME.world.cars.slice().forEach(function (c) {
+        if (c !== GAME.player.car && Math.abs(c.pos.z - f.z) < 30 &&
+            c.pos.x > f.x - 20 && c.pos.x < f.x + 60) GAME.vehicles.removeCar(c);
+      });
+      var car = GAME.test.spawnCar('sedan', 30, 0);
+      if (!car) return;
+      spec = { l: car.spec.l, w: car.spec.w };
+      car.pos.set(f.x + 30, GAME.city.groundY(f.x + 30, f.z), f.z);
+      // no traffic AI: it steers onto its own lane route and drives politely
+      // around the pedestrian this is supposed to be aimed at
+      car.occupied = null; car.ai = null;
+      car.controls = { throttle: 0, steer: 0, handbrake: false };
+      var ped = GAME.test.spawnPed(10, off);
+      if (!ped) { GAME.vehicles.removeCar(car); return; }
+      ped.state = 'walk';
+      var died = false;
+      for (var t = 0; t < 60 * 4; t++) {
+        ped.pos.x = f.x + 10; ped.pos.z = f.z + off; ped.speed = 0;
+        if (t % 15 === 0) GAME.world.cars.slice().forEach(function (c) {
+          if (c !== car && c !== GAME.player.car && Math.abs(c.pos.z - f.z) < 30 &&
+              c.pos.x > f.x - 20 && c.pos.x < f.x + 60) GAME.vehicles.removeCar(c);
+        });
+        // forward is (sin h, cos h), so -x travel is h = -PI/2
+        car.heading = -Math.PI / 2; car.speed = 14; car.lat = 0;
+        GAME.test.fastForward(1 / 60);
+        if (ped.dead) { died = true; break; }
+      }
+      rows.push({ off: off, died: died });
+      if (!ped.gone) GAME.peds.removePed(ped);
+      if (car && !car.dead) GAME.vehicles.removeCar(car);
+    });
+    return { rows: rows, spec: spec };
+  });
+  if (runover.spec) {
+    var flank = runover.spec.w / 2;
+    var hit = runover.rows[0], edge = runover.rows[1], clear = runover.rows[2];
+    check('runover: standing in front of it still gets you run over (anchor sanity)',
+      hit.died, 'at ' + hit.off + ' m from the centreline, inside a ' + flank.toFixed(2) + ' m half-width');
+    check('runover: three quarters of a metre clear of the bodywork is clear',
+      !edge.died, 'at ' + edge.off + ' m from the centreline: ' + (edge.died ? 'killed' : 'unharmed'));
+    check('runover: and so is a metre and a quarter clear of it',
+      !clear.died, 'at ' + clear.off + ' m from the centreline: ' + (clear.died ? 'killed' : 'unharmed'));
+  }
+
+  // and the man you pull out of a moving car survives his own car
+  var jacked = await page.evaluate(function () {
+    var survived = 0, tries = 0;
+    for (var k = 0; k < 5; k++) {
+      GAME.test.teleport(-150 + k * 14, 0);
+      GAME.test.fastForward(0.6);
+      if (GAME.player.inCar) GAME.exitCar();
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      var tc = GAME.test.spawnCar('van', 3, 0);
+      if (!tc) continue;
+      tc.occupied = 'ai';
+      tc.ai = { mode: 'traffic', desired: 12, laneX: 0, laneZ: 0 };
+      tc.speed = 11;
+      GAME.test.fastForward(0.2);
+      GAME.enterCar(tc);
+      tries++;
+      GAME.test.fastForward(1.2);
+      var alive = GAME.world.peds.some(function (p) { return !p.dead && !p.isCop; });
+      if (alive) survived++;
+      if (GAME.player.inCar) GAME.exitCar();
+      GAME.test.fastForward(0.3);
+      if (tc && !tc.dead) GAME.vehicles.removeCar(tc);
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+    }
+    return { survived: survived, tries: tries };
+  });
+  check('runover: jacking a moving van does not kill the driver you pulled out',
+    jacked.tries > 0 && jacked.survived === jacked.tries,
+    jacked.survived + '/' + jacked.tries + ' walked away from their own car');
+
+  // ---------- 3m: everyone runs from a blast ----------
+  // explodeCar killed anyone within 8 m and did nothing whatsoever to the
+  // rest. The only scattering was indirect — kill() panics a 26 m circle — so
+  // a blast that happened to catch somebody got a reaction and a blast that
+  // caught nobody got none at all: a car went up in the street and the people
+  // beside it kept walking. This is NOT rated by the chaos knob, so it runs
+  // here with the knob at the OFF the suite pins it to.
+  var blast = await page.evaluate(function () {
+    // Everything is staged around a point well clear of the player. The first
+    // version put the car at the focus itself — on top of them — and the blast
+    // killed the player, which halts police.update entirely and took out three
+    // checks in the group after this one.
+    var OX = 60, OZ = 0;
+    function ring(dists) {
+      var out = [];
+      for (var i = 0; i < dists.length; i++) {
+        var p = GAME.test.spawnPed(OX + Math.cos(i * 0.9) * dists[i], OZ + Math.sin(i * 0.9) * dists[i]);
+        if (p) { p.state = 'walk'; p.foe = null; out.push({ ped: p, d: dists[i] }); }
+      }
+      return out;
+    }
+    function blow(type, dists) {
+      GAME.test.teleport(-150, 60);
+      GAME.police.clearWanted();
+      GAME.test.fastForward(0.8);
+      // clear anyone left over so the ring is the only crowd that matters
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      var r = ring(dists);
+      var boom = GAME.test.spawnCar(type, OX, OZ);
+      GAME.test.fastForward(0.3);
+      if (!boom) return null;
+      GAME.vehicles.explodeCar(boom, 'test', false);
+      GAME.test.fastForward(0.3);
+      var reachedTo = 0, quietFrom = 1e9;
+      r.forEach(function (e) {
+        var moved = e.ped.dead || e.ped.state === 'flee';
+        if (moved && e.d > reachedTo) reachedTo = e.d;
+        if (!moved && e.d < quietFrom) quietFrom = e.d;
+      });
+      var res = { reachedTo: reachedTo, quietFrom: quietFrom === 1e9 ? null : quietFrom,
+                  n: r.length };
+      r.forEach(function (e) { if (!e.ped.gone) GAME.peds.removePed(e.ped); });
+      if (!boom.dead) GAME.vehicles.removeCar(boom);
+      return res;
+    }
+
+    // a mid-fight pair has to be broken up by it too
+    GAME.test.teleport(-150, 60);
+    GAME.test.fastForward(0.6);
+    GAME.chaos.set(3);
+    var a = GAME.test.spawnPed(60, 18), b = GAME.test.spawnPed(60, 20);
+    var fought = false, brokeUp = false;
+    if (a && b) {
+      a.temper = 1; b.temper = 1;
+      // straight into the state: the ceiling is not what this is about, and a
+      // staged fight that loses the race for a slot reads as "no brawl to
+      // interrupt" about a blast that works perfectly
+      a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 30;
+      GAME.test.fastForward(0.2);
+      fought = a.state === 'attack';
+      GAME.chaos.set(0);
+      var bomb = GAME.test.spawnCar('sedan', 60, 0);
+      GAME.test.fastForward(0.3);
+      if (bomb) {
+        GAME.vehicles.explodeCar(bomb, 'test', false);
+        GAME.test.fastForward(0.3);
+        brokeUp = a.dead || a.state !== 'attack';
+        if (!bomb.dead) GAME.vehicles.removeCar(bomb);
+      }
+      [a, b].forEach(function (p) { if (p && !p.gone) GAME.peds.removePed(p); });
+    }
+    GAME.chaos.set(0);
+
+    var DIST = [14, 26, 38, 50, 62, 76, 92, 110];
+    var res = { car: blow('sedan', DIST), heli: blow('helicopter', DIST),
+                fought: fought, brokeUp: brokeUp };
+    GAME.player.health = 100;
+    res.playerAlive = GAME.player.state === 'alive';
+    return res;
+  });
+  if (blast.car) {
+    check('blast: a car going up scatters people it did not touch (anchor sanity)',
+      blast.car.reachedTo >= 38,
+      'furthest to react was standing ' + blast.car.reachedTo + ' m away, of ' + blast.car.n + ' placed');
+    // felt far past where it hurts — the damage radius is 8 m
+    check('blast: well past the eight metres it actually hurts within',
+      blast.car.reachedTo > 8 * 3, 'reached ' + blast.car.reachedTo + ' m');
+    check('blast: but not the whole city — it does have an edge',
+      blast.car.quietFrom !== null && blast.car.quietFrom > blast.car.reachedTo,
+      'nearest untroubled bystander stood at ' + blast.car.quietFrom + ' m');
+  }
+  if (blast.car && blast.heli) {
+    check('blast: an airframe going up reaches further than a car does',
+      blast.heli.reachedTo > blast.car.reachedTo,
+      'helicopter ' + blast.heli.reachedTo + ' m vs sedan ' + blast.car.reachedTo + ' m');
+  }
+  check('blast: and the group leaves the player standing (anchor sanity)',
+    blast.playerAlive, 'player state after four explosions nearby');
+  check('blast: two men mid-fight were mid-fight (anchor sanity)',
+    blast.fought, blast.fought ? 'a brawl was running' : 'no brawl to interrupt');
+  // panic() exempts anyone in the attack state — right for a shout or a body
+  // hitting the pavement, wrong for a fireball, which ends any argument
+  check('blast: and it ends their argument rather than being ignored',
+    blast.brokeUp, blast.brokeUp ? 'the fight broke up' : 'they kept swinging through it');
+
   // ---------- 3l: the law has somewhere else to be ----------
   // At zero stars police.js used to delete every officer and cruiser in the
   // world every sixtieth frame, which is the deepest reason the police were
@@ -1071,6 +1293,17 @@ function withTimeout(p, ms) {
     GAME.test.teleport(-150, 40);
     GAME.police.clearWanted();
     GAME.player.health = 100;
+    // Seed a crowd beside the player, for the same reason the top-of-range
+    // anchor above needs one: trouble only starts near them and spawnBubble
+    // puts everyone 60-150 m out, so a player standing still can go a full
+    // minute with nothing to report and this group reads "no incidents" about
+    // a mechanism that is working perfectly.
+    for (var sk = 0; sk < 8; sk++) {
+      var sp = GAME.test.spawnPed(Math.cos(sk * 0.8) * (10 + (sk % 3) * 6),
+                                  Math.sin(sk * 0.8) * (10 + (sk % 3) * 6));
+      if (sp) sp.temper = 0.6 + Math.random() * 0.4;
+    }
+    GAME.test.fastForward(0.5);
     var stars0 = GAME.police.wanted, hp0 = GAME.player.health;
     var patrolPeak = 0, incPeak = 0, attended = 0, starsMax = 0;
     for (var f = 0; f < 60 * 75; f++) {
@@ -2183,9 +2416,19 @@ function withTimeout(p, ms) {
   // no clock in the way, and what belongs here is the wiring: run somebody
   // down for the star and the star reaches your hand. It is a single pulse
   // where the splat is a pattern, and godMode rules out the other scalars.
+  // One more subtlety, found by it going red: "a single pulse" was the wrong
+  // signature for the star. wantedUp counts the star out in TAPS, so it is a
+  // single pulse only when the kill lights the FIRST one — light the second
+  // and a perfectly correct [20,65,36] arrives and the check fails on a real
+  // outcome. So the star is identified by contrast with the splat instead,
+  // taking the splat's own signature from the controlled one recorded above
+  // rather than hardcoding it: any buzz that is not splat-shaped is the star.
+  var splatSig = Array.isArray(world.splat[0]) ? world.splat[0] : null;
   check('haptics: and the star that kill earns reaches the hand too',
-    world.firstKill.some(function (v) { return typeof v === 'number'; }) &&
-    Array.isArray(world.splat[0]),
+    !!splatSig && world.firstKill.some(function (v) {
+      if (typeof v === 'number') return true;      // a bare pulse is never a splat
+      return !(Array.isArray(v) && v[0] === splatSig[0] && v[1] === splatSig[1]);
+    }),
     'buzzes from the kill that lit it=' + JSON.stringify(world.firstKill) +
     ' splat=' + JSON.stringify(world.splat[0]));
   check('haptics: a star going up buzzes, and going clear buzzes differently',
