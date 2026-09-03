@@ -455,6 +455,13 @@ GAME.peds = (function () {
               panic(ped.pos.x, ped.pos.z, 22);
             }
           } else if (ad2 > reach * reach) {
+            // Running, not swinging. The jab pose used to be applied on EVERY
+            // frame of the attack state, charge included, and punchT does not
+            // tick while closing — so both arms locked at head height and
+            // stayed there for the whole run. Players called it what it looked
+            // like: a zombie. aimPose off here hands the arms back to the walk
+            // cycle below.
+            ped.aimPose = false;
             // A full 0.85x-sprint charge: faster than you can walk away.
             //
             // Chasing another NPC needs a little more than that. A fleeing
@@ -467,6 +474,7 @@ GAME.peds = (function () {
             ped.speed = U.damp(ped.speed, F.kind === 'ped' ? 7.7 : 6.8, 6, dt);
             ped.yankT = 0;
           } else {
+            ped.aimPose = true;
             ped.speed = U.damp(ped.speed, 0, 9, dt);
             ped.punchT -= dt;
             if (chaseCar && tSpeed < 2.5) {
@@ -509,7 +517,25 @@ GAME.peds = (function () {
               // whoever is on the end of it takes the punch
               if (tcar) {
                 GAME.vehicles.damageCar(tcar, 2, 'fists', false);
-                if (tcar === P.car && P.inCar) GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12);
+                if (tcar === P.car && P.inCar) {
+                  GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12);
+                } else if (tcar.occupied === 'ai' && GAME.chaos.on && !tcar.isPolice && !tcar.mission) {
+                  // Somebody hammering on your bonnet does not go unanswered.
+                  // Two blows in and the man inside gets out, and what was a
+                  // person hitting a parked object becomes two people having
+                  // it out — which is the thing worth watching.
+                  ped.bangT = (ped.bangT || 0) + 0.55;
+                  if (ped.bangT > 1) {
+                    ped.bangT = 0;
+                    var other = GAME.vehicles.ejectDriver(tcar);
+                    if (other) {
+                      other.temper = Math.max(other.temper || 0, 0.7);
+                      ped.foe = { kind: 'ped', ped: other };
+                      ped.attackT = Math.max(ped.attackT, 12);
+                      startFight(other, { kind: 'ped', ped: ped }, 14);
+                    }
+                  }
+                }
               } else if (F.kind === 'ped' && F.ped) {
                 // a thrown punch is a provocation like any other: the man on
                 // the receiving end gets to decide whether to swing back
@@ -520,11 +546,14 @@ GAME.peds = (function () {
               GAME.audio.crash(0.18, ped.pos.x, ped.pos.z);
             }
           }
-          // quick jabs off alternating hands, not a slow-motion haymaker
-          var aj = ped.mesh.userData.joints;
-          var jab = U.clamp(ped.punchT / 0.55, 0, 1);
-          aj[ped.punchArm ? 'armR' : 'armL'].rotation.x = -2.3 + jab * 1.1;
-          aj[ped.punchArm ? 'armL' : 'armR'].rotation.x = -1.2;
+          // quick jabs off alternating hands, not a slow-motion haymaker —
+          // and only while actually within reach of someone
+          if (ped.aimPose) {
+            var aj = ped.mesh.userData.joints;
+            var jab = U.clamp(ped.punchT / 0.55, 0, 1);
+            aj[ped.punchArm ? 'armR' : 'armL'].rotation.x = -2.3 + jab * 1.1;
+            aj[ped.punchArm ? 'armL' : 'armR'].rotation.x = -1.2;
+          }
         }
       } else if (ped.state === 'dive') {
         // a real dive: they leave their feet, arc through the air and land —
@@ -669,17 +698,28 @@ GAME.peds = (function () {
     if (!GAME.chaos.on || GAME.chaos.sparkRate <= 0) return;
     if (fightCount() >= GAME.chaos.maxFights) return;
     var range2 = GAME.chaos.sparkRange * GAME.chaos.sparkRange;
+    // Near the player — see GAME.chaos.nearPlayer for why.
     for (var i = 0; i < world.peds.length; i++) {
       var a = world.peds[i];
       if (a.dead || a.isCop || a.jobPed || a.state !== 'walk') continue;
       if ((a.temper || 0) < 0.5) continue;                 // the placid never start it
+      // 85 m, not tighter. The crowd is SPAWNED at 60-150 m (see spawnBubble),
+      // so nobody starts near the player at all — they only get close by
+      // walking there or by the player driving to them. A 55 m gate sat
+      // inside the spawn ring and starved a player who was standing still:
+      // measured, forty-five seconds at the top of the range with a crowd of
+      // twenty produced no fights whatsoever.
+      if (!GAME.chaos.nearPlayer(a.pos.x, a.pos.z, 85)) continue;
       if (!GAME.chaos.rollRate(GAME.chaos.sparkRate, dt)) continue;
       for (var j = 0; j < world.peds.length; j++) {
         var b = world.peds[j];
         if (b === a || b.dead || b.isCop || b.jobPed) continue;
         if (U.dist2(a.pos.x, a.pos.z, b.pos.x, b.pos.z) > range2) continue;
         if (Math.abs(a.pos.y - b.pos.y) > 2) continue;
-        startFight(a, { kind: 'ped', ped: b }, U.randRange(Math.random, 6, 11));
+        // Long enough to come across. A ten-second scuffle three streets over
+        // is a scuffle nobody saw; the same one running for twenty gives a
+        // player driving past a chance to notice it and stop.
+        startFight(a, { kind: 'ped', ped: b }, U.randRange(Math.random, 12, 22));
         return;                                             // one a frame, at most
       }
     }
@@ -732,8 +772,15 @@ GAME.peds = (function () {
   function startFight(ped, foe, secs) {
     if (ped.dead || ped.gone || ped.isCop || ped.jobPed) return false;
     if (foe && foe.kind === 'ped' && (!foe.ped || foe.ped.dead || foe.ped.gone || foe.ped === ped)) return false;
-    // an existing brawler is already counted; a fresh one has to fit
-    if (ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
+    // An existing brawler is already counted; a fresh one has to fit. But
+    // SWINGING BACK is not a new fight, it is the other half of one that is
+    // already running — and counting it as new was most of the reason fights
+    // looked one-sided. The ceiling counts bodies, so a mutual brawl cost two
+    // of them: at LIVELY's cap of three you could have one real fight and one
+    // man being chased, and never two real ones.
+    var answering = foe && foe.kind === 'ped' && foe.ped &&
+      foe.ped.state === 'attack' && foe.ped.foe && foe.ped.foe.ped === ped;
+    if (!answering && ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
     ped.state = 'attack';
     ped.attackT = secs || 9;
     ped.foe = foe || null;
@@ -782,7 +829,12 @@ GAME.peds = (function () {
       // else could not start anything and the pavement never fought with
       // itself. It is rated, because a city where every shove becomes a
       // brawl is as unreal as one where none of them do.
-      fights = spirit && GAME.chaos.roll(GAME.chaos.fightChance + 0.35);
+      // Hit by another stranger, and standing there taking it is the one
+      // outcome nobody wants to watch. `spirit` alone gates on temper, which
+      // already excludes about half of them; on top of that the roll used to
+      // discard a further chunk, and the result was a lot of chasing and very
+      // little fighting. Anyone with the temper for it now answers.
+      fights = spirit && (GAME.chaos.fightChance > 0 || ped.state === 'attack');
     } else {
       fights = byPlayer && spirit;
     }

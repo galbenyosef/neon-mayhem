@@ -46,13 +46,18 @@ GAME.chaos = (function () {
   // three minutes is not enough samples at these rates — worth about ±1.5/min
   // there. So the levels are placed on the points that are far enough apart to
   // be real, rather than fitted to the curve: roughly 0.7, 2.5, 5.7 and 20.
+  // The rates went up roughly fourfold after the first play session: measured
+  // in a headless sim with the player PARKED they looked right, but nobody
+  // plays parked. Driving, with fights only counted where they can actually be
+  // seen, LIVELY was producing under two a minute at a median of 68 m — which
+  // is a player reporting two fights in a quarter of an hour, and they did.
   var ROWS = [
     // name    react  fight  spark  range  armed  police  maxFights
     ['OFF',    0,     0,     0,     0,     0,     false,  0],
-    ['CALM',   0.55,  0.10,  0.016, 10,    0,     true,   1],
-    ['NORMAL', 0.85,  0.28,  0.018, 14,    0.02,  true,   2],
-    ['LIVELY', 1,     0.50,  0.024, 28,    0.06,  true,   3],
-    ['MAYHEM', 1,     0.85,  0.070, 42,    0.18,  true,   5]
+    ['CALM',   0.55,  0.10,  0.020, 10,    0,     true,   1],
+    ['NORMAL', 0.85,  0.28,  0.060, 14,    0.02,  true,   3],
+    ['LIVELY', 1,     0.50,  0.110, 28,    0.06,  true,   5],
+    ['MAYHEM', 1,     0.85,  0.300, 42,    0.18,  true,   8]
   ];
 
   // LIVELY. The city being too quiet is the thing being fixed, so the default
@@ -99,6 +104,25 @@ GAME.chaos = (function () {
       return idx;
     },
     cycle: function () { return api.set((idx + 1) % ROWS.length); },
+
+    // Is this close enough to the player to be worth staging?
+    //
+    // The crowd lives out to 180 m and a brawl at that range is a brawl that
+    // did not happen, as far as anyone watching is concerned. Measured while
+    // driving, the median fight was starting 97 m away — the sim was hitting
+    // its rate honestly and the player was seeing almost none of it. So every
+    // chaos event asks this first.
+    //
+    // It does mean the city misbehaves where you are looking and behaves
+    // itself where you are not, which is a cheat. It is the same cheat as the
+    // spawn bubble itself, and the alternative is spending the whole budget
+    // out of shot.
+    nearPlayer: function (x, z, r) {
+      var f = GAME.focus();
+      var d = (r || 60);
+      var dx = x - f.x, dz = z - f.z;
+      return dx * dx + dz * dz <= d * d;
+    },
 
     // one place for "roll a die against a chaos rate", so a caller cannot
     // accidentally run a gated behaviour at OFF by forgetting the check

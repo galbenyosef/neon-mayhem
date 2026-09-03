@@ -802,6 +802,27 @@ GAME.vehicles = (function () {
     }
   }
 
+  // Get the driver out from behind the wheel and leave the car standing. The
+  // same person every time — lastDriver remembers the face and the temper —
+  // so the man who got out to argue about a dent is the man who was driving.
+  function ejectDriver(car) {
+    if (!car || car.dead || car.occupied !== 'ai' || car.isPolice) return null;
+    var side = car.heading + Math.PI / 2;
+    var d = GAME.peds.spawnPed(car.pos.x + Math.sin(side) * 1.7, car.pos.z + Math.cos(side) * 1.7,
+      car.lastDriver ? { look: car.lastDriver } : undefined);
+    if (!d) return null;
+    if (car.lastDriver) d.temper = car.lastDriver.temper;
+    else car.lastDriver = { shirt: d.look.shirt, pants: d.look.pants, skin: d.look.skin,
+      hair: d.look.hair, hairCol: d.look.hairCol, temper: d.temper };
+    car.occupied = null;
+    car.ai = null;
+    car.controls = { throttle: 0, steer: 0, handbrake: true };
+    car.speed = 0; car.lat = 0;
+    if (car.riderMesh) { car.mesh.remove(car.riderMesh); disposeTree(car.riderMesh); car.riderMesh = null; }
+    d.leftCar = car;
+    return d;
+  }
+
   function collideCars(dt) {
     var cars = world.cars;
     for (var i = 0; i < cars.length; i++) {
@@ -868,6 +889,25 @@ GAME.vehicles = (function () {
             // a mission rival in a cruiser is a racer, not the law
             if (other.isPolice && !other.mission) GAME.police.reportCrime('hit_cop_car', pc.pos);
             else if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
+          }
+        }
+        // Somebody gets out about it. A shunt between two strangers used to be
+        // a noise and a dent and nothing else — no horn, no words, both cars
+        // driving on as if metal meeting metal were weather. Now the one who
+        // was hit can stop, get out, and go and have it out with the other
+        // driver, which is the version of this that happens where the player
+        // is actually looking rather than somewhere behind them.
+        if (rel > 7 && GAME.chaos.nearPlayer(a.pos.x, a.pos.z, 60) &&
+          GAME.chaos.roll(GAME.chaos.reactChance * 0.8) &&
+          a.occupied === 'ai' && b.occupied === 'ai' && !a.isPolice && !b.isPolice &&
+          !a.mission && !b.mission) {
+          // whoever was hit from behind or the side is the aggrieved party
+          var hitFirst = (avx * nx + avz * nz) > 0 ? b : a;   // a drove into b
+          var other = hitFirst === a ? b : a;
+          var out = ejectDriver(hitFirst);
+          if (out) {
+            out.temper = Math.max(out.temper || 0, 0.6);
+            GAME.peds.startFight(out, { kind: 'car', car: other }, 14);
           }
         }
         // transfer momentum crudely
@@ -1330,6 +1370,7 @@ GAME.vehicles = (function () {
     TYPES: VEHICLES,
     spawnCar: spawnCar,
     removeCar: removeCar,
+    ejectDriver: ejectDriver,
     update: update,
     damageCar: damageCar,
     explodeCar: explodeCar,

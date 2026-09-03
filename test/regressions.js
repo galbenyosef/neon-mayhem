@@ -941,6 +941,122 @@ function withTimeout(p, ms) {
     kerb.inside + ' spots inside a crossing carriageway' +
     (kerb.where ? ', worst ' + kerb.worst + 'm in at ' + JSON.stringify(kerb.where) : ''));
 
+  // ---------- 3k (b): what a fight has to LOOK like ----------
+  // Three things a play session found that the first round of measurement did
+  // not, because it counted fights rather than watching one.
+  var brawl2 = await page.evaluate(function () {
+    var C = GAME.chaos;
+    C.set(1);            // CALM: a ceiling of one, so a single filler fills it
+    GAME.test.teleport(-150, 120);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.6);
+    var f = GAME.focus();
+    var a = GAME.test.spawnPed(4, 0), b = GAME.test.spawnPed(4, 22);
+    if (!a || !b) { C.set(0); return { noPeds: true }; }
+    a.temper = 1; b.temper = 1;
+    // Saturate the fight ceiling first. That is the condition the bug lived
+    // in: the cap counts BODIES, so a two-sided brawl needs two slots, and
+    // swinging back was competing with fresh fights for one. With the board
+    // clear the victim turns and fights on any version of the code, which is
+    // exactly why the first version of this check passed on the broken one.
+    GAME.world.peds.forEach(function (p) {
+      if (p !== a && p !== b && p.state === 'attack') { p.state = 'walk'; p.foe = null; }
+    });
+    var x = GAME.test.spawnPed(-16, 4), y = GAME.test.spawnPed(-16, 7);
+    if (x && y) { x.temper = 1; y.temper = 1; GAME.peds.startFight(x, { kind: 'ped', ped: y }, 30); }
+    var cap = C.maxFights, fillers = GAME.peds.fightCount();
+    // and put `a` in the fight WITHOUT going through the ceiling, so this is
+    // a test of the victim's answer rather than of the aggressor's slot
+    a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 25;
+    var armsUpWhileRunning = 0, runFrames = 0, mutual = false, punches = 0;
+    var hp0 = b.hp;
+    for (var t = 0; t < 60 * 20; t++) {
+      // hold him to it: attackT runs down and the state gives up on its own,
+      // and this check is about how he looks getting there
+      if (a.state !== 'attack') { a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; }
+      a.attackT = 25;
+      GAME.test.fastForward(1 / 60);
+      if (a.dead || b.dead || a.gone || b.gone) break;
+      // the charge: arms must swing, not sit frozen overhead
+      if (a.state === 'attack' && a.speed > 4) {
+        runFrames++;
+        // EITHER arm. The jab pose raises whichever one punchArm selects and
+        // drops the other to -1.2, and punchArm starts falsy — so watching
+        // armR alone watched the arm that was never up, and this check passed
+        // on the broken code.
+        var jt = a.mesh.userData.joints;
+        if (jt.armR.rotation.x < -2 || jt.armL.rotation.x < -2) armsUpWhileRunning++;
+      }
+      if (b.state === 'attack' && b.foe && b.foe.ped === a) mutual = true;
+      if (b.hp < hp0) punches++;
+    }
+    var out = { armsUp: armsUpWhileRunning, runFrames: runFrames, mutual: mutual,
+                landed: b.hp < hp0 || b.dead, cap: cap, fillers: fillers };
+    [a, b, x, y].forEach(function (p) { if (p && !p.gone) GAME.peds.removePed(p); });
+    C.set(0);
+    return out;
+  });
+  if (!brawl2.noPeds) {
+    check('brawl: he does actually run at the other man (anchor sanity)',
+      brawl2.runFrames > 30, brawl2.runFrames + ' frames of charging');
+    // The jab pose was applied on every frame of the attack state, charge
+    // included, and punchT does not tick while closing — so both arms locked
+    // at head height for the whole run. It read as a zombie, and it did.
+    check('brawl: and his arms swing while he does, rather than locked overhead',
+      brawl2.armsUp < brawl2.runFrames * 0.1,
+      brawl2.armsUp + ' of ' + brawl2.runFrames + ' charging frames with the arms up');
+    check('brawl: the punches land (anchor sanity)', brawl2.landed, 'the other man was hit');
+    // The fight ceiling counts BODIES, so a two-sided brawl cost two of them
+    // and swinging back was competing with fresh fights for a slot. Most
+    // fights came out one-sided: one man chasing, the other never turning.
+    check('brawl: the board is full while he is being hit (anchor sanity)',
+      brawl2.fillers >= brawl2.cap, brawl2.fillers + ' fights already running against a ceiling of ' + brawl2.cap);
+    check('brawl: and the man being hit swings back even so',
+      brawl2.mutual, brawl2.mutual ? 'he turned and fought' : 'he never fought back');
+  }
+
+  // a shunt between two strangers puts somebody on the pavement about it
+  var shunt = await page.evaluate(function () {
+    var C = GAME.chaos;
+    C.set(4);
+    GAME.test.teleport(-250, 0);
+    GAME.police.clearWanted();
+    if (GAME.player.inCar) GAME.exitCar();
+    GAME.test.fastForward(0.8);
+    var f = GAME.focus();
+    var got = 0, tries = 0;
+    for (var k = 0; k < 12 && !got; k++) {
+      tries++;
+      var one = GAME.test.spawnCar('sedan', 8, 6), two = GAME.test.spawnCar('sedan', 8, -6);
+      if (!one || !two) break;
+      one.occupied = 'ai'; two.occupied = 'ai';
+      one.ai = { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 };
+      two.ai = { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 };
+      // point them at each other and let them meet
+      // Nose to nose and closing. Eighteen metres apart gave the drivers most
+      // of a second to steer around each other and the crash often never
+      // happened at all; four metres does not.
+      one.pos.set(f.x + 8, GAME.city.groundY(f.x + 8, f.z + 2), f.z + 2);
+      two.pos.set(f.x + 8, GAME.city.groundY(f.x + 8, f.z - 2), f.z - 2);
+      one.heading = Math.PI; two.heading = 0;
+      one.speed = 14; two.speed = 14;
+      one.lat = 0; two.lat = 0;
+      for (var t = 0; t < 60 * 2; t++) {
+        GAME.test.fastForward(1 / 60);
+        var ps = GAME.world.peds;
+        for (var i = 0; i < ps.length; i++) if (ps[i].leftCar && !ps[i].dead) { got++; break; }
+        if (got) break;
+      }
+      [one, two].forEach(function (c) { if (c && !c.dead) GAME.vehicles.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (p.leftCar) GAME.peds.removePed(p); });
+    }
+    C.set(0);
+    return { got: got, tries: tries };
+  });
+  check('shunt: a hard crash between two strangers puts a driver on the road',
+    shunt.got > 0, shunt.got ? 'a driver got out within ' + shunt.tries + ' staged crashes'
+                             : 'nobody got out of a car in ' + shunt.tries + ' staged crashes');
+
   // ---------- 3l: the law has somewhere else to be ----------
   // At zero stars police.js used to delete every officer and cruiser in the
   // world every sixtieth frame, which is the deepest reason the police were
@@ -1041,7 +1157,10 @@ function withTimeout(p, ms) {
       b.pos.x = a.pos.x + 26; b.pos.z = a.pos.z + 2;
       b.pos.y = GAME.city.groundY(b.pos.x, b.pos.z);
       GAME.peds.startFlee(b, a.pos.x, a.pos.z, 30);
-      GAME.peds.startFight(a, { kind: 'ped', ped: b }, 30);
+      // straight into the state rather than through startFight: the ceiling
+      // is not what this check is about, and at the top of the range the
+      // ambient brawls can hold every slot
+      a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 30;
       var d0 = Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z), dmin = d0;
       for (var t = 0; t < 60 * 8; t++) {
         GAME.test.fastForward(1 / 60);
@@ -1136,6 +1255,18 @@ function withTimeout(p, ms) {
       GAME.test.teleport(-150, 40);
       GAME.police.clearWanted();
       GAME.test.fastForward(1);
+      // Seed a crowd beside the player. Sparks only fire near them (see
+      // chaos.nearPlayer) and spawnBubble puts everyone 60-150 m out, so a
+      // player standing still has nobody close and the street can stay quiet
+      // for a full minute at the top of the range — measured, twice. Driving
+      // into the crowd is what normally supplies this.
+      var f = GAME.focus();
+      for (var k = 0; k < 8; k++) {
+        var ang = k * 0.8, rr = 10 + (k % 3) * 6;
+        var np = GAME.test.spawnPed(Math.cos(ang) * rr, Math.sin(ang) * rr);
+        if (np) np.temper = 0.6 + Math.random() * 0.4;
+      }
+      GAME.test.fastForward(0.5);
       var seen = [], fights = 0, peak = 0;
       for (var f = 0; f < 60 * secs; f++) {
         GAME.test.fastForward(1 / 60);
@@ -1178,6 +1309,13 @@ function withTimeout(p, ms) {
     var a = GAME.test.spawnPed(4, 0), b = GAME.test.spawnPed(6, 0);
     if (!a || !b) { C.set(0); return { noPeds: true }; }
     a.temper = 1; b.temper = 1;
+    // Clear the ambient brawls first. The fight ceiling is a real cap and at
+    // the top of the range the street reaches it on its own — a staged fight
+    // that silently loses the race for a slot reads as "he did not charge"
+    // and fails a check about something else entirely.
+    GAME.world.peds.forEach(function (p) {
+      if (p !== a && p !== b && p.state === 'attack') { p.state = 'walk'; p.foe = null; }
+    });
     var hp0 = b.hp;
     var took = GAME.peds.startFight(a, { kind: 'ped', ped: b }, 12);
     var closed = 1e9;
