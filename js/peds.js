@@ -441,13 +441,14 @@ GAME.peds = (function () {
           // close he still swings, because a pistol at arm's length is a punch
           // with extra steps.
           //
-          // Only ever pointed at another NPC. The knob turns armed strangers
-          // on, but nothing here has been asked to make the streets more
-          // dangerous to the PLAYER, and a civilian who opens fire on you is a
-          // different game to one who pulls a gun on the man he is arguing
-          // with. Against you they use their fists exactly as they always did.
+          // Pointed at whoever he is fighting, the player included. Getting
+          // into a fist fight with a man who turns out to be armed is the
+          // point of him being armed; he just cannot start one from across the
+          // street, because he only ever draws on someone he is already in the
+          // attack state against, which for the player means they provoked it.
           var canShoot = ped.carrying && GAME.chaos.armedChance > 0 &&
-            F.kind === 'ped' && F.ped && ad2 > 36 && ad2 < 30 * 30 &&
+            (F.kind === 'ped' ? !!F.ped : F.kind === 'player') &&
+            ad2 > 36 && ad2 < 30 * 30 &&
             Math.abs(ty - ped.pos.y) < 3 &&
             GAME.city.hash.segmentClear(ped.pos.x, ped.pos.z, tx, tz);
           if (canShoot) {
@@ -458,9 +459,17 @@ GAME.peds = (function () {
             ped.shootT -= dt;
             if (ped.shootT <= 0) {
               ped.shootT = U.randRange(Math.random, 0.9, 1.8);
-              GAME.combat.npcShoot(ped.pos.x, 1.35, ped.pos.z, 0.55, 7, ped, F.ped);
-              // a gun makes this a different call: the officer who turns up
-              // treats it as one
+              // A wilder shot than the law, deliberately. npcShoot's accuracy
+              // is INVERTED — higher is tighter — and 0.55 made a man with a
+              // pistol in his waistband a better shot than a three-star
+              // officer, which was tolerable while he could only ever hit
+              // another NPC and is not now. At 0.15 he lands about a quarter
+              // of his rounds at twelve metres where an officer lands a third.
+              GAME.combat.npcShoot(ped.pos.x, 1.35, ped.pos.z, 0.15, 6, ped,
+                F.kind === 'ped' ? F.ped : undefined);
+              // A gun in the street is a police matter whoever it is aimed at,
+              // so this is reported either way — the officer who turns up
+              // treats it as the serious call it is.
               if (GAME.police.reportIncident) GAME.police.reportIncident(ped.pos.x, ped.pos.z, ped, 2);
               panic(ped.pos.x, ped.pos.z, 22);
             }

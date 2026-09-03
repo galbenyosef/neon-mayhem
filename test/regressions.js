@@ -1404,6 +1404,71 @@ function withTimeout(p, ms) {
     }
     if (!a.gone) GAME.peds.removePed(a);
     if (!b.gone) GAME.peds.removePed(b);
+
+    // and now the other way round: a fight the PLAYER is in, against someone
+    // who turns out to be carrying
+    var P = GAME.player;
+    function rate(acc, dmg, n) {
+      var hits = 0, sh = { aimSkill: 1.03 };
+      P.moveSpeed = 0;
+      for (var i = 0; i < n; i++) {
+        P.health = 100;
+        if (GAME.combat.npcShoot(P.pos.x + 12, 1.35, P.pos.z, acc, dmg, sh)) hits++;
+      }
+      P.health = 100;
+      return hits / n;
+    }
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(-150, 0);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.8);
+    P.health = 100;
+    var armed = { civ: rate(0.15, 6, 3000), cop1: rate(0.36, 6, 3000), cop3: rate(0.48, 8, 3000) };
+    C.set(4);
+    var fx = GAME.focus(), shot = 0, tries = 0;
+    // He only draws with a clear line to his man — so the staging has to give
+    // him one. Placing him at a fixed bearing put a wall between them on one
+    // run in five and the check reported "he never fired" about a gate that
+    // was working exactly as written.
+    var ANGLES = [0, 0.9, 1.8, 2.7, 3.6, 4.5, 5.4, 6.0];
+    for (var k = 0; k < ANGLES.length && tries < 6; k++) {
+      var gx = fx.x + Math.cos(ANGLES[k]) * 11, gz = fx.z + Math.sin(ANGLES[k]) * 11;
+      if (!GAME.city.hash.segmentClear(gx, gz, fx.x, fx.z)) continue;
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      // and clear the traffic. A car bearing down makes him DIVE, which takes
+      // him out of the attack state and stops him drawing at all — which is
+      // why the hit count swung between one attempt in four and four, and
+      // occasionally came up empty. He is not missing on those runs, he never
+      // fires.
+      GAME.world.cars.slice().forEach(function (c) {
+        if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, fx.x, fx.z) < 50 * 50) GAME.vehicles.removeCar(c);
+      });
+      var g = GAME.test.spawnPed(gx - fx.x, gz - fx.z);
+      if (!g) continue;
+      tries++;
+      g.temper = 1; g.carrying = true;
+      // a null foe is the player — the same thing a provoked stranger gets
+      g.state = 'attack'; g.foe = null; g.attackT = 20;
+      P.health = 100;
+      P.state = 'alive';
+      for (var t = 0; t < 60 * 10; t++) {
+        P.pos.x = fx.x; P.pos.z = fx.z;          // hold the range open
+        g.pos.x = gx; g.pos.z = gz;
+        g.attackT = 20;
+        if (g.state !== 'attack') { g.state = 'attack'; g.foe = null; }
+        if (t % 30 === 0) GAME.world.cars.slice().forEach(function (c) {
+          if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, fx.x, fx.z) < 50 * 50) GAME.vehicles.removeCar(c);
+        });
+        GAME.test.fastForward(1 / 60);
+        if (P.health < 100) { shot++; break; }
+      }
+      P.health = 100;
+      if (!g.gone) GAME.peds.removePed(g);
+    }
+    armed.shot = shot; armed.tries = tries; armed.hitPlayer = shot > 0;
+    armed.stars = GAME.police.wanted;
+    out.armed = armed;
+    P.health = 100;
     C.set(0);
     return out;
   });
@@ -1417,6 +1482,23 @@ function withTimeout(p, ms) {
       gun.playerHp >= gun.php0, 'player health ' + gun.php0 + ' -> ' + gun.playerHp);
     check('gun: gunfire between strangers is not the player’s crime',
       gun.stars === gun.stars0, 'stars ' + gun.stars0 + ' -> ' + gun.stars);
+    if (gun.armed) {
+      check('gun: a man you are fighting who is carrying will point it at YOU',
+        gun.armed.hitPlayer, gun.armed.hitPlayer
+          ? 'he drew and hit the player in ' + gun.armed.shot + '/' + gun.armed.tries + ' fights'
+          : 'he never fired at the player in ' + gun.armed.tries + ' fights');
+      // npcShoot's accuracy is INVERTED — higher is tighter — and the value
+      // used while these guns could only ever be aimed at other NPCs made a
+      // man with a pistol in his waistband a better shot than a three-star
+      // officer. Fine when the player could not be hit by it; not now.
+      check('gun: but he is a worse shot than the law, not a better one',
+        gun.armed.civ < gun.armed.cop1 && gun.armed.civ < gun.armed.cop3,
+        'civilian ' + (gun.armed.civ * 100).toFixed(0) + '% vs officer ' +
+        (gun.armed.cop1 * 100).toFixed(0) + '% at one star and ' +
+        (gun.armed.cop3 * 100).toFixed(0) + '% at three, all at 12 m');
+      check('gun: and being shot at is not something the player gets blamed for',
+        gun.armed.stars === 0, 'player stars after being fired on: ' + gun.armed.stars);
+    }
     if (gun.chaseFrom !== undefined) {
       // Both run at 6.8: measured, two of them held station thirty metres
       // apart for five straight seconds, neither gaining an inch.
@@ -1976,7 +2058,13 @@ function withTimeout(p, ms) {
     var seen = null, s0 = GAME.audio.siren;
     GAME.audio.siren = function (v, p, x, z) { if (v > 0) seen = { x: x, z: z }; return s0.apply(GAME.audio, arguments); };
     GAME.test.setWanted(3);
-    GAME.test.fastForward(6);
+    // Wait for the cruiser, do not assume six seconds buys one. Spawning a
+    // pursuit car, getting it to the player and starting its siren is a
+    // stochastic errand, and a fixed window duly came up empty on one run in
+    // five — reporting "no siren position" about a chase that simply had not
+    // arrived yet.
+    var waited = 0;
+    while (!seen && waited < 60 * 25) { GAME.test.fastForward(1 / 60); waited++; }
     var wanted = GAME.police.wanted;
     GAME.audio.siren = s0;
     // Call off the manhunt. Left running it followed the player into the
@@ -1985,11 +2073,12 @@ function withTimeout(p, ms) {
     GAME.police.clearWanted();
     GAME.player.health = 100;
     GAME.test.fastForward(1);
-    return { seen: seen, wanted: wanted };
+    return { seen: seen, wanted: wanted, waited: waited };
   });
   check('stereo: a chasing cruiser gives the siren its position',
     !!siren.seen && isFinite(siren.seen.x) && isFinite(siren.seen.z),
-    'wanted=' + siren.wanted + ' got=' + JSON.stringify(siren.seen));
+    'wanted=' + siren.wanted + ' got=' + JSON.stringify(siren.seen) +
+    ' after ' + (siren.waited / 60).toFixed(1) + 's');
 
   // ---------- 6: a rider follows the deck when it tilts ----------
   // vehicles.js pitches a chassis over a ramp (negative rotation.x lifts the
@@ -2607,6 +2696,14 @@ function withTimeout(p, ms) {
     window.__buzz.length = 0;
   });
   var woundDown = await waitFor(function () { return !window.__rumbleState().armed; }, 8000);
+  // Clear the buffer AFTER it has disarmed, not before, and then watch a beat.
+  // The channel runs on its own timer, so a keepalive scheduled a moment
+  // before the caller went quiet can still land while it is winding down —
+  // which is the channel stopping, not the channel failing to stop, and it
+  // failed this check on one run in five. What matters is that nothing keeps
+  // arriving afterwards.
+  await page.evaluate(function () { window.__buzz.length = 0; });
+  await page.waitForTimeout(700);
   var rollOff = await page.evaluate(function () {
     return { sent: window.__buzz.slice(), state: window.__rumbleState() };
   });
@@ -2618,10 +2715,11 @@ function withTimeout(p, ms) {
     roll.knockGotThrough.length === 1 && roll.knockGotThrough[0] === 55,
     'sent=' + JSON.stringify(roll.knockGotThrough));
   check('haptics: and the rumble picks back up behind it', resumed === true);
-  check('haptics: the caller going quiet winds it down, with nothing to remember',
+  check('haptics: the caller going quiet winds it down, and stays down',
     woundDown && !rollOff.state.missing && rollOff.state.on === false &&
     rollOff.sent.filter(function (v) { return Array.isArray(v); }).length === 0,
-    'state=' + JSON.stringify(rollOff.state) + ' sentAfter=' + JSON.stringify(rollOff.sent));
+    'state=' + JSON.stringify(rollOff.state) + ' sent in the 0.7 s after it disarmed=' +
+    JSON.stringify(rollOff.sent));
 
   // and the wiring: a plane on its wheels with the throttle open arms it
   var plane = await page.evaluate(function () {
@@ -3088,6 +3186,20 @@ function withTimeout(p, ms) {
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car || !car.susp) return { drove: false };
+    // Empty the strip around the car. This group reads a spring, and a car
+    // standing on a live street for the settle window gets leaned on by
+    // passing traffic — which is what kept the settle check marginal (0.0061
+    // against a 0.005 threshold on one run in four) long after the reading
+    // itself was averaged. A nudge from a stranger is not the suspension
+    // failing to return.
+    function clearTraffic() {
+      GAME.world.cars.slice().forEach(function (c) {
+        if (c !== car && U.dist2(c.pos.x, c.pos.z, car.pos.x, car.pos.z) < 45 * 45) {
+          GAME.vehicles.removeCar(c);
+        }
+      });
+    }
+    clearTraffic();
     // Wait for the spring to SETTLE rather than assuming a second and a half
     // is enough. It is a damped oscillator being asked to read as zero, and
     // whatever the car is still doing after a spawn and a boarding — rolling
@@ -3104,6 +3216,7 @@ function withTimeout(p, ms) {
       // reverse decays on its own constant (SHUNT_DRAG, vehicles.js) rather
       // than coasting, 0.7 m/s is enough to hold 0.37 degrees of pitch.
       while (n < limit && (Math.abs(car.susp.p) > 0.004 || Math.abs(car.speed) > 0.05)) {
+        if (n % 30 === 0) clearTraffic();
         GAME.test.fastForward(1 / 60); n++;
       }
       GAME.test.fastForward(0.2);
@@ -3148,6 +3261,7 @@ function withTimeout(p, ms) {
     // runs locally, which is the measurement talking, not the suspension.
     var settleSum = 0, settleN = 0;
     for (var sn = 0; sn < 60; sn++) {
+      if (sn % 20 === 0) clearTraffic();
       GAME.test.fastForward(1 / 60);
       settleSum += Math.abs(car.susp.p); settleN++;
     }
