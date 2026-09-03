@@ -175,14 +175,18 @@ GAME.peds = (function () {
   }
 
   function removePed(ped) {
+    // anyone holding this one as a foe has to be able to tell it is gone —
+    // ped.dead only covers being killed, not despawning off the bubble edge
+    ped.gone = true;
     var i = world.peds.indexOf(ped);
     if (i >= 0) world.peds.splice(i, 1);
     GAME.scene.remove(ped.mesh);
     disposeTree(ped.mesh);
   }
 
-  function kill(ped, cause, byPlayer) {
+  function kill(ped, cause, byPlayer, attacker) {
     if (ped.dead) return;
+    ped.killedBy = attacker || null;
     ped.dead = true;
     ped.state = 'dead';
     ped.deadT = 0;
@@ -246,6 +250,44 @@ GAME.peds = (function () {
     ped.wpT = U.randRange(Math.random, 10, 20);
   }
 
+  // Who is this one fighting, and where are they right now?
+  //
+  // ped.foe names the target — the player, another stranger, or a vehicle —
+  // and this turns it into the handful of numbers the attack state actually
+  // uses. An unset foe means the player, so every caller that predates any of
+  // this keeps working untouched.
+  //
+  // `valid` is the important field. A foe can stop being a thing to fight
+  // between one frame and the next: the ped is killed, or despawns off the
+  // edge of the bubble, or the car burns out. Everything that can dangle is
+  // checked here rather than at each of the dozen places downstream.
+  function foeState(ped, chaseCar) {
+    var P = GAME.player;
+    if (chaseCar) {
+      return { valid: !chaseCar.dead, kind: 'car', car: chaseCar, ped: null,
+        x: chaseCar.pos.x, z: chaseCar.pos.z, y: chaseCar.pos.y, speed: Math.abs(chaseCar.speed || 0) };
+    }
+    var foe = ped.foe;
+    if (foe && foe.kind === 'ped') {
+      var o = foe.ped;
+      var ok = !!o && !o.dead && !o.gone;
+      return { valid: ok, kind: 'ped', car: null, ped: o,
+        x: ok ? o.pos.x : ped.pos.x, z: ok ? o.pos.z : ped.pos.z,
+        y: ok ? o.pos.y : ped.pos.y, speed: ok ? Math.abs(o.speed || 0) : 0 };
+    }
+    if (foe && foe.kind === 'car') {
+      var c = foe.car;
+      var cok = !!c && !c.dead;
+      return { valid: cok, kind: 'car', car: c, ped: null,
+        x: cok ? c.pos.x : ped.pos.x, z: cok ? c.pos.z : ped.pos.z,
+        y: cok ? c.pos.y : ped.pos.y, speed: cok ? Math.abs(c.speed || 0) : 0 };
+    }
+    var pc = P.inCar && P.car ? P.car : null;
+    return { valid: P.state === 'alive', kind: 'player', car: pc, ped: null,
+      x: pc ? pc.pos.x : P.pos.x, z: pc ? pc.pos.z : P.pos.z,
+      y: pc ? pc.pos.y : P.pos.y, speed: pc ? Math.abs(pc.speed || 0) : 0 };
+  }
+
   function animateWalk(ped, dt) {
     ped.walkPhase += ped.speed * dt * 2.2;
     var j = ped.mesh.userData.joints;
@@ -280,6 +322,7 @@ GAME.peds = (function () {
         if (ped.deadT > 12 || d2p > 190 * 190) removePed(ped);
         continue;
       }
+      ped.bumpCd = Math.max(0, (ped.bumpCd || 0) - dt);
       if (!ped.isCop && !ped.jobPed && d2p > 180 * 180) { removePed(ped); continue; }
       if (ped.isCop) {
         // movement is driven by police.js, but officers are still flesh and blood:
@@ -346,27 +389,38 @@ GAME.peds = (function () {
         ped.speed = U.damp(ped.speed, 6.8, 4, dt);    // 0.85x the player's 8 sprint
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
       } else if (ped.state === 'attack') {
-        // this one is coming for you — properly. They run you down faster
-        // than you can walk away, throw quick jabs off both hands, and the
-        // one whose car you stole chases the CAR: bangs on it, hauls you out
-        // of the seat if you sit there, and drives off in it. They give up
-        // once you speed away, get too far, or the fight has gone on long
+        // this one is coming for someone — properly. They run their man down
+        // faster than he can walk away, throw quick jabs off both hands, and
+        // the one whose car was taken chases the CAR: bangs on it, hauls the
+        // thief out of the seat, and drives off in it. They give up once the
+        // target speeds away, gets too far, or the fight has gone on long
         // enough — then they run.
+        //
+        // WHO they are coming for is ped.foe, not "the player" — see
+        // foeState(). Everything below is written against the resolved
+        // target, so the same charge-and-jab serves a mugging on the
+        // pavement, a driver hauling a stranger out of his own car, and the
+        // original case of somebody deciding they have had enough of you.
         ped.attackT -= dt;
-        var tcar = P.inCar && P.car ? P.car : null;
         var myCar = ped.stolenCar && !ped.stolenCar.dead && ped.stolenCar.occupied !== 'ai' ? ped.stolenCar : null;
         var chaseCar = myCar && U.dist2(ped.pos.x, ped.pos.z, myCar.pos.x, myCar.pos.z) < 55 * 55;
-        var tx = chaseCar ? myCar.pos.x : P.pos.x;
-        var tz = chaseCar ? myCar.pos.z : P.pos.z;
-        var ty = chaseCar ? myCar.pos.y : (tcar ? tcar.pos.y : P.pos.y);
-        var tSpeed = chaseCar ? Math.abs(myCar.speed) : (tcar ? Math.abs(tcar.speed) : 0);
+        var F = foeState(ped, chaseCar ? myCar : null);
+        var tcar = F.car;
+        var tx = F.x, tz = F.z, ty = F.y, tSpeed = F.speed;
         var ad2 = U.dist2(ped.pos.x, ped.pos.z, tx, tz);
-        if (ped.attackT <= 0 || ad2 > 55 * 55 || P.state !== 'alive' ||
+        // Turning the knob off has to calm the street that is already going,
+        // not merely stop the next one starting — a player reaching for the
+        // escape hatch wants the brawl in front of them to stop. Fights with
+        // the PLAYER are not chaos's to call off, and neither is a man taking
+        // his own car back: both predate all of this and stand at OFF.
+        var calledOff = !GAME.chaos.on && !chaseCar && F.kind !== 'player';
+        if (ped.attackT <= 0 || !F.valid || ad2 > 55 * 55 || calledOff ||
           Math.abs(ty - ped.pos.y) > 3 || tSpeed > 10) {
           ped.state = 'flee';
           ped.fleeT = 4;
-          ped.fleeX = P.pos.x; ped.fleeZ = P.pos.z;
+          ped.fleeX = tx; ped.fleeZ = tz;
           ped.aimPose = false;
+          ped.foe = null;
         } else {
           var ah = Math.atan2(tx - ped.pos.x, tz - ped.pos.z);
           ped.heading = U.angleLerp(ped.heading, ah, Math.min(1, dt * 10));
@@ -417,8 +471,17 @@ GAME.peds = (function () {
             } else if (ped.punchT <= 0) {
               ped.punchT = 0.55;
               ped.punchArm = !ped.punchArm;
-              if (tcar) { GAME.vehicles.damageCar(tcar, 2, 'fists', false); GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12); }
-              else GAME.playerDamage(6, 'fists');
+              // whoever is on the end of it takes the punch
+              if (tcar) {
+                GAME.vehicles.damageCar(tcar, 2, 'fists', false);
+                if (tcar === P.car && P.inCar) GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.12);
+              } else if (F.kind === 'ped' && F.ped) {
+                // a thrown punch is a provocation like any other: the man on
+                // the receiving end gets to decide whether to swing back
+                damage(F.ped, 6, false, ped);
+              } else {
+                GAME.playerDamage(6, 'fists');
+              }
               GAME.audio.crash(0.18, ped.pos.x, ped.pos.z);
             }
           }
@@ -505,6 +568,22 @@ GAME.peds = (function () {
         var lng = vdx * vfx + vdz * vfz;          // along the body
         var lat2 = vdx * vfz - vdz * vfx;         // across it
         if (Math.abs(lng) >= vhl || Math.abs(lat2) >= vhw) continue;
+        // A nudge is not nothing. Between a standstill and the 4 m/s where the
+        // run-over check takes over there was a dead band: a car could shove
+        // someone up the street all day and they would carry on walking as if
+        // the bonnet were weather. Now they notice — most step back, some come
+        // round to the window about it.
+        if (Math.abs(pcv.speed) > 1.2 && (ped.bumpCd || 0) <= 0 && ped.state !== 'attack') {
+          ped.bumpCd = 2.5;
+          if (GAME.chaos.roll(GAME.chaos.reactChance)) {
+            if ((ped.temper || 0) > 0.4 && GAME.chaos.roll(GAME.chaos.fightChance)) {
+              startFight(ped, { kind: 'car', car: pcv }, 7);
+            } else {
+              startFlee(ped, pcv.pos.x, pcv.pos.z, 3);
+              GAME.audio.yelp(ped.pos.x, ped.pos.z);
+            }
+          }
+        }
         var penL = vhl - Math.abs(lng), penW = vhw - Math.abs(lat2);
         if (penW <= penL) {
           var ws = lat2 >= 0 ? 1 : -1;
@@ -543,6 +622,32 @@ GAME.peds = (function () {
       }
     }
     if (GAME.frame % 20 === 5) spawnBubble();
+    sparkTrouble(dt);
+  }
+
+  // Strangers finding their own reasons. Without this the only fights in the
+  // city are ones the player started, which is its own kind of unreal — a
+  // place where nothing happens unless somebody is looking at it. Rare by
+  // design even at the top of the range: an argument every few seconds on a
+  // street of eighteen people is already a lot of argument.
+  function sparkTrouble(dt) {
+    if (!GAME.chaos.on || GAME.chaos.sparkRate <= 0) return;
+    if (fightCount() >= GAME.chaos.maxFights) return;
+    var range2 = GAME.chaos.sparkRange * GAME.chaos.sparkRange;
+    for (var i = 0; i < world.peds.length; i++) {
+      var a = world.peds[i];
+      if (a.dead || a.isCop || a.jobPed || a.state !== 'walk') continue;
+      if ((a.temper || 0) < 0.5) continue;                 // the placid never start it
+      if (!GAME.chaos.rollRate(GAME.chaos.sparkRate, dt)) continue;
+      for (var j = 0; j < world.peds.length; j++) {
+        var b = world.peds[j];
+        if (b === a || b.dead || b.isCop || b.jobPed) continue;
+        if (U.dist2(a.pos.x, a.pos.z, b.pos.x, b.pos.z) > range2) continue;
+        if (Math.abs(a.pos.y - b.pos.y) > 2) continue;
+        startFight(a, { kind: 'ped', ped: b }, U.randRange(Math.random, 6, 11));
+        return;                                             // one a frame, at most
+      }
+    }
   }
 
   function spawnBubble() {
@@ -576,29 +681,73 @@ GAME.peds = (function () {
     }
   }
 
-  function damage(ped, amt, byPlayer) {
+  // how many brawls are already going, so a bad roll cannot turn the whole
+  // street into a boxing gym at once (GAME.chaos.maxFights)
+  function fightCount() {
+    var n = 0;
+    for (var i = 0; i < world.peds.length; i++) {
+      var p = world.peds[i];
+      if (!p.dead && !p.isCop && p.state === 'attack') n++;
+    }
+    return n;
+  }
+
+  // Commit this one to a fight. Returns false if it did not take — the
+  // ceiling is full, or the target is not something to fight.
+  function startFight(ped, foe, secs) {
+    if (ped.dead || ped.gone || ped.isCop || ped.jobPed) return false;
+    if (foe && foe.kind === 'ped' && (!foe.ped || foe.ped.dead || foe.ped.gone || foe.ped === ped)) return false;
+    // an existing brawler is already counted; a fresh one has to fit
+    if (ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
+    ped.state = 'attack';
+    ped.attackT = secs || 9;
+    ped.foe = foe || null;
+    ped.stuckT = 0;
+    GAME.audio.yelp(ped.pos.x, ped.pos.z);
+    return true;
+  }
+
+  // Turn and run from wherever the trouble came from.
+  function startFlee(ped, fromX, fromZ, secs) {
+    ped.state = 'flee';
+    ped.fleeT = secs || 6;
+    ped.fleeX = fromX; ped.fleeZ = fromZ;
+    ped.foe = null;
+  }
+
+  // `attacker` is the ped who did it, or undefined when it was the player.
+  // Which one it is decides both whether swinging back is even on the table
+  // and, if not, which way they run.
+  function damage(ped, amt, byPlayer, attacker) {
     if (ped.dead) return;
     ped.hp -= amt;
     GAME.fx.spawn(ped.pos.x, 1.2, ped.pos.z, { count: 3, color: 0xc42848, spread: 1, vy: 1, life: 0.3, grav: -3 });
-    if (ped.hp <= 0) kill(ped, 'shot', byPlayer);
-    else if (!ped.isCop) {
-      // Not everyone runs — and whoever DOES turn to fight, fights. The old
-      // hp floor made every brawler quit after two punches, which read as
-      // no fight at all. Once committed, they go the distance; only someone
-      // nearly dead before it starts thinks better of it.
-      var fights = byPlayer &&
-        (ped.state === 'attack' || ((ped.temper || 0) > 0.45 && ped.hp > 4));
-      if (fights) {
-        ped.state = 'attack';
-        ped.attackT = 9;
-        GAME.audio.yelp(ped.pos.x, ped.pos.z);
-      } else {
-        ped.state = 'flee';
-        ped.fleeT = 6;
-        ped.fleeX = GAME.player.pos.x; ped.fleeZ = GAME.player.pos.z;
-      }
+    if (ped.hp <= 0) { kill(ped, 'shot', byPlayer, attacker); return; }
+    if (ped.isCop) return;
+    // Not everyone runs — and whoever DOES turn to fight, fights. The old
+    // hp floor made every brawler quit after two punches, which read as
+    // no fight at all. Once committed, they go the distance; only someone
+    // nearly dead before it starts thinks better of it.
+    var spirit = (ped.state === 'attack' || ((ped.temper || 0) > 0.45 && ped.hp > 4));
+    var fights;
+    if (attacker) {
+      // Hit by another stranger. This is the case that did not exist at all
+      // before — the old rule was `byPlayer && ...`, so a punch from anyone
+      // else could not start anything and the pavement never fought with
+      // itself. It is rated, because a city where every shove becomes a
+      // brawl is as unreal as one where none of them do.
+      fights = spirit && GAME.chaos.roll(GAME.chaos.fightChance + 0.35);
+    } else {
+      fights = byPlayer && spirit;
     }
+    var fromX = attacker ? attacker.pos.x : GAME.player.pos.x;
+    var fromZ = attacker ? attacker.pos.z : GAME.player.pos.z;
+    if (fights && startFight(ped, attacker ? { kind: 'ped', ped: attacker } : null, 9)) return;
+    startFlee(ped, fromX, fromZ, 6);
   }
 
-  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair };
+  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair,
+    // so a crash in vehicles.js can put somebody's back up without knowing
+    // anything about how a fight is represented
+    startFight: startFight, startFlee: startFlee, fightCount: fightCount };
 })();

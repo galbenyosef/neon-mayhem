@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3k. A CITY THAT FIGHTS ITSELF — strangers react to each other, the knob
+//       that rates it is monotone, and OFF is the old game exactly.
 //   3j. BOUNCING OFF A WALL — the shove off what you hit is capped and it
 //       dies, instead of handing the car a reverse gear it never selected.
 //   3i. ON FOOT, NOT UP THE RAMP — a stunt ramp is a drivable surface with
@@ -927,6 +929,135 @@ function withTimeout(p, ms) {
     kerb.inside === 0,
     kerb.inside + ' spots inside a crossing carriageway' +
     (kerb.where ? ', worst ' + kerb.worst + 'm in at ' + JSON.stringify(kerb.where) : ''));
+
+  // ---------- 3k: the city fights with itself, by the knob ----------
+  // Every social thing strangers do to each OTHER is rated off GAME.chaos.
+  // Two properties matter and they pull against each other: the levels have
+  // to actually differ (a knob whose settings feel the same is not a knob),
+  // and OFF has to be the game exactly as it was, because it is the escape
+  // hatch as much as it is a preference.
+  var chaosRows = await page.evaluate(function () {
+    var C = GAME.chaos;
+    if (!C) return { missing: true };
+    var rows = [], was = C.level;
+    for (var i = 0; i < C.levels.length; i++) {
+      C.set(i);
+      rows.push({ name: C.name, react: C.reactChance, fight: C.fightChance,
+                  spark: C.sparkRate, range: C.sparkRange, armed: C.armedChance,
+                  police: C.policeRespond, cap: C.maxFights });
+    }
+    // and the roll helpers must be dead at OFF whatever they are handed
+    C.set(0);
+    var offRolls = 0;
+    for (var r = 0; r < 4000; r++) {
+      if (C.roll(1)) offRolls++;
+      if (C.rollRate(1000, 1 / 60)) offRolls++;
+    }
+    C.set(was);
+    return { rows: rows, offRolls: offRolls, count: C.levels.length };
+  });
+  check('chaos: the knob exists and has a range to it',
+    !chaosRows.missing && chaosRows.count >= 3,
+    chaosRows.missing ? 'GAME.chaos is not defined' : chaosRows.count + ' levels: ' +
+    chaosRows.rows.map(function (r) { return r.name; }).join(' / '));
+  if (!chaosRows.missing) {
+    var rows = chaosRows.rows, off = rows[0];
+    check('chaos: OFF is genuinely nothing, not merely quiet',
+      off.react === 0 && off.fight === 0 && off.spark === 0 && off.armed === 0 &&
+      off.police === false && off.cap === 0,
+      JSON.stringify(off));
+    // A roll helper that fires at OFF would let any gated behaviour through by
+    // accident, which is the one way the escape hatch could silently leak.
+    check('chaos: and no roll can come up true at OFF, however it is asked',
+      chaosRows.offRolls === 0, chaosRows.offRolls + '/8000 rolls fired at OFF');
+    var mono = true, detail = [];
+    for (var i = 1; i < rows.length; i++) {
+      detail.push(rows[i].name + ' spark=' + rows[i].spark + '@' + rows[i].range + 'm cap=' + rows[i].cap);
+      if (i > 1) {
+        var a = rows[i - 1], b = rows[i];
+        // range and the ceiling carry the level (see the note in chaos.js), so
+        // those are the two that must never go backwards
+        if (b.range < a.range || b.cap < a.cap || b.fight < a.fight) mono = false;
+      }
+    }
+    check('chaos: every step up is a step up, never sideways or back',
+      mono, detail.join('  |  '));
+  }
+
+  // and through the game: OFF is silent, the top of the range is not
+  var chaosWorld = await page.evaluate(function () {
+    var C = GAME.chaos, was = C.level;
+    function runFor(level, secs) {
+      C.set(level);
+      GAME.test.teleport(-150, 40);
+      GAME.police.clearWanted();
+      GAME.test.fastForward(1);
+      var seen = [], fights = 0, peak = 0;
+      for (var f = 0; f < 60 * secs; f++) {
+        GAME.test.fastForward(1 / 60);
+        var ps = GAME.world.peds, live = 0;
+        for (var i = 0; i < ps.length; i++) {
+          var p = ps[i];
+          if (p.dead || p.isCop) continue;
+          if (p.state === 'attack') {
+            live++;
+            if (seen.indexOf(p) < 0) { seen.push(p); fights++; }
+          }
+        }
+        if (live > peak) peak = live;
+      }
+      return { fights: fights, peak: peak, crowd: GAME.world.peds.length };
+    }
+    // MAYHEM first: if the crowd cannot produce a fight at all, the OFF
+    // result below means nothing
+    var loud = runFor(C.levels.length - 1, 45);
+    var quiet = runFor(0, 45);
+    C.set(was);
+    return { loud: loud, quiet: quiet };
+  });
+  check('chaos: at the top of the range the street does kick off (anchor sanity)',
+    chaosWorld.loud.fights > 0,
+    chaosWorld.loud.fights + ' fights in 45 s, up to ' + chaosWorld.loud.peak +
+    ' at once, crowd of ' + chaosWorld.loud.crowd);
+  check('chaos: and at OFF the same street does not, at all',
+    chaosWorld.quiet.fights === 0,
+    chaosWorld.quiet.fights + ' fights in 45 s with the knob off');
+
+  // a fight between two strangers has to actually be a fight
+  var brawl = await page.evaluate(function () {
+    var C = GAME.chaos, was = C.level;
+    C.set(3);
+    GAME.test.teleport(-150, 60);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.6);
+    var f = GAME.focus();
+    var a = GAME.test.spawnPed(4, 0), b = GAME.test.spawnPed(6, 0);
+    if (!a || !b) { C.set(was); return { noPeds: true }; }
+    a.temper = 1; b.temper = 1;
+    var hp0 = b.hp;
+    var took = GAME.peds.startFight(a, { kind: 'ped', ped: b }, 12);
+    var closed = 1e9;
+    for (var t = 0; t < 60 * 10; t++) {
+      GAME.test.fastForward(1 / 60);
+      if (a.dead || b.dead) break;
+      closed = Math.min(closed, Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z));
+    }
+    var out = { took: took, hp0: hp0, hp1: b.hp, hit: b.hp < hp0 || b.dead,
+                closed: +closed.toFixed(1), aState: a.state, bState: b.state };
+    if (!a.gone) GAME.peds.removePed(a);
+    if (!b.gone) GAME.peds.removePed(b);
+    C.set(was);
+    return out;
+  });
+  if (!brawl.noPeds) {
+    check('chaos: one stranger can be set on another at all (anchor sanity)',
+      brawl.took === true, 'startFight returned ' + brawl.took);
+    check('chaos: and he closes the distance rather than shadow-boxing',
+      brawl.closed < 2.5, 'got within ' + brawl.closed + ' m');
+    check('chaos: and the punches land on the other man, not on the player',
+      brawl.hit, 'his hp went ' + brawl.hp0 + ' -> ' + brawl.hp1 +
+      ' (he ended up ' + brawl.bState + ')');
+  }
 
   // ---------- 3j: a wall shoves you off, it does not launch you ----------
   // The rebound off a solid was 40% of the closing speed with nothing to take
