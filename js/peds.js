@@ -427,9 +427,44 @@ GAME.peds = (function () {
           ped.aimPose = true;
           var targetCarBody = chaseCar ? myCar : tcar;
           var reach = targetCarBody ? (targetCarBody.spec.l / 2 + 1.5) : 1.7;
-          if (ad2 > reach * reach) {
-            // a full 0.85x-sprint charge: faster than you can walk away
-            ped.speed = U.damp(ped.speed, 6.8, 6, dt);
+          // Carrying, and far enough away for it to be worth drawing — up
+          // close he still swings, because a pistol at arm's length is a punch
+          // with extra steps.
+          //
+          // Only ever pointed at another NPC. The knob turns armed strangers
+          // on, but nothing here has been asked to make the streets more
+          // dangerous to the PLAYER, and a civilian who opens fire on you is a
+          // different game to one who pulls a gun on the man he is arguing
+          // with. Against you they use their fists exactly as they always did.
+          var canShoot = ped.carrying && GAME.chaos.armedChance > 0 &&
+            F.kind === 'ped' && F.ped && ad2 > 36 && ad2 < 30 * 30 &&
+            Math.abs(ty - ped.pos.y) < 3 &&
+            GAME.city.hash.segmentClear(ped.pos.x, ped.pos.z, tx, tz);
+          if (canShoot) {
+            ped.speed = U.damp(ped.speed, 0, 6, dt);
+            ped.aimPose = true;
+            ped.mesh.userData.joints.armR.rotation.x = -Math.PI / 2;
+            ped.mesh.userData.joints.armL.rotation.x = -0.4;
+            ped.shootT -= dt;
+            if (ped.shootT <= 0) {
+              ped.shootT = U.randRange(Math.random, 0.9, 1.8);
+              GAME.combat.npcShoot(ped.pos.x, 1.35, ped.pos.z, 0.55, 7, ped, F.ped);
+              // a gun makes this a different call: the officer who turns up
+              // treats it as one
+              if (GAME.police.reportIncident) GAME.police.reportIncident(ped.pos.x, ped.pos.z, ped, 2);
+              panic(ped.pos.x, ped.pos.z, 22);
+            }
+          } else if (ad2 > reach * reach) {
+            // A full 0.85x-sprint charge: faster than you can walk away.
+            //
+            // Chasing another NPC needs a little more than that. A fleeing
+            // stranger runs at exactly the same 6.8 the charge uses, so the
+            // two of them held station at whatever range the fight started —
+            // measured, thirty metres apart for five straight seconds, one
+            // jogging after the other and neither gaining an inch, until the
+            // clock ran out. Against the PLAYER the 0.85 is a balance figure
+            // and stays exactly what it was.
+            ped.speed = U.damp(ped.speed, F.kind === 'ped' ? 7.7 : 6.8, 6, dt);
             ped.yankT = 0;
           } else {
             ped.speed = U.damp(ped.speed, 0, 9, dt);
@@ -703,7 +738,18 @@ GAME.peds = (function () {
     ped.attackT = secs || 9;
     ped.foe = foe || null;
     ped.stuckT = 0;
+    // Some of them are carrying. Rolled once and remembered, so the man who
+    // pulled a gun in one scuffle is the same man in the next rather than a
+    // fresh coin toss every time he squares up.
+    if (ped.carrying === undefined) ped.carrying = GAME.chaos.roll(GAME.chaos.armedChance);
     GAME.audio.yelp(ped.pos.x, ped.pos.z);
+    // Somebody may want a word about this. Only trouble between OTHER people
+    // is reported — a fight the player is in is what the wanted level is for,
+    // and routing it through here as well would have the law turn up twice
+    // for the same thing.
+    if (foe && foe.kind !== 'player' && GAME.police.reportIncident) {
+      GAME.police.reportIncident(ped.pos.x, ped.pos.z, ped, 1);
+    }
     return true;
   }
 

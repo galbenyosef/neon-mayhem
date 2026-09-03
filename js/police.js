@@ -326,6 +326,193 @@ GAME.police = (function () {
     }
   }
 
+  // ---- the beat, and what happens on it -------------------------------
+  //
+  // Everything below is about police who are NOT after the player. It is
+  // deliberately not a second wanted level: there is no per-suspect heat, no
+  // stars for anyone else, no dispatch model. An incident is a place, a
+  // suspect and a clock, and an officer walks over and deals with it. That
+  // buys the thing that was missing — the law reacting to something you did
+  // not do — without turning a module built around one pursuit into one
+  // built around many.
+  //
+  // The hard rule is at the bottom: the player's pursuit always wins. An
+  // officer in the middle of a scuffle drops it the moment you earn a star.
+  var incidents = [];
+  var patrolT = 0;
+
+  function patrolCount() {
+    var n = 0;
+    for (var i = 0; i < GAME.world.peds.length; i++) {
+      var p = GAME.world.peds[i];
+      if (p.isCop && p.patrol && !p.dead) n++;
+    }
+    return n;
+  }
+
+  // A couple of officers on foot in the bubble, so there is somebody to
+  // notice. Kept small on purpose: this is scenery that can act, not a
+  // garrison, and every one of them costs the same per-frame work a stroller
+  // does out of a budget of eighteen.
+  function maintainPatrol(dt) {
+    if (!GAME.chaos.policeRespond) return;
+    patrolT -= dt;
+    if (patrolT > 0) return;
+    patrolT = U.randRange(Math.random, 3, 6);
+    var want = GAME.chaos.level >= 3 ? 2 : 1;
+    if (patrolCount() >= want) return;
+    var f = GAME.focus();
+    for (var t = 0; t < 6; t++) {
+      var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 45, 85);
+      var rp = GAME.city.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
+      if (rp.axis !== 'net' && (rp.x < -470 || rp.x > 352 || Math.abs(rp.z) > 470)) continue;
+      if (GAME.city.isInWater(rp.x, rp.z)) continue;
+      var d2 = U.dist2(rp.x, rp.z, f.x, f.z);
+      if (d2 < 35 * 35 || d2 > 110 * 110) continue;
+      var cop = GAME.peds.spawnPed(rp.x, rp.z, { cop: true });
+      cop.patrol = true;
+      cop.state = 'walk';
+      cop.armed = true;
+      return;
+    }
+  }
+
+  // Somebody did something. `severity` 1 is a scuffle, 2 is a body or a gun.
+  function reportIncident(x, z, suspect, severity) {
+    if (!GAME.chaos.policeRespond) return null;
+    if (!suspect || suspect.dead || suspect.gone) return null;
+    // one open case per suspect — a long brawl is not twenty incidents
+    for (var i = 0; i < incidents.length; i++) {
+      if (incidents[i].suspect === suspect) {
+        incidents[i].severity = Math.max(incidents[i].severity, severity || 1);
+        incidents[i].t = 0;
+        incidents[i].x = x; incidents[i].z = z;
+        return incidents[i];
+      }
+    }
+    if (incidents.length > 4) return null;
+    var inc = { x: x, z: z, suspect: suspect, severity: severity || 1, t: 0, cop: null };
+    incidents.push(inc);
+    return inc;
+  }
+
+  // An officer attending: walk to the scene, then to the suspect; the suspect
+  // legs it when the law gets close. It ends when the suspect is gone, the
+  // clock runs out, or the player earns a star and everyone has better things
+  // to do.
+  function updateIncidents(dt, s) {
+    for (var i = incidents.length - 1; i >= 0; i--) {
+      var inc = incidents[i];
+      inc.t += dt;
+      var sus = inc.suspect;
+      var dead = !sus || sus.dead || sus.gone;
+      if (dead || inc.t > 26 || s > 0 || !GAME.chaos.policeRespond) {
+        if (inc.cop && !inc.cop.dead && !inc.cop.gone) { inc.cop.onCase = null; inc.cop.state = 'walk'; }
+        incidents.splice(i, 1);
+        continue;
+      }
+      inc.x = sus.pos.x; inc.z = sus.pos.z;
+      if (!inc.cop || inc.cop.dead || inc.cop.gone) {
+        inc.cop = null;
+        // nearest free officer on the beat
+        var best = null, bd = 1e9;
+        for (var c = 0; c < GAME.world.peds.length; c++) {
+          var p = GAME.world.peds[c];
+          if (!p.isCop || !p.patrol || p.dead || p.onCase) continue;
+          var d2 = U.dist2(p.pos.x, p.pos.z, inc.x, inc.z);
+          if (d2 < bd) { bd = d2; best = p; }
+        }
+        if (!best) continue;
+        inc.cop = best;
+        best.onCase = inc;
+      }
+      var cop = inc.cop;
+      var d = stepCop(cop, inc.x, inc.z, dt, 6.4);
+      // A gun is a different call. The officer does not walk up to a man who
+      // is shooting: he stops at a distance and draws, and the aim model is
+      // the same one that decides whether his round finds the player.
+      if (inc.severity >= 2 && d < 26 && d > 4 &&
+        GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, inc.x, inc.z)) {
+        cop.speed = U.damp(cop.speed, 0, 6, dt);
+        cop.mesh.userData.joints.armR.rotation.x = -Math.PI / 2;
+        cop.shootT -= dt;
+        if (cop.shootT <= 0) {
+          cop.shootT = U.randRange(Math.random, 1.0, 1.9);
+          GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.35, 8, cop, sus);
+        }
+        continue;
+      }
+      // close enough to be told to break it up: the fight stops and they run
+      if (d < 3.2) {
+        if (sus.state === 'attack') GAME.peds.startFlee(sus, cop.pos.x, cop.pos.z, 7);
+        if (inc.t > 3) {
+          cop.onCase = null; cop.state = 'walk';
+          incidents.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  // Walk an officer toward a point and animate the legs. Returns how far away
+  // it still is. Shared by the callout and the idle beat below — peds.js does
+  // not move officers (it skips them entirely), so anything a cop does when
+  // there is no pursuit has to be driven from here.
+  function stepCop(cop, tx, tz, dt, want) {
+    var dx = tx - cop.pos.x, dz = tz - cop.pos.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    cop.heading = U.angleLerp(cop.heading, Math.atan2(dx, dz), Math.min(1, dt * 6));
+    cop.speed = U.damp(cop.speed, d > 2.2 ? want : 0, 5, dt);
+    var kx = cop.pos.x, kz = cop.pos.z;
+    cop.pos.x += Math.sin(cop.heading) * cop.speed * dt;
+    cop.pos.z += Math.cos(cop.heading) * cop.speed * dt;
+    if (!GAME.city.canWalkTo(kx, kz, cop.pos.x, cop.pos.z)) { cop.pos.x = kx; cop.pos.z = kz; }
+    var rp = GAME.resolveCircle(cop.pos.x, cop.pos.z, 0.4);
+    cop.pos.x = rp.x; cop.pos.z = rp.z;
+    cop.pos.y = GAME.city.groundY(cop.pos.x, cop.pos.z);
+    cop.mesh.rotation.y = cop.heading;
+    cop.walkPhase += cop.speed * dt * 2.2;
+    var j = cop.mesh.userData.joints;
+    var sw = Math.sin(cop.walkPhase) * Math.min(1, cop.speed / 2.2) * 0.7;
+    j.legL.rotation.x = sw; j.legR.rotation.x = -sw;
+    j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
+    return d;
+  }
+
+  // An officer with nothing to attend still has to look like an officer on a
+  // beat rather than a bollard in a hat.
+  function walkTheBeat(dt) {
+    var f = GAME.focus();
+    for (var i = 0; i < GAME.world.peds.length; i++) {
+      var cop = GAME.world.peds[i];
+      if (!cop.isCop || !cop.patrol || cop.dead || cop.onCase) continue;
+      if (U.dist2(cop.pos.x, cop.pos.z, f.x, f.z) > 150 * 150) { GAME.peds.removePed(cop); continue; }
+      cop.beatT = (cop.beatT || 0) - dt;
+      if (cop.beatT <= 0 || U.dist2(cop.pos.x, cop.pos.z, cop.beatX || 0, cop.beatZ || 0) < 9) {
+        cop.beatT = U.randRange(Math.random, 8, 16);
+        var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 20, 55);
+        var rp = GAME.city.nearestRoadPoint(cop.pos.x + Math.cos(a) * r, cop.pos.z + Math.sin(a) * r);
+        var off = 8.4 * (Math.random() < 0.5 ? 1 : -1);
+        cop.beatX = rp.axis === 'z' ? rp.x + off : rp.x;
+        cop.beatZ = rp.axis === 'z' ? rp.z : rp.z + off;
+        if (GAME.city.isInWater(cop.beatX, cop.beatZ)) { cop.beatX = cop.pos.x; cop.beatZ = cop.pos.z; }
+      }
+      stepCop(cop, cop.beatX, cop.beatZ, dt, 2.6);
+    }
+  }
+
+  // The player's pursuit outranks the beat, always. Whatever an officer was
+  // dealing with, a star means they are yours now — otherwise the law can be
+  // busy elsewhere at exactly the moment it matters, which reads as broken
+  // rather than as a living city.
+  function releasePatrolToPursuit() {
+    if (!incidents.length) return;
+    for (var i = 0; i < incidents.length; i++) {
+      var c = incidents[i].cop;
+      if (c && !c.dead && !c.gone) { c.onCase = null; c.state = 'chase'; }
+    }
+    incidents.length = 0;
+  }
+
   function chaseControls(car, dt, s) {
     var P = GAME.player;
     var pxr = P.inCar && P.car ? P.car.pos.x : P.pos.x;
@@ -528,15 +715,32 @@ GAME.police = (function () {
     if (s === 0) {
       GAME.audio.siren(0);
       if (heat > 0) heat = Math.max(0, heat - dt * 16);
-      // stray cops wander off
+      // Pursuit units stand down — but the beat does not. Until now this
+      // deleted every officer in the world every sixtieth frame, which is the
+      // deepest reason the police were never after anybody but you: at zero
+      // stars there were no police. A patrol officer is a different thing
+      // from a unit sent after the player, and only the latter goes home.
       if (GAME.frame % 60 === 0) {
         var strays = copCars();
-        for (var st = 0; st < strays.length; st++) GAME.vehicles.removeCar(strays[st]);
-        GAME.world.peds.slice().forEach(function (p) { if (p.isCop && !p.dead) GAME.peds.removePed(p); });
+        for (var st = 0; st < strays.length; st++) if (!strays[st].patrol) GAME.vehicles.removeCar(strays[st]);
+        // Pursuit officers always stand down here. A patrol officer normally
+        // stays — that is the whole point of the beat — but goes home too when
+        // the knob says the police are not part of this, so switching to OFF
+        // empties the street rather than leaving one man walking it forever.
+        var beatOn = GAME.chaos.policeRespond;
+        GAME.world.peds.slice().forEach(function (p) {
+          if (p.isCop && !p.dead && (!p.patrol || !beatOn)) GAME.peds.removePed(p);
+        });
         clearSpikes();
       }
+      maintainPatrol(dt);
+      updateIncidents(dt, 0);
+      walkTheBeat(dt);
       return;
     }
+    // the player's own pursuit outranks anything on the beat: an officer
+    // already dealing with a scuffle drops it and comes for you
+    releasePatrolToPursuit();
 
     // high in an aircraft you're out of reach: ground units stop being sent and
     // stop counting as eyes on you, so the heat can cool
@@ -663,6 +867,9 @@ GAME.police = (function () {
     get wanted() { return stars(); },
     get heat() { return heat; },
     reportCrime: reportCrime,
+    reportIncident: reportIncident,
+    get incidentCount() { return incidents.length; },
+    get patrolCount() { return patrolCount(); },
     noteGunfire: noteGunfire,
     airspaceStrike: airspaceStrike,
     get airUnitCount() { return airUnits.length; },

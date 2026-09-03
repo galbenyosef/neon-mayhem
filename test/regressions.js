@@ -22,6 +22,9 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3l. THE LAW OFF THE PLAYER'S BACK — there are police on the street when
+//       you are clean, they attend other people's trouble, and none of it
+//       reaches your wanted level. A drawn gun is pointed at another NPC.
 //   3k. A CITY THAT FIGHTS ITSELF — strangers react to each other, the knob
 //       that rates it is monotone, and OFF is the old game exactly.
 //   3j. BOUNCING OFF A WALL — the shove off what you hit is capped and it
@@ -141,6 +144,14 @@ function withTimeout(p, ms) {
   // Record the calls and assert on those.
   await page.evaluate(function () {
     GAME.test.start();
+    // Pin the city quiet for the whole suite. OFF is by definition the game as
+    // it was before any of the chaos work, so every group below measures what
+    // it always measured — and the alternative is not hypothetical: with the
+    // default LIVELY the suspension group started failing one run in two
+    // because a brawl or a passing officer had leaned on the car it was
+    // reading springs off. The two groups that are ABOUT the knob turn it up
+    // themselves and put it back.
+    GAME.chaos.set(0);
     GAME.test.fastForward(1);
     var a = GAME.audio;
     var engine0 = a.engineState, skid0 = a.skid, siren0 = a.siren, vol0 = a.radio.setVolume;
@@ -930,6 +941,139 @@ function withTimeout(p, ms) {
     kerb.inside + ' spots inside a crossing carriageway' +
     (kerb.where ? ', worst ' + kerb.worst + 'm in at ' + JSON.stringify(kerb.where) : ''));
 
+  // ---------- 3l: the law has somewhere else to be ----------
+  // At zero stars police.js used to delete every officer and cruiser in the
+  // world every sixtieth frame, which is the deepest reason the police were
+  // never after anyone but the player: when you were clean there were no
+  // police. A patrol officer now survives that sweep and attends other
+  // people's trouble — but the player's own pursuit outranks all of it, and
+  // none of it may touch the wanted level.
+  var beat = await page.evaluate(function () {
+    var C = GAME.chaos, out = {};
+    if (!GAME.police.reportIncident) return { missing: true };
+    C.set(3);
+    GAME.test.teleport(-150, 40);
+    GAME.police.clearWanted();
+    GAME.player.health = 100;
+    var stars0 = GAME.police.wanted, hp0 = GAME.player.health;
+    var patrolPeak = 0, incPeak = 0, attended = 0, starsMax = 0;
+    for (var f = 0; f < 60 * 75; f++) {
+      GAME.test.fastForward(1 / 60);
+      patrolPeak = Math.max(patrolPeak, GAME.police.patrolCount);
+      incPeak = Math.max(incPeak, GAME.police.incidentCount);
+      starsMax = Math.max(starsMax, GAME.police.wanted);
+      var ps = GAME.world.peds;
+      for (var i = 0; i < ps.length; i++) if (ps[i].onCase) { attended++; break; }
+    }
+    out.patrolPeak = patrolPeak;
+    out.incPeak = incPeak;
+    out.attended = attended;
+    out.starsMax = starsMax;
+    out.hpKept = GAME.player.health >= hp0;
+
+    // a star of the player's own pulls every officer off the beat
+    GAME.test.setWanted(3);
+    GAME.test.fastForward(2);
+    out.incAfterStars = GAME.police.incidentCount;
+    GAME.police.clearWanted();
+    GAME.test.fastForward(3);
+
+    // And OFF empties the street. This has to read the END of the window, not
+    // the peak across it: the officer standing there when the knob is pressed
+    // cannot evaporate on that same frame — the stand-down runs on the
+    // sixty-frame sweep — so a peak would only ever be measuring the man who
+    // was already there.
+    C.set(0);
+    GAME.test.fastForward(6);
+    out.offPatrolPeak = GAME.police.patrolCount;
+    for (var g = 0; g < 60 * 20; g++) GAME.test.fastForward(1 / 60);
+    out.offPatrolEnd = GAME.police.patrolCount;
+    C.set(0);
+    return out;
+  });
+  check('beat: the incident API is there at all',
+    !beat.missing, beat.missing ? 'police.reportIncident is not defined' : 'present');
+  if (!beat.missing) {
+    check('beat: there are officers on the street with the player clean (anchor sanity)',
+      beat.patrolPeak > 0, 'up to ' + beat.patrolPeak + ' on the beat at zero stars');
+    check('beat: and other people’s trouble gets reported and attended',
+      beat.incPeak > 0 && beat.attended > 0,
+      'up to ' + beat.incPeak + ' open cases, ' + beat.attended + ' frames with an officer on one');
+    // The one that matters most: a lively city must never frame the player.
+    check('beat: none of it lands on the player’s wanted level',
+      beat.starsMax === 0, 'highest the player’s stars reached: ' + beat.starsMax);
+    check('beat: nor on the player’s health',
+      beat.hpKept, 'the player was left alone');
+    check('beat: a star of your own outranks whatever they were dealing with',
+      beat.incAfterStars === 0, beat.incAfterStars + ' cases survived the player earning 3 stars');
+    check('beat: and OFF sends them home rather than leaving one walking it',
+      beat.offPatrolPeak === 0 && beat.offPatrolEnd === 0,
+      'six seconds after the switch: ' + beat.offPatrolPeak + ', twenty more: ' + beat.offPatrolEnd);
+  }
+
+  // a drawn gun: pointed at the other man, and only ever at him
+  var gun = await page.evaluate(function () {
+    var C = GAME.chaos;
+    C.set(4);
+    GAME.test.teleport(-150, 90);
+    GAME.police.clearWanted();
+    GAME.player.health = 100;
+    GAME.test.fastForward(0.6);
+    var a = GAME.test.spawnPed(5, 0), b = GAME.test.spawnPed(8, 0);
+    if (!a || !b) { C.set(0); return { noPeds: true }; }
+    var hp0 = b.hp, php0 = GAME.player.health, stars0 = GAME.police.wanted;
+    // fire straight through the module door, twenty rounds at close range:
+    // the spread model still rolls, so one shot is not a test
+    var hits = 0;
+    for (var r = 0; r < 20; r++) {
+      if (GAME.combat.npcShoot(a.pos.x, 1.35, a.pos.z, 1, 1, a, b)) hits++;
+      if (b.dead) break;
+    }
+    var out = { hits: hits, victimHurt: b.hp < hp0 || b.dead,
+                playerHp: GAME.player.health, php0: php0,
+                stars: GAME.police.wanted, stars0: stars0 };
+
+    // and a chase between two of them has to actually close
+    if (!b.dead) {
+      b.hp = 30; b.dead = false;
+      // put a street between them first — started three metres apart there is
+      // no gap to close and the check passes on any code at all
+      b.pos.x = a.pos.x + 26; b.pos.z = a.pos.z + 2;
+      b.pos.y = GAME.city.groundY(b.pos.x, b.pos.z);
+      GAME.peds.startFlee(b, a.pos.x, a.pos.z, 30);
+      GAME.peds.startFight(a, { kind: 'ped', ped: b }, 30);
+      var d0 = Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z), dmin = d0;
+      for (var t = 0; t < 60 * 8; t++) {
+        GAME.test.fastForward(1 / 60);
+        if (a.dead || b.dead || a.gone || b.gone) break;
+        dmin = Math.min(dmin, Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z));
+      }
+      out.chaseFrom = +d0.toFixed(1); out.chaseTo = +dmin.toFixed(1);
+    }
+    if (!a.gone) GAME.peds.removePed(a);
+    if (!b.gone) GAME.peds.removePed(b);
+    C.set(0);
+    return out;
+  });
+  if (!gun.noPeds) {
+    check('gun: an NPC round can be aimed at another NPC and land (anchor sanity)',
+      gun.hits > 0 && gun.victimHurt, gun.hits + '/20 rounds found the other man');
+    // npcShoot read the player's position for its target and applied damage
+    // to the player, full stop. If that were still true these twenty rounds
+    // would have been fired into the player standing a few metres away.
+    check('gun: and it never goes into the player instead',
+      gun.playerHp >= gun.php0, 'player health ' + gun.php0 + ' -> ' + gun.playerHp);
+    check('gun: gunfire between strangers is not the player’s crime',
+      gun.stars === gun.stars0, 'stars ' + gun.stars0 + ' -> ' + gun.stars);
+    if (gun.chaseFrom !== undefined) {
+      // Both run at 6.8: measured, two of them held station thirty metres
+      // apart for five straight seconds, neither gaining an inch.
+      check('gun: and a chase between two of them actually closes',
+        gun.chaseFrom > 20 && gun.chaseTo < gun.chaseFrom - 6,
+        'closed from ' + gun.chaseFrom + ' m to ' + gun.chaseTo + ' m in eight seconds');
+    }
+  }
+
   // ---------- 3k: the city fights with itself, by the knob ----------
   // Every social thing strangers do to each OTHER is rated off GAME.chaos.
   // Two properties matter and they pull against each other: the levels have
@@ -939,7 +1083,7 @@ function withTimeout(p, ms) {
   var chaosRows = await page.evaluate(function () {
     var C = GAME.chaos;
     if (!C) return { missing: true };
-    var rows = [], was = C.level;
+    var rows = [];
     for (var i = 0; i < C.levels.length; i++) {
       C.set(i);
       rows.push({ name: C.name, react: C.reactChance, fight: C.fightChance,
@@ -953,7 +1097,7 @@ function withTimeout(p, ms) {
       if (C.roll(1)) offRolls++;
       if (C.rollRate(1000, 1 / 60)) offRolls++;
     }
-    C.set(was);
+    C.set(0);
     return { rows: rows, offRolls: offRolls, count: C.levels.length };
   });
   check('chaos: the knob exists and has a range to it',
@@ -986,7 +1130,7 @@ function withTimeout(p, ms) {
 
   // and through the game: OFF is silent, the top of the range is not
   var chaosWorld = await page.evaluate(function () {
-    var C = GAME.chaos, was = C.level;
+    var C = GAME.chaos;
     function runFor(level, secs) {
       C.set(level);
       GAME.test.teleport(-150, 40);
@@ -1012,7 +1156,7 @@ function withTimeout(p, ms) {
     // result below means nothing
     var loud = runFor(C.levels.length - 1, 45);
     var quiet = runFor(0, 45);
-    C.set(was);
+    C.set(0);
     return { loud: loud, quiet: quiet };
   });
   check('chaos: at the top of the range the street does kick off (anchor sanity)',
@@ -1025,14 +1169,14 @@ function withTimeout(p, ms) {
 
   // a fight between two strangers has to actually be a fight
   var brawl = await page.evaluate(function () {
-    var C = GAME.chaos, was = C.level;
+    var C = GAME.chaos;
     C.set(3);
     GAME.test.teleport(-150, 60);
     GAME.police.clearWanted();
     GAME.test.fastForward(0.6);
     var f = GAME.focus();
     var a = GAME.test.spawnPed(4, 0), b = GAME.test.spawnPed(6, 0);
-    if (!a || !b) { C.set(was); return { noPeds: true }; }
+    if (!a || !b) { C.set(0); return { noPeds: true }; }
     a.temper = 1; b.temper = 1;
     var hp0 = b.hp;
     var took = GAME.peds.startFight(a, { kind: 'ped', ped: b }, 12);
@@ -1046,7 +1190,7 @@ function withTimeout(p, ms) {
                 closed: +closed.toFixed(1), aState: a.state, bState: b.state };
     if (!a.gone) GAME.peds.removePed(a);
     if (!b.gone) GAME.peds.removePed(b);
-    C.set(was);
+    C.set(0);
     return out;
   });
   if (!brawl.noPeds) {
