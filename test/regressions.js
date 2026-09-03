@@ -2896,7 +2896,19 @@ function withTimeout(p, ms) {
     // down on the ordinary drag alone. The ceiling is here to catch a
     // spring that never returns, not to time the roll.
     var settledTicks = settle(900);           // let it settle, however long that takes
-    var settled = car.susp.p;
+    // The MEAN over a second, not one instant. "It settles back to the grade"
+    // is a claim about where the spring stays, and reading it at a single
+    // moment 0.2 s after the settle loop exits made it a claim about that
+    // moment: anything that touches the car in that frame — traffic drifting
+    // into it, a kerb, the tail of the spring's own oscillation — reads as a
+    // failure to settle. It went red on CI three times while passing four
+    // runs locally, which is the measurement talking, not the suspension.
+    var settleSum = 0, settleN = 0;
+    for (var sn = 0; sn < 60; sn++) {
+      GAME.test.fastForward(1 / 60);
+      settleSum += Math.abs(car.susp.p); settleN++;
+    }
+    var settled = settleSum / settleN;
 
     // in the air nothing loads the springs
     K['KeyW'] = true;
@@ -2923,8 +2935,9 @@ function withTimeout(p, ms) {
       'furthest it dived=' + susp.dive.hi.toFixed(4) +
       ' speed ' + susp.squat.speed.toFixed(1) + ' -> ' + susp.dive.speed.toFixed(1));
     check('suspension: and it settles back to the grade',
-      Math.abs(susp.settled) < 0.005 && susp.settledTicks < 900,
-      'susp=' + susp.settled.toFixed(4) + ' after ' + susp.settledTicks + ' ticks');
+      susp.settled < 0.005 && susp.settledTicks < 900,
+      'mean |susp| over the second after settling = ' + susp.settled.toFixed(4) +
+      ', reached after ' + susp.settledTicks + ' ticks');
     check('suspension: nothing loads the springs in mid-air',
       Math.abs(susp.air) < 0.01, 'susp=' + susp.air.toFixed(4));
     check('suspension: the mesh angle is exactly grade plus spring (additive, not replaced)',
