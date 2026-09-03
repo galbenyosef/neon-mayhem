@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3j. BOUNCING OFF A WALL — the shove off what you hit is capped and it
+//       dies, instead of handing the car a reverse gear it never selected.
 //   3i. ON FOOT, NOT UP THE RAMP — a stunt ramp is a drivable surface with
 //       walled flanks, so anyone who walks onto the deck is stuck up there.
 //       Nobody on foot climbs one, and no fare is set down on one.
@@ -925,6 +927,114 @@ function withTimeout(p, ms) {
     kerb.inside === 0,
     kerb.inside + ' spots inside a crossing carriageway' +
     (kerb.where ? ', worst ' + kerb.worst + 'm in at ' + JSON.stringify(kerb.where) : ''));
+
+  // ---------- 3j: a wall shoves you off, it does not launch you ----------
+  // The rebound off a solid was 40% of the closing speed with nothing to take
+  // it back off you again: it went straight into car.speed and was left to a
+  // drag with a four-second time constant. Measured, a 26 m/s hit came back
+  // at 7.6 m/s, reversed 21 metres, and was still rolling backwards at 2.3 m/s
+  // six seconds later — a reverse gear nobody selected. The share is unchanged
+  // (a nudge still bounces exactly as it did); what is new is a ceiling on it,
+  // and a drag that only ever acts on a reverse you did not ask for.
+  var wall = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys, C = GAME.city;
+    // a tall face with clear ground in front of it to run at
+    var w = null;
+    for (var z = -400; z <= 400 && !w; z += 7) for (var x = -400; x <= 300 && !w; x += 7) {
+      var boxes = C.hash.query(x, z, 3);
+      for (var b = 0; b < boxes.length; b++) {
+        var q = boxes[b];
+        if (q.h === undefined || q.h < 8) continue;
+        var ax = q.minX - 30, az = (q.minZ + q.maxZ) / 2;
+        if (C.isInWater(ax, az)) continue;
+        var clear = true;
+        for (var st = 2; st <= 26 && clear; st += 2) {
+          var got = C.hash.query(ax + st, az, 2.5);
+          for (var g = 0; g < got.length; g++) if (got[g] !== q) { clear = false; break; }
+        }
+        if (clear) { w = { ax: ax, az: az, faceX: q.minX }; break; }
+      }
+    }
+    if (!w) return { noWall: true };
+
+    function board() {
+      GAME.test.teleport(w.ax, w.az); GAME.test.fastForward(0.3);
+      if (P.inCar) GAME.exitCar();
+      var c = GAME.test.spawnCar('sedan', 2, 0); GAME.test.fastForward(0.3);
+      GAME.test.enterNearestCar(c); GAME.test.fastForward(1.2);
+      K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false;
+      return P.car;
+    }
+    // Drive squarely at the face and report what the bounce does afterwards.
+    // The start is close in on purpose: from 30 m back the coast drag eats
+    // most of the entry speed — a 9 m/s run arrived at 3.7 — and then both
+    // cases land under the ceiling and the comparison below means nothing.
+    function crash(entry) {
+      var car = board();
+      var sx = w.faceX - (car.spec.l / 2 + 6);
+      car.pos.set(sx, C.groundY(sx, w.az), w.az);
+      // Clear the run-up. By the time this group runs the suite has simulated
+      // minutes of play, so the street between the car and the wall is parked
+      // up — the first attempt at this stopped 5.8 m short on a parked sedan
+      // and measured a car-on-car nudge instead of the wall.
+      for (var q = GAME.world.cars.length - 1; q >= 0; q--) {
+        var o = GAME.world.cars[q];
+        if (o === car) continue;
+        if (o.pos.x > sx - 12 && o.pos.x < w.faceX + 4 && Math.abs(o.pos.z - w.az) < 14) GAME.vehicles.removeCar(o);
+      }
+      car.heading = Math.PI / 2;          // straight at it
+      car.speed = entry; car.lat = 0; car.hp = car.spec.hp; car.stage = 0;
+      var back = 0, revDist = 0, prevX = car.pos.x, hit = false, closest = 1e9;
+      for (var t = 0; t < 60 * 6; t++) {
+        GAME.test.fastForward(1 / 60);
+        if (car.speed < back) back = car.speed;
+        if (car.speed < -0.2) hit = true;
+        if (car.pos.x < prevX) revDist += prevX - car.pos.x;
+        prevX = car.pos.x;
+        // CLOSEST approach, not where it ended up: on the old code the car
+        // bounces and then reverses most of a block, so an end-of-run gap
+        // says "never reached the wall" about a run that hit it hard.
+        closest = Math.min(closest, w.faceX - (car.pos.x + car.spec.l / 2));
+      }
+      var r = { entry: entry, back: +back.toFixed(2), revDist: +revDist.toFixed(1),
+                endSp: +car.speed.toFixed(2), bounced: hit,
+                // how close the nose got to the face — proof it was the WALL
+                // it met, and not something parked in the way
+                gap: +closest.toFixed(1) };
+      GAME.exitCar();
+      return r;
+    }
+    var out = { slow: crash(8), fast: crash(26) };
+
+    // and asking for reverse still gives you reverse
+    var car = board();
+    var rx = w.ax - 40;
+    car.pos.set(rx, C.groundY(rx, w.az), w.az);
+    car.heading = Math.PI / 2; car.speed = 0; car.lat = 0;
+    K['KeyS'] = true;
+    for (var t2 = 0; t2 < 60 * 4; t2++) GAME.test.fastForward(1 / 60);
+    out.reverse = +car.speed.toFixed(2);
+    K['KeyS'] = false;
+    GAME.exitCar();
+    return out;
+  });
+  if (!wall.noWall) {
+    check('wall: driving into it does bounce the car back (anchor sanity)',
+      wall.fast.bounced && wall.slow.bounced && wall.fast.gap < 3 && wall.slow.gap < 3,
+      'rebound peaks ' + wall.slow.back + ' / ' + wall.fast.back + ' m/s, nose left ' +
+      wall.slow.gap + ' / ' + wall.fast.gap + ' m off the face');
+    // The point of the ceiling: arriving three times as fast must not hand
+    // back three times the shove. Without it the fast run rebounds at 7.6.
+    check('wall: a fast hit is absorbed, not returned',
+      Math.abs(wall.fast.back) < Math.abs(wall.slow.back) * 1.6,
+      'from ' + wall.slow.entry + ' m/s the shove is ' + Math.abs(wall.slow.back) +
+      ', from ' + wall.fast.entry + ' m/s it is ' + Math.abs(wall.fast.back));
+    check('wall: and the bounce stops instead of becoming a reverse gear',
+      wall.fast.revDist < 6 && Math.abs(wall.fast.endSp) < 0.2,
+      'reversed ' + wall.fast.revDist + ' m, still doing ' + wall.fast.endSp + ' m/s six seconds later');
+    check('wall: reverse you actually ASK for is untouched',
+      wall.reverse < -8, 'four seconds on the brake from a standstill: ' + wall.reverse + ' m/s');
+  }
 
   // ---------- 3i: nobody on foot goes up a stunt ramp ----------
   // Ramps are surfaces rather than solids — that is what lets a car ride up
@@ -2329,7 +2439,17 @@ function withTimeout(p, ms) {
     function settle(limit) {
       var n = 0;
       clear();
-      while (n < limit && Math.abs(car.susp.p) > 0.004) { GAME.test.fastForward(1 / 60); n++; }
+      // Wait for the car to be at REST, not merely for the spring to cross
+      // zero on the way past. A car still rolling is a car still being
+      // decelerated, and a steady deceleration holds a steady spring offset —
+      // so the 0.2 s settle-and-read below caught that offset and called it
+      // "not settled" when the body was doing exactly what it should. The
+      // brake case leaves the car at -0.7 m/s, and once an unasked-for
+      // reverse decays on its own constant (SHUNT_DRAG, vehicles.js) rather
+      // than coasting, 0.7 m/s is enough to hold 0.37 degrees of pitch.
+      while (n < limit && (Math.abs(car.susp.p) > 0.004 || Math.abs(car.speed) > 0.05)) {
+        GAME.test.fastForward(1 / 60); n++;
+      }
       GAME.test.fastForward(0.2);
       return n;
     }
@@ -2358,7 +2478,11 @@ function withTimeout(p, ms) {
     var squat = phase(0.5, 'KeyW');           // open the throttle
     var dive = phase(0.5, 'KeyS');            // and stand on the brakes
 
-    var settledTicks = settle(420);           // let it settle, however long that takes
+    // 900, not 420: settling now includes coming to a STOP, and a car left
+    // rolling backwards off the throttle takes about ten seconds to coast
+    // down on the ordinary drag alone. The ceiling is here to catch a
+    // spring that never returns, not to time the roll.
+    var settledTicks = settle(900);           // let it settle, however long that takes
     var settled = car.susp.p;
 
     // in the air nothing loads the springs
@@ -2386,7 +2510,7 @@ function withTimeout(p, ms) {
       'furthest it dived=' + susp.dive.hi.toFixed(4) +
       ' speed ' + susp.squat.speed.toFixed(1) + ' -> ' + susp.dive.speed.toFixed(1));
     check('suspension: and it settles back to the grade',
-      Math.abs(susp.settled) < 0.005 && susp.settledTicks < 420,
+      Math.abs(susp.settled) < 0.005 && susp.settledTicks < 900,
       'susp=' + susp.settled.toFixed(4) + ' after ' + susp.settledTicks + ' ticks');
     check('suspension: nothing loads the springs in mid-air',
       Math.abs(susp.air) < 0.01, 'susp=' + susp.air.toFixed(4));

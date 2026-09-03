@@ -500,6 +500,14 @@ GAME.vehicles = (function () {
       }
       car.speed = U.clamp(car.speed, -maxSp * 0.4, maxSp);
       car.speed *= Math.exp(-0.25 * dt);
+      // Rolling backwards with nobody asking for reverse is a shunt, not a
+      // gear. The drag above models a coast — four seconds to shed 1/e — and
+      // that is right for a car rolling forward off the throttle, but a car
+      // shoved backwards has its wheels pointed the other way and the
+      // drivetrain against it, so it comes to rest rather than cruising. Ask
+      // for reverse and this stops applying; it only ever kills a push you
+      // did not ask for.
+      if (car.speed < 0 && c.throttle >= 0) car.speed *= Math.exp(-SHUNT_DRAG * dt);
       if (Math.abs(car.speed) < 0.06 && c.throttle === 0) car.speed = 0;
     }
 
@@ -687,6 +695,25 @@ GAME.vehicles = (function () {
     }
   }
 
+  // How fast an unasked-for reverse dies (see the drive step): a shunt is not
+  // a gear, so it decays on its own constant rather than the coasting one.
+  var SHUNT_DRAG = 2.2;
+
+  // What comes back off a wall: the same share of the closing speed as ever,
+  // but never more than MAX_BOUNCE of it.
+  //
+  // There is deliberately no friction term along the face, and two things
+  // were tried and dropped. A Coulomb scrub on the tangent took a 24 m/s pass
+  // five degrees off the face from the 2.1 m/s it survives with on the old
+  // code down to 0.35 — stickier than this game has ever been, and nobody's
+  // complaint. Holding SHUNT_DRAG off while a car is still touching (on the
+  // theory that a scrape oscillates car.speed through zero and each dip gets
+  // damped) recovered only 0.9 -> 1.1 of that 2.1, which is not what it
+  // claimed to do. All three land in the same place anyway: grind a wall for
+  // a second at 24 m/s and you have stopped, before this change and after it.
+  // The reversing AWAY from the wall is the part that was wrong.
+  var REST_WALL = 0.4, MAX_BOUNCE = 3.5;
+
   function collideStatic(car, dt) {
     var fx = fwdX(car), fz = fwdZ(car);
     var sxv = fz, szv = -fx;
@@ -733,7 +760,26 @@ GAME.vehicles = (function () {
       var impact = Math.abs(car.vx * nx + car.vz * nz);
       var vn = car.vx * nx + car.vz * nz;
       if (vn < 0) {
-        car.vx -= nx * vn * 1.4; car.vz -= nz * vn * 1.4;
+        // Come off the wall, but not with a running start.
+        //
+        // The rebound used to be pure proportion — 40% of the closing speed,
+        // however fast you arrived — and nothing ever took it back off you:
+        // it was decomposed straight into car.speed and left to a drag with a
+        // four-second time constant. Measured, a 26 m/s hit rebounded at
+        // 7.6 m/s, reversed 21 metres and was still rolling backwards at
+        // 2.3 m/s six seconds later. That is not a bounce, it is a reverse
+        // gear you did not select.
+        //
+        // The share is unchanged, so a nudge at walking pace comes off the
+        // wall exactly as it always did. What is new is a CEILING on it: a
+        // hull crumples, and past about 9 m/s of closing speed the extra goes
+        // into the bodywork rather than back into the car. What kills what is
+        // left is SHUNT_DRAG, up in the drive step — the two go together, and
+        // neither is much use without the other.
+        var close = -vn;
+        var tx = car.vx - nx * vn, tz = car.vz - nz * vn;      // along the face
+        var out = Math.min(close * REST_WALL, MAX_BOUNCE);
+        car.vx = tx + nx * out; car.vz = tz + nz * out;
         // decompose back into speed/lat
         car.speed = car.vx * fx + car.vz * fz;
         car.lat = car.vx * fz + car.vz * -fx;
