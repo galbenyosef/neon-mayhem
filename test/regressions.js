@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3o. PICKUPS ON DRY LAND — nothing you are meant to walk to stands at
+//       the waterline, where reaching for it is a swim.
 //   3m. A BLAST CLEARS THE STREET — an explosion is felt far past where it
 //       hurts, it ends whatever anyone was doing, and an airframe is bigger.
 //   3l. THE LAW OFF THE PLAYER'S BACK — there are police on the street when
@@ -1173,6 +1175,41 @@ function withTimeout(p, ms) {
   check('runover: jacking a moving van does not kill the driver you pulled out',
     jacked.tries > 0 && jacked.survived === jacked.tries,
     jacked.survived + '/' + jacked.tries + ' walked away from their own car');
+
+  // ---------- 3o: a pickup you have to swim for is not a pickup ----------
+  // The island's second health sat one metre from the sea — reaching for it
+  // walked you into the water and washed you up on the beach. This holds every
+  // FIXED pickup to standing somewhere you can walk to and back from.
+  var dryness = await page.evaluate(function () {
+    var C = GAME.city;
+    function waterDist(x, z) {
+      for (var r = 1; r <= 14; r++) {
+        for (var a = 0; a < 16; a++) {
+          var ang = a * Math.PI / 8;
+          if (C.isInWater(x + Math.cos(ang) * r, z + Math.sin(ang) * r)) return r;
+        }
+      }
+      return 99;
+    }
+    var worst = null, wet = 0, n = 0;
+    C.pickupSpots.forEach(function (sp) {
+      n++;
+      if (C.isInWater(sp.x, sp.z)) wet++;
+      var d = waterDist(sp.x, sp.z);
+      if (!worst || d < worst.d) worst = { d: d, x: Math.round(sp.x), z: Math.round(sp.z), type: sp.type };
+    });
+    return { n: n, wet: wet, worst: worst };
+  });
+  check('pickups: the world puts some out to be collected (anchor sanity)',
+    dryness.n > 10, dryness.n + ' fixed pickups');
+  check('pickups: none of them is standing in the sea',
+    dryness.wet === 0, dryness.wet + ' of ' + dryness.n + ' in water');
+  // 1 m was the measured distance for the island health that prompted this.
+  // Six gives room to walk up, turn round and leave again.
+  check('pickups: and none close enough that reaching for it is a swim',
+    dryness.worst && dryness.worst.d >= 6,
+    'closest to water: a ' + dryness.worst.type + ' at (' + dryness.worst.x + ', ' +
+    dryness.worst.z + '), ' + dryness.worst.d + ' m from it');
 
   // ---------- 3m: everyone runs from a blast ----------
   // explodeCar killed anyone within 8 m and did nothing whatsoever to the

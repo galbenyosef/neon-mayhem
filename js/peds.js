@@ -434,7 +434,22 @@ GAME.peds = (function () {
         } else {
           var ah = Math.atan2(tx - ped.pos.x, tz - ped.pos.z);
           ped.heading = U.angleLerp(ped.heading, ah, Math.min(1, dt * 10));
-          ped.aimPose = true;
+          // The melee pose is HELD for a moment rather than recomputed from
+          // scratch every frame. Two men swinging at each other jostle back
+          // and forth across the 1.7 m reach boundary constantly, and the pose
+          // was being switched on in reach and off on the charge — so the arms
+          // flipped between a walk swing and a raised guard at sixty hertz.
+          // It read exactly like what it was: a flicker, not an animation.
+          ped.poseT = Math.max(0, (ped.poseT || 0) - dt);
+          ped.aimPose = ped.poseT > 0;
+          // The punch clock runs whether or not he is in reach. Ticking it
+          // only within reach — and worse, resetting it on the frames he was
+          // not — meant that two men jostling across the 1.7 m boundary threw
+          // the swing animation back to its start over and over, mid-arc: an
+          // arm jumping half a radian between frames, ten times in five
+          // seconds. Left running, the arc simply finishes and the hand
+          // settles back to a guard.
+          ped.punchT -= dt;
           var targetCarBody = chaseCar ? myCar : tcar;
           var reach = targetCarBody ? (targetCarBody.spec.l / 2 + 1.5) : 1.7;
           // Carrying, and far enough away for it to be worth drawing — up
@@ -453,6 +468,7 @@ GAME.peds = (function () {
             GAME.city.hash.segmentClear(ped.pos.x, ped.pos.z, tx, tz);
           if (canShoot) {
             ped.speed = U.damp(ped.speed, 0, 6, dt);
+            ped.poseT = POSE_HOLD;
             ped.aimPose = true;
             ped.mesh.userData.joints.armR.rotation.x = -Math.PI / 2;
             ped.mesh.userData.joints.armL.rotation.x = -0.4;
@@ -478,9 +494,9 @@ GAME.peds = (function () {
             // frame of the attack state, charge included, and punchT does not
             // tick while closing — so both arms locked at head height and
             // stayed there for the whole run. Players called it what it looked
-            // like: a zombie. aimPose off here hands the arms back to the walk
-            // cycle below.
-            ped.aimPose = false;
+            // like: a zombie. Letting the hold above lapse hands the arms back
+            // to the walk cycle below, over about a third of a second rather
+            // than on the next frame.
             // A full 0.85x-sprint charge: faster than you can walk away.
             //
             // Chasing another NPC needs a little more than that. A fleeing
@@ -493,9 +509,9 @@ GAME.peds = (function () {
             ped.speed = U.damp(ped.speed, F.kind === 'ped' ? 7.7 : 6.8, 6, dt);
             ped.yankT = 0;
           } else {
+            ped.poseT = POSE_HOLD;          // in reach: keep the guard up
             ped.aimPose = true;
             ped.speed = U.damp(ped.speed, 0, 9, dt);
-            ped.punchT -= dt;
             if (chaseCar && tSpeed < 2.5) {
               // hands on his own car: hammering first, a shouted warning at
               // the door, and only then the yank. The clock restarts whenever
@@ -531,7 +547,7 @@ GAME.peds = (function () {
                 GAME.audio.crash(0.15, ped.pos.x, ped.pos.z);
               }
             } else if (ped.punchT <= 0) {
-              ped.punchT = 0.55;
+              ped.punchT = PUNCH_CYCLE;
               ped.punchArm = !ped.punchArm;
               // whoever is on the end of it takes the punch
               if (tcar) {
@@ -565,13 +581,30 @@ GAME.peds = (function () {
               GAME.audio.crash(0.18, ped.pos.x, ped.pos.z);
             }
           }
-          // quick jabs off alternating hands, not a slow-motion haymaker —
-          // and only while actually within reach of someone
+          // Quick jabs off alternating hands — but a jab, with a shape to it.
+          //
+          // This used to be a linear ramp across the whole cycle that then
+          // SNAPPED back to the guard and handed over to the other arm, so
+          // each hand jumped a radian instantly twice a second and the pair of
+          // them read as frantic. Now the arm goes out fast, comes back
+          // slower, and holds a guard for the rest of the cycle: out in 0.14 s,
+          // back over 0.3, still for the remainder.
           if (ped.aimPose) {
             var aj = ped.mesh.userData.joints;
-            var jab = U.clamp(ped.punchT / 0.55, 0, 1);
-            aj[ped.punchArm ? 'armR' : 'armL'].rotation.x = -2.3 + jab * 1.1;
-            aj[ped.punchArm ? 'armL' : 'armR'].rotation.x = -1.2;
+            var since = PUNCH_CYCLE - U.clamp(ped.punchT, 0, PUNCH_CYCLE);
+            var out = since < 0.14 ? since / 0.14
+              : Math.max(0, 1 - (since - 0.14) / 0.3);
+            var lead = ped.punchArm ? 'armR' : 'armL';
+            var off = ped.punchArm ? 'armL' : 'armR';
+            var tl = -1.15 - out * 1.05;
+            // Snap into the strike, ease into the guard. Taking the stance
+            // from a dead run means the arms are wherever the walk cycle left
+            // them, and setting them outright popped a radian and a half in
+            // one frame; easing only the guard smooths that without slowing
+            // the punch, which is the part that should be quick.
+            aj[lead].rotation.x = out > 0 ? tl
+              : U.lerp(aj[lead].rotation.x, tl, Math.min(1, dt * 14));
+            aj[off].rotation.x = U.lerp(aj[off].rotation.x, -1.15, Math.min(1, dt * 14));
           }
         }
       } else if (ped.state === 'dive') {
@@ -787,6 +820,11 @@ GAME.peds = (function () {
 
   // how many brawls are already going, so a bad roll cannot turn the whole
   // street into a boxing gym at once (GAME.chaos.maxFights)
+  // One punch every PUNCH_CYCLE seconds, and how long the fighting pose
+  // survives a frame out of reach. 0.55 was fast enough to read as flailing
+  // once two people were doing it at each other.
+  var PUNCH_CYCLE = 0.72, POSE_HOLD = 0.35;
+
   function fightCount() {
     var n = 0;
     for (var i = 0; i < world.peds.length; i++) {
