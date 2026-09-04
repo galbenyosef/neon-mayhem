@@ -500,6 +500,14 @@ GAME.vehicles = (function () {
       }
       car.speed = U.clamp(car.speed, -maxSp * 0.4, maxSp);
       car.speed *= Math.exp(-0.25 * dt);
+      // Rolling backwards with nobody asking for reverse is a shunt, not a
+      // gear. The drag above models a coast — four seconds to shed 1/e — and
+      // that is right for a car rolling forward off the throttle, but a car
+      // shoved backwards has its wheels pointed the other way and the
+      // drivetrain against it, so it comes to rest rather than cruising. Ask
+      // for reverse and this stops applying; it only ever kills a push you
+      // did not ask for.
+      if (car.speed < 0 && c.throttle >= 0) car.speed *= Math.exp(-SHUNT_DRAG * dt);
       if (Math.abs(car.speed) < 0.06 && c.throttle === 0) car.speed = 0;
     }
 
@@ -687,6 +695,25 @@ GAME.vehicles = (function () {
     }
   }
 
+  // How fast an unasked-for reverse dies (see the drive step): a shunt is not
+  // a gear, so it decays on its own constant rather than the coasting one.
+  var SHUNT_DRAG = 2.2;
+
+  // What comes back off a wall: the same share of the closing speed as ever,
+  // but never more than MAX_BOUNCE of it.
+  //
+  // There is deliberately no friction term along the face, and two things
+  // were tried and dropped. A Coulomb scrub on the tangent took a 24 m/s pass
+  // five degrees off the face from the 2.1 m/s it survives with on the old
+  // code down to 0.35 — stickier than this game has ever been, and nobody's
+  // complaint. Holding SHUNT_DRAG off while a car is still touching (on the
+  // theory that a scrape oscillates car.speed through zero and each dip gets
+  // damped) recovered only 0.9 -> 1.1 of that 2.1, which is not what it
+  // claimed to do. All three land in the same place anyway: grind a wall for
+  // a second at 24 m/s and you have stopped, before this change and after it.
+  // The reversing AWAY from the wall is the part that was wrong.
+  var REST_WALL = 0.4, MAX_BOUNCE = 3.5;
+
   function collideStatic(car, dt) {
     var fx = fwdX(car), fz = fwdZ(car);
     var sxv = fz, szv = -fx;
@@ -733,7 +760,26 @@ GAME.vehicles = (function () {
       var impact = Math.abs(car.vx * nx + car.vz * nz);
       var vn = car.vx * nx + car.vz * nz;
       if (vn < 0) {
-        car.vx -= nx * vn * 1.4; car.vz -= nz * vn * 1.4;
+        // Come off the wall, but not with a running start.
+        //
+        // The rebound used to be pure proportion — 40% of the closing speed,
+        // however fast you arrived — and nothing ever took it back off you:
+        // it was decomposed straight into car.speed and left to a drag with a
+        // four-second time constant. Measured, a 26 m/s hit rebounded at
+        // 7.6 m/s, reversed 21 metres and was still rolling backwards at
+        // 2.3 m/s six seconds later. That is not a bounce, it is a reverse
+        // gear you did not select.
+        //
+        // The share is unchanged, so a nudge at walking pace comes off the
+        // wall exactly as it always did. What is new is a CEILING on it: a
+        // hull crumples, and past about 9 m/s of closing speed the extra goes
+        // into the bodywork rather than back into the car. What kills what is
+        // left is SHUNT_DRAG, up in the drive step — the two go together, and
+        // neither is much use without the other.
+        var close = -vn;
+        var tx = car.vx - nx * vn, tz = car.vz - nz * vn;      // along the face
+        var out = Math.min(close * REST_WALL, MAX_BOUNCE);
+        car.vx = tx + nx * out; car.vz = tz + nz * out;
         // decompose back into speed/lat
         car.speed = car.vx * fx + car.vz * fz;
         car.lat = car.vx * fz + car.vz * -fx;
@@ -754,6 +800,28 @@ GAME.vehicles = (function () {
       }
       return;
     }
+  }
+
+  // Get the driver out from behind the wheel and leave the car standing. The
+  // same person every time — lastDriver remembers the face and the temper —
+  // so the man who got out to argue about a dent is the man who was driving.
+  function ejectDriver(car) {
+    if (!car || car.dead || car.occupied !== 'ai' || car.isPolice) return null;
+    var side = car.heading + Math.PI / 2;
+    var stepOut = car.spec.w / 2 + 1;      // clear of his own car's flank
+    var d = GAME.peds.spawnPed(car.pos.x + Math.sin(side) * stepOut, car.pos.z + Math.cos(side) * stepOut,
+      car.lastDriver ? { look: car.lastDriver } : undefined);
+    if (!d) return null;
+    if (car.lastDriver) d.temper = car.lastDriver.temper;
+    else car.lastDriver = { shirt: d.look.shirt, pants: d.look.pants, skin: d.look.skin,
+      hair: d.look.hair, hairCol: d.look.hairCol, temper: d.temper };
+    car.occupied = null;
+    car.ai = null;
+    car.controls = { throttle: 0, steer: 0, handbrake: true };
+    car.speed = 0; car.lat = 0;
+    if (car.riderMesh) { car.mesh.remove(car.riderMesh); disposeTree(car.riderMesh); car.riderMesh = null; }
+    d.leftCar = car;
+    return d;
   }
 
   function collideCars(dt) {
@@ -822,6 +890,25 @@ GAME.vehicles = (function () {
             // a mission rival in a cruiser is a racer, not the law
             if (other.isPolice && !other.mission) GAME.police.reportCrime('hit_cop_car', pc.pos);
             else if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
+          }
+        }
+        // Somebody gets out about it. A shunt between two strangers used to be
+        // a noise and a dent and nothing else — no horn, no words, both cars
+        // driving on as if metal meeting metal were weather. Now the one who
+        // was hit can stop, get out, and go and have it out with the other
+        // driver, which is the version of this that happens where the player
+        // is actually looking rather than somewhere behind them.
+        if (rel > 7 && GAME.chaos.nearPlayer(a.pos.x, a.pos.z, 60) &&
+          GAME.chaos.roll(GAME.chaos.reactChance * 0.8) &&
+          a.occupied === 'ai' && b.occupied === 'ai' && !a.isPolice && !b.isPolice &&
+          !a.mission && !b.mission) {
+          // whoever was hit from behind or the side is the aggrieved party
+          var hitFirst = (avx * nx + avz * nz) > 0 ? b : a;   // a drove into b
+          var other = hitFirst === a ? b : a;
+          var out = ejectDriver(hitFirst);
+          if (out) {
+            out.temper = Math.max(out.temper || 0, 0.6);
+            GAME.peds.startFight(out, { kind: 'car', car: other }, 14);
           }
         }
         // transfer momentum crudely
@@ -928,6 +1015,18 @@ GAME.vehicles = (function () {
     world.peds.forEach(function (ped) {
       if (!ped.dead && U.dist2(ped.pos.x, ped.pos.z, car.pos.x, car.pos.z) < 55) GAME.peds.kill(ped, 'explosion', byPlayer);
     });
+    // And everyone else runs. An explosion is the loudest thing that happens
+    // in this city and until now nobody looked up: the only scattering was
+    // indirect, because kill() panics a 26 m circle — so a blast that happened
+    // to catch somebody got a reaction, and one that caught nobody got none at
+    // all. It is felt far past where it hurts (the damage radius is 8 m), and
+    // an airframe going up is bigger again.
+    //
+    // Not rated by GAME.chaos. Running from a fireball is not the city picking
+    // fights with itself, it is what anybody would do, and it belongs at every
+    // setting including OFF.
+    var wide = (car.spec.plane || car.spec.heli) ? 85 : 55;
+    GAME.peds.panic(car.pos.x, car.pos.z, wide, true);
     world.cars.forEach(function (c2) {
       if (c2 !== car && !c2.dead && U.dist2(c2.pos.x, c2.pos.z, car.pos.x, car.pos.z) < 60) damageCar(c2, 40, 'explosion', byPlayer);
     });
@@ -1284,6 +1383,7 @@ GAME.vehicles = (function () {
     TYPES: VEHICLES,
     spawnCar: spawnCar,
     removeCar: removeCar,
+    ejectDriver: ejectDriver,
     update: update,
     damageCar: damageCar,
     explodeCar: explodeCar,

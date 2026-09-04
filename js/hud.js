@@ -123,6 +123,22 @@ GAME.hud = (function () {
     } else {
       $('pause-haptic').style.display = 'none';
     }
+    // How much the city fights with itself. A cycle rather than a slider,
+    // because the other settings here are all buttons and a five-stop range
+    // reads fine as one. It is on every platform: unlike rumble there is
+    // nothing device-specific about wanting a quieter street.
+    function paintChaosBtn() {
+      $('pause-chaos').textContent = '🌆 CITY: ' + GAME.chaos.name;
+    }
+    pauseBtn('pause-chaos', function () {
+      GAME.chaos.cycle();
+      if (GAME.prefs) { GAME.prefs.chaos = GAME.chaos.level; GAME.save(); }
+      paintChaosBtn();
+      GAME.hud.message('City set to ' + GAME.chaos.name + '.', 2);
+    });
+    if (GAME.prefs && GAME.prefs.chaos !== undefined) GAME.chaos.set(GAME.prefs.chaos);
+    paintChaosBtn();
+
     // Handedness, remembered like the rest. touch.init() runs before the save
     // is read, so the stored choice can only be applied from here — the same
     // reason the rumble switch above reads its pref at this point.

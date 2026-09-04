@@ -538,11 +538,17 @@ GAME.combat = (function () {
     torso: 0.5,        // half-width of a person...
     car: 1.15          // ...and of the car they might be sitting in
   };
-  function npcShoot(fromX, fromY, fromZ, accuracy, damage, shooter) {
+  // `victim` is who is being shot at: a ped, or omitted for the player. The
+  // aim model, the tracer and the hit test are the same either way — a round
+  // does not care whose gun it left — but who takes the damage, how wide the
+  // target is, and whether the shot is a crime all follow from it.
+  function npcShoot(fromX, fromY, fromZ, accuracy, damage, shooter, victim) {
     var P = GAME.player;
-    var inCar = !!(P.inCar && P.car);
-    var tx = inCar ? P.car.pos.x : P.pos.x;
-    var tz = inCar ? P.car.pos.z : P.pos.z;
+    var atPlayer = !victim;
+    if (victim && (victim.dead || victim.gone)) return false;
+    var inCar = atPlayer && !!(P.inCar && P.car);
+    var tx = atPlayer ? (inCar ? P.car.pos.x : P.pos.x) : victim.pos.x;
+    var tz = atPlayer ? (inCar ? P.car.pos.z : P.pos.z) : victim.pos.z;
     var d = U.dist(fromX, fromZ, tx, tz);
 
     // Officers are individuals. One spawns a better shot than the next and
@@ -554,7 +560,8 @@ GAME.combat = (function () {
     var fresh = !shooter || GAME.time - (shooter.lastShotT || -99) > 2.5;
     if (shooter) shooter.lastShotT = GAME.time;
 
-    var speed = inCar ? Math.abs(P.car.speed || 0) : (P.moveSpeed || 0);
+    var speed = atPlayer ? (inCar ? Math.abs(P.car.speed || 0) : (P.moveSpeed || 0))
+      : Math.abs(victim.speed || 0);
     var spread = (NPC_AIM.base
       + d * NPC_AIM.perMetre
       + Math.min(1, speed / 11) * NPC_AIM.moving
@@ -568,7 +575,8 @@ GAME.combat = (function () {
     // how far off it passes at your range, against how wide you are: what you
     // saw happen is now what happened
     if (Math.abs(Math.sin(err)) * d <= (inCar ? NPC_AIM.car : NPC_AIM.torso)) {
-      if (inCar) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');
+      if (!atPlayer) GAME.peds.damage(victim, damage, false, shooter);
+      else if (inCar) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');
       else GAME.playerDamage(damage, 'shot');
       return true;
     }

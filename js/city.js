@@ -177,6 +177,30 @@ GAME.city = (function () {
     return null;
   };
 
+  // A ramp is a SURFACE, not a solid, which is what lets a car ride up one —
+  // but feet ride up just as well, and the raked flanks beside the deck are
+  // walls. A stroller who wandered onto a wedge was left milling about on top
+  // for half a minute with nowhere to go but back down the way they came or
+  // off the lip. So nobody on foot climbs: above ankle height on a ramp, the
+  // only step left is one that brings you back DOWN it, which is what lets
+  // anyone already up there walk off.
+  //
+  // The comparison is strictly downhill on purpose. Allowing "near enough
+  // level" — even a 2 cm tolerance — is not a tolerance at all but a climb
+  // rate, because the rule is asked once per FRAME: a stroller covers under
+  // 3 cm in a sixtieth of a second, which on any of these wedges gains barely
+  // more than a centimetre of height, so every step qualifies as level and
+  // the whole ramp goes by a centimetre at a time. Measured, a 2 cm slack let
+  // 777 frames of climbing through.
+  var STEP_UP = 0.45;
+  city.canWalkTo = function (fromX, fromZ, toX, toZ) {
+    if (!city.ramps.length) return true;
+    var to = city.rampAt(toX, toZ);
+    if (!to || to.y <= STEP_UP) return true;
+    var from = city.rampAt(fromX, fromZ);
+    return !!from && to.y < from.y;
+  };
+
   city.groundY = function (x, z, atY) {
     if (city.ramps.length) {
       var rp = city.rampAt(x, z);
@@ -1931,12 +1955,31 @@ GAME.city = (function () {
   }
 
   function buildSpots() {
-    // parked cars hugging the curbs, clear of the driving lanes
+    // Parked cars hug the kerb of the road they are ON — but the grid crosses
+    // itself every hundred metres, and a spot dropped at a junction hugs
+    // nothing: it sits BROADSIDE in the middle of the road going the other
+    // way. A car parked along z presents its whole length across an east-west
+    // carriageway, which is a roadblock rather than a parked car, and traffic
+    // piles up behind it. Eleven percent of them landed there, up to 5.7 m
+    // past the crossing centreline.
+    //
+    // Clearance is measured to that centreline and has to cover the crossing
+    // road's half-width plus the parked car's own half-length, or the nose
+    // still pokes into the outside lane.
+    var CROSS_CLEAR = ROAD_HALF + 3.2;
+    function clearOfCrossings(along) {
+      for (var c = 0; c < R.length; c++) if (Math.abs(along - R[c]) < CROSS_CLEAR) return false;
+      return true;
+    }
     for (var i = 0; i < R.length; i++) {
       for (var d = -430; d < 440; d += U.randRange(rng, 45, 90)) {
-        if (rng() < 0.55) city.parkedSpots.push({ x: R[i] + (rng() < 0.5 ? 5.3 : -5.3), z: d, heading: 0 });
+        if (rng() < 0.55 && clearOfCrossings(d)) {
+          city.parkedSpots.push({ x: R[i] + (rng() < 0.5 ? 5.3 : -5.3), z: d, heading: 0 });
+        }
         var hx = d + U.randRange(rng, 0, 30);
-        if (hx < 340 && rng() < 0.45) city.parkedSpots.push({ x: hx, z: R[i] + (rng() < 0.5 ? 5.3 : -5.3), heading: Math.PI / 2 });
+        if (hx < 340 && rng() < 0.45 && clearOfCrossings(hx)) {
+          city.parkedSpots.push({ x: hx, z: R[i] + (rng() < 0.5 ? 5.3 : -5.3), heading: Math.PI / 2 });
+        }
       }
     }
     // pickups at seeded sidewalk corners

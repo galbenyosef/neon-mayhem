@@ -285,6 +285,8 @@ GAME.missions = (function () {
       var off = rp.axis === 'net' ? [Math.cos(rp.heading) * 9 * sgn, -Math.sin(rp.heading) * 9 * sgn]
         : rp.axis === 'z' ? [9 * sgn, 0] : [0, 9 * sgn];
       var px = Math.round(rp.x + off[0]), pz = Math.round(rp.z + off[1]);
+      // a marker part-way up a stunt ramp is a stop you cannot pull in at
+      if (!offRamp(px, pz)) continue;
       var d = U.dist(px, pz, fromX, fromZ);
       if (d >= minR && d <= maxR) return [px, pz];
       // keep the closest near-miss in case nothing lands inside the band
@@ -535,25 +537,63 @@ GAME.missions = (function () {
   }
 
   // a spot on the pavement beside the pickup marker, pushed clear of the
-  // carriageway on the same side of the road and jittered along the kerb
+  // carriageway on the same side of the road and jittered along the kerb.
+  //
+  // Stunt ramps stand on the verge from 11 m out (see city.js rollStuntSpots),
+  // and 14 m lands squarely inside that band: about one fare in fifty was set
+  // down on the slope of a wedge, where nobody on foot can reach them and the
+  // cab certainly cannot pull up. So the spot is rolled — a fresh place along
+  // the kerb first, then in against the pavement, which is inside the ramps —
+  // until it stands on something you can walk up to.
+  var WAIT_OUT = [14, 14, 14, 9.5, 9.5, 8];
   function kerbWaitSpot(x, z) {
     var rp = GAME.city.nearestRoadPoint(x, z);
-    var out = 14, jitter = U.randRange(Math.random, -5, 5);
-    var wx, wz;
-    if (rp.axis === 'net') {       // a curved road: step out along its normal
-      var sgn = U.dist2(x, z, rp.x + Math.cos(rp.heading), rp.z - Math.sin(rp.heading)) <
-        U.dist2(x, z, rp.x - Math.cos(rp.heading), rp.z + Math.sin(rp.heading)) ? 1 : -1;
-      wx = rp.x + Math.cos(rp.heading) * out * sgn + Math.sin(rp.heading) * jitter;
-      wz = rp.z - Math.sin(rp.heading) * out * sgn + Math.cos(rp.heading) * jitter;
-    } else if (rp.axis === 'z') {          // road runs along z; step out in x
-      wx = rp.x + (x >= rp.x ? out : -out);
-      wz = z + jitter;
-    } else {                        // road runs along x; step out in z
-      wx = x + jitter;
-      wz = rp.z + (z >= rp.z ? out : -out);
+    var first = null;
+    // one candidate: `out` metres off the road centre on the marker's own
+    // side, `along` metres up or down the kerb from it. Answers null if it
+    // came out on a wedge.
+    function candidate(out, along) {
+      var wx, wz;
+      if (rp.axis === 'net') {       // a curved road: step out along its normal
+        var sgn = U.dist2(x, z, rp.x + Math.cos(rp.heading), rp.z - Math.sin(rp.heading)) <
+          U.dist2(x, z, rp.x - Math.cos(rp.heading), rp.z + Math.sin(rp.heading)) ? 1 : -1;
+        wx = rp.x + Math.cos(rp.heading) * out * sgn + Math.sin(rp.heading) * along;
+        wz = rp.z - Math.sin(rp.heading) * out * sgn + Math.cos(rp.heading) * along;
+      } else if (rp.axis === 'z') {          // road runs along z; step out in x
+        wx = rp.x + (x >= rp.x ? out : -out);
+        wz = z + along;
+      } else {                        // road runs along x; step out in z
+        wx = x + along;
+        wz = rp.z + (z >= rp.z ? out : -out);
+      }
+      // resolveCircle can shove the point clear of a wall and onto a ramp, so
+      // the wedge test comes after the push-out, not before it
+      var s = GAME.resolveCircle(wx, wz, 0.5);
+      if (!first) first = [s.x, s.z];
+      return offRamp(s.x, s.z) ? [s.x, s.z] : null;
     }
-    var s = GAME.resolveCircle(wx, wz, 0.5);
-    return [s.x, s.z];
+    for (var t = 0; t < WAIT_OUT.length; t++) {
+      var got = candidate(WAIT_OUT[t], U.randRange(Math.random, -5, 5));
+      if (got) return got;
+    }
+    // Six rolls beaten means a wedge covering the whole width of this stretch
+    // of pavement — one of the hand-placed ramps by a landmark, not a verge
+    // one. Jittering again would just be more of the same luck, so walk ALONG
+    // the kerb in strides instead: a ramp is 34 m end to end at the longest,
+    // and two strides leave the longest of them behind for certain.
+    for (var d = 12; d <= 24; d += 12) {
+      for (var sd = -1; sd <= 1; sd += 2) {
+        var g2 = candidate(9.5, d * sd);
+        if (g2) return g2;
+      }
+    }
+    return first;
+  }
+
+  // flat enough to stand a fare on: the very foot of a wedge is still pavement
+  function offRamp(x, z) {
+    var r = GAME.city.rampAt(x, z);
+    return !r || r.y <= 0.45;
   }
 
   // someone standing at the kerb waiting — arm raised, and they stay put
@@ -632,6 +672,9 @@ GAME.missions = (function () {
   }
 
   // walk anyone who's been hailed over to the vehicle and load them in
+  // how long somebody stands at the hatch before they have their cone
+  var SERVE_TIME = 1.3;
+
   function stepBoarding(dt, f, P) {
     for (var i = active.targets.length - 1; i >= 0; i--) {
       var t = active.targets[i];
@@ -642,21 +685,45 @@ GAME.missions = (function () {
       if (U.dist2(f.x, f.z, t.x, t.z) > 40 * 40) { t.boarding = false; continue; }
       var dx = f.x - ped.pos.x, dz = f.z - ped.pos.z;
       var d = Math.sqrt(dx * dx + dz * dz);
-      if (d < 2.2) { collectTarget(t); continue; }
+      // Ice cream is not an emergency (walkUp is only ever set on the round's
+      // customers). A fare hurrying to a waiting cab can sprint; somebody
+      // strolling over for a cone should not, and they were covering the
+      // ground at 0.85x the player's full sprint and then completing the sale
+      // the instant they touched the truck — no walk to it and no moment at
+      // the hatch, just people teleporting money into the till.
+      var stroll = !!t.walkUp;
+      if (d < 2.2) {
+        if (!stroll) { collectTarget(t); continue; }
+        // served, not spirited: a beat at the window while it is handed over
+        t.serveT = (t.serveT || 0) + dt;
+        ped.speed = 0;
+        ped.heading = Math.atan2(dx, dz);
+        ped.mesh.rotation.y = ped.heading;
+        var sj = ped.mesh.userData.joints;
+        sj.legL.rotation.x = sj.legR.rotation.x = 0;
+        // an arm up to the hatch, and back down as they turn away with it
+        var reach = U.clamp(t.serveT / (SERVE_TIME * 0.45), 0, 1) *
+          U.clamp((SERVE_TIME - t.serveT) / (SERVE_TIME * 0.3) + 1, 0, 1);
+        sj.armR.rotation.x = -1.25 * reach;
+        sj.armL.rotation.x = 0;
+        if (t.serveT >= SERVE_TIME) collectTarget(t);
+        continue;
+      }
       ped.heading = Math.atan2(dx, dz);
-      ped.speed = 6.8;   // 0.85x the player's 8 sprint
+      ped.speed = stroll ? 4.1 : 6.8;   // 6.8 is 0.85x the player's 8 sprint
       ped.pos.x += Math.sin(ped.heading) * ped.speed * dt;
       ped.pos.z += Math.cos(ped.heading) * ped.speed * dt;
       var rp = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
       ped.pos.x = rp.x; ped.pos.z = rp.z;
       ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z);
       ped.mesh.rotation.y = ped.heading;
-      // running animation while they hurry over
-      ped.walkPhase += ped.speed * dt * 3;
+      // a run if they are hurrying, an ordinary walk if they are just coming
+      // over for one
+      ped.walkPhase += ped.speed * dt * (stroll ? 2.2 : 3);
       var j = ped.mesh.userData.joints;
-      var sw = Math.sin(ped.walkPhase) * 0.9;
+      var sw = Math.sin(ped.walkPhase) * (stroll ? 0.6 : 0.9);
       j.legL.rotation.x = sw; j.legR.rotation.x = -sw;
-      j.armL.rotation.x = -sw; j.armR.rotation.set(sw, 0, 0);
+      j.armL.rotation.x = -sw * (stroll ? 0.8 : 1); j.armR.rotation.set(sw * (stroll ? 0.8 : 1), 0, 0);
     }
   }
 
@@ -1593,6 +1660,8 @@ GAME.missions = (function () {
     get active() { return active; },
     // headless hooks, so the generators can be sampled without playing a shift
     testDropBand: function (lv) { var a = active; active = { level: lv, def: { id: 'taxifare' } }; var r = dropBand(); active = a; return r; },
+    testWaitSpot: kerbWaitSpot,
+    testRandomRoadPoint: randomRoadPoint,
     testRollCourier: rollCourierStops,
     testCollect: collectTarget,
     testStartRound: startRound,

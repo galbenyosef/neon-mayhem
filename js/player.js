@@ -318,7 +318,10 @@ GAME.enterCar = function (car) {
     // jack: the driver bails — and not all of them run. The short-tempered
     // turn on you and try to take their ride back with their fists.
     var side = car.heading + Math.PI / 2;
-    var dx = Math.sin(side) * 1.6, dz = Math.cos(side) * 1.6;
+    // clear of the bodywork, whatever is being jacked: a flat 1.6 m put the
+    // driver of anything wide inside his own car's kill box
+    var stepOut = car.spec.w / 2 + 1;
+    var dx = Math.sin(side) * stepOut, dz = Math.cos(side) * stepOut;
     // The car remembers its driver. Jack it, let the owner take it back,
     // jack it again — the SAME person climbs out both times, same clothes
     // and same temper, instead of a fresh stranger materializing at the

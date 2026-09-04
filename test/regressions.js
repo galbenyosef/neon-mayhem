@@ -22,6 +22,23 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3p. THE ICE CREAM ROUND — a customer walks over and is SERVED, rather
+//       than sprinting at the hatch and teleporting money into the till.
+//   3o. PICKUPS ON DRY LAND — nothing you are meant to walk to stands at
+//       the waterline, where reaching for it is a swim.
+//   3m. A BLAST CLEARS THE STREET — an explosion is felt far past where it
+//       hurts, it ends whatever anyone was doing, and an airframe is bigger.
+//   3l. THE LAW OFF THE PLAYER'S BACK — there are police on the street when
+//       you are clean, they attend other people's trouble, and none of it
+//       reaches your wanted level. A drawn gun is pointed at another NPC.
+//   3k. A CITY THAT FIGHTS ITSELF — strangers react to each other, the knob
+//       that rates it is monotone, and OFF is the old game exactly.
+//   3j. BOUNCING OFF A WALL — the shove off what you hit is capped and it
+//       dies, instead of handing the car a reverse gear it never selected.
+//   3i. ON FOOT, NOT UP THE RAMP — a stunt ramp is a drivable surface with
+//       walled flanks, so anyone who walks onto the deck is stuck up there.
+//       Nobody on foot climbs one, and no fare is set down on one.
+//   3h. KERBSIDE PARKING — a parked car is beside a road, never across one.
 //   3g. LANE KEEPING — a driver takes its lane from the first metre, not
 //       from the first node it reaches.
 //   3f. PARKED AIRFRAME — solid to drive into, and still shoves nobody.
@@ -133,6 +150,14 @@ function withTimeout(p, ms) {
   // Record the calls and assert on those.
   await page.evaluate(function () {
     GAME.test.start();
+    // Pin the city quiet for the whole suite. OFF is by definition the game as
+    // it was before any of the chaos work, so every group below measures what
+    // it always measured — and the alternative is not hypothetical: with the
+    // default LIVELY the suspension group started failing one run in two
+    // because a brawl or a passing officer had leaned on the car it was
+    // reading springs off. The two groups that are ABOUT the knob turn it up
+    // themselves and put it back.
+    GAME.chaos.set(0);
     GAME.test.fastForward(1);
     var a = GAME.audio;
     var engine0 = a.engineState, skid0 = a.skid, siren0 = a.siren, vol0 = a.radio.setVolume;
@@ -497,7 +522,14 @@ function withTimeout(p, ms) {
       }
       return { rate: hits / n, worstHit: worstHit, bestMiss: bestMiss, n: n };
     }
-    var N = 600;
+    // 4000 rounds a volley, not 600. Two of the checks below compare hit
+    // RATES, and at 600 shots with rates near 0.3 the standard error on the
+    // difference between two of them is about 0.026 — against a threshold of
+    // 0.05. That is an under-powered check, and it duly failed on a run where
+    // the numbers came out 0.32 against 0.27: a real effect that the sample
+    // was too small to resolve. Firing four times as many rounds halves the
+    // error again, and it is all arithmetic — no simulation, no frames.
+    var N = 4000;
     r.near = volley(6, 0, N);
     r.far = volley(34, 0, N);
     r.still = volley(12, 0, N);
@@ -888,6 +920,1199 @@ function withTimeout(p, ms) {
   // this line: a driver takes a 3.1 m lane on its first tick, and no moving
   // driver anywhere has none (0% here against 23%).
 
+  // ---------- 3h: kerbside parking is beside the road, not across one ----------
+  // The grid crosses itself every hundred metres and the spot generator only
+  // knew about the road it was parking ON. A spot dropped at a junction hugs
+  // nothing: parked along z, the car presents its whole LENGTH across the
+  // east-west carriageway, which is a roadblock rather than a parked car.
+  var kerb = await page.evaluate(function () {
+    var R = GAME.city.R, H = GAME.city.ROAD_HALF;
+    var spots = GAME.city.parkedSpots.filter(function (s) {
+      return !s.vtype && !s.police && !s.isla && !s.special;
+    });
+    var worst = 0, inside = 0, where = null;
+    spots.forEach(function (s) {
+      // parked along z (heading 0) sits on a road at some x, so its position
+      // ALONG that road is z — and the roads it can block run at those same
+      // coordinates on the other axis
+      var along = Math.abs(s.heading) < 0.1 ? s.z : s.x;
+      var near = 1e9;
+      for (var c = 0; c < R.length; c++) near = Math.min(near, Math.abs(along - R[c]));
+      var into = H - near;
+      if (into > 0) {
+        inside++;
+        if (into > worst) { worst = into; where = [Math.round(s.x), Math.round(s.z)]; }
+      }
+    });
+    return { spots: spots.length, inside: inside, worst: +worst.toFixed(1), where: where,
+             offset: 5.3, roadHalf: H };
+  });
+  check('kerb: the streets are parked up (anchor sanity)',
+    kerb.spots > 80, kerb.spots + ' street spots');
+  check('kerb: and not one of them is standing in a crossing road',
+    kerb.inside === 0,
+    kerb.inside + ' spots inside a crossing carriageway' +
+    (kerb.where ? ', worst ' + kerb.worst + 'm in at ' + JSON.stringify(kerb.where) : ''));
+
+  // ---------- 3k (b): what a fight has to LOOK like ----------
+  // Three things a play session found that the first round of measurement did
+  // not, because it counted fights rather than watching one.
+  var brawl2 = await page.evaluate(function () {
+    var C = GAME.chaos;
+    C.set(1);            // CALM: a ceiling of one, so a single filler fills it
+    GAME.test.teleport(-150, 120);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.6);
+    var f = GAME.focus();
+    var a = GAME.test.spawnPed(4, 0), b = GAME.test.spawnPed(4, 22);
+    if (!a || !b) { C.set(0); return { noPeds: true }; }
+    a.temper = 1; b.temper = 1;
+    // Saturate the fight ceiling first. That is the condition the bug lived
+    // in: the cap counts BODIES, so a two-sided brawl needs two slots, and
+    // swinging back was competing with fresh fights for one. With the board
+    // clear the victim turns and fights on any version of the code, which is
+    // exactly why the first version of this check passed on the broken one.
+    GAME.world.peds.forEach(function (p) {
+      if (p !== a && p !== b && p.state === 'attack') { p.state = 'walk'; p.foe = null; }
+    });
+    // and clear the traffic around them. These two stand and trade punches in
+    // a live street for twenty seconds; a car finding the victim first kills
+    // him, the loop breaks, and it reads as "he never fought back".
+    var ff = GAME.focus();
+    GAME.world.cars.slice().forEach(function (c) {
+      if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, ff.x, ff.z) < 60 * 60) GAME.vehicles.removeCar(c);
+    });
+    var x = GAME.test.spawnPed(-16, 4), y = GAME.test.spawnPed(-16, 7);
+    if (x && y) { x.temper = 1; y.temper = 1; GAME.peds.startFight(x, { kind: 'ped', ped: y }, 30); }
+    var cap = C.maxFights, fillers = GAME.peds.fightCount();
+    // and put `a` in the fight WITHOUT going through the ceiling, so this is
+    // a test of the victim's answer rather than of the aggressor's slot
+    a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 25;
+    var armsUpWhileRunning = 0, runFrames = 0, mutual = false, punches = 0;
+    var hp0 = b.hp;
+    for (var t = 0; t < 60 * 20; t++) {
+      // hold him to it: attackT runs down and the state gives up on its own,
+      // and this check is about how he looks getting there
+      if (a.state !== 'attack') { a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; }
+      a.attackT = 25;
+      if (t % 30 === 0) GAME.world.cars.slice().forEach(function (c) {
+        if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, ff.x, ff.z) < 60 * 60) GAME.vehicles.removeCar(c);
+      });
+      GAME.test.fastForward(1 / 60);
+      if (a.dead || b.dead || a.gone || b.gone) break;
+      // the charge: arms must swing, not sit frozen overhead
+      if (a.state === 'attack' && a.speed > 4) {
+        runFrames++;
+        // EITHER arm. The jab pose raises whichever one punchArm selects and
+        // drops the other to -1.2, and punchArm starts falsy — so watching
+        // armR alone watched the arm that was never up, and this check passed
+        // on the broken code.
+        var jt = a.mesh.userData.joints;
+        if (jt.armR.rotation.x < -2 || jt.armL.rotation.x < -2) armsUpWhileRunning++;
+      }
+      if (b.state === 'attack' && b.foe && b.foe.ped === a) mutual = true;
+      if (b.hp < hp0) punches++;
+    }
+    var out = { armsUp: armsUpWhileRunning, runFrames: runFrames, mutual: mutual,
+                landed: b.hp < hp0 || b.dead, cap: cap, fillers: fillers };
+    [a, b, x, y].forEach(function (p) { if (p && !p.gone) GAME.peds.removePed(p); });
+    C.set(0);
+    return out;
+  });
+  if (!brawl2.noPeds) {
+    check('brawl: he does actually run at the other man (anchor sanity)',
+      brawl2.runFrames > 30, brawl2.runFrames + ' frames of charging');
+    // The jab pose was applied on every frame of the attack state, charge
+    // included, and punchT does not tick while closing — so both arms locked
+    // at head height for the whole run. It read as a zombie, and it did.
+    check('brawl: and his arms swing while he does, rather than locked overhead',
+      brawl2.armsUp < brawl2.runFrames * 0.1,
+      brawl2.armsUp + ' of ' + brawl2.runFrames + ' charging frames with the arms up');
+    check('brawl: the punches land (anchor sanity)', brawl2.landed, 'the other man was hit');
+    // The fight ceiling counts BODIES, so a two-sided brawl cost two of them
+    // and swinging back was competing with fresh fights for a slot. Most
+    // fights came out one-sided: one man chasing, the other never turning.
+    check('brawl: the board is full while he is being hit (anchor sanity)',
+      brawl2.fillers >= brawl2.cap, brawl2.fillers + ' fights already running against a ceiling of ' + brawl2.cap);
+    check('brawl: and the man being hit swings back even so',
+      brawl2.mutual, brawl2.mutual ? 'he turned and fought' : 'he never fought back');
+  }
+
+  // a shunt between two strangers puts somebody on the pavement about it
+  var shunt = await page.evaluate(function () {
+    var C = GAME.chaos;
+    C.set(4);
+    GAME.test.teleport(-250, 0);
+    GAME.police.clearWanted();
+    if (GAME.player.inCar) GAME.exitCar();
+    GAME.test.fastForward(0.8);
+    var f = GAME.focus();
+    var got = 0, tries = 0;
+    for (var k = 0; k < 12 && !got; k++) {
+      tries++;
+      var one = GAME.test.spawnCar('sedan', 8, 6), two = GAME.test.spawnCar('sedan', 8, -6);
+      if (!one || !two) break;
+      one.occupied = 'ai'; two.occupied = 'ai';
+      one.ai = { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 };
+      two.ai = { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 };
+      // point them at each other and let them meet
+      // Nose to nose and closing. Eighteen metres apart gave the drivers most
+      // of a second to steer around each other and the crash often never
+      // happened at all; four metres does not.
+      one.pos.set(f.x + 8, GAME.city.groundY(f.x + 8, f.z + 2), f.z + 2);
+      two.pos.set(f.x + 8, GAME.city.groundY(f.x + 8, f.z - 2), f.z - 2);
+      one.heading = Math.PI; two.heading = 0;
+      one.speed = 14; two.speed = 14;
+      one.lat = 0; two.lat = 0;
+      for (var t = 0; t < 60 * 2; t++) {
+        GAME.test.fastForward(1 / 60);
+        var ps = GAME.world.peds;
+        for (var i = 0; i < ps.length; i++) if (ps[i].leftCar && !ps[i].dead) { got++; break; }
+        if (got) break;
+      }
+      [one, two].forEach(function (c) { if (c && !c.dead) GAME.vehicles.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (p.leftCar) GAME.peds.removePed(p); });
+    }
+    C.set(0);
+    return { got: got, tries: tries };
+  });
+  check('shunt: a hard crash between two strangers puts a driver on the road',
+    shunt.got > 0, shunt.got ? 'a driver got out within ' + shunt.tries + ' staged crashes'
+                             : 'nobody got out of a car in ' + shunt.tries + ' staged crashes');
+
+  // ---------- 3n: a car kills with its bodywork, not with an aura ----------
+  // The run-over test was `dist2 < 5.2` — a 2.28 m circle measured from the
+  // CAR'S CENTRE — while a sedan is 0.95 m from its centreline to its flank.
+  // So more than a metre of clear air beside a moving car was fatal: people
+  // died brushing past cars that never touched them, and the driver you pulled
+  // out of a moving one appeared inside that circle and was killed by his own
+  // car. Measured on the old code, lethal all the way out to 2.2 m.
+  var runover = await page.evaluate(function () {
+    GAME.test.teleport(-150, 0);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.8);
+    var rows = [], spec = null;
+    // 1.7, not 1.4. The margin is w/2 + 0.45 = exactly 1.4 for a sedan, so
+    // standing there put the pedestrian ON the threshold and floating point
+    // decided each run — the check failed half the time against code that was
+    // behaving perfectly. Never sample a boundary you are trying to assert
+    // across.
+    [0.6, 1.7, 2.2].forEach(function (off) {
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      var f = GAME.focus();
+      // Empty the corridor first. The pedestrian stands still for four seconds
+      // in the middle of a live street, and ANY car that finds him kills him —
+      // three runs in four failed on a passing stranger rather than on the car
+      // this is about.
+      GAME.world.cars.slice().forEach(function (c) {
+        if (c !== GAME.player.car && Math.abs(c.pos.z - f.z) < 30 &&
+            c.pos.x > f.x - 20 && c.pos.x < f.x + 60) GAME.vehicles.removeCar(c);
+      });
+      var car = GAME.test.spawnCar('sedan', 30, 0);
+      if (!car) return;
+      spec = { l: car.spec.l, w: car.spec.w };
+      car.pos.set(f.x + 30, GAME.city.groundY(f.x + 30, f.z), f.z);
+      // no traffic AI: it steers onto its own lane route and drives politely
+      // around the pedestrian this is supposed to be aimed at
+      car.occupied = null; car.ai = null;
+      car.controls = { throttle: 0, steer: 0, handbrake: false };
+      var ped = GAME.test.spawnPed(10, off);
+      if (!ped) { GAME.vehicles.removeCar(car); return; }
+      ped.state = 'walk';
+      var died = false;
+      for (var t = 0; t < 60 * 4; t++) {
+        ped.pos.x = f.x + 10; ped.pos.z = f.z + off; ped.speed = 0;
+        if (t % 15 === 0) GAME.world.cars.slice().forEach(function (c) {
+          if (c !== car && c !== GAME.player.car && Math.abs(c.pos.z - f.z) < 30 &&
+              c.pos.x > f.x - 20 && c.pos.x < f.x + 60) GAME.vehicles.removeCar(c);
+        });
+        // forward is (sin h, cos h), so -x travel is h = -PI/2
+        car.heading = -Math.PI / 2; car.speed = 14; car.lat = 0;
+        GAME.test.fastForward(1 / 60);
+        if (ped.dead) { died = true; break; }
+      }
+      rows.push({ off: off, died: died });
+      if (!ped.gone) GAME.peds.removePed(ped);
+      if (car && !car.dead) GAME.vehicles.removeCar(car);
+    });
+    return { rows: rows, spec: spec };
+  });
+  if (runover.spec) {
+    var flank = runover.spec.w / 2;
+    var hit = runover.rows[0], edge = runover.rows[1], clear = runover.rows[2];
+    check('runover: standing in front of it still gets you run over (anchor sanity)',
+      hit.died, 'at ' + hit.off + ' m from the centreline, inside a ' + flank.toFixed(2) + ' m half-width');
+    check('runover: three quarters of a metre clear of the bodywork is clear',
+      !edge.died, 'at ' + edge.off + ' m from the centreline: ' + (edge.died ? 'killed' : 'unharmed'));
+    check('runover: and so is a metre and a quarter clear of it',
+      !clear.died, 'at ' + clear.off + ' m from the centreline: ' + (clear.died ? 'killed' : 'unharmed'));
+  }
+
+  // and the man you pull out of a moving car survives his own car
+  var jacked = await page.evaluate(function () {
+    var survived = 0, tries = 0;
+    for (var k = 0; k < 5; k++) {
+      GAME.test.teleport(-150 + k * 14, 0);
+      GAME.test.fastForward(0.6);
+      if (GAME.player.inCar) GAME.exitCar();
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      var tc = GAME.test.spawnCar('van', 3, 0);
+      if (!tc) continue;
+      tc.occupied = 'ai';
+      tc.ai = { mode: 'traffic', desired: 12, laneX: 0, laneZ: 0 };
+      tc.speed = 11;
+      GAME.test.fastForward(0.2);
+      GAME.enterCar(tc);
+      tries++;
+      GAME.test.fastForward(1.2);
+      var alive = GAME.world.peds.some(function (p) { return !p.dead && !p.isCop; });
+      if (alive) survived++;
+      if (GAME.player.inCar) GAME.exitCar();
+      GAME.test.fastForward(0.3);
+      if (tc && !tc.dead) GAME.vehicles.removeCar(tc);
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+    }
+    return { survived: survived, tries: tries };
+  });
+  check('runover: jacking a moving van does not kill the driver you pulled out',
+    jacked.tries > 0 && jacked.survived === jacked.tries,
+    jacked.survived + '/' + jacked.tries + ' walked away from their own car');
+
+  // ---------- 3p: the round has a pace ----------
+  // Customers covered the ground at 6.8 m/s — 0.85x the player's full sprint,
+  // the speed a fare hurries to a waiting cab — and the sale completed the
+  // instant they touched the truck. Measured, 1.58 s from being noticed to the
+  // money landing. Nobody walks to an ice cream van like that.
+  var ice = await page.evaluate(function () {
+    GAME.police.clearWanted();
+    GAME.test.teleport(-150, 40);
+    GAME.test.fastForward(0.8);
+    if (GAME.player.inCar) GAME.exitCar();
+    var truck = GAME.test.spawnCar('icecream', 3, 0);
+    if (!truck) return { noTruck: true };
+    GAME.test.fastForward(0.4);
+    GAME.test.enterNearestCar(truck);
+    GAME.test.fastForward(1.5);
+    if (!GAME.player.inCar) return { noBoard: true };
+    GAME.test.pressKey('KeyJ');                 // the round starts with J
+    GAME.test.fastForward(0.6);
+    if (!GAME.missions.active) return { noJob: true };
+    var top = 0, atHatch = 0, served = 0, seen = 0;
+    var watching = null;
+    for (var t = 0; t < 60 * 60; t++) {
+      GAME.player.car.speed = 0;                // parked, so the chimes work
+      GAME.test.fastForward(1 / 60);
+      var a = GAME.missions.active;
+      if (!a || !a.targets) break;
+      if (!watching) {
+        for (var i = 0; i < a.targets.length; i++) {
+          if (a.targets[i].walkUp && a.targets[i].ped) { watching = a.targets[i]; seen++; break; }
+        }
+      }
+      if (watching) {
+        var ped = watching.ped;
+        var d = Math.hypot(ped.pos.x - GAME.player.car.pos.x, ped.pos.z - GAME.player.car.pos.z);
+        top = Math.max(top, ped.speed || 0);
+        if (d < 2.4) atHatch++;
+        if (a.targets.indexOf(watching) < 0) { served++; break; }   // sold
+      }
+    }
+    var out = { seen: seen, served: served, top: +top.toFixed(1), hatch: +(atHatch / 60).toFixed(2) };
+    // Clock off properly. A round left running keeps selling in the
+    // background, and every sale fires haptics.pickup() — which lands in the
+    // buzz log of the haptics group further down and breaks two of its checks
+    // about a knock buzzing exactly once.
+    if (GAME.player.car) { GAME.player.car.speed = 0; GAME.player.car.lat = 0; }
+    if (GAME.player.inCar) GAME.exitCar();
+    GAME.test.fastForward(1.5);
+    out.clockedOff = !GAME.missions.active;
+    // Clocking off puts up the result card, and an overlay HALTS THE TICK
+    // (that is group 1's whole subject). Left open it froze the world for
+    // every group after this one — cameraShake sat at 0.9 forever and the
+    // haptics knock checks failed on a game that was not running.
+    if (GAME.share.isOpen) GAME.share.hide();
+    out.overlayClosed = !GAME.share.isOpen;
+    if (truck && !truck.dead) GAME.vehicles.removeCar(truck);
+    GAME.test.fastForward(0.3);
+    return out;
+  });
+  if (!ice.noTruck && !ice.noBoard && !ice.noJob) {
+    check('ice cream: the chimes bring somebody over (anchor sanity)',
+      ice.seen > 0 && ice.served > 0, 'watched ' + ice.seen + ' customer, sold to ' + ice.served);
+    check('ice cream: and they walk to the hatch rather than sprinting at it',
+      ice.top > 0 && ice.top < 5,
+      'fastest they moved: ' + ice.top + ' m/s (a fare hurrying to a cab does 6.8)');
+    check('ice cream: and stand there long enough to be handed one',
+      ice.hatch >= 0.8, 'time at the window before the sale: ' + ice.hatch + ' s');
+    check('ice cream: and the group clocks off after itself (anchor sanity)',
+      ice.clockedOff === true && ice.overlayClosed === true,
+      'shift ended=' + ice.clockedOff + ', result card closed=' + ice.overlayClosed);
+  } else {
+    check('ice cream: the round could be started at all',
+      false, JSON.stringify(ice));
+  }
+
+  // ---------- 3o: a pickup you have to swim for is not a pickup ----------
+  // The island's second health sat one metre from the sea — reaching for it
+  // walked you into the water and washed you up on the beach. This holds every
+  // FIXED pickup to standing somewhere you can walk to and back from.
+  var dryness = await page.evaluate(function () {
+    var C = GAME.city;
+    function waterDist(x, z) {
+      for (var r = 1; r <= 14; r++) {
+        for (var a = 0; a < 16; a++) {
+          var ang = a * Math.PI / 8;
+          if (C.isInWater(x + Math.cos(ang) * r, z + Math.sin(ang) * r)) return r;
+        }
+      }
+      return 99;
+    }
+    var worst = null, wet = 0, n = 0;
+    C.pickupSpots.forEach(function (sp) {
+      n++;
+      if (C.isInWater(sp.x, sp.z)) wet++;
+      var d = waterDist(sp.x, sp.z);
+      if (!worst || d < worst.d) worst = { d: d, x: Math.round(sp.x), z: Math.round(sp.z), type: sp.type };
+    });
+    return { n: n, wet: wet, worst: worst };
+  });
+  check('pickups: the world puts some out to be collected (anchor sanity)',
+    dryness.n > 10, dryness.n + ' fixed pickups');
+  check('pickups: none of them is standing in the sea',
+    dryness.wet === 0, dryness.wet + ' of ' + dryness.n + ' in water');
+  // 1 m was the measured distance for the island health that prompted this.
+  // Six gives room to walk up, turn round and leave again.
+  check('pickups: and none close enough that reaching for it is a swim',
+    dryness.worst && dryness.worst.d >= 6,
+    'closest to water: a ' + dryness.worst.type + ' at (' + dryness.worst.x + ', ' +
+    dryness.worst.z + '), ' + dryness.worst.d + ' m from it');
+
+  // ---------- 3m: everyone runs from a blast ----------
+  // explodeCar killed anyone within 8 m and did nothing whatsoever to the
+  // rest. The only scattering was indirect — kill() panics a 26 m circle — so
+  // a blast that happened to catch somebody got a reaction and a blast that
+  // caught nobody got none at all: a car went up in the street and the people
+  // beside it kept walking. This is NOT rated by the chaos knob, so it runs
+  // here with the knob at the OFF the suite pins it to.
+  var blast = await page.evaluate(function () {
+    // Everything is staged around a point well clear of the player. The first
+    // version put the car at the focus itself — on top of them — and the blast
+    // killed the player, which halts police.update entirely and took out three
+    // checks in the group after this one.
+    var OX = 60, OZ = 0;
+    function ring(dists) {
+      var out = [];
+      for (var i = 0; i < dists.length; i++) {
+        var p = GAME.test.spawnPed(OX + Math.cos(i * 0.9) * dists[i], OZ + Math.sin(i * 0.9) * dists[i]);
+        if (p) { p.state = 'walk'; p.foe = null; out.push({ ped: p, d: dists[i] }); }
+      }
+      return out;
+    }
+    function blow(type, dists) {
+      GAME.test.teleport(-150, 60);
+      GAME.police.clearWanted();
+      GAME.test.fastForward(0.8);
+      // clear anyone left over so the ring is the only crowd that matters
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      var r = ring(dists);
+      var boom = GAME.test.spawnCar(type, OX, OZ);
+      GAME.test.fastForward(0.3);
+      if (!boom) return null;
+      GAME.vehicles.explodeCar(boom, 'test', false);
+      GAME.test.fastForward(0.3);
+      var reachedTo = 0, quietFrom = 1e9;
+      r.forEach(function (e) {
+        var moved = e.ped.dead || e.ped.state === 'flee';
+        if (moved && e.d > reachedTo) reachedTo = e.d;
+        if (!moved && e.d < quietFrom) quietFrom = e.d;
+      });
+      var res = { reachedTo: reachedTo, quietFrom: quietFrom === 1e9 ? null : quietFrom,
+                  n: r.length };
+      r.forEach(function (e) { if (!e.ped.gone) GAME.peds.removePed(e.ped); });
+      if (!boom.dead) GAME.vehicles.removeCar(boom);
+      return res;
+    }
+
+    // a mid-fight pair has to be broken up by it too
+    GAME.test.teleport(-150, 60);
+    GAME.test.fastForward(0.6);
+    GAME.chaos.set(3);
+    var a = GAME.test.spawnPed(60, 18), b = GAME.test.spawnPed(60, 20);
+    var fought = false, brokeUp = false;
+    if (a && b) {
+      a.temper = 1; b.temper = 1;
+      // straight into the state: the ceiling is not what this is about, and a
+      // staged fight that loses the race for a slot reads as "no brawl to
+      // interrupt" about a blast that works perfectly
+      a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 30;
+      GAME.test.fastForward(0.2);
+      fought = a.state === 'attack';
+      GAME.chaos.set(0);
+      var bomb = GAME.test.spawnCar('sedan', 60, 0);
+      GAME.test.fastForward(0.3);
+      if (bomb) {
+        GAME.vehicles.explodeCar(bomb, 'test', false);
+        GAME.test.fastForward(0.3);
+        brokeUp = a.dead || a.state !== 'attack';
+        if (!bomb.dead) GAME.vehicles.removeCar(bomb);
+      }
+      [a, b].forEach(function (p) { if (p && !p.gone) GAME.peds.removePed(p); });
+    }
+    GAME.chaos.set(0);
+
+    var DIST = [14, 26, 38, 50, 62, 76, 92, 110];
+    var res = { car: blow('sedan', DIST), heli: blow('helicopter', DIST),
+                fought: fought, brokeUp: brokeUp };
+    GAME.player.health = 100;
+    res.playerAlive = GAME.player.state === 'alive';
+    return res;
+  });
+  if (blast.car) {
+    check('blast: a car going up scatters people it did not touch (anchor sanity)',
+      blast.car.reachedTo >= 38,
+      'furthest to react was standing ' + blast.car.reachedTo + ' m away, of ' + blast.car.n + ' placed');
+    // felt far past where it hurts — the damage radius is 8 m
+    check('blast: well past the eight metres it actually hurts within',
+      blast.car.reachedTo > 8 * 3, 'reached ' + blast.car.reachedTo + ' m');
+    check('blast: but not the whole city — it does have an edge',
+      blast.car.quietFrom !== null && blast.car.quietFrom > blast.car.reachedTo,
+      'nearest untroubled bystander stood at ' + blast.car.quietFrom + ' m');
+  }
+  if (blast.car && blast.heli) {
+    check('blast: an airframe going up reaches further than a car does',
+      blast.heli.reachedTo > blast.car.reachedTo,
+      'helicopter ' + blast.heli.reachedTo + ' m vs sedan ' + blast.car.reachedTo + ' m');
+  }
+  check('blast: and the group leaves the player standing (anchor sanity)',
+    blast.playerAlive, 'player state after four explosions nearby');
+  check('blast: two men mid-fight were mid-fight (anchor sanity)',
+    blast.fought, blast.fought ? 'a brawl was running' : 'no brawl to interrupt');
+  // panic() exempts anyone in the attack state — right for a shout or a body
+  // hitting the pavement, wrong for a fireball, which ends any argument
+  check('blast: and it ends their argument rather than being ignored',
+    blast.brokeUp, blast.brokeUp ? 'the fight broke up' : 'they kept swinging through it');
+
+  // ---------- 3l: the law has somewhere else to be ----------
+  // At zero stars police.js used to delete every officer and cruiser in the
+  // world every sixtieth frame, which is the deepest reason the police were
+  // never after anyone but the player: when you were clean there were no
+  // police. A patrol officer now survives that sweep and attends other
+  // people's trouble — but the player's own pursuit outranks all of it, and
+  // none of it may touch the wanted level.
+  var beat = await page.evaluate(function () {
+    var C = GAME.chaos, out = {};
+    if (!GAME.police.reportIncident) return { missing: true };
+    C.set(3);
+    GAME.test.teleport(-150, 40);
+    GAME.police.clearWanted();
+    GAME.player.health = 100;
+    // Seed a crowd beside the player, for the same reason the top-of-range
+    // anchor above needs one: trouble only starts near them and spawnBubble
+    // puts everyone 60-150 m out, so a player standing still can go a full
+    // minute with nothing to report and this group reads "no incidents" about
+    // a mechanism that is working perfectly.
+    for (var sk = 0; sk < 8; sk++) {
+      var sp = GAME.test.spawnPed(Math.cos(sk * 0.8) * (10 + (sk % 3) * 6),
+                                  Math.sin(sk * 0.8) * (10 + (sk % 3) * 6));
+      if (sp) sp.temper = 0.6 + Math.random() * 0.4;
+    }
+    GAME.test.fastForward(0.5);
+    var stars0 = GAME.police.wanted, hp0 = GAME.player.health;
+    var patrolPeak = 0, incPeak = 0, attended = 0, starsMax = 0;
+    for (var f = 0; f < 60 * 75; f++) {
+      GAME.test.fastForward(1 / 60);
+      patrolPeak = Math.max(patrolPeak, GAME.police.patrolCount);
+      incPeak = Math.max(incPeak, GAME.police.incidentCount);
+      starsMax = Math.max(starsMax, GAME.police.wanted);
+      var ps = GAME.world.peds;
+      for (var i = 0; i < ps.length; i++) if (ps[i].onCase) { attended++; break; }
+    }
+    out.patrolPeak = patrolPeak;
+    out.incPeak = incPeak;
+    out.attended = attended;
+    out.starsMax = starsMax;
+    out.hpKept = GAME.player.health >= hp0;
+
+    // a star of the player's own pulls every officer off the beat
+    GAME.test.setWanted(3);
+    GAME.test.fastForward(2);
+    out.incAfterStars = GAME.police.incidentCount;
+    GAME.police.clearWanted();
+    GAME.test.fastForward(3);
+
+    // And OFF empties the street. This has to read the END of the window, not
+    // the peak across it: the officer standing there when the knob is pressed
+    // cannot evaporate on that same frame — the stand-down runs on the
+    // sixty-frame sweep — so a peak would only ever be measuring the man who
+    // was already there.
+    C.set(0);
+    GAME.test.fastForward(6);
+    out.offPatrolPeak = GAME.police.patrolCount;
+    for (var g = 0; g < 60 * 20; g++) GAME.test.fastForward(1 / 60);
+    out.offPatrolEnd = GAME.police.patrolCount;
+    C.set(0);
+    return out;
+  });
+  check('beat: the incident API is there at all',
+    !beat.missing, beat.missing ? 'police.reportIncident is not defined' : 'present');
+  if (!beat.missing) {
+    check('beat: there are officers on the street with the player clean (anchor sanity)',
+      beat.patrolPeak > 0, 'up to ' + beat.patrolPeak + ' on the beat at zero stars');
+    check('beat: and other people’s trouble gets reported and attended',
+      beat.incPeak > 0 && beat.attended > 0,
+      'up to ' + beat.incPeak + ' open cases, ' + beat.attended + ' frames with an officer on one');
+    // The one that matters most: a lively city must never frame the player.
+    check('beat: none of it lands on the player’s wanted level',
+      beat.starsMax === 0, 'highest the player’s stars reached: ' + beat.starsMax);
+    check('beat: nor on the player’s health',
+      beat.hpKept, 'the player was left alone');
+    check('beat: a star of your own outranks whatever they were dealing with',
+      beat.incAfterStars === 0, beat.incAfterStars + ' cases survived the player earning 3 stars');
+    check('beat: and OFF sends them home rather than leaving one walking it',
+      beat.offPatrolPeak === 0 && beat.offPatrolEnd === 0,
+      'six seconds after the switch: ' + beat.offPatrolPeak + ', twenty more: ' + beat.offPatrolEnd);
+  }
+
+  // a drawn gun: pointed at the other man, and only ever at him
+  var gun = await page.evaluate(function () {
+    var C = GAME.chaos;
+    C.set(4);
+    GAME.test.teleport(-150, 90);
+    GAME.police.clearWanted();
+    GAME.player.health = 100;
+    GAME.test.fastForward(0.6);
+    var a = GAME.test.spawnPed(5, 0), b = GAME.test.spawnPed(8, 0);
+    if (!a || !b) { C.set(0); return { noPeds: true }; }
+    var hp0 = b.hp, php0 = GAME.player.health, stars0 = GAME.police.wanted;
+    // fire straight through the module door, twenty rounds at close range:
+    // the spread model still rolls, so one shot is not a test
+    var hits = 0;
+    for (var r = 0; r < 20; r++) {
+      if (GAME.combat.npcShoot(a.pos.x, 1.35, a.pos.z, 1, 1, a, b)) hits++;
+      if (b.dead) break;
+    }
+    var out = { hits: hits, victimHurt: b.hp < hp0 || b.dead,
+                playerHp: GAME.player.health, php0: php0,
+                stars: GAME.police.wanted, stars0: stars0 };
+
+    // and a chase between two of them has to actually close
+    if (!b.dead) {
+      b.hp = 30; b.dead = false;
+      // put a street between them first — started three metres apart there is
+      // no gap to close and the check passes on any code at all
+      b.pos.x = a.pos.x + 26; b.pos.z = a.pos.z + 2;
+      b.pos.y = GAME.city.groundY(b.pos.x, b.pos.z);
+      GAME.peds.startFlee(b, a.pos.x, a.pos.z, 30);
+      // straight into the state rather than through startFight: the ceiling
+      // is not what this check is about, and at the top of the range the
+      // ambient brawls can hold every slot
+      a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 30;
+      var d0 = Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z), dmin = d0;
+      for (var t = 0; t < 60 * 8; t++) {
+        GAME.test.fastForward(1 / 60);
+        if (a.dead || b.dead || a.gone || b.gone) break;
+        dmin = Math.min(dmin, Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z));
+      }
+      out.chaseFrom = +d0.toFixed(1); out.chaseTo = +dmin.toFixed(1);
+    }
+    if (!a.gone) GAME.peds.removePed(a);
+    if (!b.gone) GAME.peds.removePed(b);
+
+    // and now the other way round: a fight the PLAYER is in, against someone
+    // who turns out to be carrying
+    var P = GAME.player;
+    function rate(acc, dmg, n) {
+      var hits = 0, sh = { aimSkill: 1.03 };
+      P.moveSpeed = 0;
+      for (var i = 0; i < n; i++) {
+        P.health = 100;
+        if (GAME.combat.npcShoot(P.pos.x + 12, 1.35, P.pos.z, acc, dmg, sh)) hits++;
+      }
+      P.health = 100;
+      return hits / n;
+    }
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(-150, 0);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.8);
+    P.health = 100;
+    var armed = { civ: rate(0.15, 6, 3000), cop1: rate(0.36, 6, 3000), cop3: rate(0.48, 8, 3000) };
+    C.set(4);
+    var fx = GAME.focus(), shot = 0, tries = 0;
+    // He only draws with a clear line to his man — so the staging has to give
+    // him one. Placing him at a fixed bearing put a wall between them on one
+    // run in five and the check reported "he never fired" about a gate that
+    // was working exactly as written.
+    var ANGLES = [0, 0.9, 1.8, 2.7, 3.6, 4.5, 5.4, 6.0];
+    for (var k = 0; k < ANGLES.length && tries < 6; k++) {
+      var gx = fx.x + Math.cos(ANGLES[k]) * 11, gz = fx.z + Math.sin(ANGLES[k]) * 11;
+      if (!GAME.city.hash.segmentClear(gx, gz, fx.x, fx.z)) continue;
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop) GAME.peds.removePed(p); });
+      // and clear the traffic. A car bearing down makes him DIVE, which takes
+      // him out of the attack state and stops him drawing at all — which is
+      // why the hit count swung between one attempt in four and four, and
+      // occasionally came up empty. He is not missing on those runs, he never
+      // fires.
+      GAME.world.cars.slice().forEach(function (c) {
+        if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, fx.x, fx.z) < 50 * 50) GAME.vehicles.removeCar(c);
+      });
+      var g = GAME.test.spawnPed(gx - fx.x, gz - fx.z);
+      if (!g) continue;
+      tries++;
+      g.temper = 1; g.carrying = true;
+      // a null foe is the player — the same thing a provoked stranger gets
+      g.state = 'attack'; g.foe = null; g.attackT = 20;
+      P.health = 100;
+      P.state = 'alive';
+      for (var t = 0; t < 60 * 10; t++) {
+        P.pos.x = fx.x; P.pos.z = fx.z;          // hold the range open
+        g.pos.x = gx; g.pos.z = gz;
+        g.attackT = 20;
+        if (g.state !== 'attack') { g.state = 'attack'; g.foe = null; }
+        if (t % 30 === 0) GAME.world.cars.slice().forEach(function (c) {
+          if (c !== GAME.player.car && U.dist2(c.pos.x, c.pos.z, fx.x, fx.z) < 50 * 50) GAME.vehicles.removeCar(c);
+        });
+        GAME.test.fastForward(1 / 60);
+        if (P.health < 100) { shot++; break; }
+      }
+      P.health = 100;
+      if (!g.gone) GAME.peds.removePed(g);
+    }
+    armed.shot = shot; armed.tries = tries; armed.hitPlayer = shot > 0;
+    armed.stars = GAME.police.wanted;
+    out.armed = armed;
+    P.health = 100;
+    C.set(0);
+    return out;
+  });
+  if (!gun.noPeds) {
+    check('gun: an NPC round can be aimed at another NPC and land (anchor sanity)',
+      gun.hits > 0 && gun.victimHurt, gun.hits + '/20 rounds found the other man');
+    // npcShoot read the player's position for its target and applied damage
+    // to the player, full stop. If that were still true these twenty rounds
+    // would have been fired into the player standing a few metres away.
+    check('gun: and it never goes into the player instead',
+      gun.playerHp >= gun.php0, 'player health ' + gun.php0 + ' -> ' + gun.playerHp);
+    check('gun: gunfire between strangers is not the player’s crime',
+      gun.stars === gun.stars0, 'stars ' + gun.stars0 + ' -> ' + gun.stars);
+    if (gun.armed) {
+      check('gun: a man you are fighting who is carrying will point it at YOU',
+        gun.armed.hitPlayer, gun.armed.hitPlayer
+          ? 'he drew and hit the player in ' + gun.armed.shot + '/' + gun.armed.tries + ' fights'
+          : 'he never fired at the player in ' + gun.armed.tries + ' fights');
+      // npcShoot's accuracy is INVERTED — higher is tighter — and the value
+      // used while these guns could only ever be aimed at other NPCs made a
+      // man with a pistol in his waistband a better shot than a three-star
+      // officer. Fine when the player could not be hit by it; not now.
+      check('gun: but he is a worse shot than the law, not a better one',
+        gun.armed.civ < gun.armed.cop1 && gun.armed.civ < gun.armed.cop3,
+        'civilian ' + (gun.armed.civ * 100).toFixed(0) + '% vs officer ' +
+        (gun.armed.cop1 * 100).toFixed(0) + '% at one star and ' +
+        (gun.armed.cop3 * 100).toFixed(0) + '% at three, all at 12 m');
+      check('gun: and being shot at is not something the player gets blamed for',
+        gun.armed.stars === 0, 'player stars after being fired on: ' + gun.armed.stars);
+    }
+    if (gun.chaseFrom !== undefined) {
+      // Both run at 6.8: measured, two of them held station thirty metres
+      // apart for five straight seconds, neither gaining an inch.
+      check('gun: and a chase between two of them actually closes',
+        gun.chaseFrom > 20 && gun.chaseTo < gun.chaseFrom - 6,
+        'closed from ' + gun.chaseFrom + ' m to ' + gun.chaseTo + ' m in eight seconds');
+    }
+  }
+
+  // ---------- 3k: the city fights with itself, by the knob ----------
+  // Every social thing strangers do to each OTHER is rated off GAME.chaos.
+  // Two properties matter and they pull against each other: the levels have
+  // to actually differ (a knob whose settings feel the same is not a knob),
+  // and OFF has to be the game exactly as it was, because it is the escape
+  // hatch as much as it is a preference.
+  var chaosRows = await page.evaluate(function () {
+    var C = GAME.chaos;
+    if (!C) return { missing: true };
+    var rows = [];
+    for (var i = 0; i < C.levels.length; i++) {
+      C.set(i);
+      rows.push({ name: C.name, react: C.reactChance, fight: C.fightChance,
+                  spark: C.sparkRate, range: C.sparkRange, armed: C.armedChance,
+                  police: C.policeRespond, cap: C.maxFights });
+    }
+    // and the roll helpers must be dead at OFF whatever they are handed
+    C.set(0);
+    var offRolls = 0;
+    for (var r = 0; r < 4000; r++) {
+      if (C.roll(1)) offRolls++;
+      if (C.rollRate(1000, 1 / 60)) offRolls++;
+    }
+    C.set(0);
+    return { rows: rows, offRolls: offRolls, count: C.levels.length };
+  });
+  check('chaos: the knob exists and has a range to it',
+    !chaosRows.missing && chaosRows.count >= 3,
+    chaosRows.missing ? 'GAME.chaos is not defined' : chaosRows.count + ' levels: ' +
+    chaosRows.rows.map(function (r) { return r.name; }).join(' / '));
+  if (!chaosRows.missing) {
+    var rows = chaosRows.rows, off = rows[0];
+    check('chaos: OFF is genuinely nothing, not merely quiet',
+      off.react === 0 && off.fight === 0 && off.spark === 0 && off.armed === 0 &&
+      off.police === false && off.cap === 0,
+      JSON.stringify(off));
+    // A roll helper that fires at OFF would let any gated behaviour through by
+    // accident, which is the one way the escape hatch could silently leak.
+    check('chaos: and no roll can come up true at OFF, however it is asked',
+      chaosRows.offRolls === 0, chaosRows.offRolls + '/8000 rolls fired at OFF');
+    var mono = true, detail = [];
+    for (var i = 1; i < rows.length; i++) {
+      detail.push(rows[i].name + ' spark=' + rows[i].spark + '@' + rows[i].range + 'm cap=' + rows[i].cap);
+      if (i > 1) {
+        var a = rows[i - 1], b = rows[i];
+        // range and the ceiling carry the level (see the note in chaos.js), so
+        // those are the two that must never go backwards
+        if (b.range < a.range || b.cap < a.cap || b.fight < a.fight) mono = false;
+      }
+    }
+    check('chaos: every step up is a step up, never sideways or back',
+      mono, detail.join('  |  '));
+  }
+
+  // and through the game: OFF is silent, the top of the range is not
+  var chaosWorld = await page.evaluate(function () {
+    var C = GAME.chaos;
+    function runFor(level, secs) {
+      C.set(level);
+      GAME.test.teleport(-150, 40);
+      GAME.police.clearWanted();
+      GAME.test.fastForward(1);
+      // Seed a crowd beside the player. Sparks only fire near them (see
+      // chaos.nearPlayer) and spawnBubble puts everyone 60-150 m out, so a
+      // player standing still has nobody close and the street can stay quiet
+      // for a full minute at the top of the range — measured, twice. Driving
+      // into the crowd is what normally supplies this.
+      var f = GAME.focus();
+      for (var k = 0; k < 8; k++) {
+        var ang = k * 0.8, rr = 10 + (k % 3) * 6;
+        var np = GAME.test.spawnPed(Math.cos(ang) * rr, Math.sin(ang) * rr);
+        if (np) np.temper = 0.6 + Math.random() * 0.4;
+      }
+      GAME.test.fastForward(0.5);
+      var seen = [], fights = 0, peak = 0;
+      for (var f = 0; f < 60 * secs; f++) {
+        GAME.test.fastForward(1 / 60);
+        var ps = GAME.world.peds, live = 0;
+        for (var i = 0; i < ps.length; i++) {
+          var p = ps[i];
+          if (p.dead || p.isCop) continue;
+          if (p.state === 'attack') {
+            live++;
+            if (seen.indexOf(p) < 0) { seen.push(p); fights++; }
+          }
+        }
+        if (live > peak) peak = live;
+      }
+      return { fights: fights, peak: peak, crowd: GAME.world.peds.length };
+    }
+    // MAYHEM first: if the crowd cannot produce a fight at all, the OFF
+    // result below means nothing
+    var loud = runFor(C.levels.length - 1, 45);
+    var quiet = runFor(0, 45);
+    C.set(0);
+    return { loud: loud, quiet: quiet };
+  });
+  check('chaos: at the top of the range the street does kick off (anchor sanity)',
+    chaosWorld.loud.fights > 0,
+    chaosWorld.loud.fights + ' fights in 45 s, up to ' + chaosWorld.loud.peak +
+    ' at once, crowd of ' + chaosWorld.loud.crowd);
+  check('chaos: and at OFF the same street does not, at all',
+    chaosWorld.quiet.fights === 0,
+    chaosWorld.quiet.fights + ' fights in 45 s with the knob off');
+
+  // a fight between two strangers has to actually be a fight
+  var brawl = await page.evaluate(function () {
+    var C = GAME.chaos;
+    C.set(3);
+    GAME.test.teleport(-150, 60);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.6);
+    var f = GAME.focus();
+    var a = GAME.test.spawnPed(4, 0), b = GAME.test.spawnPed(6, 0);
+    if (!a || !b) { C.set(0); return { noPeds: true }; }
+    a.temper = 1; b.temper = 1;
+    // Clear the ambient brawls first. The fight ceiling is a real cap and at
+    // the top of the range the street reaches it on its own — a staged fight
+    // that silently loses the race for a slot reads as "he did not charge"
+    // and fails a check about something else entirely.
+    GAME.world.peds.forEach(function (p) {
+      if (p !== a && p !== b && p.state === 'attack') { p.state = 'walk'; p.foe = null; }
+    });
+    var hp0 = b.hp;
+    var took = GAME.peds.startFight(a, { kind: 'ped', ped: b }, 12);
+    var closed = 1e9;
+    for (var t = 0; t < 60 * 10; t++) {
+      GAME.test.fastForward(1 / 60);
+      if (a.dead || b.dead) break;
+      closed = Math.min(closed, Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z));
+    }
+    var out = { took: took, hp0: hp0, hp1: b.hp, hit: b.hp < hp0 || b.dead,
+                closed: +closed.toFixed(1), aState: a.state, bState: b.state };
+    if (!a.gone) GAME.peds.removePed(a);
+    if (!b.gone) GAME.peds.removePed(b);
+    C.set(0);
+    return out;
+  });
+  if (!brawl.noPeds) {
+    check('chaos: one stranger can be set on another at all (anchor sanity)',
+      brawl.took === true, 'startFight returned ' + brawl.took);
+    check('chaos: and he closes the distance rather than shadow-boxing',
+      brawl.closed < 2.5, 'got within ' + brawl.closed + ' m');
+    check('chaos: and the punches land on the other man, not on the player',
+      brawl.hit, 'his hp went ' + brawl.hp0 + ' -> ' + brawl.hp1 +
+      ' (he ended up ' + brawl.bState + ')');
+  }
+
+  // ---------- 3j: a wall shoves you off, it does not launch you ----------
+  // The rebound off a solid was 40% of the closing speed with nothing to take
+  // it back off you again: it went straight into car.speed and was left to a
+  // drag with a four-second time constant. Measured, a 26 m/s hit came back
+  // at 7.6 m/s, reversed 21 metres, and was still rolling backwards at 2.3 m/s
+  // six seconds later — a reverse gear nobody selected. The share is unchanged
+  // (a nudge still bounces exactly as it did); what is new is a ceiling on it,
+  // and a drag that only ever acts on a reverse you did not ask for.
+  var wall = await page.evaluate(function () {
+    var P = GAME.player, K = GAME.input.keys, C = GAME.city;
+    // a tall face with clear ground in front of it to run at
+    var w = null;
+    for (var z = -400; z <= 400 && !w; z += 7) for (var x = -400; x <= 300 && !w; x += 7) {
+      var boxes = C.hash.query(x, z, 3);
+      for (var b = 0; b < boxes.length; b++) {
+        var q = boxes[b];
+        if (q.h === undefined || q.h < 8) continue;
+        var ax = q.minX - 30, az = (q.minZ + q.maxZ) / 2;
+        if (C.isInWater(ax, az)) continue;
+        var clear = true;
+        for (var st = 2; st <= 26 && clear; st += 2) {
+          var got = C.hash.query(ax + st, az, 2.5);
+          for (var g = 0; g < got.length; g++) if (got[g] !== q) { clear = false; break; }
+        }
+        if (clear) { w = { ax: ax, az: az, faceX: q.minX }; break; }
+      }
+    }
+    if (!w) return { noWall: true };
+
+    function board() {
+      GAME.test.teleport(w.ax, w.az); GAME.test.fastForward(0.3);
+      if (P.inCar) GAME.exitCar();
+      var c = GAME.test.spawnCar('sedan', 2, 0); GAME.test.fastForward(0.3);
+      GAME.test.enterNearestCar(c); GAME.test.fastForward(1.2);
+      K['KeyW'] = K['KeyS'] = K['KeyA'] = K['KeyD'] = false;
+      return P.car;
+    }
+    // Drive squarely at the face and report what the bounce does afterwards.
+    // The start is close in on purpose: from 30 m back the coast drag eats
+    // most of the entry speed — a 9 m/s run arrived at 3.7 — and then both
+    // cases land under the ceiling and the comparison below means nothing.
+    function crash(entry) {
+      var car = board();
+      var sx = w.faceX - (car.spec.l / 2 + 6);
+      car.pos.set(sx, C.groundY(sx, w.az), w.az);
+      // Clear the run-up. By the time this group runs the suite has simulated
+      // minutes of play, so the street between the car and the wall is parked
+      // up — the first attempt at this stopped 5.8 m short on a parked sedan
+      // and measured a car-on-car nudge instead of the wall.
+      for (var q = GAME.world.cars.length - 1; q >= 0; q--) {
+        var o = GAME.world.cars[q];
+        if (o === car) continue;
+        if (o.pos.x > sx - 12 && o.pos.x < w.faceX + 4 && Math.abs(o.pos.z - w.az) < 14) GAME.vehicles.removeCar(o);
+      }
+      car.heading = Math.PI / 2;          // straight at it
+      car.speed = entry; car.lat = 0; car.hp = car.spec.hp; car.stage = 0;
+      var back = 0, revDist = 0, prevX = car.pos.x, hit = false, closest = 1e9;
+      for (var t = 0; t < 60 * 6; t++) {
+        GAME.test.fastForward(1 / 60);
+        if (car.speed < back) back = car.speed;
+        if (car.speed < -0.2) hit = true;
+        if (car.pos.x < prevX) revDist += prevX - car.pos.x;
+        prevX = car.pos.x;
+        // CLOSEST approach, not where it ended up: on the old code the car
+        // bounces and then reverses most of a block, so an end-of-run gap
+        // says "never reached the wall" about a run that hit it hard.
+        closest = Math.min(closest, w.faceX - (car.pos.x + car.spec.l / 2));
+      }
+      var r = { entry: entry, back: +back.toFixed(2), revDist: +revDist.toFixed(1),
+                endSp: +car.speed.toFixed(2), bounced: hit,
+                // how close the nose got to the face — proof it was the WALL
+                // it met, and not something parked in the way
+                gap: +closest.toFixed(1) };
+      GAME.exitCar();
+      return r;
+    }
+    var out = { slow: crash(8), fast: crash(26) };
+
+    // and asking for reverse still gives you reverse
+    var car = board();
+    var rx = w.ax - 40;
+    car.pos.set(rx, C.groundY(rx, w.az), w.az);
+    car.heading = Math.PI / 2; car.speed = 0; car.lat = 0;
+    K['KeyS'] = true;
+    for (var t2 = 0; t2 < 60 * 4; t2++) GAME.test.fastForward(1 / 60);
+    out.reverse = +car.speed.toFixed(2);
+    K['KeyS'] = false;
+    GAME.exitCar();
+    return out;
+  });
+  if (!wall.noWall) {
+    check('wall: driving into it does bounce the car back (anchor sanity)',
+      wall.fast.bounced && wall.slow.bounced && wall.fast.gap < 3 && wall.slow.gap < 3,
+      'rebound peaks ' + wall.slow.back + ' / ' + wall.fast.back + ' m/s, nose left ' +
+      wall.slow.gap + ' / ' + wall.fast.gap + ' m off the face');
+    // The point of the ceiling: arriving three times as fast must not hand
+    // back three times the shove. Without it the fast run rebounds at 7.6.
+    check('wall: a fast hit is absorbed, not returned',
+      Math.abs(wall.fast.back) < Math.abs(wall.slow.back) * 1.6,
+      'from ' + wall.slow.entry + ' m/s the shove is ' + Math.abs(wall.slow.back) +
+      ', from ' + wall.fast.entry + ' m/s it is ' + Math.abs(wall.fast.back));
+    check('wall: and the bounce stops instead of becoming a reverse gear',
+      wall.fast.revDist < 6 && Math.abs(wall.fast.endSp) < 0.2,
+      'reversed ' + wall.fast.revDist + ' m, still doing ' + wall.fast.endSp + ' m/s six seconds later');
+    check('wall: reverse you actually ASK for is untouched',
+      wall.reverse < -8, 'four seconds on the brake from a standstill: ' + wall.reverse + ' m/s');
+  }
+
+  // ---------- 3i: nobody on foot goes up a stunt ramp ----------
+  // Ramps are surfaces rather than solids — that is what lets a car ride up
+  // one — and feet ride up just as well. The raked flanks beside the deck ARE
+  // solid, so a stroller who wandered onto a wedge had nowhere to go but back
+  // down the way they came or off the lip: measured, seven of them did it in
+  // six minutes of play and stayed up there for as long as 39 seconds.
+  var walkRule = await page.evaluate(function () {
+    var C = GAME.city;
+    if (typeof C.canWalkTo !== 'function') return { missing: true, ramps: C.ramps.length };
+    // a ground-level wedge to reason about, and its two ends in world space
+    var r = null;
+    for (var i = 0; i < C.ramps.length; i++) if (!C.ramps[i].base) { r = C.ramps[i]; break; }
+    if (!r) return { noRamp: true };
+    function at(lx, lz) { return [r.x + lx * r.cos + lz * r.sin, r.z - lx * r.sin + lz * r.cos]; }
+    var foot = at(0, -r.len / 2 - 3);          // 3 m short of the low end
+    var low = at(0, -r.len / 2 + r.len * 0.3); // a third of the way up
+    var high = at(0, r.len / 2 - 0.5);         // just below the lip
+    var off = at(r.w / 2 + 14, 0);             // well clear, beside it
+    return {
+      ramps: C.ramps.length,
+      // the heights those points actually stand at, so the check is not
+      // asserting against a ramp it has mis-located
+      lowY: +((C.rampAt(low[0], low[1]) || {}).y || 0).toFixed(2),
+      highY: +((C.rampAt(high[0], high[1]) || {}).y || 0).toFixed(2),
+      footOn: !!C.rampAt(foot[0], foot[1]),
+      up: C.canWalkTo(foot[0], foot[1], low[0], low[1]),
+      further: C.canWalkTo(low[0], low[1], high[0], high[1]),
+      down: C.canWalkTo(high[0], high[1], low[0], low[1]),
+      away: C.canWalkTo(low[0], low[1], off[0], off[1]),
+      flat: C.canWalkTo(off[0], off[1], off[0] + 2, off[1] + 2),
+      // A walker heading straight up the wedge, advancing only where the rule
+      // allows. This is the one that matters: asking the rule about ONE step
+      // tells you nothing about a thousand of them, and the first version of
+      // this fix — which let through any step gaining under 2 cm — passed
+      // every single-step check above while letting a stroller climb the
+      // whole ramp a centimetre at a time.
+      //
+      // The stride has to be a walking ped's ACTUAL frame, ~1.6 m/s at 1/60,
+      // because that is the granularity the rule gets asked at and the whole
+      // point of a per-step tolerance is that a small enough step slips under
+      // it. A coarser 0.06 m stride gains 2.6 cm on this slope, clears the
+      // 2 cm slack on its own, and let the broken rule pass this check.
+      climbed: (function () {
+        var STRIDE = 1.6 / 60;
+        var lz = -r.len / 2 - 1, peak = 0;
+        var n = Math.ceil(r.len / STRIDE) + 300;   // enough to walk clear over the top
+        for (var k = 0; k < n; k++) {
+          var a = at(0, lz), b = at(0, lz + STRIDE);
+          if (!C.canWalkTo(a[0], a[1], b[0], b[1])) continue;   // refused: they stay put
+          lz += STRIDE;
+          var hit = C.rampAt(b[0], b[1]);
+          if (hit && hit.y > peak) peak = hit.y;
+        }
+        return +peak.toFixed(2);
+      })()
+    };
+  });
+  check('ramp: the rule exists at all',
+    !walkRule.missing, walkRule.missing ? 'city.canWalkTo is not defined' : 'city.canWalkTo');
+  if (!walkRule.missing && !walkRule.noRamp) {
+    check('ramp: the wedge under the test rises (anchor sanity)',
+      walkRule.highY > walkRule.lowY && walkRule.lowY > 0.45 && !walkRule.footOn,
+      'deck ' + walkRule.lowY + 'm -> ' + walkRule.highY + 'm, foot clear=' + !walkRule.footOn);
+    check('ramp: a step from the ground up onto the deck is refused',
+      walkRule.up === false, 'canWalkTo(ground -> deck) = ' + walkRule.up);
+    check('ramp: and so is one that climbs higher up it',
+      walkRule.further === false, 'canWalkTo(low -> high) = ' + walkRule.further);
+    check('ramp: but coming back DOWN is always allowed',
+      walkRule.down === true, 'canWalkTo(high -> low) = ' + walkRule.down);
+    check('ramp: and so is stepping off it onto the ground',
+      walkRule.away === true, 'canWalkTo(deck -> beside) = ' + walkRule.away);
+    check('ramp: level ground is untouched by the rule',
+      walkRule.flat === true, 'canWalkTo(flat -> flat) = ' + walkRule.flat);
+    check('ramp: and a thousand walking strides up it get no further than ankle deep',
+      walkRule.climbed <= 0.46,
+      'a walker striding at it reached ' + walkRule.climbed + 'm of a ' + walkRule.highY + 'm deck');
+  }
+
+  // and the same thing through the game. Three cases, because the first two
+  // fail on different broken rules: a crowd sent at a ramp from the ground
+  // catches "no rule at all", and one already standing on the foot of the
+  // wedge catches a rule with a per-step tolerance in it. That second one is
+  // not hypothetical — the first version of this allowed a step that gained
+  // less than 2 cm, and since a walking ped covers under 3 cm in a frame and
+  // gains barely more than a centimetre of height doing it, the whole ramp was
+  // climbed a centimetre at a time and THIS CHECK PASSED. The third pins the
+  // way back down, so the rule cannot be tightened into a trap of its own.
+  var walkWorld = await page.evaluate(function () {
+    var C = GAME.city, r = null;
+    for (var i = 0; i < C.ramps.length; i++) if (!C.ramps[i].base) { r = C.ramps[i]; break; }
+    if (!r) return { noRamp: true };
+    function at(lx, lz) { return [r.x + lx * r.cos + lz * r.sin, r.z - lx * r.sin + lz * r.cos]; }
+    function upAt(y) { return -r.len / 2 + (y / r.h) * r.len; }   // local z at deck height y
+    var top = at(0, r.len / 2 - 1);
+    GAME.test.teleport(r.x + 26, r.z + 26);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.5);
+    var out = { h: +r.h.toFixed(1), ramps: C.ramps.length };
+
+    // walk a crowd, hold them to an order every frame, and report how high
+    // they got and how far they moved
+    function drive(places, aim, secs) {
+      var f = GAME.focus(), crowd = [], peak = 0;
+      for (var k = 0; k < places.length; k++) {
+        var p = GAME.test.spawnPed(places[k][0] - f.x, places[k][1] - f.z);
+        p.state = 'walk'; p.speed = 1.6;
+        p.startX = p.pos.x; p.startZ = p.pos.z;
+        crowd.push(p);
+      }
+      var lastY = 0;
+      for (var t = 0; t < 60 * secs; t++) {
+        for (var c = 0; c < crowd.length; c++) {
+          var q = crowd[c];
+          if (q.dead) continue;
+          q.wpX = aim[0]; q.wpZ = aim[1]; q.wpT = 60;
+          var rp = C.rampAt(q.pos.x, q.pos.z);
+          lastY = rp ? rp.y : 0;
+          if (lastY > peak) peak = lastY;
+        }
+        GAME.test.fastForward(1 / 60);
+      }
+      var moved = 0, ended = 0;
+      for (var d = 0; d < crowd.length; d++) {
+        moved = Math.max(moved, Math.hypot(crowd[d].pos.x - crowd[d].startX, crowd[d].pos.z - crowd[d].startZ));
+        var er = C.rampAt(crowd[d].pos.x, crowd[d].pos.z);
+        ended = Math.max(ended, er ? er.y : 0);
+        GAME.peds.removePed(crowd[d]);
+      }
+      return { peak: +peak.toFixed(2), moved: +moved.toFixed(1), ended: +ended.toFixed(2) };
+    }
+
+    // 1. three abreast, 3 m short of the low end, told to go over the top
+    out.fromGround = drive([at(-2, -r.len / 2 - 3), at(0, -r.len / 2 - 3), at(2, -r.len / 2 - 3)], top, 12);
+    // 2. one already standing at ankle height on the slope, same order
+    out.fromFoot = drive([at(0, upAt(0.40))], top, 12);
+    // 3. one dropped two thirds of the way up: they have to get themselves off
+    var high = at(0, upAt(r.h * 0.66));
+    out.highY = +((C.rampAt(high[0], high[1]) || {}).y || 0).toFixed(2);
+    var f2 = GAME.focus();
+    var stranded = GAME.test.spawnPed(high[0] - f2.x, high[1] - f2.z);
+    stranded.state = 'walk'; stranded.speed = 1.6;
+    // Told to leave by the low end, every frame. Left to their own waypoints
+    // the time to get off is a lottery — measured at 4.8 s, 4.9 s and 8.3 s
+    // on the same code — and a bound inside that spread is not a check. With
+    // the order held, this asks the one thing it is for: does the rule let
+    // someone who WANTS to come down actually do it?
+    var exit = at(0, -r.len / 2 - 4);
+    out.downT = null;
+    for (var t2 = 0; t2 < 60 * 30; t2++) {
+      stranded.wpX = exit[0]; stranded.wpZ = exit[1]; stranded.wpT = 60;
+      GAME.test.fastForward(1 / 60);
+      var sr = C.rampAt(stranded.pos.x, stranded.pos.z);
+      if (!sr || sr.y <= 0.5) { out.downT = +(t2 / 60).toFixed(1); break; }
+    }
+    GAME.peds.removePed(stranded);
+    return out;
+  });
+  if (!walkWorld.noRamp) {
+    check('ramp: the crowd sent at it actually set off (anchor sanity)',
+      walkWorld.fromGround.moved > 2, 'furthest of the three moved ' + walkWorld.fromGround.moved + 'm');
+    check('ramp: twelve seconds of walking straight at one gets nobody up it',
+      walkWorld.fromGround.peak <= 0.5,
+      'highest anyone stood: ' + walkWorld.fromGround.peak + 'm on a ' + walkWorld.h + 'm ramp');
+    // the same thing through the AI. It moves the needle far less than the
+    // stride walk above does — 16 cm against a whole ramp — so treat this as
+    // the wiring check it is and leave the ratchet itself to the door.
+    check('ramp: nor does one who starts already standing on the foot of it',
+      walkWorld.fromFoot.peak <= 0.5,
+      'from ankle height they reached ' + walkWorld.fromFoot.peak + 'm, ending at ' + walkWorld.fromFoot.ended + 'm');
+    check('ramp: someone left up on the deck is up there (anchor sanity)',
+      walkWorld.highY > 1, 'dropped at ' + walkWorld.highY + 'm');
+    check('ramp: and they can walk back down off it',
+      walkWorld.downT !== null && walkWorld.downT < 20,
+      walkWorld.downT === null ? 'still on the deck after 30s' : 'off in ' + walkWorld.downT + 's');
+  }
+
+  // ---------- 3i (b): a fare is never set down on a wedge ----------
+  // kerbWaitSpot pushed 14 m out from the road centre and the verge ramps
+  // start at 11 m, so about one fare or casualty in fifty stood on a slope
+  // where the cab cannot pull up and — before the rule above — nobody on
+  // foot could be reached anyway.
+  var fares = await page.evaluate(function () {
+    var M = GAME.missions, C = GAME.city;
+    if (!M.testWaitSpot || !M.testRandomRoadPoint) return { missing: true };
+    function onRamp(x, z) { var r = C.rampAt(x, z); return !!r && r.y > 0.45; }
+    var res = { n: 0, marker: 0, body: 0, naive: 0, drifts: [] };
+    // 20k rolls, not a few hundred: the marker itself lands on a wedge about
+    // once in nine hundred, and a sample too small to see that is a check
+    // that would pass on the broken code. The whole sweep is arithmetic —
+    // it costs a second or two, no simulation at all.
+    for (var t = 0; t < 20000; t++) {
+      var fx = -440 + Math.random() * 780, fz = -440 + Math.random() * 880;
+      if (C.isInWater(fx, fz)) continue;
+      var m = M.testRandomRoadPoint(fx, fz, 60, 260);
+      var w = M.testWaitSpot(m[0], m[1]);
+      res.n++;
+      if (onRamp(m[0], m[1])) res.marker++;
+      if (onRamp(w[0], w[1])) res.body++;
+      res.drifts.push(Math.hypot(w[0] - m[0], w[1] - m[1]));
+      // what the old single push would have produced from the same marker:
+      // straight out 14 m on the marker's own side, no re-roll
+      var rp = C.nearestRoadPoint(m[0], m[1]);
+      var nx, nz;
+      if (rp.axis === 'net') {
+        var sgn = Math.hypot(m[0] - (rp.x + Math.cos(rp.heading)), m[1] - (rp.z - Math.sin(rp.heading))) <
+          Math.hypot(m[0] - (rp.x - Math.cos(rp.heading)), m[1] - (rp.z + Math.sin(rp.heading))) ? 1 : -1;
+        nx = rp.x + Math.cos(rp.heading) * 14 * sgn; nz = rp.z - Math.sin(rp.heading) * 14 * sgn;
+      } else if (rp.axis === 'z') { nx = rp.x + (m[0] >= rp.x ? 14 : -14); nz = m[1]; }
+      else { nx = m[0]; nz = rp.z + (m[1] >= rp.z ? 14 : -14); }
+      if (onRamp(nx, nz)) res.naive++;
+    }
+    res.drifts.sort(function (a, b) { return a - b; });
+    res.p99 = +res.drifts[Math.floor(res.drifts.length * 0.99)].toFixed(1);
+    res.drift = +res.drifts[res.drifts.length - 1].toFixed(1);
+    res.drifts = null;
+    return res;
+  });
+  check('fare: the pickup roller answers at all',
+    !fares.missing, fares.missing ? 'GAME.missions.testWaitSpot is not exposed' : 'hooks present');
+  if (!fares.missing) {
+    // Without this the two zeroes below could just mean "this world has no
+    // ramp anywhere near a kerb", which would make them free.
+    check('fare: the 14 m push does land on ramps (anchor sanity)',
+      fares.naive > 0,
+      fares.naive + '/' + fares.n + ' of the unrolled spots are on a wedge');
+    check('fare: no pickup marker sits part-way up a ramp',
+      fares.marker === 0, fares.marker + '/' + fares.n + ' markers on a wedge');
+    check('fare: and nobody is left standing on one waiting for you',
+      fares.body === 0, fares.body + '/' + fares.n + ' waiting bodies on a wedge');
+    // The re-roll moves people along the kerb, so this has to stay honest
+    // about how far: the everyday case, and the worst the kerb sweep does.
+    check('fare: the fare still stands beside their own marker',
+      fares.p99 < 12 && fares.drift < 30,
+      'p99 ' + fares.p99 + 'm, furthest ' + fares.drift + 'm from the marker');
+  }
+
   // ---------- 4: unlimited ammo reads as unlimited ----------
   var ammo = await page.evaluate(function () {
     GAME.test.fastForward(1);
@@ -946,7 +2171,13 @@ function withTimeout(p, ms) {
     var seen = null, s0 = GAME.audio.siren;
     GAME.audio.siren = function (v, p, x, z) { if (v > 0) seen = { x: x, z: z }; return s0.apply(GAME.audio, arguments); };
     GAME.test.setWanted(3);
-    GAME.test.fastForward(6);
+    // Wait for the cruiser, do not assume six seconds buys one. Spawning a
+    // pursuit car, getting it to the player and starting its siren is a
+    // stochastic errand, and a fixed window duly came up empty on one run in
+    // five — reporting "no siren position" about a chase that simply had not
+    // arrived yet.
+    var waited = 0;
+    while (!seen && waited < 60 * 25) { GAME.test.fastForward(1 / 60); waited++; }
     var wanted = GAME.police.wanted;
     GAME.audio.siren = s0;
     // Call off the manhunt. Left running it followed the player into the
@@ -955,11 +2186,12 @@ function withTimeout(p, ms) {
     GAME.police.clearWanted();
     GAME.player.health = 100;
     GAME.test.fastForward(1);
-    return { seen: seen, wanted: wanted };
+    return { seen: seen, wanted: wanted, waited: waited };
   });
   check('stereo: a chasing cruiser gives the siren its position',
     !!siren.seen && isFinite(siren.seen.x) && isFinite(siren.seen.z),
-    'wanted=' + siren.wanted + ' got=' + JSON.stringify(siren.seen));
+    'wanted=' + siren.wanted + ' got=' + JSON.stringify(siren.seen) +
+    ' after ' + (siren.waited / 60).toFixed(1) + 's');
 
   // ---------- 6: a rider follows the deck when it tilts ----------
   // vehicles.js pitches a chassis over a ramp (negative rotation.x lifts the
@@ -982,16 +2214,23 @@ function withTimeout(p, ms) {
       car.ai = null;
       car.controls = { throttle: 0, steer: 0, handbrake: true };
       car.heading = 0;                    // so +NOSE along z IS +NOSE along the body
+      // and no ROLL. The prediction below is pure pitch, but the body also
+      // leans on lateral slip — so one shove from passing traffic puts a roll
+      // under the rider and the measured height stops matching the trig. Pitch
+      // was pinned here and roll was not, which is a failure once in a while
+      // and nothing to do with what is being tested.
+      car.lat = 0; car.speed = 0;
+      car.mesh.rotation.z = 0;
       P.pos.x = car.pos.x; P.pos.z = car.pos.z + NOSE;
     }
     hold();
     P.pos.set(car.pos.x, car.pos.y + 4, car.pos.z + NOSE);
     P.velY = 0;
-    for (var i = 0; i < 60; i++) { hold(); car.mesh.rotation.x = 0; GAME.test.fastForward(1 / 60); }
+    for (var i = 0; i < 60; i++) { hold(); car.mesh.rotation.x = 0; GAME.test.fastForward(1 / 60); car.mesh.rotation.z = 0; }
     var level = P.pos.y - car.pos.y, riding = P.roofCar === car;
     // now lift the nose, a frame at a time
     var PITCH = 0.35;
-    for (var j = 0; j < 40; j++) { hold(); car.mesh.rotation.x = -PITCH * (j + 1) / 40; GAME.test.fastForward(1 / 60); }
+    for (var j = 0; j < 40; j++) { hold(); car.mesh.rotation.x = -PITCH * (j + 1) / 40; GAME.test.fastForward(1 / 60); car.mesh.rotation.z = 0; }
     var noseUp = P.pos.y - car.pos.y, stillRiding = P.roofCar === car;
     // what the geometry says it must be, derived here with plain trig rather
     // than by asking the code under test what it thinks
@@ -1379,9 +2618,19 @@ function withTimeout(p, ms) {
   // no clock in the way, and what belongs here is the wiring: run somebody
   // down for the star and the star reaches your hand. It is a single pulse
   // where the splat is a pattern, and godMode rules out the other scalars.
+  // One more subtlety, found by it going red: "a single pulse" was the wrong
+  // signature for the star. wantedUp counts the star out in TAPS, so it is a
+  // single pulse only when the kill lights the FIRST one — light the second
+  // and a perfectly correct [20,65,36] arrives and the check fails on a real
+  // outcome. So the star is identified by contrast with the splat instead,
+  // taking the splat's own signature from the controlled one recorded above
+  // rather than hardcoding it: any buzz that is not splat-shaped is the star.
+  var splatSig = Array.isArray(world.splat[0]) ? world.splat[0] : null;
   check('haptics: and the star that kill earns reaches the hand too',
-    world.firstKill.some(function (v) { return typeof v === 'number'; }) &&
-    Array.isArray(world.splat[0]),
+    !!splatSig && world.firstKill.some(function (v) {
+      if (typeof v === 'number') return true;      // a bare pulse is never a splat
+      return !(Array.isArray(v) && v[0] === splatSig[0] && v[1] === splatSig[1]);
+    }),
     'buzzes from the kill that lit it=' + JSON.stringify(world.firstKill) +
     ' splat=' + JSON.stringify(world.splat[0]));
   check('haptics: a star going up buzzes, and going clear buzzes differently',
@@ -1560,6 +2809,14 @@ function withTimeout(p, ms) {
     window.__buzz.length = 0;
   });
   var woundDown = await waitFor(function () { return !window.__rumbleState().armed; }, 8000);
+  // Clear the buffer AFTER it has disarmed, not before, and then watch a beat.
+  // The channel runs on its own timer, so a keepalive scheduled a moment
+  // before the caller went quiet can still land while it is winding down —
+  // which is the channel stopping, not the channel failing to stop, and it
+  // failed this check on one run in five. What matters is that nothing keeps
+  // arriving afterwards.
+  await page.evaluate(function () { window.__buzz.length = 0; });
+  await page.waitForTimeout(700);
   var rollOff = await page.evaluate(function () {
     return { sent: window.__buzz.slice(), state: window.__rumbleState() };
   });
@@ -1571,10 +2828,11 @@ function withTimeout(p, ms) {
     roll.knockGotThrough.length === 1 && roll.knockGotThrough[0] === 55,
     'sent=' + JSON.stringify(roll.knockGotThrough));
   check('haptics: and the rumble picks back up behind it', resumed === true);
-  check('haptics: the caller going quiet winds it down, with nothing to remember',
+  check('haptics: the caller going quiet winds it down, and stays down',
     woundDown && !rollOff.state.missing && rollOff.state.on === false &&
     rollOff.sent.filter(function (v) { return Array.isArray(v); }).length === 0,
-    'state=' + JSON.stringify(rollOff.state) + ' sentAfter=' + JSON.stringify(rollOff.sent));
+    'state=' + JSON.stringify(rollOff.state) + ' sent in the 0.7 s after it disarmed=' +
+    JSON.stringify(rollOff.sent));
 
   // and the wiring: a plane on its wheels with the throttle open arms it
   var plane = await page.evaluate(function () {
@@ -2041,6 +3299,20 @@ function withTimeout(p, ms) {
     GAME.test.fastForward(1.5);
     var car = P.car;
     if (!car || !car.susp) return { drove: false };
+    // Empty the strip around the car. This group reads a spring, and a car
+    // standing on a live street for the settle window gets leaned on by
+    // passing traffic — which is what kept the settle check marginal (0.0061
+    // against a 0.005 threshold on one run in four) long after the reading
+    // itself was averaged. A nudge from a stranger is not the suspension
+    // failing to return.
+    function clearTraffic() {
+      GAME.world.cars.slice().forEach(function (c) {
+        if (c !== car && U.dist2(c.pos.x, c.pos.z, car.pos.x, car.pos.z) < 45 * 45) {
+          GAME.vehicles.removeCar(c);
+        }
+      });
+    }
+    clearTraffic();
     // Wait for the spring to SETTLE rather than assuming a second and a half
     // is enough. It is a damped oscillator being asked to read as zero, and
     // whatever the car is still doing after a spawn and a boarding — rolling
@@ -2048,7 +3320,18 @@ function withTimeout(p, ms) {
     function settle(limit) {
       var n = 0;
       clear();
-      while (n < limit && Math.abs(car.susp.p) > 0.004) { GAME.test.fastForward(1 / 60); n++; }
+      // Wait for the car to be at REST, not merely for the spring to cross
+      // zero on the way past. A car still rolling is a car still being
+      // decelerated, and a steady deceleration holds a steady spring offset —
+      // so the 0.2 s settle-and-read below caught that offset and called it
+      // "not settled" when the body was doing exactly what it should. The
+      // brake case leaves the car at -0.7 m/s, and once an unasked-for
+      // reverse decays on its own constant (SHUNT_DRAG, vehicles.js) rather
+      // than coasting, 0.7 m/s is enough to hold 0.37 degrees of pitch.
+      while (n < limit && (Math.abs(car.susp.p) > 0.004 || Math.abs(car.speed) > 0.05)) {
+        if (n % 30 === 0) clearTraffic();
+        GAME.test.fastForward(1 / 60); n++;
+      }
       GAME.test.fastForward(0.2);
       return n;
     }
@@ -2077,8 +3360,25 @@ function withTimeout(p, ms) {
     var squat = phase(0.5, 'KeyW');           // open the throttle
     var dive = phase(0.5, 'KeyS');            // and stand on the brakes
 
-    var settledTicks = settle(420);           // let it settle, however long that takes
-    var settled = car.susp.p;
+    // 900, not 420: settling now includes coming to a STOP, and a car left
+    // rolling backwards off the throttle takes about ten seconds to coast
+    // down on the ordinary drag alone. The ceiling is here to catch a
+    // spring that never returns, not to time the roll.
+    var settledTicks = settle(900);           // let it settle, however long that takes
+    // The MEAN over a second, not one instant. "It settles back to the grade"
+    // is a claim about where the spring stays, and reading it at a single
+    // moment 0.2 s after the settle loop exits made it a claim about that
+    // moment: anything that touches the car in that frame — traffic drifting
+    // into it, a kerb, the tail of the spring's own oscillation — reads as a
+    // failure to settle. It went red on CI three times while passing four
+    // runs locally, which is the measurement talking, not the suspension.
+    var settleSum = 0, settleN = 0;
+    for (var sn = 0; sn < 60; sn++) {
+      if (sn % 20 === 0) clearTraffic();
+      GAME.test.fastForward(1 / 60);
+      settleSum += Math.abs(car.susp.p); settleN++;
+    }
+    var settled = settleSum / settleN;
 
     // in the air nothing loads the springs
     K['KeyW'] = true;
@@ -2105,8 +3405,9 @@ function withTimeout(p, ms) {
       'furthest it dived=' + susp.dive.hi.toFixed(4) +
       ' speed ' + susp.squat.speed.toFixed(1) + ' -> ' + susp.dive.speed.toFixed(1));
     check('suspension: and it settles back to the grade',
-      Math.abs(susp.settled) < 0.005 && susp.settledTicks < 420,
-      'susp=' + susp.settled.toFixed(4) + ' after ' + susp.settledTicks + ' ticks');
+      susp.settled < 0.005 && susp.settledTicks < 900,
+      'mean |susp| over the second after settling = ' + susp.settled.toFixed(4) +
+      ', reached after ' + susp.settledTicks + ' ticks');
     check('suspension: nothing loads the springs in mid-air',
       Math.abs(susp.air) < 0.01, 'susp=' + susp.air.toFixed(4));
     check('suspension: the mesh angle is exactly grade plus spring (additive, not replaced)',

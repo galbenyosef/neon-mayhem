@@ -1794,12 +1794,18 @@ GAME.isla = (function () {
     city.parkedSpots.push({ x: tx(900), z: tz(-282), heading: 0, vtype: 'pickup' });
     city.parkedSpots.push({ x: tx(1206), z: tz(66), heading: Math.PI / 2, vtype: 'limo' });
 
-    // pickups on the island: a couple of weapons and some health. The second
-    // health used to float right at the factory's front door — free healing
-    // on a shop's doorstep reads as part of the shop; it waits on the quiet
-    // sand BEHIND the factory now, a find rather than a doormat fixture.
+    // Pickups on the island: a couple of weapons and some health.
+    //
+    // The second health has moved twice. It began at the ice cream factory's
+    // front door, which read as part of the shop rather than as a find, and
+    // was pushed round to the quiet sand behind it — where, measured, it sat
+    // ONE METRE from the water. Reaching for it walked you straight into the
+    // sea. It stands on the hospital's front apron now: somewhere health
+    // belongs, dry (99 m from the nearest water), clear of the building, and
+    // sixteen metres off the respawn point so it is not simply handed to you
+    // for dying.
     var pk = [['health', 902, 78], ['armor', 1268, 150], ['smg', 1006, -278],
-      ['health', 1195, 460], ['shotgun', 812, 260]];
+      ['health', 849, -93], ['shotgun', 812, 260]];
     pk.forEach(function (P) { city.pickupSpots.push({ x: P[1], z: P[2], type: P[0] }); });
   }
 
