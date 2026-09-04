@@ -672,6 +672,9 @@ GAME.missions = (function () {
   }
 
   // walk anyone who's been hailed over to the vehicle and load them in
+  // how long somebody stands at the hatch before they have their cone
+  var SERVE_TIME = 1.3;
+
   function stepBoarding(dt, f, P) {
     for (var i = active.targets.length - 1; i >= 0; i--) {
       var t = active.targets[i];
@@ -682,21 +685,45 @@ GAME.missions = (function () {
       if (U.dist2(f.x, f.z, t.x, t.z) > 40 * 40) { t.boarding = false; continue; }
       var dx = f.x - ped.pos.x, dz = f.z - ped.pos.z;
       var d = Math.sqrt(dx * dx + dz * dz);
-      if (d < 2.2) { collectTarget(t); continue; }
+      // Ice cream is not an emergency (walkUp is only ever set on the round's
+      // customers). A fare hurrying to a waiting cab can sprint; somebody
+      // strolling over for a cone should not, and they were covering the
+      // ground at 0.85x the player's full sprint and then completing the sale
+      // the instant they touched the truck — no walk to it and no moment at
+      // the hatch, just people teleporting money into the till.
+      var stroll = !!t.walkUp;
+      if (d < 2.2) {
+        if (!stroll) { collectTarget(t); continue; }
+        // served, not spirited: a beat at the window while it is handed over
+        t.serveT = (t.serveT || 0) + dt;
+        ped.speed = 0;
+        ped.heading = Math.atan2(dx, dz);
+        ped.mesh.rotation.y = ped.heading;
+        var sj = ped.mesh.userData.joints;
+        sj.legL.rotation.x = sj.legR.rotation.x = 0;
+        // an arm up to the hatch, and back down as they turn away with it
+        var reach = U.clamp(t.serveT / (SERVE_TIME * 0.45), 0, 1) *
+          U.clamp((SERVE_TIME - t.serveT) / (SERVE_TIME * 0.3) + 1, 0, 1);
+        sj.armR.rotation.x = -1.25 * reach;
+        sj.armL.rotation.x = 0;
+        if (t.serveT >= SERVE_TIME) collectTarget(t);
+        continue;
+      }
       ped.heading = Math.atan2(dx, dz);
-      ped.speed = 6.8;   // 0.85x the player's 8 sprint
+      ped.speed = stroll ? 4.1 : 6.8;   // 6.8 is 0.85x the player's 8 sprint
       ped.pos.x += Math.sin(ped.heading) * ped.speed * dt;
       ped.pos.z += Math.cos(ped.heading) * ped.speed * dt;
       var rp = GAME.resolveCircle(ped.pos.x, ped.pos.z, 0.4);
       ped.pos.x = rp.x; ped.pos.z = rp.z;
       ped.pos.y = GAME.city.groundY(ped.pos.x, ped.pos.z);
       ped.mesh.rotation.y = ped.heading;
-      // running animation while they hurry over
-      ped.walkPhase += ped.speed * dt * 3;
+      // a run if they are hurrying, an ordinary walk if they are just coming
+      // over for one
+      ped.walkPhase += ped.speed * dt * (stroll ? 2.2 : 3);
       var j = ped.mesh.userData.joints;
-      var sw = Math.sin(ped.walkPhase) * 0.9;
+      var sw = Math.sin(ped.walkPhase) * (stroll ? 0.6 : 0.9);
       j.legL.rotation.x = sw; j.legR.rotation.x = -sw;
-      j.armL.rotation.x = -sw; j.armR.rotation.set(sw, 0, 0);
+      j.armL.rotation.x = -sw * (stroll ? 0.8 : 1); j.armR.rotation.set(sw * (stroll ? 0.8 : 1), 0, 0);
     }
   }
 

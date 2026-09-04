@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3p. THE ICE CREAM ROUND — a customer walks over and is SERVED, rather
+//       than sprinting at the hatch and teleporting money into the till.
 //   3o. PICKUPS ON DRY LAND — nothing you are meant to walk to stands at
 //       the waterline, where reaching for it is a swim.
 //   3m. A BLAST CLEARS THE STREET — an explosion is felt far past where it
@@ -1175,6 +1177,80 @@ function withTimeout(p, ms) {
   check('runover: jacking a moving van does not kill the driver you pulled out',
     jacked.tries > 0 && jacked.survived === jacked.tries,
     jacked.survived + '/' + jacked.tries + ' walked away from their own car');
+
+  // ---------- 3p: the round has a pace ----------
+  // Customers covered the ground at 6.8 m/s — 0.85x the player's full sprint,
+  // the speed a fare hurries to a waiting cab — and the sale completed the
+  // instant they touched the truck. Measured, 1.58 s from being noticed to the
+  // money landing. Nobody walks to an ice cream van like that.
+  var ice = await page.evaluate(function () {
+    GAME.police.clearWanted();
+    GAME.test.teleport(-150, 40);
+    GAME.test.fastForward(0.8);
+    if (GAME.player.inCar) GAME.exitCar();
+    var truck = GAME.test.spawnCar('icecream', 3, 0);
+    if (!truck) return { noTruck: true };
+    GAME.test.fastForward(0.4);
+    GAME.test.enterNearestCar(truck);
+    GAME.test.fastForward(1.5);
+    if (!GAME.player.inCar) return { noBoard: true };
+    GAME.test.pressKey('KeyJ');                 // the round starts with J
+    GAME.test.fastForward(0.6);
+    if (!GAME.missions.active) return { noJob: true };
+    var top = 0, atHatch = 0, served = 0, seen = 0;
+    var watching = null;
+    for (var t = 0; t < 60 * 60; t++) {
+      GAME.player.car.speed = 0;                // parked, so the chimes work
+      GAME.test.fastForward(1 / 60);
+      var a = GAME.missions.active;
+      if (!a || !a.targets) break;
+      if (!watching) {
+        for (var i = 0; i < a.targets.length; i++) {
+          if (a.targets[i].walkUp && a.targets[i].ped) { watching = a.targets[i]; seen++; break; }
+        }
+      }
+      if (watching) {
+        var ped = watching.ped;
+        var d = Math.hypot(ped.pos.x - GAME.player.car.pos.x, ped.pos.z - GAME.player.car.pos.z);
+        top = Math.max(top, ped.speed || 0);
+        if (d < 2.4) atHatch++;
+        if (a.targets.indexOf(watching) < 0) { served++; break; }   // sold
+      }
+    }
+    var out = { seen: seen, served: served, top: +top.toFixed(1), hatch: +(atHatch / 60).toFixed(2) };
+    // Clock off properly. A round left running keeps selling in the
+    // background, and every sale fires haptics.pickup() — which lands in the
+    // buzz log of the haptics group further down and breaks two of its checks
+    // about a knock buzzing exactly once.
+    if (GAME.player.car) { GAME.player.car.speed = 0; GAME.player.car.lat = 0; }
+    if (GAME.player.inCar) GAME.exitCar();
+    GAME.test.fastForward(1.5);
+    out.clockedOff = !GAME.missions.active;
+    // Clocking off puts up the result card, and an overlay HALTS THE TICK
+    // (that is group 1's whole subject). Left open it froze the world for
+    // every group after this one — cameraShake sat at 0.9 forever and the
+    // haptics knock checks failed on a game that was not running.
+    if (GAME.share.isOpen) GAME.share.hide();
+    out.overlayClosed = !GAME.share.isOpen;
+    if (truck && !truck.dead) GAME.vehicles.removeCar(truck);
+    GAME.test.fastForward(0.3);
+    return out;
+  });
+  if (!ice.noTruck && !ice.noBoard && !ice.noJob) {
+    check('ice cream: the chimes bring somebody over (anchor sanity)',
+      ice.seen > 0 && ice.served > 0, 'watched ' + ice.seen + ' customer, sold to ' + ice.served);
+    check('ice cream: and they walk to the hatch rather than sprinting at it',
+      ice.top > 0 && ice.top < 5,
+      'fastest they moved: ' + ice.top + ' m/s (a fare hurrying to a cab does 6.8)');
+    check('ice cream: and stand there long enough to be handed one',
+      ice.hatch >= 0.8, 'time at the window before the sale: ' + ice.hatch + ' s');
+    check('ice cream: and the group clocks off after itself (anchor sanity)',
+      ice.clockedOff === true && ice.overlayClosed === true,
+      'shift ended=' + ice.clockedOff + ', result card closed=' + ice.overlayClosed);
+  } else {
+    check('ice cream: the round could be started at all',
+      false, JSON.stringify(ice));
+  }
 
   // ---------- 3o: a pickup you have to swim for is not a pickup ----------
   // The island's second health sat one metre from the sea — reaching for it
