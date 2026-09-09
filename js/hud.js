@@ -262,10 +262,12 @@ GAME.hud = (function () {
   var mapSolo = null;
   var NAV_ALWAYS = { dest: 1, objective: 1 };
   function catVis(k) { return !!NAV_ALWAYS[k] || !mapSolo || mapSolo === k; }
-  // Which helipads the big map puts up, and whether it puts up any. The draw
-  // below calls this rather than repeating the rule, so a check standing on
-  // it cannot pass while the map disagrees.
-  function mapHelipads() {
+  // Which helipads are shown, and whether any are. BOTH surfaces call this —
+  // the big map and the radar — rather than each repeating the rule, so they
+  // cannot drift apart and a check standing on it cannot pass while either
+  // one disagrees. A pad is treated exactly like the airport it shares a
+  // legend row with: same family, same filter, same blip.
+  function shownHelipads() {
     if (!catVis('airport')) return [];
     return [GAME.city.helipad, GAME.city.roofHelipad].filter(function (h) { return !!h; });
   }
@@ -412,7 +414,7 @@ GAME.hud = (function () {
     // helipads: a ringed cyan disc with an H, one per pad. Both of them —
     // the Alta Verde summit across the channel, and the one on the downtown
     // tower here, which is where the mainland's only helicopter stands.
-    mapHelipads().forEach(function (hpb) {
+    shownHelipads().forEach(function (hpb) {
       var hxp = w2mx(hpb.x), hyp = w2my(hpb.z);
       g.fillStyle = '#8de0ff';
       g.beginPath(); g.arc(hxp, hyp, 8, 0, Math.PI * 2); g.fill();
@@ -738,10 +740,8 @@ GAME.hud = (function () {
     if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (H2) { blip(H2.x, H2.z, '#ff8aa8', 3); });
     if (catVis('police')) GAME.city.pois.stations.forEach(function (st2) { blip(st2.x, st2.z, '#5aa0ff', 3); });
     if (catVis('respray')) GAME.city.pois.resprays.forEach(function (r2) { blip(r2.door.x, r2.door.z, '#c86bff', 3); });
-    if (catVis('airport')) {
-      landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
-      landmark(GAME.city.helipad.x, GAME.city.helipad.z);
-    }
+    if (catVis('airport')) landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
+    shownHelipads().forEach(function (hp2) { landmark(hp2.x, hp2.z); });
     if (catVis('icecream') && GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
@@ -1018,7 +1018,7 @@ GAME.hud = (function () {
     },
     // headless hook: where a home you own lands on the radar, and as what
     testHomeMarker: homeMarker,
-    testMapHelipads: mapHelipads,
+    testHelipads: shownHelipads,
     testToggleCat: toggleCat,
     // How much marker-cyan the BAKED base image carries around a world point.
     // The base is painted once and sits underneath the live pass, so whatever

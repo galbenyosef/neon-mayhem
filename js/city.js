@@ -736,11 +736,13 @@ GAME.city = (function () {
       // the beacon over the cross tower, blinking ambulance-red
       kmesh(0.7, 0.7, 0.7, 0xff3b4e, H.x + 26, 26.8, H.z + 1, { blink: 1.6, duty: 0.55 });
     });
-    // The find: a helipad crowning a downtown tower, with a helicopter on it.
-    // It shows on no map — the way onto it is out of the sky, a parachute off
-    // the plane onto the roof, and the reward for arriving is a way off again.
-    // This is the mainland's only helicopter. It used to sit on the hospital
-    // roof, but eighteen metres is barely a find; now it takes real flying.
+    // A helipad crowning a downtown tower, with a helicopter on it — the
+    // mainland's only one. It used to sit on the hospital roof, but eighteen
+    // metres was barely worth the trip; now it takes real flying, because the
+    // way onto it is out of the sky, a parachute off the plane onto the roof,
+    // and the reward for arriving is a way off again. It is on the map and
+    // the radar like any other pad: knowing where it is was never the hard
+    // part, and hiding it only made people wonder whether it existed.
     var HT = { x: 0, z: -200, h: 72 };
     batches.downtown.addBox(HT.x, HT.h / 2, HT.z, 30, HT.h, 30, 0, 0xb8c4e8, 28);
     addSolid(HT.x, HT.z, 30, 30, HT.h);
