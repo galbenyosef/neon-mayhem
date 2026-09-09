@@ -262,6 +262,13 @@ GAME.hud = (function () {
   var mapSolo = null;
   var NAV_ALWAYS = { dest: 1, objective: 1 };
   function catVis(k) { return !!NAV_ALWAYS[k] || !mapSolo || mapSolo === k; }
+  // Which helipads the big map puts up, and whether it puts up any. The draw
+  // below calls this rather than repeating the rule, so a check standing on
+  // it cannot pass while the map disagrees.
+  function mapHelipads() {
+    if (!catVis('airport')) return [];
+    return [GAME.city.helipad, GAME.city.roofHelipad].filter(function (h) { return !!h; });
+  }
   function pickupCat(t) { return t === 'health' ? 'health' : t === 'armor' ? 'armor' : 'weapon'; }
   function toggleCat(k) {
     if (NAV_ALWAYS[k]) return;            // navigation rows are labels, not filters
@@ -402,19 +409,21 @@ GAME.hud = (function () {
     });
     if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
     if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
-    // helipad: a ringed cyan disc with an H
-    if (catVis('airport')) {
-      var hpb = GAME.city.helipad;
+    // helipads: a ringed cyan disc with an H, one per pad. Both of them —
+    // the Alta Verde summit across the channel, and the one on the downtown
+    // tower here, which is where the mainland's only helicopter stands.
+    mapHelipads().forEach(function (hpb) {
+      var hxp = w2mx(hpb.x), hyp = w2my(hpb.z);
       g.fillStyle = '#8de0ff';
-      g.beginPath(); g.arc(w2mx(hpb.x), w2my(hpb.z), 8, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(hxp, hyp, 8, 0, Math.PI * 2); g.fill();
       g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
       g.strokeStyle = '#0c0816'; g.lineWidth = 2;
       g.beginPath();
-      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) - 3, w2my(hpb.z) + 3.5);
-      g.moveTo(w2mx(hpb.x) + 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z) + 3.5);
-      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z)); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z));
+      g.moveTo(hxp - 3, hyp - 3.5); g.lineTo(hxp - 3, hyp + 3.5);
+      g.moveTo(hxp + 3, hyp - 3.5); g.lineTo(hxp + 3, hyp + 3.5);
+      g.moveTo(hxp - 3, hyp); g.lineTo(hxp + 3, hyp);
       g.stroke();
-    }
+    });
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -574,13 +583,12 @@ GAME.hud = (function () {
     g.strokeStyle = '#d8c46a'; g.lineWidth = 1; g.setLineDash([4, 4]);
     g.beginPath(); g.moveTo(mx(A.minX + 8), my(A.cz)); g.lineTo(mx(A.maxX - 8), my(A.cz)); g.stroke();
     g.setLineDash([]);
-    // helipad: cyan ring
-    var hp = GAME.city.helipad;
-    g.strokeStyle = '#8de0ff'; g.lineWidth = 2;
-    g.beginPath(); g.arc(mx(hp.x), my(hp.z), 5, 0, Math.PI * 2); g.stroke();
-    // POI markers are NOT baked in here: the big map draws them live as
-    // legend-filterable badges, and squares burned into the base image sat
-    // underneath, immune to the legend's solo/strike
+    // No marker is baked in here — not a POI square, and not the helipad ring
+    // that used to be. The big map draws them live as legend-filterable
+    // badges; anything burned into this image sits underneath that pass,
+    // where the legend's solo/strike can never reach it. The pad ring was the
+    // last one left, and it showed: solo any other family and every badge on
+    // the map went out except that one, which sat there through all of it.
     // the landmasses name themselves, written on the sea below each one
     g.font = 'italic 700 17px "Segoe UI", Arial, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -1009,7 +1017,22 @@ GAME.hud = (function () {
       return on;
     },
     // headless hook: where a home you own lands on the radar, and as what
-    testHomeMarker: homeMarker
+    testHomeMarker: homeMarker,
+    testMapHelipads: mapHelipads,
+    testToggleCat: toggleCat,
+    // How much marker-cyan the BAKED base image carries around a world point.
+    // The base is painted once and sits underneath the live pass, so whatever
+    // is burned into it is beyond the legend's reach — which is the whole
+    // reason markers are not drawn here.
+    testBaseInk: function (wx, wz, r) {
+      if (!mapBuffer) return -1;
+      var bx = Math.round((wx + MAP_OX) * MAP_S), by = Math.round((wz + MAP_OY) * MAP_S);
+      var d = mapBuffer.getContext('2d').getImageData(bx - r, by - r, r * 2, r * 2).data, n = 0;
+      for (var i = 0; i < d.length; i += 4) {
+        if (d[i] > 100 && d[i] < 180 && d[i + 1] > 190 && d[i + 2] > 220) n++;
+      }
+      return n;
+    }
   };
   return api;
 })();

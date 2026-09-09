@@ -22,6 +22,9 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3s. THE MAP'S HELIPADS — both pads are on the map, and the legend can
+//       strike them: nothing marker-shaped is baked into the base image,
+//       where no filter could ever reach it.
 //   3r. THE BEACH AT THE BRIDGES — the sand parts for the span and for
 //       nothing else, so no slot of open sea is left beside it.
 //   3q. THE RADAR'S HOME MARKER — a property in range is a dot where it
@@ -1245,6 +1248,42 @@ function withTimeout(p, ms) {
         c.bare ? c.bare + ' samples of open nothing, first at x=' + c.worstX
                : 'no bare ground anywhere in the cut');
     });
+  }
+
+  // ---------- 3s: the map's helipads ----------
+  // The ring over the Alta Verde pad was BAKED into the base map image, which
+  // is painted once and drawn under the live marker pass — so it was the one
+  // marker the legend could not reach. Solo any other family and every badge
+  // on the map struck out except that one, which sat there through all of it.
+  // The mainland pad, meanwhile, was on no map at all.
+  var pads = await page.evaluate(function () {
+    var H = GAME.hud;
+    if (!H.testMapHelipads || !H.testBaseInk) return { missing: true };
+    var all = H.testMapHelipads().map(function (h) { return { x: Math.round(h.x), z: Math.round(h.z) }; });
+    // ink burned into the base image at each pad, before anything is soloed
+    var ink = H.testMapHelipads().map(function (h) { return H.testBaseInk(h.x, h.z, 7); });
+    H.testToggleCat('health');                     // solo a family that is not this one
+    var soloed = H.testMapHelipads().length;
+    H.testToggleCat('health');                     // and release it again
+    var released = H.testMapHelipads().length;
+    return { all: all, ink: ink, soloed: soloed, released: released,
+      roof: GAME.city.roofHelipad ? { x: Math.round(GAME.city.roofHelipad.x), z: Math.round(GAME.city.roofHelipad.z) } : null,
+      solo: (GAME.prefs || {}).mapSolo || null };
+  });
+  if (!pads.missing) {
+    check('map: the world has a pad on each island (anchor sanity)',
+      pads.roof !== null, 'the mainland tower pad is at ' + JSON.stringify(pads.roof));
+    check('map: and the map puts up both of them, not just the island one',
+      pads.all.length === 2, 'pads drawn: ' + JSON.stringify(pads.all));
+    check('map: soloing another family takes the pads down with the rest',
+      pads.soloed === 0, 'pads still drawn while HEALTH was soloed: ' + pads.soloed);
+    check('map: and releasing the solo brings them back',
+      pads.released === 2 && pads.solo === null, 'back to ' + pads.released + ', solo=' + pads.solo);
+    // The check that would have caught it: a marker in the base image is a
+    // marker no legend can strike, however the live pass is filtered.
+    check('map: with no pad ring left burned into the base image',
+      pads.ink.every(function (n) { return n === 0; }),
+      'marker-cyan pixels baked at the pads: ' + JSON.stringify(pads.ink));
   }
 
   // ---------- 3q: a home off the radar is a direction, not a place ----------
