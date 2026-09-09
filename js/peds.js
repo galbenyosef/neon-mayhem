@@ -215,7 +215,12 @@ GAME.peds = (function () {
     var r2 = r * r;
     for (var i = 0; i < world.peds.length; i++) {
       var p = world.peds[i];
-      if (p.dead || p.isCop) continue;
+      // Job peds are left out of it. A fare, a patient or somebody crossing to
+      // the ice cream hatch is steered by their mission every frame, which
+      // overwrites heading and speed regardless of what this sets — so all a
+      // scare could do was leave them carrying a 'flee' they could not act
+      // on. A state nothing honours is worse than no state.
+      if (p.dead || p.isCop || p.jobPed) continue;
       if (p.state === 'attack' && !force) continue;   // mid-brawl, past being scared off
       if (U.dist2(p.pos.x, p.pos.z, x, z) < r2) {
         p.state = 'flee';
@@ -597,14 +602,26 @@ GAME.peds = (function () {
             var lead = ped.punchArm ? 'armR' : 'armL';
             var off = ped.punchArm ? 'armL' : 'armR';
             var tl = -1.15 - out * 1.05;
-            // Snap into the strike, ease into the guard. Taking the stance
-            // from a dead run means the arms are wherever the walk cycle left
-            // them, and setting them outright popped a radian and a half in
-            // one frame; easing only the guard smooths that without slowing
-            // the punch, which is the part that should be quick.
-            aj[lead].rotation.x = out > 0 ? tl
-              : U.lerp(aj[lead].rotation.x, tl, Math.min(1, dt * 14));
-            aj[off].rotation.x = U.lerp(aj[off].rotation.x, -1.15, Math.min(1, dt * 14));
+            // Quick into the strike, eased into the guard — and neither one
+            // allowed to teleport. Taking the stance from a dead run means the
+            // arms are wherever the walk cycle left them, and the strike used
+            // to be set OUTRIGHT: a punch beginning before the guard had eased
+            // in abandoned the ease and jumped to full extension. Measured,
+            // 1.41 rad in a single step, off an arm still carrying the swing.
+            //
+            // So whichever branch an arm is set from, its step is bounded. The
+            // jab is untouched by that — it travels 7.5 rad/s, half the
+            // ceiling — and the guard is bounded too, because easing is
+            // proportional and an arm starting a long way out takes its
+            // biggest step first: 0.4 rad off one frame, most of the way to
+            // the jump this is here to stop.
+            var cap = STRIKE_RATE * dt;
+            var cur = aj[lead].rotation.x;
+            var want = out > 0 ? tl : U.lerp(cur, tl, Math.min(1, dt * 14));
+            aj[lead].rotation.x = cur + U.clamp(want - cur, -cap, cap);
+            var offc = aj[off].rotation.x;
+            var offw = U.lerp(offc, -1.15, Math.min(1, dt * 14));
+            aj[off].rotation.x = offc + U.clamp(offw - offc, -cap, cap);
           }
         }
       } else if (ped.state === 'dive') {
@@ -634,7 +651,17 @@ GAME.peds = (function () {
       }
 
       var fx0 = ped.pos.x, fz0 = ped.pos.z;
-      if (ped.state !== 'dive') {
+      // Job peds are steered by their mission and moved BY IT — stepBoarding
+      // sets heading and speed and then walks them in itself. Integrating
+      // that same heading and speed here as well moved them twice a frame,
+      // and since no branch above claims the 'wait' they sit in, the values
+      // it stepped them with were still sitting there to be reapplied.
+      // Measured on the ice cream round: a customer covering the ground at
+      // 8.2 m/s — exactly twice the 4.1 stroll they are set to — which is the
+      // serving pace the round was slowed to in the first place. It went
+      // unseen because the check watched ped.speed, which read a truthful
+      // 4.1 the whole way in; only the distance actually covered shows it.
+      if (ped.state !== 'dive' && !ped.jobPed) {
         ped.pos.x += Math.sin(ped.heading) * ped.speed * dt;
         ped.pos.z += Math.cos(ped.heading) * ped.speed * dt;
         ped.mesh.rotation.y = ped.heading;
@@ -824,6 +851,11 @@ GAME.peds = (function () {
   // survives a frame out of reach. 0.55 was fast enough to read as flailing
   // once two people were doing it at each other.
   var PUNCH_CYCLE = 0.72, POSE_HOLD = 0.35;
+  // How fast the leading arm is allowed to travel into a strike, rad/s. The
+  // jab itself covers 1.05 rad in 0.14 s — 7.5 rad/s — so at twice that the
+  // swing is not slowed at all and only a jump is clipped. See the punch
+  // block for what was jumping.
+  var STRIKE_RATE = 15;
 
   function fightCount() {
     var n = 0;

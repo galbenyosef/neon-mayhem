@@ -994,6 +994,8 @@ function withTimeout(p, ms) {
     a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 25;
     var armsUpWhileRunning = 0, runFrames = 0, mutual = false, punches = 0;
     var hp0 = b.hp;
+    var aj0 = a.mesh.userData.joints;
+    var pl = aj0.armL.rotation.x, pr = aj0.armR.rotation.x, maxJump = 0;
     for (var t = 0; t < 60 * 20; t++) {
       // hold him to it: attackT runs down and the state gives up on its own,
       // and this check is about how he looks getting there
@@ -1004,6 +1006,16 @@ function withTimeout(p, ms) {
       });
       GAME.test.fastForward(1 / 60);
       if (a.dead || b.dead || a.gone || b.gone) break;
+      // How far an arm is allowed to travel in ONE step while he is posed.
+      // The guard eases in over about a third of a second; a punch starting
+      // before that finished used to abandon the ease and set the arm
+      // outright, off whatever the walk cycle had left behind.
+      var jn = a.mesh.userData.joints;
+      if (a.aimPose) {
+        maxJump = Math.max(maxJump,
+          Math.abs(jn.armL.rotation.x - pl), Math.abs(jn.armR.rotation.x - pr));
+      }
+      pl = jn.armL.rotation.x; pr = jn.armR.rotation.x;
       // the charge: arms must swing, not sit frozen overhead
       if (a.state === 'attack' && a.speed > 4) {
         runFrames++;
@@ -1018,7 +1030,8 @@ function withTimeout(p, ms) {
       if (b.hp < hp0) punches++;
     }
     var out = { armsUp: armsUpWhileRunning, runFrames: runFrames, mutual: mutual,
-                landed: b.hp < hp0 || b.dead, cap: cap, fillers: fillers };
+                landed: b.hp < hp0 || b.dead, cap: cap, fillers: fillers,
+                maxJump: +maxJump.toFixed(3) };
     [a, b, x, y].forEach(function (p) { if (p && !p.gone) GAME.peds.removePed(p); });
     C.set(0);
     return out;
@@ -1033,6 +1046,12 @@ function withTimeout(p, ms) {
       brawl2.armsUp < brawl2.runFrames * 0.1,
       brawl2.armsUp + ' of ' + brawl2.runFrames + ' charging frames with the arms up');
     check('brawl: the punches land (anchor sanity)', brawl2.landed, 'the other man was hit');
+    // A jab travels 1.05 rad in 0.14 s — 7.5 rad/s, or 0.125 in a step. A
+    // step of 1.4 is not a fast punch, it is a teleport, and that is what a
+    // strike off a half-eased guard was doing.
+    check('brawl: and no arm teleports mid-swing',
+      brawl2.maxJump > 0 && brawl2.maxJump < 0.45,
+      'biggest single-step arm move while posed: ' + brawl2.maxJump + ' rad');
     // The fight ceiling counts BODIES, so a two-sided brawl cost two of them
     // and swinging back was competing with fresh fights for a slot. Most
     // fights came out one-sided: one man chasing, the other never turning.
@@ -1295,8 +1314,18 @@ function withTimeout(p, ms) {
     GAME.test.pressKey('KeyJ');                 // the round starts with J
     GAME.test.fastForward(0.6);
     if (!GAME.missions.active) return { noJob: true };
+    // Nobody is spawned waiting for you: the round drafts whoever is already
+    // within 24 m of the truck, and the crowd spawns at 60-150 m and walks in.
+    // Whether anyone was in range inside a minute was therefore luck, and it
+    // came up empty — the group's own anchor failed, taking every check in it
+    // down with it. Put people on the pavement rather than hoping for them.
+    for (var sp = 0; sp < 3; sp++) {
+      var extra = GAME.test.spawnPed([11, -9, 7][sp], [0, 7, -10][sp]);
+      if (extra) { extra.jobPed = false; extra.iceServed = false; }
+    }
     var top = 0, atHatch = 0, served = 0, seen = 0;
     var watching = null;
+    var prevX, prevZ, ratio = 0, scared = false, fledFrames = 0;
     for (var t = 0; t < 60 * 60; t++) {
       GAME.player.car.speed = 0;                // parked, so the chimes work
       GAME.test.fastForward(1 / 60);
@@ -1311,11 +1340,29 @@ function withTimeout(p, ms) {
         var ped = watching.ped;
         var d = Math.hypot(ped.pos.x - GAME.player.car.pos.x, ped.pos.z - GAME.player.car.pos.z);
         top = Math.max(top, ped.speed || 0);
+        // What they are SET to and what they cover are two different numbers,
+        // and only the second one is the thing you watch. The pace fix set
+        // stepBoarding's speed to 4.1 and moved them at it — but the ped loop
+        // integrated the same heading and speed a second time before missions
+        // ran, so they crossed the ground at 8.2. `top` read a truthful 4.1
+        // throughout, which is why this group passed while the customer on
+        // screen was still jogging in at twice the intended pace.
+        if (prevX !== undefined && (ped.speed || 0) > 2) {
+          var moved = Math.hypot(ped.pos.x - prevX, ped.pos.z - prevZ) * 60;
+          ratio = Math.max(ratio, moved / ped.speed);
+        }
+        prevX = ped.pos.x; prevZ = ped.pos.z;
+        // A blast is not allowed to hand them a state their mission cannot
+        // honour: the round steers them every frame regardless, so a 'flee'
+        // here is a flag nobody acts on.
+        if (!scared) { scared = true; GAME.peds.panic(ped.pos.x, ped.pos.z, 55, true); }
+        if (ped.state === 'flee') fledFrames++;
         if (d < 2.4) atHatch++;
         if (a.targets.indexOf(watching) < 0) { served++; break; }   // sold
       }
     }
-    var out = { seen: seen, served: served, top: +top.toFixed(1), hatch: +(atHatch / 60).toFixed(2) };
+    var out = { seen: seen, served: served, top: +top.toFixed(1), hatch: +(atHatch / 60).toFixed(2),
+      ratio: +ratio.toFixed(2), scared: scared, fled: fledFrames };
     // Clock off properly. A round left running keeps selling in the
     // background, and every sale fires haptics.pickup() — which lands in the
     // buzz log of the haptics group further down and breaks two of its checks
@@ -1342,6 +1389,13 @@ function withTimeout(p, ms) {
       'fastest they moved: ' + ice.top + ' m/s (a fare hurrying to a cab does 6.8)');
     check('ice cream: and stand there long enough to be handed one',
       ice.hatch >= 0.8, 'time at the window before the sale: ' + ice.hatch + ' s');
+    // The one that matters: ground covered, not the speed they were set to.
+    check('ice cream: and cover the ground at the pace they are set, not twice it',
+      ice.ratio > 0 && ice.ratio < 1.35,
+      'fastest they actually travelled was ' + ice.ratio + 'x the speed they were on');
+    check('ice cream: a blast beside the round leaves them to their round',
+      ice.scared === true && ice.fled === 0,
+      'scared them: ' + ice.scared + ', frames spent fleeing: ' + ice.fled);
     check('ice cream: and the group clocks off after itself (anchor sanity)',
       ice.clockedOff === true && ice.overlayClosed === true,
       'shift ended=' + ice.clockedOff + ', result card closed=' + ice.overlayClosed);
