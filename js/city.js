@@ -357,27 +357,60 @@ GAME.city = (function () {
   city.addSign = function (batch, slotIdx, x, y, z, rotY, w, h, tint) { addSign(batch, slotIdx, x, y, z, rotY, w, h, tint); };
 
   // ---------- canvas textures ----------
-  function windowTexture(bg, litColors, cols, rows, litProb, bandColor) {
-    var cv = document.createElement('canvas');
-    cv.width = 512; cv.height = 384;
-    var g = cv.getContext('2d');
-    g.fillStyle = bg; g.fillRect(0, 0, 512, 384);
+  function repeatTex(cv) {
+    var t = new THREE.CanvasTexture(cv);
+    t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
+
+  // Two images, not one, and the reason is the whole business of a building
+  // having a colour at all.
+  //
+  // A facade's colour arrives as the VERTEX TINT and multiplies whatever the
+  // map holds, so a map that bakes a near-black wall crushes every palette
+  // into the same block: the generic wall was 0x181420, a ninth of full
+  // brightness, and a tan and a sage multiplied through it land a few units
+  // apart — indistinguishable at any distance, in any light. Five careful
+  // shades per district, and not one of them could be seen. The wall is kept
+  // pale here so the tint is what you actually look at.
+  //
+  // But the same texture was ALSO the emissive map, and a pale wall there
+  // lights the whole block up like a paper lantern — tried it, the street
+  // turned into a row of glowing white slabs. So the glow gets an image of
+  // its own: black everywhere except the windows that are lit.
+  // `rnd` defaults to the city's own stream. The pale twins below pass a
+  // PRIVATE one, and they have to: this generator burns a roll per window,
+  // and the stream is shared with everything generated after the textures —
+  // the props, the landmarks, the airport, the stunt ramps, the parking. Four
+  // more textures drawing from it would have shifted every one of them, and
+  // silently: same city, every ramp somewhere else.
+  function windowTexture(wall, litColors, cols, rows, litProb, bandColor, rnd) {
+    rnd = rnd || rng;
+    var cv = document.createElement('canvas'), gv = document.createElement('canvas');
+    cv.width = gv.width = 512; cv.height = gv.height = 384;
+    var g = cv.getContext('2d'), e = gv.getContext('2d');
+    g.fillStyle = wall; g.fillRect(0, 0, 512, 384);
+    e.fillStyle = '#000'; e.fillRect(0, 0, 512, 384);
     var cw = 512 / cols, ch = 384 / rows;
     for (var i = 0; i < cols; i++) for (var j = 0; j < rows; j++) {
-      var lit = rng() < litProb;
+      var lit = rnd() < litProb;
       var pad = cw * 0.22;
-      g.fillStyle = lit ? litColors[Math.floor(rng() * litColors.length)] : 'rgba(30,34,58,0.9)';
-      g.fillRect(i * cw + pad, j * ch + ch * 0.2, cw - pad * 2, ch * 0.55);
+      // the rng draw order is untouched: one roll for lit, one more only when
+      // it is — the same city comes out of the same seed either way
+      var col = lit ? litColors[Math.floor(rnd() * litColors.length)] : 'rgba(30,34,58,0.9)';
+      var wx = i * cw + pad, wy = j * ch + ch * 0.2, ww = cw - pad * 2, wh = ch * 0.55;
+      g.fillStyle = col; g.fillRect(wx, wy, ww, wh);
+      if (lit) { e.fillStyle = col; e.fillRect(wx, wy, ww, wh); }
     }
     if (bandColor) {
       g.fillStyle = bandColor;
       for (var b = 0; b < rows; b++) g.fillRect(0, b * ch - 2, 512, 5);
     }
-    // keep left column dark so roof uvs sample facade color
-    g.fillStyle = bg; g.fillRect(0, 0, Math.floor(cw * 0.2), 384);
-    var tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-    return tex;
+    // keep the left column plain so roof uvs sample the wall — and black in
+    // the glow, or every roof in the city would be lit from inside
+    g.fillStyle = wall; g.fillRect(0, 0, Math.floor(cw * 0.2), 384);
+    e.fillStyle = '#000'; e.fillRect(0, 0, Math.floor(cw * 0.2), 384);
+    return { map: repeatTex(cv), glow: repeatTex(gv) };
   }
 
   var SIGN_TEXTS = ['CLUB FLAMINGO', 'HOTEL MIRAJE', "ROXY'S", 'EL DORADO', 'NEON PALMS', 'TIKI LOUNGE',
@@ -471,6 +504,16 @@ GAME.city = (function () {
       strip: new GeoBatch(),
       generic: new GeoBatch(),
       harbor: new GeoBatch(),
+      // The ordinary blocks draw from their own batches so they can have a
+      // material of their own. Everything already designed — the hospitals,
+      // the stations, the shops, the tower, the island — shares the batches
+      // above and keeps the dark-walled texture its colours were chosen
+      // against; only the anonymous stock gets a wall pale enough to take a
+      // colour. Same geometry, same builders, different mesh.
+      blkDowntown: new GeoBatch(),
+      blkStrip: new GeoBatch(),
+      blkGeneric: new GeoBatch(),
+      blkHarbor: new GeoBatch(),
       wood: new GeoBatch(),
       glow: new GeoBatch(),
       signs: new GeoBatch()
@@ -521,8 +564,16 @@ GAME.city = (function () {
     var texGeneric = windowTexture('#181420', ['#ffe0a0', '#d8c8ff'], 9, 7, 0.3);
     var texHarbor = windowTexture('#1a1a20', ['#ffd890'], 6, 3, 0.15, 'rgba(60,62,70,0.9)');
 
-    function lam(tex) {
-      return new THREE.MeshLambertMaterial({ map: tex, emissive: 0xbbbbcc, emissiveMap: tex, vertexColors: true });
+    // The same windows over a wall pale enough that the building's own colour
+    // is what you see. Only the block batches use these.
+    var wrng = mulberry32(90210);          // private: see windowTexture
+    var blkDowntown = windowTexture('#aeb3bd', ['#ffe9a8', '#a8e8ff', '#ffd0e8', '#c8ffe0'], 10, 8, 0.5, null, wrng);
+    var blkStrip = windowTexture('#cfc7cd', ['#ffe9a8', '#ffd0e8'], 8, 5, 0.4, 'rgba(120,92,116,0.45)', wrng);
+    var blkGeneric = windowTexture('#b6b0a6', ['#ffe0a0', '#d8c8ff'], 9, 7, 0.3, null, wrng);
+    var blkHarbor = windowTexture('#a8a49e', ['#ffd890'], 6, 3, 0.15, 'rgba(78,80,88,0.5)', wrng);
+
+    function lam(t) {
+      return new THREE.MeshLambertMaterial({ map: t.map, emissive: 0xbbbbcc, emissiveMap: t.glow, vertexColors: true });
     }
     // the second landmass draws its own meshes but shares the city's window
     // textures and sign atlas, so the two read as one world
@@ -544,6 +595,66 @@ GAME.city = (function () {
     addMesh(batches.strip, lam(texStrip));
     addMesh(batches.generic, lam(texGeneric));
     addMesh(batches.harbor, lam(texHarbor));
+    var blockMeshes = [
+      addMesh(batches.blkDowntown, lam(blkDowntown)),
+      addMesh(batches.blkStrip, lam(blkStrip)),
+      addMesh(batches.blkGeneric, lam(blkGeneric)),
+      addMesh(batches.blkHarbor, lam(blkHarbor))
+    ];
+    // headless hook: every facade colour baked into the ordinary blocks, as
+    // one number, plus how many distinct colours are actually in there.
+    // Determinism is the point — the same seed has to paint the same building
+    // the same colour on every load, or the city changes clothes behind your
+    // back — and `distinct` is what keeps the check honest, because a hash
+    // agreeing with itself proves nothing about a city painted all one shade.
+    // headless hook: can a building's colour actually be SEEN? The wall the
+    // tint multiplies is sampled straight out of the map (x=2 is inside the
+    // plain left column), and the answer is that luminance times the spread
+    // of the palette on that mesh — what separates the palest building on a
+    // street from the darkest, on screen, after the multiply. The bug this
+    // exists for had a full palette per district and a separation of two
+    // hundredths: every shade distinct in the data, none of them visible.
+    city.testFacadeContrast = function () {
+      var out = [];
+      for (var i = 0; i < blockMeshes.length; i++) {
+        var m = blockMeshes[i], a = m.geometry.attributes.color;
+        var img = m.material.map && m.material.map.image;
+        if (!a || !img || !img.getContext) continue;
+        var px = img.getContext('2d').getImageData(2, 2, 1, 1).data;
+        var wall = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+        // Per channel, not by luminance: two facades can sit at the same
+        // brightness and still be plainly a different colour, and a metric
+        // that only knew about luminance would call a street of identical
+        // greys and a street of brick-and-steel the same thing.
+        var lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9], spread = 0;
+        for (var v = 0; v < a.count; v++) {
+          var ch = [a.getX(v), a.getY(v), a.getZ(v)];
+          for (var c = 0; c < 3; c++) {
+            if (ch[c] < lo[c]) lo[c] = ch[c];
+            if (ch[c] > hi[c]) hi[c] = ch[c];
+          }
+        }
+        for (var c2 = 0; c2 < 3; c2++) spread = Math.max(spread, hi[c2] - lo[c2]);
+        out.push({ wall: +wall.toFixed(3), spread: +spread.toFixed(3),
+          seen: +(spread * wall).toFixed(3) });
+      }
+      return out;
+    };
+
+    city.testFacadeColors = function () {
+      var seen = {}, n = 0, h = 2166136261;
+      for (var i = 0; i < blockMeshes.length; i++) {
+        var a = blockMeshes[i].geometry.attributes.color;
+        if (!a) continue;
+        for (var v = 0; v < a.count; v++) {
+          var key = (Math.round(a.getX(v) * 255) << 16) |
+                    (Math.round(a.getY(v) * 255) << 8) | Math.round(a.getZ(v) * 255);
+          seen[key] = 1; n++;
+          h = Math.imul(h ^ key, 16777619) >>> 0;
+        }
+      }
+      return { verts: n, distinct: Object.keys(seen).length, hash: h };
+    };
     addMesh(batches.wood, new THREE.MeshLambertMaterial({ vertexColors: true }));
     city.signMesh = addMesh(batches.signs, new THREE.MeshBasicMaterial({ map: atlas.tex, transparent: true, vertexColors: true, side: THREE.DoubleSide }));
     var glowMat = new THREE.MeshBasicMaterial({ map: radialGlowTexture('rgba(255,176,102,0.55)'), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -598,15 +709,29 @@ GAME.city = (function () {
     return true;
   }
 
+  // Most of a street is quiet and a few buildings are not. Drawing uniformly
+  // from a palette gives every colour equal billing, which is how a city ends
+  // up looking like a paint chart; skewing the draw toward the front of the
+  // list keeps the neutrals common and the accents occasional. So order
+  // matters in every list below: stone and stucco first, the terracotta and
+  // the sage last. One rng() call, exactly like the U.pick it replaces, so
+  // the city that comes out of the seed is the same city.
+  function facadeShade(list) {
+    var i = Math.floor(Math.pow(rng(), 1.7) * list.length);
+    return list[i < list.length ? i : list.length - 1];
+  }
+
   function buildDowntownBlock(batches, cx, cz) {
-    var shades = [0x8a94b8, 0x6a7aa0, 0x9aa8c8, 0x5a6488, 0x7a88b0];
+    // concrete, pale stone, slate — and two that are barely a colour at all
+    var shades = [0xc3c8d2, 0xb4bcc8, 0xd0d3d9, 0xa7b0bf, 0xbcc0c6,
+                  0x98a3b4, 0xc9c2b4, 0x8fa3ad, 0xb0a8b8];
     for (var lx = -1; lx <= 1; lx += 2) for (var lz = -1; lz <= 1; lz += 2) {
       if (rng() < 0.22) continue;
       var w = U.randRange(rng, 18, 30), dep = U.randRange(rng, 18, 30);
       var h = U.randRange(rng, 32, 88) * (1 - U.dist(cx, cz, -100, -100) / 900);
       var x = cx + lx * 19, z = cz + lz * 19;
-      if (tryBuilding(batches.downtown, x, z, w, dep, h, U.pick(rng, shades), 32)) {
-        batches.downtown.addBox(x, 1.5, z, w + 4, 3, dep + 4, 0, 0x3a3448, 0);
+      if (tryBuilding(batches.blkDowntown, x, z, w, dep, h, facadeShade(shades), 32)) {
+        batches.blkDowntown.addBox(x, 1.5, z, w + 4, 3, dep + 4, 0, 0x3a3448, 0);
         if (rng() < 0.28) {
           var slot = U.randInt(rng, 0, 17);
           addSign(batches.signs, slot, x, h + 3, z, rng() * Math.PI * 2, 22, 5);
@@ -616,7 +741,11 @@ GAME.city = (function () {
   }
 
   function buildStripBlock(batches, cx, cz, frontRow) {
-    var pastel = [0xf7a8c4, 0x9fe8d8, 0xf9d99a, 0xb8a8e8, 0x8fd0f0, 0xf0b090, 0xe8f0b0];
+    // deco pastels, which is what the strip is for — but pastels, not poster
+    // paint: they used to be picked at full saturation and then buried under
+    // the dark wall, so nobody ever saw how loud they were
+    var pastel = [0xe3cbbc, 0xe6d6b8, 0xd9d3c6, 0xe2c6cc,
+                  0xc5d6cd, 0xe0b89c, 0xd6b4ca, 0xb4c8dc];
     var n = frontRow ? 2 : U.randInt(rng, 2, 3);
     for (var k = 0; k < n; k++) {
       var w = U.randRange(rng, 22, 34), dep = U.randRange(rng, 16, 24);
@@ -624,11 +753,11 @@ GAME.city = (function () {
       var x = frontRow ? cx + 18 : cx + U.randRange(rng, -20, 20);
       var z = cz - 38 + dep / 2 + k * (76 / n) + U.randRange(rng, 0, 76 / n - dep - 2);
       z = U.clamp(z, cz - 38 + dep / 2, cz + 38 - dep / 2);
-      var col = U.pick(rng, pastel);
-      if (tryBuilding(batches.strip, x, z, w, dep, h, col, 24)) {
+      var col = facadeShade(pastel);
+      if (tryBuilding(batches.blkStrip, x, z, w, dep, h, col, 24)) {
         // stepped art-deco top
-        batches.strip.addBox(x, h + 1.5, z, w * 0.6, 3, dep * 0.6, 0, col, 0);
-        batches.strip.addBox(x, h + 3.7, z, w * 0.3, 1.6, dep * 0.3, 0, 0xfff0f8, 0);
+        batches.blkStrip.addBox(x, h + 1.5, z, w * 0.6, 3, dep * 0.6, 0, col, 0);
+        batches.blkStrip.addBox(x, h + 3.7, z, w * 0.3, 1.6, dep * 0.3, 0, 0xfff0f8, 0);
         var slot = U.randInt(rng, 0, 17);
         var face = frontRow ? Math.PI / 2 : (rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
         var sx = x + (face > 0 ? w / 2 + 0.3 : -w / 2 - 0.3);
@@ -641,7 +770,9 @@ GAME.city = (function () {
   function buildHarborBlock(batches, cx, cz) {
     var w = U.randRange(rng, 46, 62), dep = U.randRange(rng, 26, 34);
     var h = U.randRange(rng, 9, 13);
-    tryBuilding(batches.harbor, cx, cz - 16, w, dep, h, U.pick(rng, [0x8a6a58, 0x6a7078, 0x707a68, 0x806858]), 40);
+    // brick and warehouse: weathered red, grey-brown, an oxide and a steel
+    tryBuilding(batches.blkHarbor, cx, cz - 16, w, dep, h,
+      facadeShade([0xa8a096, 0x8d8a80, 0x9a8b7c, 0x7a7268, 0x8e5f4c, 0x6f7c82]), 40);
     // container stacks
     var colors = [0xc85040, 0x4078a8, 0x50a068, 0xb89040, 0x9060a0];
     for (var r = 0; r < 3; r++) {
@@ -660,7 +791,10 @@ GAME.city = (function () {
   }
 
   function buildGenericBlock(batches, cx, cz) {
-    var shades = [0xb08878, 0x88a090, 0xa898b0, 0x90a8b8, 0xb0a080];
+    // stucco and painted concrete: bone, sand, cream, taupe — then a
+    // terracotta, a sage and a dusty blue for the few that stand out
+    var shades = [0xd9d0c0, 0xcabda8, 0xd5c8b4, 0xc2b8a8, 0xdad3c6,
+                  0xc7b294, 0xb9ac9c, 0xcd9276, 0xa8b69e, 0x9fb2bd];
     var n = U.randInt(rng, 3, 5);
     for (var k = 0; k < n; k++) {
       var w = U.randRange(rng, 14, 26), dep = U.randRange(rng, 14, 26);
@@ -669,7 +803,7 @@ GAME.city = (function () {
       var ok = true;
       var q = city.hash.query(x, z, Math.max(w, dep) * 0.72);
       for (var qq = 0; qq < q.length; qq++) if (q[qq].tag === 'building') { ok = false; break; }
-      if (ok) tryBuilding(batches.generic, x, z, w, dep, h, U.pick(rng, shades), 28);
+      if (ok) tryBuilding(batches.blkGeneric, x, z, w, dep, h, facadeShade(shades), 28);
     }
     if (rng() < 0.4) city.palmSpots.push({ x: cx + U.randRange(rng, -30, 30), z: cz + U.randRange(rng, -30, 30), s: U.randRange(rng, 0.8, 1.1) });
   }
@@ -1363,7 +1497,7 @@ GAME.city = (function () {
     addSolid(-100, -100, 37, 37, 110);
     addSolid(-100, -100, 15, 15, 111.2);
     var twrTex = windowTexture('#0e1226', ['#a8e8ff', '#ffd0e8', '#ffe9a8'], 10, 9, 0.6);
-    var twrMesh = new THREE.Mesh(twr.build(), new THREE.MeshLambertMaterial({ map: twrTex, emissive: 0xccccdd, emissiveMap: twrTex, vertexColors: true }));
+    var twrMesh = new THREE.Mesh(twr.build(), new THREE.MeshLambertMaterial({ map: twrTex.map, emissive: 0xccccdd, emissiveMap: twrTex.glow, vertexColors: true }));
     twrMesh.matrixAutoUpdate = false;
     scene.add(twrMesh);
     var crown = new THREE.Mesh(new THREE.BoxGeometry(15, 1.6, 15), new THREE.MeshBasicMaterial({ color: 0xff4fa3 }));

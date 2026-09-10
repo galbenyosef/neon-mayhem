@@ -22,6 +22,8 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3t. FACADE PAINT — the ordinary blocks are painted in more than one
+//       shade, and the seed paints the same building the same way every load.
 //   3s. THE HELIPADS — both pads show, on the map and on the radar alike,
 //       from one shared list the legend can strike; and nothing
 //       marker-shaped is baked into the base image, where no filter reaches.
@@ -1248,6 +1250,50 @@ function withTimeout(p, ms) {
         c.bare ? c.bare + ' samples of open nothing, first at x=' + c.worstX
                : 'no bare ground anywhere in the cut');
     });
+  }
+
+  // ---------- 3t: a building keeps its colour ----------
+  // Facade colour is drawn from the seeded rng while the city is generated,
+  // so the same seed has to paint the same building the same shade on every
+  // load. A city that changes clothes between visits is worse than a grey one.
+  // Checked on a SECOND page rather than by reloading this one, which would
+  // pull the world out from under every group after it.
+  var paintOne = await page.evaluate(function () {
+    return GAME.city.testFacadeColors ? GAME.city.testFacadeColors() : null;
+  });
+  var contrast = await page.evaluate(function () {
+    return GAME.city.testFacadeContrast ? GAME.city.testFacadeContrast() : [];
+  });
+  var paintTwo = null;
+  if (paintOne) {
+    var p2 = await browser.newPage({ viewport: { width: 400, height: 300 } });
+    await p2.goto(origin + '/index.html');
+    await p2.waitForFunction(function () {
+      return window.GAME && GAME.city && GAME.city.testFacadeColors &&
+        GAME.city.nodes && GAME.city.nodes.length > 0;
+    }, null, { timeout: 30000 });
+    paintTwo = await p2.evaluate(function () { return GAME.city.testFacadeColors(); });
+    await p2.close();
+  }
+  if (paintOne && paintTwo) {
+    check('paint: the ordinary blocks carry a colour at all (anchor sanity)',
+      paintOne.verts > 2000, paintOne.verts + ' facade vertices with a colour on them');
+    // Without this the check above it is decoration: a hash agrees with
+    // itself just as happily on a city painted one flat shade, which is the
+    // city this started as — five careful shades per district, every one of
+    // them multiplied into the same near-black by the wall behind it.
+    check('paint: in more than one shade, or there is nothing to keep',
+      paintOne.distinct >= 6, paintOne.distinct + ' distinct facade colours across the blocks');
+    check('paint: and a fresh load paints the same city the same way',
+      paintOne.hash === paintTwo.hash,
+      'first load ' + paintOne.hash + ', second load ' + paintTwo.hash);
+    // The one that would have caught the bug. Distinct colours in the data
+    // mean nothing if the wall behind them is dark enough to crush the lot:
+    // the palettes were always there, and the separation between the palest
+    // building on a street and the darkest came to two hundredths.
+    check('paint: and the colours survive the wall they are multiplied by',
+      contrast.length > 0 && contrast.every(function (c) { return c.seen >= 0.1; }),
+      contrast.map(function (c) { return 'wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));
   }
 
   // ---------- 3s: the helipads, on both surfaces ----------
