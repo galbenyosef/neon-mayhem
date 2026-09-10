@@ -1292,8 +1292,8 @@ function withTimeout(p, ms) {
     // the palettes were always there, and the separation between the palest
     // building on a street and the darkest came to two hundredths.
     check('paint: and the colours survive the wall they are multiplied by',
-      contrast.length > 0 && contrast.every(function (c) { return c.seen >= 0.1; }),
-      contrast.map(function (c) { return 'wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));
+      contrast.length === 4 && contrast.every(function (c) { return c.seen >= 0.1; }),
+      contrast.map(function (c) { return c.district + ' ' + c.buildings + ' blocks, wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));
   }
 
   // ---------- 3s: the helipads, on both surfaces ----------
