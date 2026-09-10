@@ -23,7 +23,8 @@
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
 //   3t. FACADE PAINT — the ordinary blocks are painted in more than one
-//       shade, and the seed paints the same building the same way every load.
+//       shade, no two neighbours are painted the same shade twice, and the
+//       seed paints the same building the same way on every load.
 //   3s. THE HELIPADS — both pads show, on the map and on the radar alike,
 //       from one shared list the legend can strike; and nothing
 //       marker-shaped is baked into the base image, where no filter reaches.
@@ -1264,6 +1265,9 @@ function withTimeout(p, ms) {
   var contrast = await page.evaluate(function () {
     return GAME.city.testFacadeContrast ? GAME.city.testFacadeContrast() : [];
   });
+  var nbrs = await page.evaluate(function () {
+    return GAME.city.testFacadeNeighbours ? GAME.city.testFacadeNeighbours() : [];
+  });
   var paintTwo = null;
   if (paintOne) {
     var p2 = await browser.newPage({ viewport: { width: 400, height: 300 } });
@@ -1291,6 +1295,18 @@ function withTimeout(p, ms) {
     // mean nothing if the wall behind them is dark enough to crush the lot:
     // the palettes were always there, and the separation between the palest
     // building on a street and the darkest came to two hundredths.
+    // A palette is not a varied street. Drawn independently from one, blocks
+    // land next to near-identical neighbours often enough that a row of six
+    // reads as one building repeated — measured with the rule off, 70 of the
+    // city's 137 neighbouring pairs were the same shade twice, and in the
+    // residential blocks it was 32 of 47.
+    var nbPairs = nbrs.reduce(function (n, d) { return n + d.pairs; }, 0);
+    var nbSame = nbrs.reduce(function (n, d) { return n + d.same; }, 0);
+    check('paint: blocks do stand close enough to be compared (anchor sanity)',
+      nbPairs > 50, nbPairs + ' pairs of blocks within a street of each other');
+    check('paint: and no two of them are the same shade twice',
+      nbSame === 0, nbSame + ' neighbouring pairs share a shade  —  ' +
+        nbrs.map(function (d) { return d.district + ' ' + d.same + '/' + d.pairs; }).join(', '));
     check('paint: and the colours survive the wall they are multiplied by',
       contrast.length === 4 && contrast.every(function (c) { return c.seen >= 0.1; }),
       contrast.map(function (c) { return c.district + ' ' + c.buildings + ' blocks, wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));

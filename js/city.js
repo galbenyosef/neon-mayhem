@@ -579,10 +579,10 @@ GAME.city = (function () {
     // building somewhere behind it — measured on screen, a charcoal tower and
     // a limestone one three doors apart and no telling them apart.
     var DIM = 'rgba(26,30,48,0.42)';
-    var blkDowntown = windowTexture('#aeb3bd', ['#ffe9a8', '#a8e8ff', '#ffd0e8', '#c8ffe0'], 10, 8, 0.34, null, wrng, DIM);
-    var blkStrip = windowTexture('#cfc7cd', ['#ffe9a8', '#ffd0e8'], 8, 5, 0.4, 'rgba(120,92,116,0.45)', wrng, DIM);
-    var blkGeneric = windowTexture('#b6b0a6', ['#ffe0a0', '#d8c8ff'], 9, 7, 0.3, null, wrng, DIM);
-    var blkHarbor = windowTexture('#a8a49e', ['#ffd890'], 6, 3, 0.15, 'rgba(78,80,88,0.5)', wrng, DIM);
+    var blkDowntown = windowTexture('#848994', ['#ffe9a8', '#a8e8ff', '#ffd0e8', '#c8ffe0'], 10, 8, 0.34, null, wrng, DIM);
+    var blkStrip = windowTexture('#a79fa6', ['#ffe9a8', '#ffd0e8'], 8, 5, 0.4, 'rgba(120,92,116,0.45)', wrng, DIM);
+    var blkGeneric = windowTexture('#8d887e', ['#ffe0a0', '#d8c8ff'], 9, 7, 0.3, null, wrng, DIM);
+    var blkHarbor = windowTexture('#828079', ['#ffd890'], 6, 3, 0.15, 'rgba(78,80,88,0.5)', wrng, DIM);
 
     function lam(t) {
       return new THREE.MeshLambertMaterial({ map: t.map, emissive: 0xbbbbcc, emissiveMap: t.glow, vertexColors: true });
@@ -659,6 +659,27 @@ GAME.city = (function () {
         for (var c2 = 0; c2 < 3; c2++) spread = Math.max(spread, (hi[c2] - lo[c2]) / 255);
         out.push({ district: d, buildings: picks.length, wall: +wall.toFixed(3),
           spread: +spread.toFixed(3), seen: +(spread * wall).toFixed(3) });
+      });
+      return out;
+    };
+
+    // headless hook: the neighbour rule, stated as a count. Every pair of
+    // blocks standing within NEAR2 of each other, and how many of those pairs
+    // are close enough in colour to read as the same building twice. This is
+    // the thing a palette on its own does not give you.
+    city.testFacadeNeighbours = function () {
+      var out = [];
+      Object.keys(facadeNear).forEach(function (d) {
+        var a = facadeNear[d], pairs = 0, same = 0;
+        for (var i = 0; i < a.length; i++) {
+          for (var j = i + 1; j < a.length; j++) {
+            var dx = a[i].x - a[j].x, dz = a[i].z - a[j].z;
+            if (dx * dx + dz * dz > NEAR2) continue;
+            pairs++;
+            if (channelGap(a[i].c, a[j].c) < MIN_GAP) same++;
+          }
+        }
+        out.push({ district: d, blocks: a.length, pairs: pairs, same: same });
       });
       return out;
     };
@@ -745,9 +766,41 @@ GAME.city = (function () {
   // every tower on the street was the same grey, because half that mesh is
   // a dark base band.
   city.facadePicks = {};
-  function facadeShade(district, list) {
-    var i = Math.floor(Math.pow(rng(), 1.7) * list.length);
-    var c = list[i < list.length ? i : list.length - 1];
+  var facadeNear = {};
+  // How far apart two buildings have to be before they may share a shade, and
+  // how different "different" is (largest channel gap, 0-1).
+  var NEAR2 = 70 * 70, MIN_GAP = 0.12;
+  function channelGap(a, b) {
+    return Math.max(Math.abs(((a >> 16) & 255) - ((b >> 16) & 255)),
+                    Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)),
+                    Math.abs((a & 255) - (b & 255))) / 255;
+  }
+  // A palette is not the same thing as a varied street. Drawing independently
+  // from one puts near-identical neighbours side by side often enough that a
+  // block of six can come out looking like one building repeated — which is
+  // what downtown did: every tower on the street within a few units of the
+  // same pale grey, out of a list holding a charcoal and a limestone.
+  //
+  // So the draw is checked against what is ALREADY STANDING nearby, and steps
+  // along the list until it finds a shade that is not its neighbour's. The
+  // step is deterministic and costs no rng at all — the one roll below is the
+  // city's, and spending more of them here would move every stunt ramp.
+  function facadeShade(district, list, x, z) {
+    var i = Math.floor(Math.pow(rng(), 1.15) * list.length);
+    if (i >= list.length) i = list.length - 1;
+    var near = facadeNear[district] = facadeNear[district] || [];
+    for (var t = 0; t < list.length; t++) {
+      var j = (i + t) % list.length, clash = false;
+      for (var k = near.length - 1; k >= 0 && k > near.length - 40; k--) {
+        var n = near[k];
+        var dx = n.x - x, dz = n.z - z;
+        if (dx * dx + dz * dz > NEAR2) continue;
+        if (channelGap(list[j], n.c) < MIN_GAP) { clash = true; break; }
+      }
+      if (!clash) { i = j; break; }
+    }
+    var c = list[i];
+    near.push({ x: x, z: z, c: c });
     (city.facadePicks[district] = city.facadePicks[district] || []).push(c);
     return c;
   }
@@ -769,7 +822,7 @@ GAME.city = (function () {
       var w = U.randRange(rng, 18, 30), dep = U.randRange(rng, 18, 30);
       var h = U.randRange(rng, 32, 88) * (1 - U.dist(cx, cz, -100, -100) / 900);
       var x = cx + lx * 19, z = cz + lz * 19;
-      if (tryBuilding(batches.blkDowntown, x, z, w, dep, h, facadeShade('downtown', shades), 32)) {
+      if (tryBuilding(batches.blkDowntown, x, z, w, dep, h, facadeShade('downtown', shades, x, z), 32)) {
         batches.blkDowntown.addBox(x, 1.5, z, w + 4, 3, dep + 4, 0, 0x3a3448, 0);
         if (rng() < 0.28) {
           var slot = U.randInt(rng, 0, 17);
@@ -792,7 +845,7 @@ GAME.city = (function () {
       var x = frontRow ? cx + 18 : cx + U.randRange(rng, -20, 20);
       var z = cz - 38 + dep / 2 + k * (76 / n) + U.randRange(rng, 0, 76 / n - dep - 2);
       z = U.clamp(z, cz - 38 + dep / 2, cz + 38 - dep / 2);
-      var col = facadeShade('strip', pastel);
+      var col = facadeShade('strip', pastel, x, z);
       if (tryBuilding(batches.blkStrip, x, z, w, dep, h, col, 24)) {
         // stepped art-deco top
         batches.blkStrip.addBox(x, h + 1.5, z, w * 0.6, 3, dep * 0.6, 0, col, 0);
@@ -811,7 +864,7 @@ GAME.city = (function () {
     var h = U.randRange(rng, 9, 13);
     // brick and warehouse: weathered red, grey-brown, an oxide and a steel
     tryBuilding(batches.blkHarbor, cx, cz - 16, w, dep, h,
-      facadeShade('harbor', [0xa8a096, 0x8d8a80, 0x9a8b7c, 0x7a7268, 0x8e5f4c, 0x6f7c82]), 40);
+      facadeShade('harbor', [0xa8a096, 0x8d8a80, 0x9a8b7c, 0x7a7268, 0x8e5f4c, 0x6f7c82], cx, cz - 16), 40);
     // container stacks
     var colors = [0xc85040, 0x4078a8, 0x50a068, 0xb89040, 0x9060a0];
     for (var r = 0; r < 3; r++) {
@@ -842,7 +895,7 @@ GAME.city = (function () {
       var ok = true;
       var q = city.hash.query(x, z, Math.max(w, dep) * 0.72);
       for (var qq = 0; qq < q.length; qq++) if (q[qq].tag === 'building') { ok = false; break; }
-      if (ok) tryBuilding(batches.blkGeneric, x, z, w, dep, h, facadeShade('residential', shades), 28);
+      if (ok) tryBuilding(batches.blkGeneric, x, z, w, dep, h, facadeShade('residential', shades, x, z), 28);
     }
     if (rng() < 0.4) city.palmSpots.push({ x: cx + U.randRange(rng, -30, 30), z: cz + U.randRange(rng, -30, 30), s: U.randRange(rng, 0.8, 1.1) });
   }
