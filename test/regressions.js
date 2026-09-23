@@ -22,9 +22,9 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
-//   3t. FACADE PAINT — the ordinary blocks are painted in more than one
-//       shade, no two neighbours are painted the same shade twice, and the
-//       seed paints the same building the same way on every load.
+//   3t. FACADE PAINT — the ordinary blocks on both islands are painted in
+//       more than one shade, no two neighbours are painted the same shade
+//       twice, and the seed paints the same building the same way every load.
 //   3s. THE HELIPADS — both pads show, on the map and on the radar alike,
 //       from one shared list the legend can strike; and nothing
 //       marker-shaped is baked into the base image, where no filter reaches.
@@ -1291,24 +1291,35 @@ function withTimeout(p, ms) {
     check('paint: and a fresh load paints the same city the same way',
       paintOne.hash === paintTwo.hash,
       'first load ' + paintOne.hash + ', second load ' + paintTwo.hash);
-    // The one that would have caught the bug. Distinct colours in the data
-    // mean nothing if the wall behind them is dark enough to crush the lot:
-    // the palettes were always there, and the separation between the palest
-    // building on a street and the darkest came to two hundredths.
     // A palette is not a varied street. Drawn independently from one, blocks
     // land next to near-identical neighbours often enough that a row of six
     // reads as one building repeated — measured with the rule off, 70 of the
-    // city's 137 neighbouring pairs were the same shade twice, and in the
-    // residential blocks it was 32 of 47.
+    // mainland's 137 neighbouring pairs were the same shade twice, and in the
+    // residential blocks it was 32 of 47. On the island the rule was on and
+    // still lost 12 of 174 among the port shops, the densest ground on the
+    // map, until they were given enough colours to find a way round.
     var nbPairs = nbrs.reduce(function (n, d) { return n + d.pairs; }, 0);
     var nbSame = nbrs.reduce(function (n, d) { return n + d.same; }, 0);
+    var islaNb = nbrs.filter(function (d) { return d.district.indexOf('isla-') === 0; });
+    var islaPairs = islaNb.reduce(function (n, d) { return n + d.pairs; }, 0);
     check('paint: blocks do stand close enough to be compared (anchor sanity)',
       nbPairs > 50, nbPairs + ' pairs of blocks within a street of each other');
+    // The island paints through the same rule on a seed of its own. Without
+    // this, an island that stopped reporting would pass every check below by
+    // having no blocks to fail with.
+    check('paint: and the island is painted by it too (anchor sanity)',
+      islaNb.length === 4 && islaPairs > 100,
+      islaNb.length + ' island districts, ' + islaPairs + ' pairs among them');
     check('paint: and no two of them are the same shade twice',
       nbSame === 0, nbSame + ' neighbouring pairs share a shade  —  ' +
         nbrs.map(function (d) { return d.district + ' ' + d.same + '/' + d.pairs; }).join(', '));
+    // The one that would have caught the bug. Distinct colours in the data
+    // mean nothing if the wall behind them is dark enough to crush the lot:
+    // the palettes were always there, and the separation between the palest
+    // building on a street and the darkest came to two hundredths. Eight
+    // districts, four a side; a villa has no window texture, so its wall is 1.
     check('paint: and the colours survive the wall they are multiplied by',
-      contrast.length === 4 && contrast.every(function (c) { return c.seen >= 0.1; }),
+      contrast.length === 8 && contrast.every(function (c) { return c.seen >= 0.1; }),
       contrast.map(function (c) { return c.district + ' ' + c.buildings + ' blocks, wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));
   }
 

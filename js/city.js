@@ -613,19 +613,14 @@ GAME.city = (function () {
       addMesh(batches.blkGeneric, lam(blkGeneric)),
       addMesh(batches.blkHarbor, lam(blkHarbor))
     ];
-    // headless hook: every facade colour baked into the ordinary blocks, as
-    // one number, plus how many distinct colours are actually in there.
-    // Determinism is the point — the same seed has to paint the same building
-    // the same colour on every load, or the city changes clothes behind your
-    // back — and `distinct` is what keeps the check honest, because a hash
-    // agreeing with itself proves nothing about a city painted all one shade.
-    // headless hook: can a building's colour actually be SEEN? The wall the
-    // tint multiplies is sampled straight out of the map (x=2 is inside the
-    // plain left column), and the answer is that luminance times the spread
-    // of the palette on that mesh — what separates the palest building on a
-    // street from the darkest, on screen, after the multiply. The bug this
-    // exists for had a full palette per district and a separation of two
-    // hundredths: every shade distinct in the data, none of them visible.
+    // Shared with the island, which builds after this and paints its own
+    // ordinary blocks over the same pale walls. It adds its meshes to the
+    // list and its districts to the walls; null there means a block with no
+    // window texture at all, whose colour is its colour.
+    city.texBlk = { downtown: blkDowntown, strip: blkStrip, generic: blkGeneric, harbor: blkHarbor };
+    city.blockMeshes = blockMeshes;
+    city.facadeWalls = { downtown: blkDowntown, strip: blkStrip,
+                         residential: blkGeneric, harbor: blkHarbor };
     // headless hook: can a building's colour be SEEN? Per district, the wall
     // its tint multiplies — sampled out of the map, where x=2 is inside the
     // plain left column — times the spread of the colours actually PICKED for
@@ -639,15 +634,17 @@ GAME.city = (function () {
     // tower on it was the same grey — half its facade is lit window, and no
     // number here knows that. For that, look at the thing.
     city.testFacadeContrast = function () {
-      var walls = { downtown: blkDowntown, strip: blkStrip,
-                    residential: blkGeneric, harbor: blkHarbor };
       var out = [];
       Object.keys(city.facadePicks).forEach(function (d) {
-        var picks = city.facadePicks[d], t = walls[d];
-        var img = t && t.map && t.map.image;
-        if (!picks.length || !img || !img.getContext) return;
-        var px = img.getContext('2d').getImageData(2, 2, 1, 1).data;
-        var wall = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+        var picks = city.facadePicks[d];
+        if (!picks.length || !(d in city.facadeWalls)) return;
+        var t = city.facadeWalls[d], wall = 1;
+        if (t) {
+          var img = t.map && t.map.image;
+          if (!img || !img.getContext) return;
+          var px = img.getContext('2d').getImageData(2, 2, 1, 1).data;
+          wall = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+        }
         var lo = [255, 255, 255], hi = [0, 0, 0], spread = 0;
         for (var i = 0; i < picks.length; i++) {
           var ch = [(picks[i] >> 16) & 255, (picks[i] >> 8) & 255, picks[i] & 255];
@@ -684,10 +681,22 @@ GAME.city = (function () {
       return out;
     };
 
+    // headless hook: every facade colour baked into the ordinary blocks, as
+    // one number, plus how many distinct colours are actually in there.
+    // Determinism is the point — the same seed has to paint the same building
+    // the same colour on every load, or the city changes clothes behind your
+    // back — and `distinct` is what keeps the check honest, because a hash
+    // agreeing with itself proves nothing about a city painted all one shade.
+    // The picks are folded in as well as the meshes: a villa has no window
+    // texture and lives in the island's plain batch among the roads and the
+    // trees, so the record of what it was dealt is the clean way to see it.
     city.testFacadeColors = function () {
       var seen = {}, n = 0, h = 2166136261;
-      for (var i = 0; i < blockMeshes.length; i++) {
-        var a = blockMeshes[i].geometry.attributes.color;
+      Object.keys(city.facadePicks).sort().forEach(function (d) {
+        city.facadePicks[d].forEach(function (c) { h = Math.imul(h ^ c, 16777619) >>> 0; });
+      });
+      for (var i = 0; i < city.blockMeshes.length; i++) {
+        var a = city.blockMeshes[i].geometry.attributes.color;
         if (!a) continue;
         for (var v = 0; v < a.count; v++) {
           var key = (Math.round(a.getX(v) * 255) << 16) |
@@ -752,13 +761,12 @@ GAME.city = (function () {
     return true;
   }
 
-  // Most of a street is quiet and a few buildings are not. Drawing uniformly
-  // from a palette gives every colour equal billing, which is how a city ends
-  // up looking like a paint chart; skewing the draw toward the front of the
-  // list keeps the neutrals common and the accents occasional. So order
-  // matters in every list below: stone and stucco first, the terracotta and
-  // the sage last. One rng() call, exactly like the U.pick it replaces, so
-  // the city that comes out of the seed is the same city.
+  // ---------- facade paint ----------
+  // Every ordinary block on both islands takes its colour through here: one
+  // roll from the caller's seeded stream (exactly the one U.pick used to
+  // spend, so the world that comes out of the seed is the same world), then a
+  // deterministic step away from whatever its neighbours are already wearing.
+  //
   // Every pick is recorded, per district, because the mesh cannot be asked
   // afterwards: a block's plinth and a deco cap live in the same geometry as
   // its walls, and reading colours back off it measured those too. That is
@@ -784,26 +792,51 @@ GAME.city = (function () {
   // So the draw is checked against what is ALREADY STANDING nearby, and steps
   // along the list until it finds a shade that is not its neighbour's. The
   // step is deterministic and costs no rng at all — the one roll below is the
-  // city's, and spending more of them here would move every stunt ramp.
-  function facadeShade(district, list, x, z) {
-    var i = Math.floor(Math.pow(rng(), 1.15) * list.length);
+  // caller's, and spending more of them would move everything generated
+  // after it: every stunt ramp here, every palm and parked car over there.
+  //
+  // `rnd` is that caller's stream. The island draws from its own, and has
+  // to: its blocks, its planting and its parking all come out of one seed.
+  //
+  // The scan covers every block already placed in the district, not a recent
+  // window. It used to look back forty, which only works when blocks are
+  // laid down street by street — the mainland's are, the island scatters
+  // its own across the whole landmass, so its nearest neighbour can be the
+  // third block placed rather than the last. At a few dozen per district the
+  // full scan costs nothing, and it means the rule and the check that counts
+  // its failures are finally looking at the same pairs.
+  function facadeShade(district, list, x, z, rnd) {
+    var i = Math.floor(Math.pow((rnd || rng)(), 1.15) * list.length);
     if (i >= list.length) i = list.length - 1;
     var near = facadeNear[district] = facadeNear[district] || [];
+    // The first shade in step order that clears every neighbour wins. When
+    // none does — four neighbours inside the radius can block a whole list
+    // between them — the one LEAST like its neighbours wins instead. It used
+    // to fall back to the original draw, which is the one shade already known
+    // to clash. Nothing in the world as built reaches this branch: the dense
+    // island shops that ran out were fixed by giving them more colours, and
+    // with those, every block finds a clean shade. It is here for the street
+    // somebody makes denser, or the list somebody makes shorter.
+    var best = i, bestGap = -1;
     for (var t = 0; t < list.length; t++) {
-      var j = (i + t) % list.length, clash = false;
-      for (var k = near.length - 1; k >= 0 && k > near.length - 40; k--) {
+      var j = (i + t) % list.length, worst = 1;
+      for (var k = 0; k < near.length; k++) {
         var n = near[k];
         var dx = n.x - x, dz = n.z - z;
         if (dx * dx + dz * dz > NEAR2) continue;
-        if (channelGap(list[j], n.c) < MIN_GAP) { clash = true; break; }
+        var g = channelGap(list[j], n.c);
+        if (g < worst) worst = g;
       }
-      if (!clash) { i = j; break; }
+      if (worst >= MIN_GAP) { best = j; break; }
+      if (worst > bestGap) { bestGap = worst; best = j; }
     }
+    i = best;
     var c = list[i];
     near.push({ x: x, z: z, c: c });
     (city.facadePicks[district] = city.facadePicks[district] || []).push(c);
     return c;
   }
+  city.facadeShade = facadeShade;
 
   function buildDowntownBlock(batches, cx, cz) {
     // Downtown gets its variety from VALUE, not hue. Nine shades of the same

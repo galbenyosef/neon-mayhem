@@ -1006,12 +1006,50 @@ GAME.isla = (function () {
   // Isla Verde is a hill island, not a second downtown: it wants space between
   // things. The gaps are what you actually see — a plot every twenty metres
   // reads as a wall of massing whatever is standing on it.
+  //
+  // Colour, band by band. The textured three sit on the mainland's pale walls
+  // now (see city.texBlk), which multiply whatever tint they are dealt, so
+  // those lists are the colours the buildings are MEANT to be. They used to
+  // sit on the dark walls instead, and every list here — purples, blue-greys,
+  // pastels — came out of the multiply as the same near-black slab.
+  //
+  // The villas are the opposite case. No window texture, so nothing
+  // multiplies them: the listed colour is what the light falls on, and a
+  // cream at 0.8 clips to flat white in the noon sun. They are chosen as the
+  // houses should look and taken down to the value a pale wall would have
+  // brought them to, so a whitewash reads white and an ochre reads ochre.
+  function asWalled(c) {
+    var k = 0.56;
+    return (Math.round(((c >> 16) & 255) * k) << 16) |
+           (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k);
+  }
   var BANDS = {
-    villa: { sx: [11, 16], sz: [9, 13], h: [4.5, 7.5], gap: 52, cols: [0xd8cfae, 0xe6dcc0, 0xcfc4a2, 0xdcd0b4], tex: null },
-    apart: { sx: [16, 24], sz: [14, 20], h: [11, 22], gap: 40, cols: [0x7a6f92, 0x6b6386, 0x8a7ea6, 0x6f688e], tex: 'generic' },
-    tower: { sx: [20, 30], sz: [20, 30], h: [30, 68], gap: 30, cols: [0x8a94b8, 0x6a7aa0, 0x9aa8c8, 0x7a88b0], tex: 'downtown' },
-    shop: { sx: [18, 30], sz: [12, 18], h: [7, 14], gap: 34, cols: [0xd9a0b6, 0xa8d8c8, 0xe0c898, 0xa8c0e0, 0xd8b0e0], tex: 'strip' }
+    // hill houses: whitewash and sun-faded wash, the way a hill town is painted
+    villa: { sx: [11, 16], sz: [9, 13], h: [4.5, 7.5], gap: 52, tex: null,
+      cols: [0xf0e6d2, 0xe0b070, 0xcc7f5c, 0xe0a0a0, 0xa0bc8c, 0x98b8d4, 0xd8c090, 0x80b8b0].map(asWalled) },
+    // walk-ups on the lower slopes: warm stucco, a few washed brighter
+    apart: { sx: [16, 24], sz: [14, 20], h: [11, 22], gap: 40, tex: 'generic',
+      cols: [0xe0cfa8, 0xd9b48a, 0xcf9a82, 0xe3d6c0, 0xb9c4a4, 0xaec3cf, 0xd8b7b0, 0xc9b98f] },
+    // the port skyline: concrete and glass, told apart by value the way the
+    // mainland's towers are, a shade warmer and with the sea in one of them
+    tower: { sx: [20, 30], sz: [20, 30], h: [30, 68], gap: 30, tex: 'downtown',
+      cols: [0xc9c6bd, 0x8e98a2, 0xd4cbb6, 0x6a7480, 0xb3b8bd, 0x5a6470, 0x8c9f9c, 0xa99a82] },
+    // the flat by the water: tropical pastels, a touch bolder than the
+    // strip's. Ten of them, spaced by hue, because this is the densest ground
+    // on either island — ninety-nine shops thirty-four metres apart, each with
+    // three or four neighbours in sight — and seven close pastels ran out:
+    // twelve pairs side by side in the same shade, with the rule unable to
+    // find a way round them.
+    shop: { sx: [18, 30], sz: [12, 18], h: [7, 14], gap: 34, tex: 'strip',
+      cols: [0xecc6a8, 0xa9dcc4, 0xf0dc9c, 0xe8adc2, 0x9fc2e4, 0xdc9c80, 0xc4e09c, 0xc3b0e2, 0xdacdb2, 0x94cfcf] }
   };
+  // Villa roofs vary too, but not by the roll: the stream has already spent
+  // its one on the walls. Where a villa stands picks its tiles, so the same
+  // house always has the same roof and the hill is not one terracotta sheet.
+  var ROOFS = [0x8f5a48, 0x7a4a3a, 0x5d6168, 0x9a6a4a];
+  function roofFor(x, z) {
+    return ROOFS[((Math.floor(x) * 73856093) ^ (Math.floor(z) * 19349663)) >>> 0 & 3];
+  }
   // names for the ones that face a street, the way the mainland signs its own
   var ISLA_SIGNS = [24, 25, 26, 27, 28, 29, 30, 31];
   var TOWN_SIGNS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
@@ -1032,7 +1070,7 @@ GAME.isla = (function () {
       var q = ringPt(a, rr * 0.94);
       var ox = q[0], oz = q[1];
       if (!contains(ox, oz) || inland(ox, oz) < 0.05) continue;
-      var band = BANDS[bandAt(ox, oz)];
+      var bandName = bandAt(ox, oz), band = BANDS[bandName];
       var w = U.randRange(rng, band.sx[0], band.sx[1]);
       var d = U.randRange(rng, band.sz[0], band.sz[1]);
       if (onRoad(ox, oz, 6 + Math.max(w, d) / 2)) continue;
@@ -1047,9 +1085,12 @@ GAME.isla = (function () {
       var h = U.randRange(rng, band.h[0], band.h[1]);
       var rot = rng() * TAU;
       var batch = band.tex ? batches[band.tex] : batches.plain;
-      batch.addBox(ox, gy + h / 2, oz, w, h, d, rot, U.pick(rng, band.cols), band.tex ? 14 : 0);
+      // one roll from the ISLAND's stream, exactly as U.pick spent it — the
+      // planting and the parking are drawn from the same seed after this
+      var wallCol = city.facadeShade('isla-' + bandName, band.cols, ox, oz, rng);
+      batch.addBox(ox, gy + h / 2, oz, w, h, d, rot, wallCol, band.tex ? 14 : 0);
       // a villa gets a shallow roof so the hills don't read as a field of boxes
-      if (!band.tex) batches.plain.addBox(ox, gy + h + 0.5, oz, w + 1.6, 1, d + 1.6, rot, 0x8f5a48, 0);
+      if (!band.tex) batches.plain.addBox(ox, gy + h + 0.5, oz, w + 1.6, 1, d + 1.6, rot, roofFor(ox, oz), 0);
       city.addSolid(ox, oz, w * 1.02, d * 1.02, gy + h);
       placed.push([ox, oz]);
       // a name on the street face, for the ones with a street to face
@@ -1920,9 +1961,18 @@ GAME.isla = (function () {
       return m;
     }
     addMesh(batches.plain, new THREE.MeshLambertMaterial({ vertexColors: true }));
-    addMesh(batches.generic, city.lam(city.tex.generic));
-    addMesh(batches.strip, city.lam(city.tex.strip));
-    addMesh(batches.downtown, city.lam(city.tex.downtown));
+    // Only buildBlocks writes into these three — the island's landmarks all
+    // build into `plain` — so they can take the pale walls wholesale, with no
+    // designed building caught underneath.
+    var TB = city.texBlk;
+    city.blockMeshes.push(
+      addMesh(batches.generic, city.lam(TB.generic)),
+      addMesh(batches.strip, city.lam(TB.strip)),
+      addMesh(batches.downtown, city.lam(TB.downtown)));
+    city.facadeWalls['isla-apart'] = TB.generic;
+    city.facadeWalls['isla-shop'] = TB.strip;
+    city.facadeWalls['isla-tower'] = TB.downtown;
+    city.facadeWalls['isla-villa'] = null;       // no window texture: its colour is its colour
     addMesh(batches.glow, new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
     addMesh(batches.signs, new THREE.MeshBasicMaterial({
       map: city.signTex, transparent: true, vertexColors: true, side: THREE.DoubleSide
