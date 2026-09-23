@@ -756,7 +756,7 @@ GAME.city = (function () {
     // never build across a carriageway — it blocks the street and makes map
     // routes look like they run straight through the block
     if (overlapsRoad(cx - sx / 2, cx + sx / 2, cz - sz / 2, cz + sz / 2)) return false;
-    batch.addBox(cx, h / 2, cz, sx, h, sz, 0, color, uvScale);
+    batch.addBox(cx, h / 2, cz, sx, h, sz, 0, color, uvScale, true);
     addSolid(cx, cz, sx, sz, h);
     return true;
   }

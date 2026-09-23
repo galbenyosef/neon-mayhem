@@ -1088,7 +1088,7 @@ GAME.isla = (function () {
       // one roll from the ISLAND's stream, exactly as U.pick spent it — the
       // planting and the parking are drawn from the same seed after this
       var wallCol = city.facadeShade('isla-' + bandName, band.cols, ox, oz, rng);
-      batch.addBox(ox, gy + h / 2, oz, w, h, d, rot, wallCol, band.tex ? 14 : 0);
+      batch.addBox(ox, gy + h / 2, oz, w, h, d, rot, wallCol, band.tex ? 14 : 0, true);
       // a villa gets a shallow roof so the hills don't read as a field of boxes
       if (!band.tex) batches.plain.addBox(ox, gy + h + 0.5, oz, w + 1.6, 1, d + 1.6, rot, roofFor(ox, oz), 0);
       city.addSolid(ox, oz, w * 1.02, d * 1.02, gy + h);

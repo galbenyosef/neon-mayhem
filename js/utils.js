@@ -93,7 +93,10 @@ function disposeTree(root) {
 function GeoBatch() {
   this.pos = []; this.nrm = []; this.col = []; this.uv = [];
 }
-GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvScale) {
+// `shift`: slide this box's window pattern along by an amount of its own (see
+// below). Opt-in, so the buildings that were designed keep the windows they
+// were designed with.
+GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvScale, shift) {
   var hx = sx / 2, hy = sy / 2, hz = sz / 2;
   var c = Math.cos(rotY || 0), s = Math.sin(rotY || 0);
   var r = (color >> 16 & 255) / 255, g = (color >> 8 & 255) / 255, b = (color & 255) / 255;
@@ -107,15 +110,33 @@ GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvSca
     [[-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz], [0, 0, 1], sx, sy],
     [[hx, -hy, -hz], [-hx, -hy, -hz], [-hx, hy, -hz], [hx, hy, -hz], [0, 0, -1], sx, sy]
   ];
-  // deterministic per-position UV offset so the city is identical every visit
-  var uoff = Math.floor(Math.abs(Math.sin(cx * 12.9898 + cy * 4.1414 + cz * 78.233) * 43758.5453) % 1 * 8);
+  // Where along its texture a wall starts. This used to be a per-position
+  // offset of floor(x * 8) — a whole number, on a texture that REPEATS, and a
+  // repeating texture samples u and u + 1 identically. So it did nothing: 249
+  // textured blocks across both islands, one window pattern between them,
+  // every tower in a district showing the same lit windows in the same places.
+  // At night, when the windows are most of what a building is, the skyline
+  // was one tower copied.
+  //
+  // A shifted box slides by a FRACTION instead, from an integer hash of where
+  // it stands — exact on every engine, so a building shows the same windows
+  // every visit. Walls only: the roof and the floor sample the texture's
+  // plain left column on purpose (that is where a roof gets its flat wall
+  // colour), and sliding them would print windows across every rooftop.
+  var ushift = 0;
+  if (shift && us) {
+    ushift = ((Math.imul(Math.round(cx * 8), 73856093) ^
+               Math.imul(Math.round(cz * 8), 19349663)) >>> 0) / 4294967296;
+  }
   for (var f = 0; f < 6; f++) {
     var F = faces[f], n = F[4];
     var nx = n[0] * c + n[2] * s, nz = -n[0] * s + n[2] * c;
     var fw = F[5], fh = F[6];
     var uw = us ? fw / us : 1, vh = us ? fh / (us * 0.75) : 1;
+    var u0 = 0;
     if (us && f >= 2 && f <= 3) { uw = 0.01; vh = 0.01; }
-    var quv = [[uoff, 0], [uoff + uw, 0], [uoff + uw, vh], [uoff, vh]];
+    else u0 = ushift;
+    var quv = [[u0, 0], [u0 + uw, 0], [u0 + uw, vh], [u0, vh]];
     var idx = [0, 1, 2, 0, 2, 3];
     for (var i = 0; i < 6; i++) {
       var v = F[idx[i]];

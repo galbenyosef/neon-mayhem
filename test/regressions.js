@@ -24,7 +24,8 @@
 //      the first living frame does not run a glide step at the hospital.
 //   3t. FACADE PAINT — the ordinary blocks on both islands are painted in
 //       more than one shade, no two neighbours are painted the same shade
-//       twice, and the seed paints the same building the same way every load.
+//       twice, each shows its own arrangement of windows, and the seed paints
+//       the same building the same way every load.
 //   3s. THE HELIPADS — both pads show, on the map and on the radar alike,
 //       from one shared list the legend can strike; and nothing
 //       marker-shaped is baked into the base image, where no filter reaches.
@@ -1268,6 +1269,22 @@ function withTimeout(p, ms) {
   var nbrs = await page.evaluate(function () {
     return GAME.city.testFacadeNeighbours ? GAME.city.testFacadeNeighbours() : [];
   });
+  // Where each textured block's windows start: the fractional u of its first
+  // wall vertex. addBox writes 36 vertices a box, vertex 0 on face +x. A box
+  // with no window texture spans exactly 1 in u, which is how it is left out.
+  var phases = await page.evaluate(function () {
+    var textured = 0, seen = {};
+    (GAME.city.blockMeshes || []).forEach(function (m) {
+      var uv = m.geometry.attributes.uv;
+      for (var b = 0; b < uv.count / 36; b++) {
+        var u0 = uv.getX(b * 36), u1 = uv.getX(b * 36 + 1);
+        if (Math.abs(u1 - u0 - 1) < 1e-6) continue;
+        textured++;
+        seen[Math.round((u0 - Math.floor(u0)) * 10000)] = 1;
+      }
+    });
+    return { textured: textured, distinct: Object.keys(seen).length };
+  });
   var paintTwo = null;
   if (paintOne) {
     var p2 = await browser.newPage({ viewport: { width: 400, height: 300 } });
@@ -1313,6 +1330,16 @@ function withTimeout(p, ms) {
     check('paint: and no two of them are the same shade twice',
       nbSame === 0, nbSame + ' neighbouring pairs share a shade  —  ' +
         nbrs.map(function (d) { return d.district + ' ' + d.same + '/' + d.pairs; }).join(', '));
+    // The windows. Every block used to start its window pattern at a whole-
+    // number offset, on a texture that repeats — so u and u + 3 sampled the
+    // same place, and all 249 textured blocks on both islands showed one
+    // arrangement of lit windows between them. At night that arrangement is
+    // most of what a tower is, and the skyline was one tower copied.
+    check('paint: the blocks carry window textures (anchor sanity)',
+      phases.textured > 200, phases.textured + ' textured blocks');
+    check('paint: and each starts its windows somewhere of its own',
+      phases.distinct >= phases.textured * 0.9,
+      phases.distinct + ' distinct window phases across ' + phases.textured + ' blocks');
     // The one that would have caught the bug. Distinct colours in the data
     // mean nothing if the wall behind them is dark enough to crush the lot:
     // the palettes were always there, and the separation between the palest
