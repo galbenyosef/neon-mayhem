@@ -357,28 +357,184 @@ GAME.city = (function () {
   city.addSign = function (batch, slotIdx, x, y, z, rotY, w, h, tint) { addSign(batch, slotIdx, x, y, z, rotY, w, h, tint); };
 
   // ---------- canvas textures ----------
-  function windowTexture(bg, litColors, cols, rows, litProb, bandColor) {
+  function repeatTex(cv) {
+    var t = new THREE.CanvasTexture(cv);
+    t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
+
+  // Two images, not one, and the reason is the whole business of a building
+  // having a colour at all.
+  //
+  // A facade's colour arrives as the VERTEX TINT and multiplies whatever the
+  // map holds, so a map that bakes a near-black wall crushes every palette
+  // into the same block: the generic wall was 0x181420, a ninth of full
+  // brightness, and a tan and a sage multiplied through it land a few units
+  // apart — indistinguishable at any distance, in any light. Five careful
+  // shades per district, and not one of them could be seen. The wall is kept
+  // pale here so the tint is what you actually look at.
+  //
+  // But the same texture was ALSO the emissive map, and a pale wall there
+  // lights the whole block up like a paper lantern — tried it, the street
+  // turned into a row of glowing white slabs. So a pale wall's glow gets an
+  // image of its own: black everywhere except the windows that are lit.
+  //
+  // A DARK wall is still its own glow, as it always was. Its wall, its bands
+  // and its unlit glass give off a faint light all day and all night, and
+  // that is part of how the hospitals, the stations, the shops and the tower
+  // were lit. A black glow behind them took a third off a hospital at night
+  // and a sixth at noon, measured against the build before any of this, and
+  // spent five more textures doing it.
+  // `rnd` defaults to the city's own stream. The pale twins below pass a
+  // PRIVATE one, and they have to: this generator burns a roll per window,
+  // and the stream is shared with everything generated after the textures —
+  // the props, the landmarks, the airport, the stunt ramps, the parking. Four
+  // more textures drawing from it would have shifted every one of them, and
+  // silently: same city, every ramp somewhere else.
+  // `opts` is for the pale-walled twins only: { rnd, dim, glowAll }.
+  function windowTexture(wall, litColors, cols, rows, litProb, bandColor, opts) {
+    opts = opts || {};
+    var rnd = opts.rnd || rng;
+    // What an UNLIT window is painted with. Near-opaque by default, which is
+    // right over a dark wall and quite wrong over a pale one: it turns half
+    // the facade into black holes that look the same on a charcoal tower and
+    // a limestone one, so the building's colour ends up expressed by a thin
+    // grid between them. The pale-walled twins pass something thinner, and
+    // the glass then carries the tint like the rest of the wall does.
+    var dim = opts.dim || 'rgba(30,34,58,0.9)';
     var cv = document.createElement('canvas');
     cv.width = 512; cv.height = 384;
     var g = cv.getContext('2d');
-    g.fillStyle = bg; g.fillRect(0, 0, 512, 384);
+    g.fillStyle = wall; g.fillRect(0, 0, 512, 384);
+    // only the pale twins have a glow apart from their map (see above)
+    var gv = null, e = null;
+    if (opts.glowAll) {
+      gv = document.createElement('canvas');
+      gv.width = 512; gv.height = 384;
+      e = gv.getContext('2d');
+      e.fillStyle = '#000'; e.fillRect(0, 0, 512, 384);
+    }
     var cw = 512 / cols, ch = 384 / rows;
     for (var i = 0; i < cols; i++) for (var j = 0; j < rows; j++) {
-      var lit = rng() < litProb;
+      var lit = rnd() < litProb;
       var pad = cw * 0.22;
-      g.fillStyle = lit ? litColors[Math.floor(rng() * litColors.length)] : 'rgba(30,34,58,0.9)';
-      g.fillRect(i * cw + pad, j * ch + ch * 0.2, cw - pad * 2, ch * 0.55);
+      // the rng draw order is untouched: one roll for lit, one more only when
+      // it is — the same city comes out of the same seed either way
+      var col = lit ? litColors[Math.floor(rnd() * litColors.length)] : dim;
+      var wx = i * cw + pad, wy = j * ch + ch * 0.2, ww = cw - pad * 2, wh = ch * 0.55;
+      g.fillStyle = col; g.fillRect(wx, wy, ww, wh);
+      // Every window has a light of its own in the glow, for the night to
+      // switch on building by building (see lamBlock). An unlit one takes its
+      // colour from where it sits, not from the stream, so the daylight
+      // pattern above comes out of exactly the rolls it always did.
+      if (e) {
+        e.fillStyle = lit ? col : litColors[(i * 7 + j * 3) % litColors.length];
+        e.fillRect(wx, wy, ww, wh);
+      }
     }
     if (bandColor) {
       g.fillStyle = bandColor;
       for (var b = 0; b < rows; b++) g.fillRect(0, b * ch - 2, 512, 5);
     }
-    // keep left column dark so roof uvs sample facade color
-    g.fillStyle = bg; g.fillRect(0, 0, Math.floor(cw * 0.2), 384);
-    var tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-    return tex;
+    // keep the left column plain so roof uvs sample the wall — and black in
+    // a separate glow, or every pale roof in the city would be lit from inside
+    g.fillStyle = wall; g.fillRect(0, 0, Math.floor(cw * 0.2), 384);
+    if (e) { e.fillStyle = '#000'; e.fillRect(0, 0, Math.floor(cw * 0.2), 384); }
+    // the wall's brightest channel, 0-1: where a lit window stops and wall begins
+    var wv = parseInt(wall.slice(1), 16);
+    var wallMax = Math.max((wv >> 16) & 255, (wv >> 8) & 255, wv & 255) / 255;
+    var map = repeatTex(cv);
+    return { map: map, glow: gv ? repeatTex(gv) : map, cells: [cols, rows], wallMax: wallMax };
   }
+
+  // ---------- window light ----------
+  // After dark every ordinary block used to light the same share of its
+  // windows, in the same colours, at the same strength, so the skyline was
+  // one lit building repeated — and from any distance the night city looked
+  // just as it did before a single wall was painted. Each building now has a
+  // share of its own (some nearly dark, like offices after hours; some
+  // blazing), a warmth of its own (tubes in an office, lamps at home), and
+  // its own choice of WHICH windows.
+  //
+  // All of it is decided in the block material's shader from one small
+  // per-vertex attribute (GeoBatch.addBox writes it): no extra draw calls, no
+  // extra textures, no extra texture reads — a hash, a step and a few mixes a
+  // pixel, on building pixels only, and by day not even that. Measured on a
+  // CPU renderer, which is where shader arithmetic costs most, frame times
+  // stayed inside the spread between two runs of the same build.
+  //
+  // By day a window glows exactly when it did, which the shader reads off the
+  // map it has already sampled: a lit window is painted at full strength
+  // there, and the wall and the glass are not. Frozen noon frames against the
+  // last build differ in a tenth of a percent of their pixels, the outermost
+  // fringe of the lit windows. Night takes over on the street lamps' own
+  // curve, and one shared value drives every block material on both islands.
+  var windowNight = { value: 1 };
+  city.windowNight = windowNight;
+  var WINDOW_VERT_HEAD = 'attribute vec3 winLight;\nvarying vec3 vWinLight;';
+  var WINDOW_FRAG_HEAD = [
+    'uniform float uNight;',
+    'uniform float uWall;',
+    'uniform vec2 uCells;',
+    'varying vec3 vWinLight;',
+    // hash without sine: stable on the mediump-leaning GPUs phones carry
+    'float winHash( vec2 p ) {',
+    '  vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );',
+    '  p3 += dot( p3, p3.yzx + 33.33 );',
+    '  return fract( ( p3.x + p3.y ) * p3.z );',
+    '}'].join('\n');
+  var WINDOW_FRAG_BODY = [
+    '{',
+    // a plinth or a deco cap (negative share) keeps the windows it always had
+    '  float nightMix = uNight * step( 0.0, vWinLight.x );',
+    // Lit by day: painted at full strength on the map. Every lit colour has a
+    // channel at 255 and the glass sits well below the wall, so filtering
+    // pulls a lit window's edge ABOVE its wall and a dark one's BELOW it —
+    // which makes this district's own wall the line between them. A fixed
+    // line above every wall trimmed the blended edge of each lit window a
+    // second time; measured on screen, lit windows a fraction smaller by day.
+    '  float dayLit = smoothstep( uWall + 0.008, uWall + 0.03, max( texelColor.r, max( texelColor.g, texelColor.b ) ) );',
+    '  vec3 glowMask = vec3( dayLit );',
+    // Everything after dark sits behind the clock. uNight is one value for
+    // the whole draw, so every pixel takes the same side of this and the GPU
+    // skips it outright by day: half the cycle, the cost is the four lines
+    // above.
+    '  if ( uNight > 0.0 ) {',
+    // lit at night: this building's own share, decided window by window
+    '    float nightLit = step( winHash( floor( vUv * uCells ) + floor( vWinLight.z + 0.5 ) * vec2( 7.0, 3.0 ) ), vWinLight.x );',
+    '    vec3 warmth = mix( vec3( 0.82, 0.92, 1.14 ), vec3( 1.16, 0.93, 0.68 ), vWinLight.y );',
+    '    glowMask = mix( glowMask, nightLit * warmth, nightMix );',
+    // A window lit in the DAY pattern but dark tonight is still painted bright
+    // on the map, and read as a faint pastel square after dark rather than as
+    // glass; take it down to the glass it is while the night holds.
+    '    diffuseColor.rgb *= 1.0 - 0.6 * dayLit * ( 1.0 - nightLit ) * nightMix;',
+    '  }',
+    '  totalEmissiveRadiance *= glowMask;',
+    '}'].join('\n');
+  function lamBlock(t) {
+    var cells = new THREE.Vector2(t.cells[0], t.cells[1]);
+    var m = new THREE.MeshLambertMaterial({ map: t.map, emissive: 0xbbbbcc, emissiveMap: t.glow, vertexColors: true });
+    // The source text is the same for every block material, so three.js
+    // compiles this program once and shares it; the uniforms stay per material.
+    m.onBeforeCompile = function (sh) {
+      sh.uniforms.uNight = windowNight;
+      sh.uniforms.uCells = { value: cells };
+      sh.uniforms.uWall = { value: t.wallMax };
+      var hook = '#include <emissivemap_fragment>';
+      // a three.js that renamed its chunks would otherwise drop this silently
+      if (sh.fragmentShader.indexOf(hook) < 0 || sh.vertexShader.indexOf('#include <begin_vertex>') < 0) {
+        console.error('window light: the shader chunks it hooks are missing');
+      }
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\n' + WINDOW_VERT_HEAD)
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWinLight = winLight;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\n' + WINDOW_FRAG_HEAD)
+        .replace(hook, hook + '\n' + WINDOW_FRAG_BODY);
+    };
+    return m;
+  }
+  city.lamBlock = lamBlock;
 
   var SIGN_TEXTS = ['CLUB FLAMINGO', 'HOTEL MIRAJE', "ROXY'S", 'EL DORADO', 'NEON PALMS', 'TIKI LOUNGE',
     'LA SIRENA', 'STARDUST', 'CASA AZUL', 'VOLTAGE', 'PINK IGUANA', 'INFERNO ROOM',
@@ -471,10 +627,33 @@ GAME.city = (function () {
       strip: new GeoBatch(),
       generic: new GeoBatch(),
       harbor: new GeoBatch(),
+      // The ordinary blocks draw from their own batches so they can have a
+      // material of their own. Everything already designed — the hospitals,
+      // the stations, the shops, the tower, the island — shares the batches
+      // above and keeps the dark-walled texture its colours were chosen
+      // against; only the anonymous stock gets a wall pale enough to take a
+      // colour. Same geometry, same builders, different mesh.
+      blkDowntown: new GeoBatch(),
+      blkStrip: new GeoBatch(),
+      blkGeneric: new GeoBatch(),
+      blkHarbor: new GeoBatch(),
       wood: new GeoBatch(),
       glow: new GeoBatch(),
       signs: new GeoBatch()
     };
+    // How much of an ordinary block is lit after dark on average, and how
+    // warm the light. `lit` is the district's own window share — the figure
+    // its texture is drawn with below — so the night keeps roughly the
+    // brightness it had and mostly spreads it unevenly; `warm` leans offices
+    // toward tube-white and homes toward lamplight. Read by GeoBatch.addBox.
+    city.blockLight = {
+      downtown: { lit: 0.34, warm: 0.3 }, strip: { lit: 0.4, warm: 0.6 },
+      generic: { lit: 0.3, warm: 0.8 }, harbor: { lit: 0.15, warm: 0.5 }
+    };
+    batches.blkDowntown.light = city.blockLight.downtown;
+    batches.blkStrip.light = city.blockLight.strip;
+    batches.blkGeneric.light = city.blockLight.generic;
+    batches.blkHarbor.light = city.blockLight.harbor;
     var atlas = signAtlas();
     city.signSlots = atlas.slots;
 
@@ -521,8 +700,22 @@ GAME.city = (function () {
     var texGeneric = windowTexture('#181420', ['#ffe0a0', '#d8c8ff'], 9, 7, 0.3);
     var texHarbor = windowTexture('#1a1a20', ['#ffd890'], 6, 3, 0.15, 'rgba(60,62,70,0.9)');
 
-    function lam(tex) {
-      return new THREE.MeshLambertMaterial({ map: tex, emissive: 0xbbbbcc, emissiveMap: tex, vertexColors: true });
+    // The same windows over a wall pale enough that the building's own colour
+    // is what you see. Only the block batches use these.
+    var wrng = mulberry32(90210);          // private: see windowTexture
+    // Downtown lights fewer of them than it did. At half lit, over a wall now
+    // pale enough to have a colour, the towers read as a glowing grid with a
+    // building somewhere behind it — measured on screen, a charcoal tower and
+    // a limestone one three doors apart and no telling them apart.
+    var DIM = 'rgba(26,30,48,0.42)';
+    var BL = city.blockLight, PALE = { rnd: wrng, dim: DIM, glowAll: true };
+    var blkDowntown = windowTexture('#848994', ['#ffe9a8', '#a8e8ff', '#ffd0e8', '#c8ffe0'], 10, 8, BL.downtown.lit, null, PALE);
+    var blkStrip = windowTexture('#a79fa6', ['#ffe9a8', '#ffd0e8'], 8, 5, BL.strip.lit, 'rgba(120,92,116,0.45)', PALE);
+    var blkGeneric = windowTexture('#8d887e', ['#ffe0a0', '#d8c8ff'], 9, 7, BL.generic.lit, null, PALE);
+    var blkHarbor = windowTexture('#828079', ['#ffd890'], 6, 3, BL.harbor.lit, 'rgba(78,80,88,0.5)', PALE);
+
+    function lam(t) {
+      return new THREE.MeshLambertMaterial({ map: t.map, emissive: 0xbbbbcc, emissiveMap: t.glow, vertexColors: true });
     }
     // the second landmass draws its own meshes but shares the city's window
     // textures and sign atlas, so the two read as one world
@@ -544,6 +737,106 @@ GAME.city = (function () {
     addMesh(batches.strip, lam(texStrip));
     addMesh(batches.generic, lam(texGeneric));
     addMesh(batches.harbor, lam(texHarbor));
+    var blockMeshes = [
+      addMesh(batches.blkDowntown, lamBlock(blkDowntown)),
+      addMesh(batches.blkStrip, lamBlock(blkStrip)),
+      addMesh(batches.blkGeneric, lamBlock(blkGeneric)),
+      addMesh(batches.blkHarbor, lamBlock(blkHarbor))
+    ];
+    // Shared with the island, which builds after this and paints its own
+    // ordinary blocks over the same pale walls. It adds its meshes to the
+    // list and its districts to the walls; null there means a block with no
+    // window texture at all, whose colour is its colour.
+    city.texBlk = { downtown: blkDowntown, strip: blkStrip, generic: blkGeneric, harbor: blkHarbor };
+    city.blockMeshes = blockMeshes;
+    city.facadeWalls = { downtown: blkDowntown, strip: blkStrip,
+                         residential: blkGeneric, harbor: blkHarbor };
+    // headless hook: can a building's colour be SEEN? Per district, the wall
+    // its tint multiplies — sampled out of the map, where x=2 is inside the
+    // plain left column — times the spread of the colours actually PICKED for
+    // that district's blocks.
+    //
+    // What this is: a floor against the bug it was written for, where a wall
+    // at a ninth of full brightness crushed a whole palette into one block
+    // and the separation between the palest building on a street and the
+    // darkest came to two hundredths. What it is NOT: a judgement of whether
+    // a street looks varied. Downtown cleared this comfortably while every
+    // tower on it was the same grey — half its facade is lit window, and no
+    // number here knows that. For that, look at the thing.
+    city.testFacadeContrast = function () {
+      var out = [];
+      Object.keys(city.facadePicks).forEach(function (d) {
+        var picks = city.facadePicks[d];
+        if (!picks.length || !(d in city.facadeWalls)) return;
+        var t = city.facadeWalls[d], wall = 1;
+        if (t) {
+          var img = t.map && t.map.image;
+          if (!img || !img.getContext) return;
+          var px = img.getContext('2d').getImageData(2, 2, 1, 1).data;
+          wall = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+        }
+        var lo = [255, 255, 255], hi = [0, 0, 0], spread = 0;
+        for (var i = 0; i < picks.length; i++) {
+          var ch = [(picks[i] >> 16) & 255, (picks[i] >> 8) & 255, picks[i] & 255];
+          for (var c = 0; c < 3; c++) {
+            if (ch[c] < lo[c]) lo[c] = ch[c];
+            if (ch[c] > hi[c]) hi[c] = ch[c];
+          }
+        }
+        for (var c2 = 0; c2 < 3; c2++) spread = Math.max(spread, (hi[c2] - lo[c2]) / 255);
+        out.push({ district: d, buildings: picks.length, wall: +wall.toFixed(3),
+          spread: +spread.toFixed(3), seen: +(spread * wall).toFixed(3) });
+      });
+      return out;
+    };
+
+    // headless hook: the neighbour rule, stated as a count. Every pair of
+    // blocks standing within NEAR2 of each other, and how many of those pairs
+    // are close enough in colour to read as the same building twice. This is
+    // the thing a palette on its own does not give you.
+    city.testFacadeNeighbours = function () {
+      var out = [];
+      Object.keys(facadeNear).forEach(function (d) {
+        var a = facadeNear[d], pairs = 0, same = 0;
+        for (var i = 0; i < a.length; i++) {
+          for (var j = i + 1; j < a.length; j++) {
+            var dx = a[i].x - a[j].x, dz = a[i].z - a[j].z;
+            if (dx * dx + dz * dz > NEAR2) continue;
+            pairs++;
+            if (channelGap(a[i].c, a[j].c) < MIN_GAP) same++;
+          }
+        }
+        out.push({ district: d, blocks: a.length, pairs: pairs, same: same });
+      });
+      return out;
+    };
+
+    // headless hook: every facade colour baked into the ordinary blocks, as
+    // one number, plus how many distinct colours are actually in there.
+    // Determinism is the point — the same seed has to paint the same building
+    // the same colour on every load, or the city changes clothes behind your
+    // back — and `distinct` is what keeps the check honest, because a hash
+    // agreeing with itself proves nothing about a city painted all one shade.
+    // The picks are folded in as well as the meshes: a villa has no window
+    // texture and lives in the island's plain batch among the roads and the
+    // trees, so the record of what it was dealt is the clean way to see it.
+    city.testFacadeColors = function () {
+      var seen = {}, n = 0, h = 2166136261;
+      Object.keys(city.facadePicks).sort().forEach(function (d) {
+        city.facadePicks[d].forEach(function (c) { h = Math.imul(h ^ c, 16777619) >>> 0; });
+      });
+      for (var i = 0; i < city.blockMeshes.length; i++) {
+        var a = city.blockMeshes[i].geometry.attributes.color;
+        if (!a) continue;
+        for (var v = 0; v < a.count; v++) {
+          var key = (Math.round(a.getX(v) * 255) << 16) |
+                    (Math.round(a.getY(v) * 255) << 8) | Math.round(a.getZ(v) * 255);
+          seen[key] = 1; n++;
+          h = Math.imul(h ^ key, 16777619) >>> 0;
+        }
+      }
+      return { verts: n, distinct: Object.keys(seen).length, hash: h };
+    };
     addMesh(batches.wood, new THREE.MeshLambertMaterial({ vertexColors: true }));
     city.signMesh = addMesh(batches.signs, new THREE.MeshBasicMaterial({ map: atlas.tex, transparent: true, vertexColors: true, side: THREE.DoubleSide }));
     var glowMat = new THREE.MeshBasicMaterial({ map: radialGlowTexture('rgba(255,176,102,0.55)'), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -593,20 +886,107 @@ GAME.city = (function () {
     // never build across a carriageway — it blocks the street and makes map
     // routes look like they run straight through the block
     if (overlapsRoad(cx - sx / 2, cx + sx / 2, cz - sz / 2, cz + sz / 2)) return false;
-    batch.addBox(cx, h / 2, cz, sx, h, sz, 0, color, uvScale);
+    batch.addBox(cx, h / 2, cz, sx, h, sz, 0, color, uvScale, true);
     addSolid(cx, cz, sx, sz, h);
     return true;
   }
 
+  // ---------- facade paint ----------
+  // Every ordinary block on both islands takes its colour through here: one
+  // roll from the caller's seeded stream (exactly the one U.pick used to
+  // spend, so the world that comes out of the seed is the same world), then a
+  // deterministic step away from whatever its neighbours are already wearing.
+  //
+  // Every pick is recorded, per district, because the mesh cannot be asked
+  // afterwards: a block's plinth and a deco cap live in the same geometry as
+  // its walls, and reading colours back off it measured those too. That is
+  // not a hypothetical — the downtown check sat at 0.44 and passing while
+  // every tower on the street was the same grey, because half that mesh is
+  // a dark base band.
+  city.facadePicks = {};
+  var facadeNear = {};
+  // How far apart two buildings have to be before they may share a shade, and
+  // how different "different" is (largest channel gap, 0-1).
+  var NEAR2 = 70 * 70, MIN_GAP = 0.12;
+  function channelGap(a, b) {
+    return Math.max(Math.abs(((a >> 16) & 255) - ((b >> 16) & 255)),
+                    Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)),
+                    Math.abs((a & 255) - (b & 255))) / 255;
+  }
+  // A palette is not the same thing as a varied street. Drawing independently
+  // from one puts near-identical neighbours side by side often enough that a
+  // block of six can come out looking like one building repeated — which is
+  // what downtown did: every tower on the street within a few units of the
+  // same pale grey, out of a list holding a charcoal and a limestone.
+  //
+  // So the draw is checked against what is ALREADY STANDING nearby, and steps
+  // along the list until it finds a shade that is not its neighbour's. The
+  // step is deterministic and costs no rng at all — the one roll below is the
+  // caller's, and spending more of them would move everything generated
+  // after it: every stunt ramp here, every palm and parked car over there.
+  //
+  // `rnd` is that caller's stream. The island draws from its own, and has
+  // to: its blocks, its planting and its parking all come out of one seed.
+  //
+  // The scan covers every block already placed in the district, not a recent
+  // window. It used to look back forty, which only works when blocks are
+  // laid down street by street — the mainland's are, the island scatters
+  // its own across the whole landmass, so its nearest neighbour can be the
+  // third block placed rather than the last. At a few dozen per district the
+  // full scan costs nothing, and it means the rule and the check that counts
+  // its failures are finally looking at the same pairs.
+  function facadeShade(district, list, x, z, rnd) {
+    var i = Math.floor(Math.pow((rnd || rng)(), 1.15) * list.length);
+    if (i >= list.length) i = list.length - 1;
+    var near = facadeNear[district] = facadeNear[district] || [];
+    // The first shade in step order that clears every neighbour wins. When
+    // none does — four neighbours inside the radius can block a whole list
+    // between them — the one LEAST like its neighbours wins instead. It used
+    // to fall back to the original draw, which is the one shade already known
+    // to clash. Nothing in the world as built reaches this branch: the dense
+    // island shops that ran out were fixed by giving them more colours, and
+    // with those, every block finds a clean shade. It is here for the street
+    // somebody makes denser, or the list somebody makes shorter.
+    var best = i, bestGap = -1;
+    for (var t = 0; t < list.length; t++) {
+      var j = (i + t) % list.length, worst = 1;
+      for (var k = 0; k < near.length; k++) {
+        var n = near[k];
+        var dx = n.x - x, dz = n.z - z;
+        if (dx * dx + dz * dz > NEAR2) continue;
+        var g = channelGap(list[j], n.c);
+        if (g < worst) worst = g;
+      }
+      if (worst >= MIN_GAP) { best = j; break; }
+      if (worst > bestGap) { bestGap = worst; best = j; }
+    }
+    i = best;
+    var c = list[i];
+    near.push({ x: x, z: z, c: c });
+    (city.facadePicks[district] = city.facadePicks[district] || []).push(c);
+    return c;
+  }
+  city.facadeShade = facadeShade;
+
   function buildDowntownBlock(batches, cx, cz) {
-    var shades = [0x8a94b8, 0x6a7aa0, 0x9aa8c8, 0x5a6488, 0x7a88b0];
+    // Downtown gets its variety from VALUE, not hue. Nine shades of the same
+    // pale blue-grey is what this was, and a street of it reads as one
+    // building repeated however many shades the list technically holds — the
+    // towers came back looking exactly as flat as the near-black ones they
+    // replaced. What tells one tower from the next in a real downtown is a
+    // dark glass slab standing against pale concrete, so the spread here runs
+    // from near-black glass to limestone and stays desaturated the whole way.
+    // The order matters: the draw is front-weighted, so the first few carry
+    // the contrast rather than saving it for a tail nobody sees.
+    var shades = [0xc6cad2, 0x8f96a3, 0xd2cec2, 0x6e7686, 0xb0b6c0,
+                  0xbdb4a4, 0x545c6e, 0x7d8a92, 0x9a8f80, 0x3f4557];
     for (var lx = -1; lx <= 1; lx += 2) for (var lz = -1; lz <= 1; lz += 2) {
       if (rng() < 0.22) continue;
       var w = U.randRange(rng, 18, 30), dep = U.randRange(rng, 18, 30);
       var h = U.randRange(rng, 32, 88) * (1 - U.dist(cx, cz, -100, -100) / 900);
       var x = cx + lx * 19, z = cz + lz * 19;
-      if (tryBuilding(batches.downtown, x, z, w, dep, h, U.pick(rng, shades), 32)) {
-        batches.downtown.addBox(x, 1.5, z, w + 4, 3, dep + 4, 0, 0x3a3448, 0);
+      if (tryBuilding(batches.blkDowntown, x, z, w, dep, h, facadeShade('downtown', shades, x, z), 32)) {
+        batches.blkDowntown.addBox(x, 1.5, z, w + 4, 3, dep + 4, 0, 0x3a3448, 0);
         if (rng() < 0.28) {
           var slot = U.randInt(rng, 0, 17);
           addSign(batches.signs, slot, x, h + 3, z, rng() * Math.PI * 2, 22, 5);
@@ -616,7 +996,11 @@ GAME.city = (function () {
   }
 
   function buildStripBlock(batches, cx, cz, frontRow) {
-    var pastel = [0xf7a8c4, 0x9fe8d8, 0xf9d99a, 0xb8a8e8, 0x8fd0f0, 0xf0b090, 0xe8f0b0];
+    // deco pastels, which is what the strip is for — but pastels, not poster
+    // paint: they used to be picked at full saturation and then buried under
+    // the dark wall, so nobody ever saw how loud they were
+    var pastel = [0xe3cbbc, 0xe6d6b8, 0xd9d3c6, 0xe2c6cc,
+                  0xc5d6cd, 0xe0b89c, 0xd6b4ca, 0xb4c8dc];
     var n = frontRow ? 2 : U.randInt(rng, 2, 3);
     for (var k = 0; k < n; k++) {
       var w = U.randRange(rng, 22, 34), dep = U.randRange(rng, 16, 24);
@@ -624,11 +1008,11 @@ GAME.city = (function () {
       var x = frontRow ? cx + 18 : cx + U.randRange(rng, -20, 20);
       var z = cz - 38 + dep / 2 + k * (76 / n) + U.randRange(rng, 0, 76 / n - dep - 2);
       z = U.clamp(z, cz - 38 + dep / 2, cz + 38 - dep / 2);
-      var col = U.pick(rng, pastel);
-      if (tryBuilding(batches.strip, x, z, w, dep, h, col, 24)) {
+      var col = facadeShade('strip', pastel, x, z);
+      if (tryBuilding(batches.blkStrip, x, z, w, dep, h, col, 24)) {
         // stepped art-deco top
-        batches.strip.addBox(x, h + 1.5, z, w * 0.6, 3, dep * 0.6, 0, col, 0);
-        batches.strip.addBox(x, h + 3.7, z, w * 0.3, 1.6, dep * 0.3, 0, 0xfff0f8, 0);
+        batches.blkStrip.addBox(x, h + 1.5, z, w * 0.6, 3, dep * 0.6, 0, col, 0);
+        batches.blkStrip.addBox(x, h + 3.7, z, w * 0.3, 1.6, dep * 0.3, 0, 0xfff0f8, 0);
         var slot = U.randInt(rng, 0, 17);
         var face = frontRow ? Math.PI / 2 : (rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
         var sx = x + (face > 0 ? w / 2 + 0.3 : -w / 2 - 0.3);
@@ -641,7 +1025,9 @@ GAME.city = (function () {
   function buildHarborBlock(batches, cx, cz) {
     var w = U.randRange(rng, 46, 62), dep = U.randRange(rng, 26, 34);
     var h = U.randRange(rng, 9, 13);
-    tryBuilding(batches.harbor, cx, cz - 16, w, dep, h, U.pick(rng, [0x8a6a58, 0x6a7078, 0x707a68, 0x806858]), 40);
+    // brick and warehouse: weathered red, grey-brown, an oxide and a steel
+    tryBuilding(batches.blkHarbor, cx, cz - 16, w, dep, h,
+      facadeShade('harbor', [0xa8a096, 0x8d8a80, 0x9a8b7c, 0x7a7268, 0x8e5f4c, 0x6f7c82], cx, cz - 16), 40);
     // container stacks
     var colors = [0xc85040, 0x4078a8, 0x50a068, 0xb89040, 0x9060a0];
     for (var r = 0; r < 3; r++) {
@@ -660,7 +1046,10 @@ GAME.city = (function () {
   }
 
   function buildGenericBlock(batches, cx, cz) {
-    var shades = [0xb08878, 0x88a090, 0xa898b0, 0x90a8b8, 0xb0a080];
+    // stucco and painted concrete: bone, sand, cream, taupe — then a
+    // terracotta, a sage and a dusty blue for the few that stand out
+    var shades = [0xd9d0c0, 0xcabda8, 0xd5c8b4, 0xc2b8a8, 0xdad3c6,
+                  0xc7b294, 0xb9ac9c, 0xcd9276, 0xa8b69e, 0x9fb2bd];
     var n = U.randInt(rng, 3, 5);
     for (var k = 0; k < n; k++) {
       var w = U.randRange(rng, 14, 26), dep = U.randRange(rng, 14, 26);
@@ -669,7 +1058,7 @@ GAME.city = (function () {
       var ok = true;
       var q = city.hash.query(x, z, Math.max(w, dep) * 0.72);
       for (var qq = 0; qq < q.length; qq++) if (q[qq].tag === 'building') { ok = false; break; }
-      if (ok) tryBuilding(batches.generic, x, z, w, dep, h, U.pick(rng, shades), 28);
+      if (ok) tryBuilding(batches.blkGeneric, x, z, w, dep, h, facadeShade('residential', shades, x, z), 28);
     }
     if (rng() < 0.4) city.palmSpots.push({ x: cx + U.randRange(rng, -30, 30), z: cz + U.randRange(rng, -30, 30), s: U.randRange(rng, 0.8, 1.1) });
   }
@@ -736,11 +1125,13 @@ GAME.city = (function () {
       // the beacon over the cross tower, blinking ambulance-red
       kmesh(0.7, 0.7, 0.7, 0xff3b4e, H.x + 26, 26.8, H.z + 1, { blink: 1.6, duty: 0.55 });
     });
-    // The find: a helipad crowning a downtown tower, with a helicopter on it.
-    // It shows on no map — the way onto it is out of the sky, a parachute off
-    // the plane onto the roof, and the reward for arriving is a way off again.
-    // This is the mainland's only helicopter. It used to sit on the hospital
-    // roof, but eighteen metres is barely a find; now it takes real flying.
+    // A helipad crowning a downtown tower, with a helicopter on it — the
+    // mainland's only one. It used to sit on the hospital roof, but eighteen
+    // metres was barely worth the trip; now it takes real flying, because the
+    // way onto it is out of the sky, a parachute off the plane onto the roof,
+    // and the reward for arriving is a way off again. It is on the map and
+    // the radar like any other pad: knowing where it is was never the hard
+    // part, and hiding it only made people wonder whether it existed.
     var HT = { x: 0, z: -200, h: 72 };
     batches.downtown.addBox(HT.x, HT.h / 2, HT.z, 30, HT.h, 30, 0, 0xb8c4e8, 28);
     addSolid(HT.x, HT.z, 30, 30, HT.h);
@@ -951,7 +1342,32 @@ GAME.city = (function () {
     // the whole beach at deck height before they climb. The sand carpet must
     // part around those corridors: laid straight through, the anti-flicker
     // height tiers sat ON TOP of the flat approach — the road sunk in sand.
-    var BRIDGE_CUTS = [[-359, -341], [141, 159]];
+    // The cut has to match the DECK, and it did not: the decks are 14 m wide
+    // (half: 7, isla.js) spanning z -357..-343 and 143..157, while these cuts
+    // took out 18 m. That left two metres of bare nothing down each side of
+    // each bridge — and since the beach there is already below sea level, what
+    // showed through was open water, a slot of sea cut into the sand right
+    // where you drive onto the span.
+    //
+    // The cuts are the band the deck covers at EVERY x across the beach, not
+    // its width at one of them: the spans drift as they cross (the north
+    // deck's south edge walks from z -357 at x=376 to -355.25 at x=426), so a
+    // cut sized to the near end opens a sliver at the far end and a cut sized
+    // to the far end is a slot at the near one. The measured intersections
+    // are what is written above.
+    //
+    // What this costs is a strip about 1.4 m wide beside the north approach
+    // where sand now lies under the deck's edge. Over the beach that approach
+    // runs at y=0 (flat from x=360 to about x=400, climbing only past 405)
+    // while the sand tiers sit at 0.06, so the sand stands a few centimetres
+    // proud of the road there. Sand at the edge of a beach road is a great
+    // deal less wrong than a slot of open water beside the bridge.
+    //
+    // Coupled to isla.js by hand because the spans are built long after this
+    // carpet is; city.bridgeCuts is exported so a test can hold the two to
+    // each other.
+    var BRIDGE_CUTS = [[-355.2, -343.05], [144.05, 156.95]];
+    city.bridgeCuts = BRIDGE_CUTS;
     function bandSegs(z0, z1) {
       var segs = [[z0, z1]];
       for (var bc = 0; bc < BRIDGE_CUTS.length; bc++) {
@@ -1148,6 +1564,8 @@ GAME.city = (function () {
     if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5);
     // street lamps burn at night, fade out through dusk, and are off in daylight
     var lampOn = U.clamp(1 - (df - 0.45) / 0.35, 0, 1);
+    // and so do the windows' own lights, building by building (see lamBlock)
+    windowNight.value = lampOn;
     if (city.lampGlow) {
       city.lampGlow.material.opacity = lampOn;
       city.lampGlow.visible = lampOn > 0.02;
@@ -1336,7 +1754,7 @@ GAME.city = (function () {
     addSolid(-100, -100, 37, 37, 110);
     addSolid(-100, -100, 15, 15, 111.2);
     var twrTex = windowTexture('#0e1226', ['#a8e8ff', '#ffd0e8', '#ffe9a8'], 10, 9, 0.6);
-    var twrMesh = new THREE.Mesh(twr.build(), new THREE.MeshLambertMaterial({ map: twrTex, emissive: 0xccccdd, emissiveMap: twrTex, vertexColors: true }));
+    var twrMesh = new THREE.Mesh(twr.build(), new THREE.MeshLambertMaterial({ map: twrTex.map, emissive: 0xccccdd, emissiveMap: twrTex.glow, vertexColors: true }));
     twrMesh.matrixAutoUpdate = false;
     scene.add(twrMesh);
     var crown = new THREE.Mesh(new THREE.BoxGeometry(15, 1.6, 15), new THREE.MeshBasicMaterial({ color: 0xff4fa3 }));

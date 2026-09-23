@@ -92,8 +92,34 @@ function disposeTree(root) {
 // Batches transformed boxes/quads into one BufferGeometry (vertex colors + tiled uvs).
 function GeoBatch() {
   this.pos = []; this.nrm = []; this.col = []; this.uv = [];
+  // Window light, per building (see addBox). Only a batch given a `light`
+  // setting carries it, so every other mesh in the game is exactly as it was.
+  this.light = null; this.lgt = [];
 }
-GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvScale) {
+// murmur3's finaliser: scrambles an integer hash so one position can seed
+// several independent choices without any of them echoing another
+function fmix32(h) {
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+// How lit a building is after dark, as a multiple of its district's usual
+// share: nearly dark like offices after hours, an evening's worth, busy, and
+// blazing. Dealt as below they average 1.11 times the district's old share,
+// so the night city is a touch brighter than it was and never darker — the
+// light is mostly just spread unevenly now.
+var WINDOW_SHARE = [0.25, 0.85, 1.6, 2.4];
+// Dealt, not rolled. Rolled independently, the island's nine port towers all
+// came up in the middle two — no dark tower and no blazing one on its whole
+// skyline, which is exactly what this is for. A district deals its blocks
+// round this ring instead, from a starting point of its own: four nearly
+// dark, nine evening, four busy and three blazing in every twenty, spaced so
+// that any seven blocks dealt in a row hold all four.
+var WINDOW_DECK = [3, 1, 0, 1, 2, 1, 1, 3, 0, 1, 2, 1, 0, 1, 3, 2, 1, 0, 2, 1];
+// `shift`: slide this box's window pattern along by an amount of its own (see
+// below). Opt-in, so the buildings that were designed keep the windows they
+// were designed with.
+GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvScale, shift) {
   var hx = sx / 2, hy = sy / 2, hz = sz / 2;
   var c = Math.cos(rotY || 0), s = Math.sin(rotY || 0);
   var r = (color >> 16 & 255) / 255, g = (color >> 8 & 255) / 255, b = (color & 255) / 255;
@@ -107,15 +133,54 @@ GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvSca
     [[-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz], [0, 0, 1], sx, sy],
     [[hx, -hy, -hz], [-hx, -hy, -hz], [-hx, hy, -hz], [hx, hy, -hz], [0, 0, -1], sx, sy]
   ];
-  // deterministic per-position UV offset so the city is identical every visit
-  var uoff = Math.floor(Math.abs(Math.sin(cx * 12.9898 + cy * 4.1414 + cz * 78.233) * 43758.5453) % 1 * 8);
+  // Where along its texture a wall starts. This used to be a per-position
+  // offset of floor(x * 8) — a whole number, on a texture that REPEATS, and a
+  // repeating texture samples u and u + 1 identically. So it did nothing: 249
+  // textured blocks across both islands, one window pattern between them,
+  // every tower in a district showing the same lit windows in the same places.
+  // At night, when the windows are most of what a building is, the skyline
+  // was one tower copied.
+  //
+  // A shifted box slides by a FRACTION instead, from an integer hash of where
+  // it stands — exact on every engine, so a building shows the same windows
+  // every visit. Walls only: the roof and the floor sample the texture's
+  // plain left column on purpose (that is where a roof gets its flat wall
+  // colour), and sliding them would print windows across every rooftop.
+  var ushift = 0, h0 = 0;
+  if (shift && us) {
+    h0 = (Math.imul(Math.round(cx * 8), 73856093) ^ Math.imul(Math.round(cz * 8), 19349663)) >>> 0;
+    ushift = h0 / 4294967296;
+  }
+  // Its window light, for a batch that carries one: the share of its windows
+  // lit after dark, how warm that light is (0 an office's tubes, 1 a lamp at
+  // home), and a seed for WHICH windows. The shader does the rest — see
+  // lamBlock in city.js. A box with no pattern of its own, a plinth or a deco
+  // cap, gets a negative share: it keeps the windows it has always had.
+  var lv = null;
+  if (this.light) {
+    if (shift && us) {
+      // (the deal is kept on the batch; names here stay clear of r, g and b
+      // above, which are this box's colour — reusing `r` once repainted every
+      // block's walls with a random number)
+      if (this.lightDeal === undefined) this.lightDeal = fmix32(h0 ^ 0x68e31da4) % WINDOW_DECK.length;
+      var cls = WINDOW_DECK[this.lightDeal++ % WINDOW_DECK.length];
+      lv = [Math.min(0.95, this.light.lit * WINDOW_SHARE[cls]),
+            Math.max(0, Math.min(1, this.light.warm + (fmix32(h0 ^ 0xb5297a4d) / 4294967296 - 0.5) * 0.9)),
+            // a whole number, not a fraction: an interpolated value is never
+            // quite constant across a face, and the hash turns the difference
+            // into windows that sparkle on and off pixel by pixel
+            fmix32(h0 ^ 0x1b56c4e9) % 61];
+    } else lv = [-1, 0.5, 0];
+  }
   for (var f = 0; f < 6; f++) {
     var F = faces[f], n = F[4];
     var nx = n[0] * c + n[2] * s, nz = -n[0] * s + n[2] * c;
     var fw = F[5], fh = F[6];
     var uw = us ? fw / us : 1, vh = us ? fh / (us * 0.75) : 1;
+    var u0 = 0;
     if (us && f >= 2 && f <= 3) { uw = 0.01; vh = 0.01; }
-    var quv = [[uoff, 0], [uoff + uw, 0], [uoff + uw, vh], [uoff, vh]];
+    else u0 = ushift;
+    var quv = [[u0, 0], [u0 + uw, 0], [u0 + uw, vh], [u0, vh]];
     var idx = [0, 1, 2, 0, 2, 3];
     for (var i = 0; i < 6; i++) {
       var v = F[idx[i]];
@@ -124,6 +189,7 @@ GeoBatch.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color, uvSca
       this.nrm.push(nx, n[1], nz);
       this.col.push(r, g, b);
       this.uv.push(quv[idx[i]][0], quv[idx[i]][1]);
+      if (lv) this.lgt.push(lv[0], lv[1], lv[2]);
     }
   }
 };
@@ -196,6 +262,12 @@ GeoBatch.prototype.build = function () {
   g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+  if (this.lgt.length) {
+    // every vertex or none: a light batch given a quad by some other route
+    // would feed the shader garbage, so say so loudly instead
+    if (this.lgt.length !== this.pos.length) console.error('GeoBatch: window light missing on some vertices');
+    g.setAttribute('winLight', new THREE.Float32BufferAttribute(this.lgt, 3));
+  }
   return g;
 };
 

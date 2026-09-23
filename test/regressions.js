@@ -22,6 +22,21 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3u. WINDOW LIGHT — after dark each ordinary block lights its own share of
+//       its windows, warm or cool, and the walls keep the colours they were
+//       dealt; checked on a real render, not just on the numbers behind it.
+//   3t. FACADE PAINT — the ordinary blocks on both islands are painted in
+//       more than one shade, no two neighbours are painted the same shade
+//       twice, each shows its own arrangement of windows, and the seed paints
+//       the same building the same way every load; the buildings with a
+//       design of their own keep the light they always had.
+//   3s. THE HELIPADS — both pads show, on the map and on the radar alike,
+//       from one shared list the legend can strike; and nothing
+//       marker-shaped is baked into the base image, where no filter reaches.
+//   3r. THE BEACH AT THE BRIDGES — the sand parts for the span and for
+//       nothing else, so no slot of open sea is left beside it.
+//   3q. THE RADAR'S HOME MARKER — a property in range is a dot where it
+//       actually is; one out of range is an ARROW, not a dot pretending.
 //   3p. THE ICE CREAM ROUND — a customer walks over and is SERVED, rather
 //       than sprinting at the hatch and teleporting money into the till.
 //   3o. PICKUPS ON DRY LAND — nothing you are meant to walk to stands at
@@ -990,6 +1005,8 @@ function withTimeout(p, ms) {
     a.state = 'attack'; a.foe = { kind: 'ped', ped: b }; a.attackT = 25;
     var armsUpWhileRunning = 0, runFrames = 0, mutual = false, punches = 0;
     var hp0 = b.hp;
+    var aj0 = a.mesh.userData.joints;
+    var pl = aj0.armL.rotation.x, pr = aj0.armR.rotation.x, maxJump = 0;
     for (var t = 0; t < 60 * 20; t++) {
       // hold him to it: attackT runs down and the state gives up on its own,
       // and this check is about how he looks getting there
@@ -1000,6 +1017,16 @@ function withTimeout(p, ms) {
       });
       GAME.test.fastForward(1 / 60);
       if (a.dead || b.dead || a.gone || b.gone) break;
+      // How far an arm is allowed to travel in ONE step while he is posed.
+      // The guard eases in over about a third of a second; a punch starting
+      // before that finished used to abandon the ease and set the arm
+      // outright, off whatever the walk cycle had left behind.
+      var jn = a.mesh.userData.joints;
+      if (a.aimPose) {
+        maxJump = Math.max(maxJump,
+          Math.abs(jn.armL.rotation.x - pl), Math.abs(jn.armR.rotation.x - pr));
+      }
+      pl = jn.armL.rotation.x; pr = jn.armR.rotation.x;
       // the charge: arms must swing, not sit frozen overhead
       if (a.state === 'attack' && a.speed > 4) {
         runFrames++;
@@ -1014,7 +1041,8 @@ function withTimeout(p, ms) {
       if (b.hp < hp0) punches++;
     }
     var out = { armsUp: armsUpWhileRunning, runFrames: runFrames, mutual: mutual,
-                landed: b.hp < hp0 || b.dead, cap: cap, fillers: fillers };
+                landed: b.hp < hp0 || b.dead, cap: cap, fillers: fillers,
+                maxJump: +maxJump.toFixed(3) };
     [a, b, x, y].forEach(function (p) { if (p && !p.gone) GAME.peds.removePed(p); });
     C.set(0);
     return out;
@@ -1029,6 +1057,12 @@ function withTimeout(p, ms) {
       brawl2.armsUp < brawl2.runFrames * 0.1,
       brawl2.armsUp + ' of ' + brawl2.runFrames + ' charging frames with the arms up');
     check('brawl: the punches land (anchor sanity)', brawl2.landed, 'the other man was hit');
+    // A jab travels 1.05 rad in 0.14 s — 7.5 rad/s, or 0.125 in a step. A
+    // step of 1.4 is not a fast punch, it is a teleport, and that is what a
+    // strike off a half-eased guard was doing.
+    check('brawl: and no arm teleports mid-swing',
+      brawl2.maxJump > 0 && brawl2.maxJump < 0.45,
+      'biggest single-step arm move while posed: ' + brawl2.maxJump + ' rad');
     // The fight ceiling counts BODIES, so a two-sided brawl cost two of them
     // and swinging back was competing with fresh fights for a slot. Most
     // fights came out one-sided: one man chasing, the other never turning.
@@ -1178,6 +1212,345 @@ function withTimeout(p, ms) {
     jacked.tries > 0 && jacked.survived === jacked.tries,
     jacked.survived + '/' + jacked.tries + ' walked away from their own car');
 
+  // ---------- 3r: the sand parts for the deck, not wider than it ----------
+  // The sand carpet has to part around the bridge approaches, because over the
+  // beach they run at y=0 while the sand tiers sit at 0.06 and would bury the
+  // road. But the cuts were 18 m against 14 m decks, so two metres of bare
+  // nothing ran down each side of each bridge — and the beach out there is
+  // already below sea level, so what showed through the hole was open water.
+  //
+  // This holds the cut to the DECK rather than to a number: every metre the
+  // sand gives up has to have bridge over it, at every x across the beach.
+  var beach = await page.evaluate(function () {
+    var C = GAME.city;
+    if (!C.bridgeCuts) return { missing: true };
+    var XS = [376, 384, 392, 400, 410, 420, 426];    // in across the sand
+    var out = [];
+    C.bridgeCuts.forEach(function (cut) {
+      var bare = 0, covered = 0, worstX = null;
+      for (var z = cut[0]; z <= cut[1]; z += 0.1) {
+        for (var i = 0; i < XS.length; i++) {
+          // ask from above, so the deck answers rather than the ground
+          if (C.crossingY(XS[i], z, 99) === null) { bare++; if (worstX === null) worstX = XS[i]; }
+          else covered++;
+        }
+      }
+      out.push({ cut: [+cut[0].toFixed(2), +cut[1].toFixed(2)],
+                 width: +(cut[1] - cut[0]).toFixed(2), bare: bare, covered: covered, worstX: worstX });
+    });
+    // and the cut must still be wide enough to be doing its job — a cut of
+    // nothing would pass the test above and bury the road
+    return { cuts: out };
+  });
+  check('beach: the sand knows where the bridges are', !beach.missing,
+    beach.missing ? 'city.bridgeCuts is not exported' : beach.cuts.length + ' cuts');
+  if (!beach.missing) {
+    beach.cuts.forEach(function (c, i) {
+      var which = i === 0 ? 'north' : 'south';
+      check('beach: the ' + which + ' cut is wide enough to clear the approach (anchor sanity)',
+        c.width > 10 && c.covered > 100,
+        'cut is ' + c.width + ' m across, ' + c.covered + ' sampled points have deck over them');
+      // 2 m of bare sand each side was the bug; anything above zero is a hole
+      check('beach: and every metre of it has bridge over it, at every x',
+        c.bare === 0,
+        c.bare ? c.bare + ' samples of open nothing, first at x=' + c.worstX
+               : 'no bare ground anywhere in the cut');
+    });
+  }
+
+  // ---------- 3t: a building keeps its colour ----------
+  // Facade colour is drawn from the seeded rng while the city is generated,
+  // so the same seed has to paint the same building the same shade on every
+  // load. A city that changes clothes between visits is worse than a grey one.
+  // Checked on a SECOND page rather than by reloading this one, which would
+  // pull the world out from under every group after it.
+  var paintOne = await page.evaluate(function () {
+    return GAME.city.testFacadeColors ? GAME.city.testFacadeColors() : null;
+  });
+  var contrast = await page.evaluate(function () {
+    return GAME.city.testFacadeContrast ? GAME.city.testFacadeContrast() : [];
+  });
+  var nbrs = await page.evaluate(function () {
+    return GAME.city.testFacadeNeighbours ? GAME.city.testFacadeNeighbours() : [];
+  });
+  // Where each textured block's windows start: the fractional u of its first
+  // wall vertex. addBox writes 36 vertices a box, vertex 0 on face +x. A box
+  // with no window texture spans exactly 1 in u, which is how it is left out.
+  var phases = await page.evaluate(function () {
+    var textured = 0, seen = {};
+    (GAME.city.blockMeshes || []).forEach(function (m) {
+      var uv = m.geometry.attributes.uv;
+      for (var b = 0; b < uv.count / 36; b++) {
+        var u0 = uv.getX(b * 36), u1 = uv.getX(b * 36 + 1);
+        if (Math.abs(u1 - u0 - 1) < 1e-6) continue;
+        textured++;
+        seen[Math.round((u0 - Math.floor(u0)) * 10000)] = 1;
+      }
+    });
+    return { textured: textured, distinct: Object.keys(seen).length };
+  });
+  var paintTwo = null;
+  if (paintOne) {
+    var p2 = await browser.newPage({ viewport: { width: 400, height: 300 } });
+    await p2.goto(origin + '/index.html');
+    await p2.waitForFunction(function () {
+      return window.GAME && GAME.city && GAME.city.testFacadeColors &&
+        GAME.city.nodes && GAME.city.nodes.length > 0;
+    }, null, { timeout: 30000 });
+    paintTwo = await p2.evaluate(function () { return GAME.city.testFacadeColors(); });
+    await p2.close();
+  }
+  if (paintOne && paintTwo) {
+    check('paint: the ordinary blocks carry a colour at all (anchor sanity)',
+      paintOne.verts > 2000, paintOne.verts + ' facade vertices with a colour on them');
+    // Without this the check above it is decoration: a hash agrees with
+    // itself just as happily on a city painted one flat shade, which is the
+    // city this started as — five careful shades per district, every one of
+    // them multiplied into the same near-black by the wall behind it.
+    check('paint: in more than one shade, or there is nothing to keep',
+      paintOne.distinct >= 6, paintOne.distinct + ' distinct facade colours across the blocks');
+    check('paint: and a fresh load paints the same city the same way',
+      paintOne.hash === paintTwo.hash,
+      'first load ' + paintOne.hash + ', second load ' + paintTwo.hash);
+    // A palette is not a varied street. Drawn independently from one, blocks
+    // land next to near-identical neighbours often enough that a row of six
+    // reads as one building repeated — measured with the rule off, 70 of the
+    // mainland's 137 neighbouring pairs were the same shade twice, and in the
+    // residential blocks it was 32 of 47. On the island the rule was on and
+    // still lost 12 of 174 among the port shops, the densest ground on the
+    // map, until they were given enough colours to find a way round.
+    var nbPairs = nbrs.reduce(function (n, d) { return n + d.pairs; }, 0);
+    var nbSame = nbrs.reduce(function (n, d) { return n + d.same; }, 0);
+    var islaNb = nbrs.filter(function (d) { return d.district.indexOf('isla-') === 0; });
+    var islaPairs = islaNb.reduce(function (n, d) { return n + d.pairs; }, 0);
+    check('paint: blocks do stand close enough to be compared (anchor sanity)',
+      nbPairs > 50, nbPairs + ' pairs of blocks within a street of each other');
+    // The island paints through the same rule on a seed of its own. Without
+    // this, an island that stopped reporting would pass every check below by
+    // having no blocks to fail with.
+    check('paint: and the island is painted by it too (anchor sanity)',
+      islaNb.length === 4 && islaPairs > 100,
+      islaNb.length + ' island districts, ' + islaPairs + ' pairs among them');
+    check('paint: and no two of them are the same shade twice',
+      nbSame === 0, nbSame + ' neighbouring pairs share a shade  —  ' +
+        nbrs.map(function (d) { return d.district + ' ' + d.same + '/' + d.pairs; }).join(', '));
+    // The windows. Every block used to start its window pattern at a whole-
+    // number offset, on a texture that repeats — so u and u + 3 sampled the
+    // same place, and all 249 textured blocks on both islands showed one
+    // arrangement of lit windows between them. At night that arrangement is
+    // most of what a tower is, and the skyline was one tower copied.
+    check('paint: the blocks carry window textures (anchor sanity)',
+      phases.textured > 200, phases.textured + ' textured blocks');
+    check('paint: and each starts its windows somewhere of its own',
+      phases.distinct >= phases.textured * 0.9,
+      phases.distinct + ' distinct window phases across ' + phases.textured + ' blocks');
+    // The one that would have caught the bug. Distinct colours in the data
+    // mean nothing if the wall behind them is dark enough to crush the lot:
+    // the palettes were always there, and the separation between the palest
+    // building on a street and the darkest came to two hundredths. Eight
+    // districts, four a side; a villa has no window texture, so its wall is 1.
+    check('paint: and the colours survive the wall they are multiplied by',
+      contrast.length === 8 && contrast.every(function (c) { return c.seen >= 0.1; }),
+      contrast.map(function (c) { return c.district + ' ' + c.buildings + ' blocks, wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));
+  }
+  // Painting the blocks gave every window texture a glow image of its own,
+  // black on the wall, and that was only ever right for the pale walls. The
+  // hospitals, the stations, the shops and the tower had always glowed from
+  // their own map, a faint light off wall, bands and unlit glass at every
+  // hour, and the black glow took it away without anyone asking: a hospital
+  // a third darker at night and a sixth at noon, measured against the build
+  // before. Every paint check passed, because none of them looks at anything
+  // but the blocks. So: whatever is not a block glows from its own map.
+  var dressed = await page.evaluate(function () {
+    var blocks = GAME.city.blockMeshes || [], out = { own: 0, apart: 0 };
+    GAME.scene.traverse(function (o) {
+      var m = o.material;
+      if (!o.isMesh || !m || Array.isArray(m) || !m.map || !m.emissiveMap) return;
+      if (blocks.indexOf(o) >= 0) return;
+      if (m.emissiveMap === m.map) out.own++; else out.apart++;
+    });
+    return out;
+  });
+  check('paint: the buildings with windows of their own design are found (anchor sanity)',
+    dressed.own + dressed.apart >= 6, (dressed.own + dressed.apart) + ' textured materials besides the blocks');
+  check('paint: and they still glow from their own walls, as before the blocks were painted',
+    dressed.apart === 0, dressed.apart + ' of ' + (dressed.own + dressed.apart) + ' given a glow apart from their map');
+
+  // ---------- 3u: window light after dark ----------
+  // After dark every ordinary block used to light the same share of its
+  // windows in the same colours, so a skyline was one lit building repeated.
+  // Each now has its own share, warmth and choice of windows, decided in the
+  // block material's shader from a per-vertex attribute; by day nothing may
+  // change at all. The render check at the end is what makes the rest mean
+  // something: an attribute that never reached the shader would leave every
+  // number above it looking perfect and the city dark.
+  var wl = await page.evaluate(function () {
+    var C = GAME.city, out = { meshes: 0, full: 0, plain: 0, warmLo: 1, warmHi: 0, districts: [], foreign: 0, checked: 0 };
+    // the wall colours actually in the mesh, against what each block was dealt
+    var dealt = { 0x3a3448: 1, 0xfff0f8: 1 };          // plinth, deco cap
+    Object.keys(C.facadePicks).forEach(function (d) { C.facadePicks[d].forEach(function (c) { dealt[c] = 1; }); });
+    C.blockMeshes.forEach(function (m) {
+      var a = m.geometry.attributes.winLight, p = m.geometry.attributes.position, col = m.geometry.attributes.color;
+      out.meshes++;
+      if (a && a.count === p.count) out.full++;
+      for (var v = 0; v < col.count; v += 6) {
+        var hex = (Math.round(col.getX(v) * 255) << 16) | (Math.round(col.getY(v) * 255) << 8) | Math.round(col.getZ(v) * 255);
+        out.checked++;
+        if (!dealt[hex]) out.foreign++;
+      }
+      if (!a) return;
+      var lo = 9, hi = -1, set = {}, n = 0;
+      for (var b = 0; b < a.count / 36; b++) {
+        var f = a.getX(b * 36), w = a.getY(b * 36);
+        if (f < 0) { out.plain++; continue; }
+        n++; set[f.toFixed(3)] = 1; lo = Math.min(lo, f); hi = Math.max(hi, f);
+        out.warmLo = Math.min(out.warmLo, w); out.warmHi = Math.max(out.warmHi, w);
+      }
+      out.districts.push({ n: n, classes: Object.keys(set).length, ratio: lo > 0 ? hi / lo : 0 });
+    });
+    var ph = GAME.dayPhase;
+    GAME.applyTimeOfDay(0); out.nightOn = C.windowNight.value;
+    GAME.applyTimeOfDay(1); out.dayOn = C.windowNight.value;
+    // One boulevard, night lighting, rendered twice in the same instant: the
+    // daytime pattern of lit windows, then tonight's. Nothing else differs.
+    var R = GAME.renderer, W = 192, H = 108;
+    var rt = new THREE.WebGLRenderTarget(W, H), buf = new Uint8Array(W * H * 4);
+    var cam = new THREE.PerspectiveCamera(62, W / H, 0.5, 3000);
+    cam.position.set(70, 5, -100); cam.lookAt(-160, 30, -100);
+    GAME.applyTimeOfDay(0);
+    function shot(v) {
+      C.windowNight.value = v;
+      R.setRenderTarget(rt); R.render(GAME.scene, cam);
+      R.readRenderTargetPixels(rt, 0, 0, W, H, buf); R.setRenderTarget(null);
+      return buf.slice();
+    }
+    var dayPat = shot(0), nightPat = shot(1);
+    out.litDay = 0; out.litNight = 0; out.differ = 0;
+    for (var i = 0; i < dayPat.length; i += 4) {
+      var mD = Math.max(dayPat[i], dayPat[i + 1], dayPat[i + 2]);
+      var mN = Math.max(nightPat[i], nightPat[i + 1], nightPat[i + 2]);
+      if (mD > 150) out.litDay++;
+      if (mN > 150) out.litNight++;
+      if (Math.abs(mD - mN) > 40) out.differ++;
+    }
+    rt.dispose();
+    GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(ph * Math.PI * 2));
+    return out;
+  });
+  check('night light: every block carries its own window light (anchor sanity)',
+    wl.meshes === 7 && wl.full === 7, wl.full + ' of ' + wl.meshes + ' block meshes, on every vertex');
+  // The check that would have caught the red channel. Declaring the light's
+  // roll as `r` inside addBox reused the name of the box's red channel, and
+  // every block's walls came out pink, cyan and green — while every paint
+  // check above passed, because they read the colours each block was DEALT,
+  // not the colours the mesh ended up wearing. Found by rendering it.
+  check('night light: and the walls still wear the colours they were dealt',
+    wl.checked > 1000 && wl.foreign === 0,
+    wl.foreign + ' of ' + wl.checked + ' wall colours in the mesh match no pick');
+  // Rolled independently, the island's nine port towers once all came up in
+  // the middle two shares: no dark tower and no blazing one on its skyline.
+  // Dealt round a ring, any seven blocks in a row hold all four.
+  check('night light: some buildings nearly dark and some blazing, in every district of size',
+    wl.districts.filter(function (d) { return d.n >= 7; }).every(function (d) { return d.classes === 4 && d.ratio >= 9; }),
+    wl.districts.map(function (d) { return d.n + ' blocks: ' + d.classes + ' shares, ' + d.ratio.toFixed(1) + 'x'; }).join('; '));
+  check('night light: from the tubes of an office to the lamps of a home',
+    wl.warmLo < 0.3 && wl.warmHi > 0.7, 'warmth ' + wl.warmLo.toFixed(2) + ' to ' + wl.warmHi.toFixed(2));
+  check('night light: plinths and deco caps keep the windows they always had',
+    wl.plain > 50, wl.plain + ' boxes flagged to keep them');
+  check('night light: it comes on with the street lamps and is gone by day',
+    wl.nightOn === 1 && wl.dayOn === 0, 'night ' + wl.nightOn + ', noon ' + wl.dayOn);
+  check('night light: the boulevard has lit windows to compare (anchor sanity)',
+    wl.litDay > 150, wl.litDay + ' lit pixels in the daytime pattern');
+  check('night light: tonight is not a blackout',
+    wl.litNight >= wl.litDay * 0.4, wl.litNight + ' lit pixels tonight against ' + wl.litDay);
+  check('night light: and tonight is not the daytime pattern either',
+    wl.differ >= wl.litDay * 0.15, wl.differ + ' pixels changed of ' + wl.litDay + ' lit');
+
+  // ---------- 3s: the helipads, on both surfaces ----------
+  // The ring over the Alta Verde pad was BAKED into the base map image, which
+  // is painted once and drawn under the live marker pass — so it was the one
+  // marker the legend could not reach. Solo any other family and every badge
+  // on the map struck out except that one, which sat there through all of it.
+  // The mainland pad, meanwhile, was on no map at all. Both surfaces draw
+  // from one list now, so what this asserts is what each of them puts up.
+  var pads = await page.evaluate(function () {
+    var H = GAME.hud;
+    if (!H.testHelipads || !H.testBaseInk) return { missing: true };
+    var all = H.testHelipads().map(function (h) { return { x: Math.round(h.x), z: Math.round(h.z) }; });
+    // ink burned into the base image at each pad, before anything is soloed
+    var ink = H.testHelipads().map(function (h) { return H.testBaseInk(h.x, h.z, 7); });
+    H.testToggleCat('health');                     // solo a family that is not this one
+    var soloed = H.testHelipads().length;
+    H.testToggleCat('health');                     // and release it again
+    var released = H.testHelipads().length;
+    return { all: all, ink: ink, soloed: soloed, released: released,
+      roof: GAME.city.roofHelipad ? { x: Math.round(GAME.city.roofHelipad.x), z: Math.round(GAME.city.roofHelipad.z) } : null,
+      solo: (GAME.prefs || {}).mapSolo || null };
+  });
+  if (!pads.missing) {
+    check('pads: the world has one on each island (anchor sanity)',
+      pads.roof !== null, 'the mainland tower pad is at ' + JSON.stringify(pads.roof));
+    check('pads: and both are shown, not just the island one',
+      pads.all.length === 2, 'pads drawn: ' + JSON.stringify(pads.all));
+    check('pads: soloing another family takes them down with the rest',
+      pads.soloed === 0, 'pads still drawn while HEALTH was soloed: ' + pads.soloed);
+    check('pads: and releasing the solo brings them back',
+      pads.released === 2 && pads.solo === null, 'back to ' + pads.released + ', solo=' + pads.solo);
+    // The check that would have caught it: a marker in the base image is a
+    // marker no legend can strike, however the live pass is filtered.
+    check('pads: with no ring left burned into the base image',
+      pads.ink.every(function (n) { return n === 0; }),
+      'marker-cyan pixels baked at the pads: ' + JSON.stringify(pads.ink));
+  }
+
+  // ---------- 3q: a home off the radar is a direction, not a place ----------
+  // A home you own ignores the range gate so the radar can always say which
+  // way it is — but a far one was CLAMPED to a circle around the player and
+  // then drawn exactly like an in-range blip. That is the same picture as a
+  // house sitting that far from you: it appeared to hold station off your
+  // shoulder as you drove, and snap onto its real spot when it came into
+  // range. It was doing what it was told, it just said the wrong thing.
+  var radar = await page.evaluate(function () {
+    var hm = GAME.hud.testHomeMarker;
+    if (!hm) return { missing: true };
+    var Z = 0.62;                                  // the in-car zoom
+    function px(m) { return Math.hypot(m.x, m.z) * Z; }   // canvas px from centre
+    var near = [hm(20, 0, Z), hm(60, 0, Z), hm(120, 0, Z)];
+    var far = [hm(400, 0, Z), hm(800, 0, Z), hm(1600, 0, Z)];
+    // and the direction has to be the real one
+    var diag = hm(600, 600, Z);
+    return {
+      nearModes: near.map(function (m) { return m.mode; }),
+      nearPx: near.map(function (m) { return +px(m).toFixed(1); }),
+      farModes: far.map(function (m) { return m.mode; }),
+      farPx: far.map(function (m) { return +px(m).toFixed(1); }),
+      diagMode: diag.mode,
+      // unit vector should point at the home: equal parts x and z here
+      diagAim: +(diag.ux - diag.uz).toFixed(3),
+      diagUx: +diag.ux.toFixed(3)
+    };
+  });
+  check('radar: the home marker answers at all', !radar.missing,
+    radar.missing ? 'GAME.hud.testHomeMarker is not exposed' : 'present');
+  if (!radar.missing) {
+    check('radar: a home in range is a dot, and it moves as you close on it',
+      radar.nearModes.every(function (m) { return m === 'dot'; }) &&
+      radar.nearPx[0] < radar.nearPx[1] && radar.nearPx[1] < radar.nearPx[2],
+      'at 20/60/120 m: ' + radar.nearModes.join(', ') + ' at ' + radar.nearPx.join(', ') + ' px');
+    // The clamp itself is not the bug and is still here — an edge indicator
+    // has to sit at the edge. What must differ is WHAT IS DRAWN there.
+    check('radar: one out of range is an arrow rather than a dot',
+      radar.farModes.every(function (m) { return m === 'arrow'; }),
+      'at 400/800/1600 m: ' + radar.farModes.join(', '));
+    check('radar: pinned to the rim, inside the 90 px face',
+      radar.farPx.every(function (v) { return Math.abs(v - radar.farPx[0]) < 0.01; }) &&
+      radar.farPx[0] > 60 && radar.farPx[0] + 6 < 90,
+      'all three at ' + radar.farPx[0] + ' px, tip reaching about ' + (radar.farPx[0] + 5.5).toFixed(0));
+    check('radar: and it points at the house, not just outward',
+      radar.diagMode === 'arrow' && Math.abs(radar.diagAim) < 0.01 && radar.diagUx > 0.5,
+      'a home to the north-east gives a heading of (' + radar.diagUx + ', ' + radar.diagUx + ')');
+  }
+
   // ---------- 3p: the round has a pace ----------
   // Customers covered the ground at 6.8 m/s — 0.85x the player's full sprint,
   // the speed a fare hurries to a waiting cab — and the sale completed the
@@ -1197,8 +1570,18 @@ function withTimeout(p, ms) {
     GAME.test.pressKey('KeyJ');                 // the round starts with J
     GAME.test.fastForward(0.6);
     if (!GAME.missions.active) return { noJob: true };
+    // Nobody is spawned waiting for you: the round drafts whoever is already
+    // within 24 m of the truck, and the crowd spawns at 60-150 m and walks in.
+    // Whether anyone was in range inside a minute was therefore luck, and it
+    // came up empty — the group's own anchor failed, taking every check in it
+    // down with it. Put people on the pavement rather than hoping for them.
+    for (var sp = 0; sp < 3; sp++) {
+      var extra = GAME.test.spawnPed([11, -9, 7][sp], [0, 7, -10][sp]);
+      if (extra) { extra.jobPed = false; extra.iceServed = false; }
+    }
     var top = 0, atHatch = 0, served = 0, seen = 0;
     var watching = null;
+    var prevX, prevZ, ratio = 0, scared = false, fledFrames = 0;
     for (var t = 0; t < 60 * 60; t++) {
       GAME.player.car.speed = 0;                // parked, so the chimes work
       GAME.test.fastForward(1 / 60);
@@ -1213,11 +1596,29 @@ function withTimeout(p, ms) {
         var ped = watching.ped;
         var d = Math.hypot(ped.pos.x - GAME.player.car.pos.x, ped.pos.z - GAME.player.car.pos.z);
         top = Math.max(top, ped.speed || 0);
+        // What they are SET to and what they cover are two different numbers,
+        // and only the second one is the thing you watch. The pace fix set
+        // stepBoarding's speed to 4.1 and moved them at it — but the ped loop
+        // integrated the same heading and speed a second time before missions
+        // ran, so they crossed the ground at 8.2. `top` read a truthful 4.1
+        // throughout, which is why this group passed while the customer on
+        // screen was still jogging in at twice the intended pace.
+        if (prevX !== undefined && (ped.speed || 0) > 2) {
+          var moved = Math.hypot(ped.pos.x - prevX, ped.pos.z - prevZ) * 60;
+          ratio = Math.max(ratio, moved / ped.speed);
+        }
+        prevX = ped.pos.x; prevZ = ped.pos.z;
+        // A blast is not allowed to hand them a state their mission cannot
+        // honour: the round steers them every frame regardless, so a 'flee'
+        // here is a flag nobody acts on.
+        if (!scared) { scared = true; GAME.peds.panic(ped.pos.x, ped.pos.z, 55, true); }
+        if (ped.state === 'flee') fledFrames++;
         if (d < 2.4) atHatch++;
         if (a.targets.indexOf(watching) < 0) { served++; break; }   // sold
       }
     }
-    var out = { seen: seen, served: served, top: +top.toFixed(1), hatch: +(atHatch / 60).toFixed(2) };
+    var out = { seen: seen, served: served, top: +top.toFixed(1), hatch: +(atHatch / 60).toFixed(2),
+      ratio: +ratio.toFixed(2), scared: scared, fled: fledFrames };
     // Clock off properly. A round left running keeps selling in the
     // background, and every sale fires haptics.pickup() — which lands in the
     // buzz log of the haptics group further down and breaks two of its checks
@@ -1244,6 +1645,13 @@ function withTimeout(p, ms) {
       'fastest they moved: ' + ice.top + ' m/s (a fare hurrying to a cab does 6.8)');
     check('ice cream: and stand there long enough to be handed one',
       ice.hatch >= 0.8, 'time at the window before the sale: ' + ice.hatch + ' s');
+    // The one that matters: ground covered, not the speed they were set to.
+    check('ice cream: and cover the ground at the pace they are set, not twice it',
+      ice.ratio > 0 && ice.ratio < 1.35,
+      'fastest they actually travelled was ' + ice.ratio + 'x the speed they were on');
+    check('ice cream: a blast beside the round leaves them to their round',
+      ice.scared === true && ice.fled === 0,
+      'scared them: ' + ice.scared + ', frames spent fleeing: ' + ice.fled);
     check('ice cream: and the group clocks off after itself (anchor sanity)',
       ice.clockedOff === true && ice.overlayClosed === true,
       'shift ended=' + ice.clockedOff + ', result card closed=' + ice.overlayClosed);

@@ -262,6 +262,15 @@ GAME.hud = (function () {
   var mapSolo = null;
   var NAV_ALWAYS = { dest: 1, objective: 1 };
   function catVis(k) { return !!NAV_ALWAYS[k] || !mapSolo || mapSolo === k; }
+  // Which helipads are shown, and whether any are. BOTH surfaces call this —
+  // the big map and the radar — rather than each repeating the rule, so they
+  // cannot drift apart and a check standing on it cannot pass while either
+  // one disagrees. A pad is treated exactly like the airport it shares a
+  // legend row with: same family, same filter, same blip.
+  function shownHelipads() {
+    if (!catVis('airport')) return [];
+    return [GAME.city.helipad, GAME.city.roofHelipad].filter(function (h) { return !!h; });
+  }
   function pickupCat(t) { return t === 'health' ? 'health' : t === 'armor' ? 'armor' : 'weapon'; }
   function toggleCat(k) {
     if (NAV_ALWAYS[k]) return;            // navigation rows are labels, not filters
@@ -402,19 +411,21 @@ GAME.hud = (function () {
     });
     if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
     if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
-    // helipad: a ringed cyan disc with an H
-    if (catVis('airport')) {
-      var hpb = GAME.city.helipad;
+    // helipads: a ringed cyan disc with an H, one per pad. Both of them —
+    // the Alta Verde summit across the channel, and the one on the downtown
+    // tower here, which is where the mainland's only helicopter stands.
+    shownHelipads().forEach(function (hpb) {
+      var hxp = w2mx(hpb.x), hyp = w2my(hpb.z);
       g.fillStyle = '#8de0ff';
-      g.beginPath(); g.arc(w2mx(hpb.x), w2my(hpb.z), 8, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(hxp, hyp, 8, 0, Math.PI * 2); g.fill();
       g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
       g.strokeStyle = '#0c0816'; g.lineWidth = 2;
       g.beginPath();
-      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) - 3, w2my(hpb.z) + 3.5);
-      g.moveTo(w2mx(hpb.x) + 3, w2my(hpb.z) - 3.5); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z) + 3.5);
-      g.moveTo(w2mx(hpb.x) - 3, w2my(hpb.z)); g.lineTo(w2mx(hpb.x) + 3, w2my(hpb.z));
+      g.moveTo(hxp - 3, hyp - 3.5); g.lineTo(hxp - 3, hyp + 3.5);
+      g.moveTo(hxp + 3, hyp - 3.5); g.lineTo(hxp + 3, hyp + 3.5);
+      g.moveTo(hxp - 3, hyp); g.lineTo(hxp + 3, hyp);
       g.stroke();
-    }
+    });
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -574,13 +585,12 @@ GAME.hud = (function () {
     g.strokeStyle = '#d8c46a'; g.lineWidth = 1; g.setLineDash([4, 4]);
     g.beginPath(); g.moveTo(mx(A.minX + 8), my(A.cz)); g.lineTo(mx(A.maxX - 8), my(A.cz)); g.stroke();
     g.setLineDash([]);
-    // helipad: cyan ring
-    var hp = GAME.city.helipad;
-    g.strokeStyle = '#8de0ff'; g.lineWidth = 2;
-    g.beginPath(); g.arc(mx(hp.x), my(hp.z), 5, 0, Math.PI * 2); g.stroke();
-    // POI markers are NOT baked in here: the big map draws them live as
-    // legend-filterable badges, and squares burned into the base image sat
-    // underneath, immune to the legend's solo/strike
+    // No marker is baked in here — not a POI square, and not the helipad ring
+    // that used to be. The big map draws them live as legend-filterable
+    // badges; anything burned into this image sits underneath that pass,
+    // where the legend's solo/strike can never reach it. The pad ring was the
+    // last one left, and it showed: solo any other family and every badge on
+    // the map went out except that one, which sat there through all of it.
     // the landmasses name themselves, written on the sea below each one
     g.font = 'italic 700 17px "Segoe UI", Arial, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -595,6 +605,25 @@ GAME.hud = (function () {
       }
       g.fillText('ISLA VERDE', mx(cxIsla / n), my(Math.min(southZ + 26, 545)));
     }
+  }
+
+  // Where a home you own goes on the radar, and as WHAT.
+  //
+  // In range it is a dot on its real position. Out of range it becomes an
+  // arrow on the rim pointing at it, because the radar's job there is to say
+  // which way home is, not to claim it is somewhere it is not. Kept out of
+  // the drawing code so the decision can be tested without a canvas.
+  //
+  // The rim is 90 — the canvas is 180 square, drawn from its centre — and the
+  // arrow tip needs room, so the anchor sits at 80 and the point reaches 85.
+  var RADAR_RIM = 80;
+  function homeMarker(dx, dz, zoom) {
+    var rx = dx * MAP_S, rz = dz * MAP_S;
+    var rr = Math.sqrt(rx * rx + rz * rz);
+    var lim = RADAR_RIM / zoom;
+    if (rr <= lim) return { mode: 'dot', x: rx, z: rz, ux: 0, uz: 0, dist: rr };
+    var ux = rx / rr, uz = rz / rr;
+    return { mode: 'arrow', x: ux * lim, z: uz * lim, ux: ux, uz: uz, dist: rr };
   }
 
   function drawMinimap() {
@@ -637,14 +666,30 @@ GAME.hud = (function () {
         if (!catVis(sbp.home ? 'home' : 'shops')) continue;
         if (!sbp.home && U.dist2(sbp.x, sbp.z, px, pz) > 170 * 170) continue;
         if (sbp.home) {
-          // clamp far homes to the radar rim so the direction still reads
-          var rx = (sbp.x - px) * MAP_S, rz = (sbp.z - pz) * MAP_S;
-          var rr = Math.sqrt(rx * rx + rz * rz);
-          var lim = 78 / zoom;
-          if (rr > lim) { rx = rx / rr * lim; rz = rz / rr * lim; }
+          var hm = homeMarker(sbp.x - px, sbp.z - pz, zoom);
           g.fillStyle = sbp.color;
-          g.beginPath(); g.arc(rx, rz, 4.4 / zoom, 0, Math.PI * 2); g.fill();
-          g.strokeStyle = '#ffffff'; g.lineWidth = 1.6 / zoom; g.stroke();
+          if (hm.mode === 'dot') {
+            g.beginPath(); g.arc(hm.x, hm.z, 4.4 / zoom, 0, Math.PI * 2); g.fill();
+            g.strokeStyle = '#ffffff'; g.lineWidth = 1.6 / zoom; g.stroke();
+          } else {
+            // Out of range: an ARROW on the rim pointing the way, not a dot.
+            //
+            // A clamped dot drawn exactly like an in-range one is the same
+            // picture as a house sitting that far from you — so as you drove,
+            // your property appeared to hold station off your shoulder and
+            // then snap onto its real spot the moment it came into range. It
+            // was doing what it was told; it just said the wrong thing.
+            var s2 = 5.5 / zoom;
+            g.beginPath();
+            g.moveTo(hm.x + hm.ux * s2, hm.z + hm.uz * s2);
+            g.lineTo(hm.x - hm.ux * s2 * 0.55 - hm.uz * s2 * 0.85,
+                     hm.z - hm.uz * s2 * 0.55 + hm.ux * s2 * 0.85);
+            g.lineTo(hm.x - hm.ux * s2 * 0.55 + hm.uz * s2 * 0.85,
+                     hm.z - hm.uz * s2 * 0.55 - hm.ux * s2 * 0.85);
+            g.closePath();
+            g.fill();
+            g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 / zoom; g.stroke();
+          }
         } else {
           blip(sbp.x, sbp.z, sbp.color, 3.2 / zoom);
         }
@@ -695,10 +740,8 @@ GAME.hud = (function () {
     if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (H2) { blip(H2.x, H2.z, '#ff8aa8', 3); });
     if (catVis('police')) GAME.city.pois.stations.forEach(function (st2) { blip(st2.x, st2.z, '#5aa0ff', 3); });
     if (catVis('respray')) GAME.city.pois.resprays.forEach(function (r2) { blip(r2.door.x, r2.door.z, '#c86bff', 3); });
-    if (catVis('airport')) {
-      landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
-      landmark(GAME.city.helipad.x, GAME.city.helipad.z);
-    }
+    if (catVis('airport')) landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
+    shownHelipads().forEach(function (hp2) { landmark(hp2.x, hp2.z); });
     if (catVis('icecream') && GAME.city.islaPois) landmark(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z);
     var cars = GAME.world.cars;
     for (var c = 0; c < cars.length; c++) {
@@ -972,6 +1015,23 @@ GAME.hud = (function () {
       var on = el['crt-layer'].style.display !== 'block';
       el['crt-layer'].style.display = on ? 'block' : 'none';
       return on;
+    },
+    // headless hook: where a home you own lands on the radar, and as what
+    testHomeMarker: homeMarker,
+    testHelipads: shownHelipads,
+    testToggleCat: toggleCat,
+    // How much marker-cyan the BAKED base image carries around a world point.
+    // The base is painted once and sits underneath the live pass, so whatever
+    // is burned into it is beyond the legend's reach — which is the whole
+    // reason markers are not drawn here.
+    testBaseInk: function (wx, wz, r) {
+      if (!mapBuffer) return -1;
+      var bx = Math.round((wx + MAP_OX) * MAP_S), by = Math.round((wz + MAP_OY) * MAP_S);
+      var d = mapBuffer.getContext('2d').getImageData(bx - r, by - r, r * 2, r * 2).data, n = 0;
+      for (var i = 0; i < d.length; i += 4) {
+        if (d[i] > 100 && d[i] < 180 && d[i + 1] > 190 && d[i + 2] > 220) n++;
+      }
+      return n;
     }
   };
   return api;
