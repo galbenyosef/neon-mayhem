@@ -376,8 +376,15 @@ GAME.city = (function () {
   //
   // But the same texture was ALSO the emissive map, and a pale wall there
   // lights the whole block up like a paper lantern — tried it, the street
-  // turned into a row of glowing white slabs. So the glow gets an image of
-  // its own: black everywhere except the windows that are lit.
+  // turned into a row of glowing white slabs. So a pale wall's glow gets an
+  // image of its own: black everywhere except the windows that are lit.
+  //
+  // A DARK wall is still its own glow, as it always was. Its wall, its bands
+  // and its unlit glass give off a faint light all day and all night, and
+  // that is part of how the hospitals, the stations, the shops and the tower
+  // were lit. A black glow behind them took a third off a hospital at night
+  // and a sixth at noon, measured against the build before any of this, and
+  // spent five more textures doing it.
   // `rnd` defaults to the city's own stream. The pale twins below pass a
   // PRIVATE one, and they have to: this generator burns a roll per window,
   // and the stream is shared with everything generated after the textures —
@@ -395,11 +402,18 @@ GAME.city = (function () {
     // grid between them. The pale-walled twins pass something thinner, and
     // the glass then carries the tint like the rest of the wall does.
     var dim = opts.dim || 'rgba(30,34,58,0.9)';
-    var cv = document.createElement('canvas'), gv = document.createElement('canvas');
-    cv.width = gv.width = 512; cv.height = gv.height = 384;
-    var g = cv.getContext('2d'), e = gv.getContext('2d');
+    var cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 384;
+    var g = cv.getContext('2d');
     g.fillStyle = wall; g.fillRect(0, 0, 512, 384);
-    e.fillStyle = '#000'; e.fillRect(0, 0, 512, 384);
+    // only the pale twins have a glow apart from their map (see above)
+    var gv = null, e = null;
+    if (opts.glowAll) {
+      gv = document.createElement('canvas');
+      gv.width = 512; gv.height = 384;
+      e = gv.getContext('2d');
+      e.fillStyle = '#000'; e.fillRect(0, 0, 512, 384);
+    }
     var cw = 512 / cols, ch = 384 / rows;
     for (var i = 0; i < cols; i++) for (var j = 0; j < rows; j++) {
       var lit = rnd() < litProb;
@@ -409,13 +423,12 @@ GAME.city = (function () {
       var col = lit ? litColors[Math.floor(rnd() * litColors.length)] : dim;
       var wx = i * cw + pad, wy = j * ch + ch * 0.2, ww = cw - pad * 2, wh = ch * 0.55;
       g.fillStyle = col; g.fillRect(wx, wy, ww, wh);
-      if (lit) { e.fillStyle = col; e.fillRect(wx, wy, ww, wh); }
-      // With glowAll every window has a light of its own in the glow, for the
-      // night to switch on building by building (see lamBlock). Its colour is
-      // taken from where it sits, not from the stream, so the daylight pattern
-      // above comes out of exactly the rolls it always did.
-      else if (opts.glowAll) {
-        e.fillStyle = litColors[(i * 7 + j * 3) % litColors.length];
+      // Every window has a light of its own in the glow, for the night to
+      // switch on building by building (see lamBlock). An unlit one takes its
+      // colour from where it sits, not from the stream, so the daylight
+      // pattern above comes out of exactly the rolls it always did.
+      if (e) {
+        e.fillStyle = lit ? col : litColors[(i * 7 + j * 3) % litColors.length];
         e.fillRect(wx, wy, ww, wh);
       }
     }
@@ -424,13 +437,14 @@ GAME.city = (function () {
       for (var b = 0; b < rows; b++) g.fillRect(0, b * ch - 2, 512, 5);
     }
     // keep the left column plain so roof uvs sample the wall — and black in
-    // the glow, or every roof in the city would be lit from inside
+    // a separate glow, or every pale roof in the city would be lit from inside
     g.fillStyle = wall; g.fillRect(0, 0, Math.floor(cw * 0.2), 384);
-    e.fillStyle = '#000'; e.fillRect(0, 0, Math.floor(cw * 0.2), 384);
+    if (e) { e.fillStyle = '#000'; e.fillRect(0, 0, Math.floor(cw * 0.2), 384); }
     // the wall's brightest channel, 0-1: where a lit window stops and wall begins
     var wv = parseInt(wall.slice(1), 16);
     var wallMax = Math.max((wv >> 16) & 255, (wv >> 8) & 255, wv & 255) / 255;
-    return { map: repeatTex(cv), glow: repeatTex(gv), cells: [cols, rows], wallMax: wallMax };
+    var map = repeatTex(cv);
+    return { map: map, glow: gv ? repeatTex(gv) : map, cells: [cols, rows], wallMax: wallMax };
   }
 
   // ---------- window light ----------

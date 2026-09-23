@@ -28,7 +28,8 @@
 //   3t. FACADE PAINT — the ordinary blocks on both islands are painted in
 //       more than one shade, no two neighbours are painted the same shade
 //       twice, each shows its own arrangement of windows, and the seed paints
-//       the same building the same way every load.
+//       the same building the same way every load; the buildings with a
+//       design of their own keep the light they always had.
 //   3s. THE HELIPADS — both pads show, on the map and on the radar alike,
 //       from one shared list the legend can strike; and nothing
 //       marker-shaped is baked into the base image, where no filter reaches.
@@ -1352,6 +1353,28 @@ function withTimeout(p, ms) {
       contrast.length === 8 && contrast.every(function (c) { return c.seen >= 0.1; }),
       contrast.map(function (c) { return c.district + ' ' + c.buildings + ' blocks, wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));
   }
+  // Painting the blocks gave every window texture a glow image of its own,
+  // black on the wall, and that was only ever right for the pale walls. The
+  // hospitals, the stations, the shops and the tower had always glowed from
+  // their own map, a faint light off wall, bands and unlit glass at every
+  // hour, and the black glow took it away without anyone asking: a hospital
+  // a third darker at night and a sixth at noon, measured against the build
+  // before. Every paint check passed, because none of them looks at anything
+  // but the blocks. So: whatever is not a block glows from its own map.
+  var dressed = await page.evaluate(function () {
+    var blocks = GAME.city.blockMeshes || [], out = { own: 0, apart: 0 };
+    GAME.scene.traverse(function (o) {
+      var m = o.material;
+      if (!o.isMesh || !m || Array.isArray(m) || !m.map || !m.emissiveMap) return;
+      if (blocks.indexOf(o) >= 0) return;
+      if (m.emissiveMap === m.map) out.own++; else out.apart++;
+    });
+    return out;
+  });
+  check('paint: the buildings with windows of their own design are found (anchor sanity)',
+    dressed.own + dressed.apart >= 6, (dressed.own + dressed.apart) + ' textured materials besides the blocks');
+  check('paint: and they still glow from their own walls, as before the blocks were painted',
+    dressed.apart === 0, dressed.apart + ' of ' + (dressed.own + dressed.apart) + ' given a glow apart from their map');
 
   // ---------- 3u: window light after dark ----------
   // After dark every ordinary block used to light the same share of its
