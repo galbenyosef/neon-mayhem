@@ -1943,6 +1943,13 @@ GAME.isla = (function () {
       strip: new GeoBatch(), downtown: new GeoBatch(), signs: new GeoBatch(),
       glow: new GeoBatch()
     };
+    // Window light after dark, per building (see lamBlock in city.js). The
+    // lit share is the texture's, shared with the mainland; the warmth is the
+    // island's own — its walk-ups are homes, its port towers are offices.
+    var BL = city.blockLight;
+    batches.generic.light = { lit: BL.generic.lit, warm: 0.8 };
+    batches.strip.light = { lit: BL.strip.lit, warm: 0.6 };
+    batches.downtown.light = { lit: BL.downtown.lit, warm: 0.35 };
     buildCache = new Map();   // see groundY: the build asks the same corners over and over
     buildLand(batches.plain);
     buildRoads(batches.plain);
@@ -1966,9 +1973,9 @@ GAME.isla = (function () {
     // designed building caught underneath.
     var TB = city.texBlk;
     city.blockMeshes.push(
-      addMesh(batches.generic, city.lam(TB.generic)),
-      addMesh(batches.strip, city.lam(TB.strip)),
-      addMesh(batches.downtown, city.lam(TB.downtown)));
+      addMesh(batches.generic, city.lamBlock(TB.generic)),
+      addMesh(batches.strip, city.lamBlock(TB.strip)),
+      addMesh(batches.downtown, city.lamBlock(TB.downtown)));
     city.facadeWalls['isla-apart'] = TB.generic;
     city.facadeWalls['isla-shop'] = TB.strip;
     city.facadeWalls['isla-tower'] = TB.downtown;

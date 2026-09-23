@@ -22,6 +22,9 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3u. WINDOW LIGHT — after dark each ordinary block lights its own share of
+//       its windows, warm or cool, and the walls keep the colours they were
+//       dealt; checked on a real render, not just on the numbers behind it.
 //   3t. FACADE PAINT — the ordinary blocks on both islands are painted in
 //       more than one shade, no two neighbours are painted the same shade
 //       twice, each shows its own arrangement of windows, and the seed paints
@@ -1349,6 +1352,96 @@ function withTimeout(p, ms) {
       contrast.length === 8 && contrast.every(function (c) { return c.seen >= 0.1; }),
       contrast.map(function (c) { return c.district + ' ' + c.buildings + ' blocks, wall ' + c.wall + ' x spread ' + c.spread + ' = ' + c.seen; }).join('; '));
   }
+
+  // ---------- 3u: window light after dark ----------
+  // After dark every ordinary block used to light the same share of its
+  // windows in the same colours, so a skyline was one lit building repeated.
+  // Each now has its own share, warmth and choice of windows, decided in the
+  // block material's shader from a per-vertex attribute; by day nothing may
+  // change at all. The render check at the end is what makes the rest mean
+  // something: an attribute that never reached the shader would leave every
+  // number above it looking perfect and the city dark.
+  var wl = await page.evaluate(function () {
+    var C = GAME.city, out = { meshes: 0, full: 0, plain: 0, warmLo: 1, warmHi: 0, districts: [], foreign: 0, checked: 0 };
+    // the wall colours actually in the mesh, against what each block was dealt
+    var dealt = { 0x3a3448: 1, 0xfff0f8: 1 };          // plinth, deco cap
+    Object.keys(C.facadePicks).forEach(function (d) { C.facadePicks[d].forEach(function (c) { dealt[c] = 1; }); });
+    C.blockMeshes.forEach(function (m) {
+      var a = m.geometry.attributes.winLight, p = m.geometry.attributes.position, col = m.geometry.attributes.color;
+      out.meshes++;
+      if (a && a.count === p.count) out.full++;
+      for (var v = 0; v < col.count; v += 6) {
+        var hex = (Math.round(col.getX(v) * 255) << 16) | (Math.round(col.getY(v) * 255) << 8) | Math.round(col.getZ(v) * 255);
+        out.checked++;
+        if (!dealt[hex]) out.foreign++;
+      }
+      if (!a) return;
+      var lo = 9, hi = -1, set = {}, n = 0;
+      for (var b = 0; b < a.count / 36; b++) {
+        var f = a.getX(b * 36), w = a.getY(b * 36);
+        if (f < 0) { out.plain++; continue; }
+        n++; set[f.toFixed(3)] = 1; lo = Math.min(lo, f); hi = Math.max(hi, f);
+        out.warmLo = Math.min(out.warmLo, w); out.warmHi = Math.max(out.warmHi, w);
+      }
+      out.districts.push({ n: n, classes: Object.keys(set).length, ratio: lo > 0 ? hi / lo : 0 });
+    });
+    var ph = GAME.dayPhase;
+    GAME.applyTimeOfDay(0); out.nightOn = C.windowNight.value;
+    GAME.applyTimeOfDay(1); out.dayOn = C.windowNight.value;
+    // One boulevard, night lighting, rendered twice in the same instant: the
+    // daytime pattern of lit windows, then tonight's. Nothing else differs.
+    var R = GAME.renderer, W = 192, H = 108;
+    var rt = new THREE.WebGLRenderTarget(W, H), buf = new Uint8Array(W * H * 4);
+    var cam = new THREE.PerspectiveCamera(62, W / H, 0.5, 3000);
+    cam.position.set(70, 5, -100); cam.lookAt(-160, 30, -100);
+    GAME.applyTimeOfDay(0);
+    function shot(v) {
+      C.windowNight.value = v;
+      R.setRenderTarget(rt); R.render(GAME.scene, cam);
+      R.readRenderTargetPixels(rt, 0, 0, W, H, buf); R.setRenderTarget(null);
+      return buf.slice();
+    }
+    var dayPat = shot(0), nightPat = shot(1);
+    out.litDay = 0; out.litNight = 0; out.differ = 0;
+    for (var i = 0; i < dayPat.length; i += 4) {
+      var mD = Math.max(dayPat[i], dayPat[i + 1], dayPat[i + 2]);
+      var mN = Math.max(nightPat[i], nightPat[i + 1], nightPat[i + 2]);
+      if (mD > 150) out.litDay++;
+      if (mN > 150) out.litNight++;
+      if (Math.abs(mD - mN) > 40) out.differ++;
+    }
+    rt.dispose();
+    GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(ph * Math.PI * 2));
+    return out;
+  });
+  check('night light: every block carries its own window light (anchor sanity)',
+    wl.meshes === 7 && wl.full === 7, wl.full + ' of ' + wl.meshes + ' block meshes, on every vertex');
+  // The check that would have caught the red channel. Declaring the light's
+  // roll as `r` inside addBox reused the name of the box's red channel, and
+  // every block's walls came out pink, cyan and green — while every paint
+  // check above passed, because they read the colours each block was DEALT,
+  // not the colours the mesh ended up wearing. Found by rendering it.
+  check('night light: and the walls still wear the colours they were dealt',
+    wl.checked > 1000 && wl.foreign === 0,
+    wl.foreign + ' of ' + wl.checked + ' wall colours in the mesh match no pick');
+  // Rolled independently, the island's nine port towers once all came up in
+  // the middle two shares: no dark tower and no blazing one on its skyline.
+  // Dealt round a ring, any seven blocks in a row hold all four.
+  check('night light: some buildings nearly dark and some blazing, in every district of size',
+    wl.districts.filter(function (d) { return d.n >= 7; }).every(function (d) { return d.classes === 4 && d.ratio >= 9; }),
+    wl.districts.map(function (d) { return d.n + ' blocks: ' + d.classes + ' shares, ' + d.ratio.toFixed(1) + 'x'; }).join('; '));
+  check('night light: from the tubes of an office to the lamps of a home',
+    wl.warmLo < 0.3 && wl.warmHi > 0.7, 'warmth ' + wl.warmLo.toFixed(2) + ' to ' + wl.warmHi.toFixed(2));
+  check('night light: plinths and deco caps keep the windows they always had',
+    wl.plain > 50, wl.plain + ' boxes flagged to keep them');
+  check('night light: it comes on with the street lamps and is gone by day',
+    wl.nightOn === 1 && wl.dayOn === 0, 'night ' + wl.nightOn + ', noon ' + wl.dayOn);
+  check('night light: the boulevard has lit windows to compare (anchor sanity)',
+    wl.litDay > 150, wl.litDay + ' lit pixels in the daytime pattern');
+  check('night light: tonight is not a blackout',
+    wl.litNight >= wl.litDay * 0.4, wl.litNight + ' lit pixels tonight against ' + wl.litDay);
+  check('night light: and tonight is not the daytime pattern either',
+    wl.differ >= wl.litDay * 0.15, wl.differ + ' pixels changed of ' + wl.litDay + ' lit');
 
   // ---------- 3s: the helipads, on both surfaces ----------
   // The ring over the Alta Verde pad was BAKED into the base map image, which

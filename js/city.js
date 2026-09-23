@@ -384,15 +384,17 @@ GAME.city = (function () {
   // the props, the landmarks, the airport, the stunt ramps, the parking. Four
   // more textures drawing from it would have shifted every one of them, and
   // silently: same city, every ramp somewhere else.
-  function windowTexture(wall, litColors, cols, rows, litProb, bandColor, rnd, dim) {
-    rnd = rnd || rng;
+  // `opts` is for the pale-walled twins only: { rnd, dim, glowAll }.
+  function windowTexture(wall, litColors, cols, rows, litProb, bandColor, opts) {
+    opts = opts || {};
+    var rnd = opts.rnd || rng;
     // What an UNLIT window is painted with. Near-opaque by default, which is
     // right over a dark wall and quite wrong over a pale one: it turns half
     // the facade into black holes that look the same on a charcoal tower and
     // a limestone one, so the building's colour ends up expressed by a thin
     // grid between them. The pale-walled twins pass something thinner, and
     // the glass then carries the tint like the rest of the wall does.
-    dim = dim || 'rgba(30,34,58,0.9)';
+    var dim = opts.dim || 'rgba(30,34,58,0.9)';
     var cv = document.createElement('canvas'), gv = document.createElement('canvas');
     cv.width = gv.width = 512; cv.height = gv.height = 384;
     var g = cv.getContext('2d'), e = gv.getContext('2d');
@@ -408,6 +410,14 @@ GAME.city = (function () {
       var wx = i * cw + pad, wy = j * ch + ch * 0.2, ww = cw - pad * 2, wh = ch * 0.55;
       g.fillStyle = col; g.fillRect(wx, wy, ww, wh);
       if (lit) { e.fillStyle = col; e.fillRect(wx, wy, ww, wh); }
+      // With glowAll every window has a light of its own in the glow, for the
+      // night to switch on building by building (see lamBlock). Its colour is
+      // taken from where it sits, not from the stream, so the daylight pattern
+      // above comes out of exactly the rolls it always did.
+      else if (opts.glowAll) {
+        e.fillStyle = litColors[(i * 7 + j * 3) % litColors.length];
+        e.fillRect(wx, wy, ww, wh);
+      }
     }
     if (bandColor) {
       g.fillStyle = bandColor;
@@ -417,8 +427,100 @@ GAME.city = (function () {
     // the glow, or every roof in the city would be lit from inside
     g.fillStyle = wall; g.fillRect(0, 0, Math.floor(cw * 0.2), 384);
     e.fillStyle = '#000'; e.fillRect(0, 0, Math.floor(cw * 0.2), 384);
-    return { map: repeatTex(cv), glow: repeatTex(gv) };
+    // the wall's brightest channel, 0-1: where a lit window stops and wall begins
+    var wv = parseInt(wall.slice(1), 16);
+    var wallMax = Math.max((wv >> 16) & 255, (wv >> 8) & 255, wv & 255) / 255;
+    return { map: repeatTex(cv), glow: repeatTex(gv), cells: [cols, rows], wallMax: wallMax };
   }
+
+  // ---------- window light ----------
+  // After dark every ordinary block used to light the same share of its
+  // windows, in the same colours, at the same strength, so the skyline was
+  // one lit building repeated — and from any distance the night city looked
+  // just as it did before a single wall was painted. Each building now has a
+  // share of its own (some nearly dark, like offices after hours; some
+  // blazing), a warmth of its own (tubes in an office, lamps at home), and
+  // its own choice of WHICH windows.
+  //
+  // All of it is decided in the block material's shader from one small
+  // per-vertex attribute (GeoBatch.addBox writes it): no extra draw calls, no
+  // extra textures, no extra texture reads — a hash, a step and a few mixes a
+  // pixel, on building pixels only, and by day not even that. Measured on a
+  // CPU renderer, which is where shader arithmetic costs most, frame times
+  // stayed inside the spread between two runs of the same build.
+  //
+  // By day a window glows exactly when it did, which the shader reads off the
+  // map it has already sampled: a lit window is painted at full strength
+  // there, and the wall and the glass are not. Frozen noon frames against the
+  // last build differ in a tenth of a percent of their pixels, the outermost
+  // fringe of the lit windows. Night takes over on the street lamps' own
+  // curve, and one shared value drives every block material on both islands.
+  var windowNight = { value: 1 };
+  city.windowNight = windowNight;
+  var WINDOW_VERT_HEAD = 'attribute vec3 winLight;\nvarying vec3 vWinLight;';
+  var WINDOW_FRAG_HEAD = [
+    'uniform float uNight;',
+    'uniform float uWall;',
+    'uniform vec2 uCells;',
+    'varying vec3 vWinLight;',
+    // hash without sine: stable on the mediump-leaning GPUs phones carry
+    'float winHash( vec2 p ) {',
+    '  vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );',
+    '  p3 += dot( p3, p3.yzx + 33.33 );',
+    '  return fract( ( p3.x + p3.y ) * p3.z );',
+    '}'].join('\n');
+  var WINDOW_FRAG_BODY = [
+    '{',
+    // a plinth or a deco cap (negative share) keeps the windows it always had
+    '  float nightMix = uNight * step( 0.0, vWinLight.x );',
+    // Lit by day: painted at full strength on the map. Every lit colour has a
+    // channel at 255 and the glass sits well below the wall, so filtering
+    // pulls a lit window's edge ABOVE its wall and a dark one's BELOW it —
+    // which makes this district's own wall the line between them. A fixed
+    // line above every wall trimmed the blended edge of each lit window a
+    // second time; measured on screen, lit windows a fraction smaller by day.
+    '  float dayLit = smoothstep( uWall + 0.008, uWall + 0.03, max( texelColor.r, max( texelColor.g, texelColor.b ) ) );',
+    '  vec3 glowMask = vec3( dayLit );',
+    // Everything after dark sits behind the clock. uNight is one value for
+    // the whole draw, so every pixel takes the same side of this and the GPU
+    // skips it outright by day: half the cycle, the cost is the four lines
+    // above.
+    '  if ( uNight > 0.0 ) {',
+    // lit at night: this building's own share, decided window by window
+    '    float nightLit = step( winHash( floor( vUv * uCells ) + floor( vWinLight.z + 0.5 ) * vec2( 7.0, 3.0 ) ), vWinLight.x );',
+    '    vec3 warmth = mix( vec3( 0.82, 0.92, 1.14 ), vec3( 1.16, 0.93, 0.68 ), vWinLight.y );',
+    '    glowMask = mix( glowMask, nightLit * warmth, nightMix );',
+    // A window lit in the DAY pattern but dark tonight is still painted bright
+    // on the map, and read as a faint pastel square after dark rather than as
+    // glass; take it down to the glass it is while the night holds.
+    '    diffuseColor.rgb *= 1.0 - 0.6 * dayLit * ( 1.0 - nightLit ) * nightMix;',
+    '  }',
+    '  totalEmissiveRadiance *= glowMask;',
+    '}'].join('\n');
+  function lamBlock(t) {
+    var cells = new THREE.Vector2(t.cells[0], t.cells[1]);
+    var m = new THREE.MeshLambertMaterial({ map: t.map, emissive: 0xbbbbcc, emissiveMap: t.glow, vertexColors: true });
+    // The source text is the same for every block material, so three.js
+    // compiles this program once and shares it; the uniforms stay per material.
+    m.onBeforeCompile = function (sh) {
+      sh.uniforms.uNight = windowNight;
+      sh.uniforms.uCells = { value: cells };
+      sh.uniforms.uWall = { value: t.wallMax };
+      var hook = '#include <emissivemap_fragment>';
+      // a three.js that renamed its chunks would otherwise drop this silently
+      if (sh.fragmentShader.indexOf(hook) < 0 || sh.vertexShader.indexOf('#include <begin_vertex>') < 0) {
+        console.error('window light: the shader chunks it hooks are missing');
+      }
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\n' + WINDOW_VERT_HEAD)
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWinLight = winLight;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\n' + WINDOW_FRAG_HEAD)
+        .replace(hook, hook + '\n' + WINDOW_FRAG_BODY);
+    };
+    return m;
+  }
+  city.lamBlock = lamBlock;
 
   var SIGN_TEXTS = ['CLUB FLAMINGO', 'HOTEL MIRAJE', "ROXY'S", 'EL DORADO', 'NEON PALMS', 'TIKI LOUNGE',
     'LA SIRENA', 'STARDUST', 'CASA AZUL', 'VOLTAGE', 'PINK IGUANA', 'INFERNO ROOM',
@@ -525,6 +627,19 @@ GAME.city = (function () {
       glow: new GeoBatch(),
       signs: new GeoBatch()
     };
+    // How much of an ordinary block is lit after dark on average, and how
+    // warm the light. `lit` is the district's own window share — the figure
+    // its texture is drawn with below — so the night keeps roughly the
+    // brightness it had and mostly spreads it unevenly; `warm` leans offices
+    // toward tube-white and homes toward lamplight. Read by GeoBatch.addBox.
+    city.blockLight = {
+      downtown: { lit: 0.34, warm: 0.3 }, strip: { lit: 0.4, warm: 0.6 },
+      generic: { lit: 0.3, warm: 0.8 }, harbor: { lit: 0.15, warm: 0.5 }
+    };
+    batches.blkDowntown.light = city.blockLight.downtown;
+    batches.blkStrip.light = city.blockLight.strip;
+    batches.blkGeneric.light = city.blockLight.generic;
+    batches.blkHarbor.light = city.blockLight.harbor;
     var atlas = signAtlas();
     city.signSlots = atlas.slots;
 
@@ -579,10 +694,11 @@ GAME.city = (function () {
     // building somewhere behind it — measured on screen, a charcoal tower and
     // a limestone one three doors apart and no telling them apart.
     var DIM = 'rgba(26,30,48,0.42)';
-    var blkDowntown = windowTexture('#848994', ['#ffe9a8', '#a8e8ff', '#ffd0e8', '#c8ffe0'], 10, 8, 0.34, null, wrng, DIM);
-    var blkStrip = windowTexture('#a79fa6', ['#ffe9a8', '#ffd0e8'], 8, 5, 0.4, 'rgba(120,92,116,0.45)', wrng, DIM);
-    var blkGeneric = windowTexture('#8d887e', ['#ffe0a0', '#d8c8ff'], 9, 7, 0.3, null, wrng, DIM);
-    var blkHarbor = windowTexture('#828079', ['#ffd890'], 6, 3, 0.15, 'rgba(78,80,88,0.5)', wrng, DIM);
+    var BL = city.blockLight, PALE = { rnd: wrng, dim: DIM, glowAll: true };
+    var blkDowntown = windowTexture('#848994', ['#ffe9a8', '#a8e8ff', '#ffd0e8', '#c8ffe0'], 10, 8, BL.downtown.lit, null, PALE);
+    var blkStrip = windowTexture('#a79fa6', ['#ffe9a8', '#ffd0e8'], 8, 5, BL.strip.lit, 'rgba(120,92,116,0.45)', PALE);
+    var blkGeneric = windowTexture('#8d887e', ['#ffe0a0', '#d8c8ff'], 9, 7, BL.generic.lit, null, PALE);
+    var blkHarbor = windowTexture('#828079', ['#ffd890'], 6, 3, BL.harbor.lit, 'rgba(78,80,88,0.5)', PALE);
 
     function lam(t) {
       return new THREE.MeshLambertMaterial({ map: t.map, emissive: 0xbbbbcc, emissiveMap: t.glow, vertexColors: true });
@@ -608,10 +724,10 @@ GAME.city = (function () {
     addMesh(batches.generic, lam(texGeneric));
     addMesh(batches.harbor, lam(texHarbor));
     var blockMeshes = [
-      addMesh(batches.blkDowntown, lam(blkDowntown)),
-      addMesh(batches.blkStrip, lam(blkStrip)),
-      addMesh(batches.blkGeneric, lam(blkGeneric)),
-      addMesh(batches.blkHarbor, lam(blkHarbor))
+      addMesh(batches.blkDowntown, lamBlock(blkDowntown)),
+      addMesh(batches.blkStrip, lamBlock(blkStrip)),
+      addMesh(batches.blkGeneric, lamBlock(blkGeneric)),
+      addMesh(batches.blkHarbor, lamBlock(blkHarbor))
     ];
     // Shared with the island, which builds after this and paints its own
     // ordinary blocks over the same pale walls. It adds its meshes to the
@@ -1434,6 +1550,8 @@ GAME.city = (function () {
     if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5);
     // street lamps burn at night, fade out through dusk, and are off in daylight
     var lampOn = U.clamp(1 - (df - 0.45) / 0.35, 0, 1);
+    // and so do the windows' own lights, building by building (see lamBlock)
+    windowNight.value = lampOn;
     if (city.lampGlow) {
       city.lampGlow.material.opacity = lampOn;
       city.lampGlow.visible = lampOn > 0.02;
