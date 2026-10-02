@@ -2144,35 +2144,55 @@ GAME.isla = (function () {
 
   // A word at the barrier, so a closed bridge explains itself instead of just
   // being a thing you bounce off.
-  var hintT = 0, arrived = false;
+  //
+  // Once per approach, and only up on the deck. It used to repeat every six
+  // seconds to anyone within 34 m — and the south gate stands over the beach,
+  // so a walk along the sand underneath got the whole 30-word banner thirteen
+  // times in a minute and a quarter.
+  var toldAt = -1, arrived = false;
   function tick(dt) {
     var P = GAME.player;
     if (!P || P.state !== 'alive') return;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var py = P.inCar && P.car ? P.car.pos.y : P.pos.y;
     if (!arrived && contains(px, pz)) {
       arrived = true;
       GAME.hud.message('ISLA VERDE — hill roads, a working port, and a factory that makes ice cream.', 5);
       GAME.track('isla-first-arrival');
     }
-    hintT -= dt;
-    if (open || hintT > 0 || !gates.length) return;
+    if (open || !gates.length) return;
+    var at = -1;
     for (var i = 0; i < gates.length; i++) {
       var g = gates[i];
       var cx = (g.minX + g.maxX) / 2, cz = (g.minZ + g.maxZ) / 2;
       if (U.dist2(px, pz, cx, cz) > 34 * 34) continue;
-      // belt and braces: if the record already qualifies, the barrier opens on
-      // the spot instead of demanding "0 more jobs" with a straight face
-      if (earned()) { checkUnlock(); return; }
-      var p = unlockProgress();
-      hintT = 6;
-      // name what actually counts: only the marked missions, each once —
-      // "jobs" pointed players at taxi shifts and repeats, which don't add
-      var left = p.need - p.done;
-      GAME.hud.message('BRIDGE CLOSED — finish ' + left + ' more marked mission' + (left === 1 ? '' : 's') +
-        ' in Costa Rosa (races, rampages, deliveries — each counts once; taxi-style shifts don’t), or find every stunt jump.', 4.5);
+      // up on the bridge, approach ramp included — not on the beach or in the
+      // water underneath it
+      if (GAME.city.crossingY(px, pz, py) === null) continue;
+      at = i;
+      break;
+    }
+    if (at < 0) {
+      // away from every gate (with a little slack, so the edge of the circle
+      // does not count as a fresh arrival every time you cross it)
+      if (toldAt >= 0) {
+        var tg = gates[toldAt];
+        if (U.dist2(px, pz, (tg.minX + tg.maxX) / 2, (tg.minZ + tg.maxZ) / 2) > 44 * 44) toldAt = -1;
+      }
       return;
     }
+    // belt and braces: if the record already qualifies, the barrier opens on
+    // the spot instead of demanding "0 more jobs" with a straight face
+    if (earned()) { checkUnlock(); return; }
+    if (toldAt === at) return;
+    toldAt = at;
+    // name what actually counts: only the marked missions, each once —
+    // "jobs" pointed players at taxi shifts and repeats, which don't add
+    var p = unlockProgress();
+    var left = p.need - p.done;
+    GAME.hud.message('BRIDGE CLOSED — finish ' + left + ' more marked mission' + (left === 1 ? '' : 's') +
+      ' in Costa Rosa (races, rampages, deliveries — each counts once; taxi-style shifts don’t), or find every stunt jump.', 4.5);
   }
 
   // the island's own district names, so the HUD reads the same over here

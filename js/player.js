@@ -5,7 +5,10 @@ GAME.player = {
   state: 'alive', stateT: 0,
   weapons: { fist: { have: true, ammo: Infinity } },
   currentWeapon: 'fist',
-  moveSpeed: 0
+  moveSpeed: 0,
+  // run-over cooldown. It has to start as a number: left undefined, the
+  // `<= 0` gate on it was never true, and no car could hurt you on foot
+  carHurtCd: 0
 };
 
 GAME.cam = { yaw: Math.PI, pitch: 0.32, dist: 6, freeT: 0, x: 0, y: 5, z: 0 };
@@ -652,26 +655,51 @@ function updateOnFoot(dt) {
   nx = rp.x; nz = rp.z;
   // solid cars — from the side. Above the body you're standing or sailing
   // over it, and neither the push nor the run-over check applies up there.
-  var cars = GAME.world.cars;
+  var cars = GAME.world.cars, pushed = false;
+  //
+  // Against the BODY, a box turned to the car's heading, the way a car meets
+  // a pedestrian. This was a circle most of a car-length across: a metre of
+  // nothing beside every door, half a metre of bonnet you could stand in, and
+  // — once the run-over check below was actually live — getting out of your
+  // own car at speed put you inside its circle, so it ran you over as it left.
   for (var i = 0; i < cars.length; i++) {
     var c = cars[i];
     if (P.pos.y - c.pos.y > carBodyTop(c) - 0.35) continue;
+    if (c.pos.y - P.pos.y > 1.8) continue;   // and below one: a helicopter overhead
+    var cfx = Math.sin(c.heading), cfz = Math.cos(c.heading);
     var dx = nx - c.pos.x, dz = nz - c.pos.z;
-    var d2 = dx * dx + dz * dz;
-    var rr = c.radius + 0.4;
-    if (d2 < rr * rr && d2 > 0.001) {
-      var d = Math.sqrt(d2);
-      nx = c.pos.x + dx / d * rr;
-      nz = c.pos.z + dz / d * rr;
-      // one hit per contact: gate by a short cooldown so a single bump can't
-      // drain health across many frames of overlap
-      if (Math.abs(c.speed) > 8 && P.carHurtCd <= 0) {
-        GAME.playerDamage(Math.min(30, Math.abs(c.speed) * 0.9), 'car');
-        P.carHurtCd = 0.8;
-        var kb = 3.2;
-        nx += dx / d * kb; nz += dz / d * kb;
-      }
+    var lng = dx * cfx + dz * cfz, lat = dx * cfz - dz * cfx;
+    var hl = c.spec.l / 2 + 0.4, hw = c.spec.w / 2 + 0.4;
+    if (Math.abs(lng) >= hl || Math.abs(lat) >= hw) continue;
+    // out through the nearer face
+    var ox, oz;
+    if (hw - Math.abs(lat) < hl - Math.abs(lng)) {
+      var sl = lat >= 0 ? 1 : -1;
+      ox = cfz * sl; oz = -cfx * sl;
+      nx += ox * (hw - Math.abs(lat)); nz += oz * (hw - Math.abs(lat));
+    } else {
+      var sf = lng >= 0 ? 1 : -1;
+      ox = cfx * sf; oz = cfz * sf;
+      nx += ox * (hl - Math.abs(lng)); nz += oz * (hl - Math.abs(lng));
     }
+    pushed = true;
+    // one hit per contact: gate by a short cooldown so a single bump can't
+    // drain health across many frames of overlap
+    if (Math.abs(c.speed) > 8 && P.carHurtCd <= 0) {
+      GAME.playerDamage(Math.min(30, Math.abs(c.speed) * 0.9), 'car');
+      P.carHurtCd = 0.8;
+      var kb = 3.2;
+      nx += ox * kb; nz += oz * kb;
+    }
+  }
+  // A car's shove (and the knock-back off a hit) came after the walls had
+  // been dealt with, and nothing put the walls back: pinned between a car and
+  // a building you were pushed inside its footprint, and the height lookup
+  // stood you on its roof — seventeen, fifty metres up. The wall gets the
+  // last word; at worst you are squeezed against the car.
+  if (pushed) {
+    rp = GAME.resolveCircle(nx, nz, 0.45, P.pos.y, footPush);
+    nx = rp.x; nz = rp.z;
   }
   P.pos.x = nx; P.pos.z = nz;
   // the closed channel's line stops walkers too — parachuting onto the
@@ -715,13 +743,15 @@ function updateOnFoot(dt) {
     if (P.pos.y <= surf) {
       var impact = -(P.velY || 0);
       P.pos.y = surf; P.velY = 0; P.airborne = false;
-      if (impact > 12) {
-        GAME.playerDamage(Math.min(95, (impact - 12) * 6), 'fall');
-        GAME.cameraShake = Math.min(1, impact / 18);
-      }
+      landOnFeet(impact);
     }
   } else {
+    // A fall whose last airborne step stopped inside the 6 cm the on-your-feet
+    // test allows lands HERE, and this used to zero the speed without the
+    // impact: 56 m/s off a 72 m tower and not a scratch, one fall in fifteen.
+    var landing = -(P.velY || 0);
     P.pos.y = surf; P.velY = 0;
+    landOnFeet(landing);
   }
   // grounded on a car: remember it (and snapshot its transform on first
   // contact) so next frame's ride-follow moves you with it
@@ -867,6 +897,13 @@ function updateDriving(dt) {
   if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
 }
 
+// what coming down at `impact` m/s does to you
+function landOnFeet(impact) {
+  if (impact <= 12) return;
+  GAME.playerDamage(Math.min(95, (impact - 12) * 6), 'fall');
+  GAME.cameraShake = Math.min(1, impact / 18);
+}
+
 function updateBikeRider(dt) {
   var P = GAME.player, car = P.car;
   // lean the bike into turns / slides
@@ -886,6 +923,7 @@ function updateBikeRider(dt) {
 }
 
 var shakePrev = 0;
+var CAM_STANDOFF = 0.35;   // how far the camera keeps off a wall it is pulled in by
 var camBoxes = [];   // the boxes between the camera and the player, refilled each frame
 function updateCamera(dt) {
   var P = GAME.player, inp = GAME.input, cam = GAME.cam;
@@ -904,8 +942,11 @@ function updateCamera(dt) {
       cam.yaw -= mdx * 0.0032;
       cam.pitch = U.clamp(cam.pitch + mdy * 0.002, 0.08, 1.1);
     } else {
-      var behind = P.car.heading + (P.car.speed < -2 ? Math.PI : 0);
-      cam.yaw = U.angleLerp(cam.yaw, behind, Math.min(1, dt * 3.4));
+      // Behind the car whichever way it is rolling. It used to swing round to
+      // face backwards above 2 m/s in reverse — so the steering read as
+      // mirrored the moment it did (A pulled the car to the right of the
+      // screen), and every three-point turn whipped the view round twice.
+      cam.yaw = U.angleLerp(cam.yaw, P.car.heading, Math.min(1, dt * 3.4));
       cam.pitch = U.damp(cam.pitch, 0.26, 2.6, dt);
     }
     var heli = P.car.spec.heli, plane = P.car.spec.plane;
@@ -922,27 +963,49 @@ function updateCamera(dt) {
   var fy = focus.y + (P.inCar ? 1.7 : 1.55);
   var fx = focus.x, fz = focus.z;
   if (aiming) {
-    // over-the-shoulder offset
-    fx += Math.sin(cam.yaw + Math.PI / 2) * 0.75;
-    fz += Math.cos(cam.yaw + Math.PI / 2) * 0.75;
+    // over-the-shoulder offset — as far as the wall beside you allows: with a
+    // shoulder to a building the offset point was INSIDE it, and so was the
+    // camera hung off it
+    var shx = Math.sin(cam.yaw + Math.PI / 2) * 0.75, shz = Math.cos(cam.yaw + Math.PI / 2) * 0.75;
+    var shT = 1;
+    var shBoxes = GAME.city.hash.queryInto(fx + shx / 2, fz + shz / 2, 2, camBoxes);
+    for (var si = 0; si < shBoxes.length; si++) {
+      var sb = shBoxes[si];
+      if (sb.noLOS || (sb.h !== undefined && sb.h < fy - 0.2) || (sb.minY !== undefined && sb.minY > fy + 0.5)) continue;
+      var st = rayAABB(fx, fz, shx, shz, sb);
+      if (st < shT) shT = Math.max(0, st - 0.3 / 0.75);
+    }
+    fx += shx * shT;
+    fz += shz * shT;
   }
   var cy = fy + Math.sin(cam.pitch) * cam.dist + (P.inCar ? 0.6 : 0);
   var horiz = Math.cos(cam.pitch) * cam.dist;
   var cx = fx - Math.sin(cam.yaw) * horiz;
   var cz = fz - Math.cos(cam.yaw) * horiz;
 
-  // pull camera in when a building blocks the view
+  // Pull the camera in when a building blocks the view — and when there is
+  // too little room behind to sit there at all, rise and look over the head
+  // instead. The pull-in used to stop at 12% of the distance however close
+  // the wall was: back to a building, the camera sat 0.7 m behind the head,
+  // inside the wall, with the head filling the screen.
   var boxes = GAME.city.hash.queryInto((fx + cx) / 2, (fz + cz) / 2, cam.dist + 2, camBoxes);
   var dirX = cx - fx, dirZ = cz - fz;
-  var bestT = 1;
+  var hlen = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
+  // looked along to a little past the camera, so it stands that much off a wall
+  var reach = (hlen + CAM_STANDOFF) / hlen, clear = 1;
   for (var i = 0; i < boxes.length; i++) {
     var b = boxes[i];
     if (b.noLOS || (b.h && b.h < cy - 1)) continue;
-    var t = rayAABB(fx, fz, dirX, dirZ, b);
-    if (t < bestT) bestT = Math.max(0.12, t - 0.05);
+    if (b.minY !== undefined && b.minY > cy + 0.5) continue;   // a deck overhead
+    var t = rayAABB(fx, fz, dirX * reach, dirZ * reach, b);
+    if (t < clear) clear = t;
   }
+  // room behind, in metres
+  var room = Math.min(hlen, Math.max(0, clear * (hlen + CAM_STANDOFF) - CAM_STANDOFF));
+  var bestT = Math.min(1, room / hlen);
+  var tight = U.clamp(1 - room / 1.8, 0, 1);   // 0: room enough, 1: against the wall
   cx = fx + dirX * bestT; cz = fz + dirZ * bestT;
-  cy = fy + (cy - fy) * (0.4 + 0.6 * bestT);
+  cy = fy + (cy - fy) * (0.4 + 0.6 * bestT) + tight * 1.9;
 
   if (GAME.cameraShake > 0.01) {
     // A rise means a fresh knock rather than the tail of the last one. The
@@ -962,5 +1025,7 @@ function updateCamera(dt) {
   cam.z = U.damp(cam.z || cz, cz, 20, dt);
   GAME.cameraObj.position.set(cam.x, Math.max(cam.y, GAME.city.groundY(cam.x, cam.z) + 0.5), cam.z);
   var lookY = fy + (aiming ? Math.tan(-cam.pitch + 0.2) * 10 * 0 : 0);
-  GAME.cameraObj.lookAt(fx + Math.sin(cam.yaw) * 4 * (aiming ? 1 : 0), lookY, fz + Math.cos(cam.yaw) * 4 * (aiming ? 1 : 0));
+  // risen over a wall at your back, look out ahead of you, not down at the crown
+  var lookAhead = (aiming ? 4 : 0) + tight * 3;
+  GAME.cameraObj.lookAt(fx + Math.sin(cam.yaw) * lookAhead, lookY, fz + Math.cos(cam.yaw) * lookAhead);
 }

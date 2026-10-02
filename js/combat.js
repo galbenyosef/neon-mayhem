@@ -74,12 +74,31 @@ GAME.combat = (function () {
     }
     return P.pos.y + 1.35;
   }
+  // In view: no building in the way, and no car either — a car body stops
+  // your rounds (raycast), so somebody crouched behind one is not a target you
+  // can lock on to and then never hit.
+  function inView(P, t, eye) {
+    if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z, eye)) return false;
+    var dx = t.pos.x - P.pos.x, dz = t.pos.z - P.pos.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.01) return true;
+    dx /= d; dz /= d;
+    var cars = GAME.world.cars;
+    for (var i = 0; i < cars.length; i++) {
+      var c = cars[i];
+      if (c === t || c === P.car || c.sinking) continue;
+      if (Math.abs(c.pos.y - P.pos.y) > 2.5) continue;
+      var tc = rayCarBody(P.pos.x, P.pos.z, dx, dz, c);
+      if (tc >= 0 && tc < d - 0.3) return false;
+    }
+    return true;
+  }
   // every target in view, best first: what Q/E and the wheel step through
   function candidates() {
     var P = GAME.player, eye = gather(), list = [];
     for (var i = 0; i < scoredN; i++) {
       var e = scored[i];
-      if (GAME.city.hash.segmentClear(P.pos.x, P.pos.z, e.t.pos.x, e.t.pos.z, eye)) list.push({ t: e.t, score: e.score });
+      if (inView(P, e.t, eye)) list.push({ t: e.t, score: e.score });
       e.t = null;
     }
     list.sort(function (a, b) { return a.score - b.score; });
@@ -99,7 +118,7 @@ GAME.combat = (function () {
       if (bi < 0) break;
       var t = scored[bi].t;
       scored[bi].t = null;
-      if (GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z, eye)) found = t;
+      if (inView(P, t, eye)) found = t;
     }
     for (var k = 0; k < scoredN; k++) scored[k].t = null;
     return found;
@@ -172,6 +191,27 @@ GAME.combat = (function () {
       if (tb < bestT) { bestT = tb; hit = { kind: 'wall', t: tb }; }
     }
     return { t: bestT, hit: hit };
+  }
+
+  // A ray against a car's body as it actually sits — a box, length by width,
+  // turned to its heading. Distance to where it enters, or -1.
+  function rayCarBody(ox, oz, dx, dz, car) {
+    var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+    var rx = ox - car.pos.x, rz = oz - car.pos.z;
+    var tmin = -Infinity, tmax = Infinity;
+    for (var k = 0; k < 2; k++) {
+      var ax = k ? fz : fx, az = k ? -fx : fz;          // forward, then side
+      var half = k ? car.spec.w / 2 : car.spec.l / 2;
+      var o = rx * ax + rz * az, v = dx * ax + dz * az;
+      if (Math.abs(v) < 1e-9) { if (Math.abs(o) > half) return -1; continue; }
+      var t1 = (-half - o) / v, t2 = (half - o) / v;
+      if (t1 > t2) { var tt = t1; t1 = t2; t2 = tt; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmin > tmax) return -1;
+    }
+    if (tmax < 0) return -1;
+    return tmin < 0 ? 0 : tmin;
   }
 
   function rayCircle(ox, oz, dx, dz, cx, cz, r) {
@@ -659,7 +699,23 @@ GAME.combat = (function () {
     var yaw = Math.atan2(tx - fromX, tz - fromZ) + err;
     var dx = Math.sin(yaw), dz = Math.cos(yaw);
     GAME.audio.gunshot('pistol', fromX, fromZ);
-    GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * d, 1.2, fromZ + dz * d);
+    // A car in the line takes the round. Only buildings ever stopped these,
+    // so the police shot straight through the van you were crouched behind —
+    // a quarter of their rounds at twelve metres — while yours stopped dead on
+    // the same van. The shooter's own car and the one you are in don't count,
+    // and nor does anything well above or below the shooter (a helicopter
+    // passing over, a car on the deck overhead).
+    var sy = shooter && shooter.pos ? shooter.pos.y : 0;
+    var stop = d, cars = GAME.world.cars;
+    for (var ci = 0; ci < cars.length; ci++) {
+      var cv = cars[ci];
+      if (cv === shooter || cv.sinking || (inCar && cv === P.car)) continue;
+      if (Math.abs(cv.pos.y - sy) > 2.5) continue;
+      var tc = rayCarBody(fromX, fromZ, dx, dz, cv);
+      if (tc >= 0 && tc < stop) stop = tc;
+    }
+    GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * stop, 1.2, fromZ + dz * stop);
+    if (stop < d - 0.3) return false;
     // how far off it passes at your range, against how wide you are: what you
     // saw happen is now what happened
     if (Math.abs(Math.sin(err)) * d <= (inCar ? NPC_AIM.car : NPC_AIM.torso)) {

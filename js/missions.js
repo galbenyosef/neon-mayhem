@@ -239,7 +239,15 @@ GAME.missions = (function () {
   // the POI line's words for a marker (kind 1) or a respray door (kind 2),
   // made again only when what is nearest, or its note, changes
   var HINT_NOTES = ['', '   —   lose the heat first', '   —   come back in a vehicle',
-    '   —   not in an aircraft', '   —   starting…'];
+    '   —   not in an aircraft', '   —   starting…', '   —   pull up in the ring to start',
+    '   —   leave the ring to go again'];
+  // A car mission starts when you pull up in its ring, not when you drive
+  // through it: race starts sit on the road, so cruising the Strip pulled
+  // people into BEACH RUN at 25 m/s with no way to say no.
+  var START_SPEED = 4;
+  // and the one that just ended waits until you have left it — failing a race
+  // you sat out on its own start line used to start it again on the next tick
+  var leaveFirst = null, REARM_R2 = 9 * 9;
   var hintK = 0, hintO = null, hintN = -1, hintText = '';
   function poiHintText(k, o, n) {
     if (k !== hintK || o !== hintO || n !== hintN) {
@@ -1193,6 +1201,8 @@ GAME.missions = (function () {
         GAME.combat.refreshWeaponHud();
       }
     }
+    // whichever marker that was waits until you have left it (see START_SPEED)
+    if (active && active.def) leaveFirst = active.def;
     active = null;
     cpMarker.visible = false;
     setMarkersVisible(true);
@@ -1382,16 +1392,20 @@ GAME.missions = (function () {
         var need = d.type === 'race' || d.type === 'courier';
         var air = P.car && (P.car.spec.heli || P.car.spec.plane);
         var dd = U.dist2(px, pz, d.start.x, d.start.z);
+        var inRing = dd < (need ? 20 : 7);
+        var slow = !P.inCar || Math.abs(P.car.speed) < START_SPEED;
+        if (leaveFirst === d && dd > REARM_R2) leaveFirst = null;
         // name what the marker is (and what it wants) whenever you're standing near it
         if (dd < 34 * 34 && (!hk || dd < hd)) {
           hk = 1; ho = d; hd = dd;
-          hn = hot ? 1 : need && !P.inCar ? 2 : d.type === 'race' && air ? 3 : dd < (need ? 20 : 7) ? 4 : 0;
+          hn = hot ? 1 : need && !P.inCar ? 2 : d.type === 'race' && air ? 3
+            : leaveFirst === d ? 6 : inRing ? (slow ? 4 : 5) : 0;
         }
         if (hot) continue;   // wanted stars close every start line
         if (need && !P.inCar) continue;
         // no cheesing a street race from a helicopter or plane
         if (d.type === 'race' && air) continue;
-        if (dd < (need ? 20 : 7)) {
+        if (inRing && slow && leaveFirst !== d) {
           start(d);
           hk = 0;
           break;

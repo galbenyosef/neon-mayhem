@@ -975,6 +975,7 @@ GAME.vehicles = (function () {
   // less leaves them hurt in proportion, landed clear of what hit them, and
   // back on their feet. `other` is whatever they were hit by, or hit.
   var RIDER_KNOCK = 4, RIDER_KILL = 10;
+  var PLAYER_BIKE_KNOCK = 9;   // what a wall takes to throw you (collideStatic)
   function knockOffRider(bike, other, rel) {
     var d = throwRider(bike);
     if (!d) return;
@@ -1035,6 +1036,15 @@ GAME.vehicles = (function () {
         if (d2 > rr * rr || d2 < 0.0001) continue;
         var d = Math.sqrt(d2), nx = dx / d, nz = dz / d;
         var overlap = rr - d;
+        // Two road vehicles meet where their BODIES do. The circles above are
+        // only the broadphase: each is most of a car-length across, so they
+        // touched at 3.8 m side by side — a car could not pass one parked at
+        // the kerb without a crash. Boxes, on the four axes the two bodies
+        // have; an airframe keeps its circle (below).
+        if (!aAir && !bAir) {
+          if (!bodyOverlap(a, b, dx, dz)) continue;
+          nx = boxN.x; nz = boxN.z; overlap = boxN.depth;
+        }
         // A parked airframe is a solid thing to drive into.
         //
         // Aircraft used to be skipped here outright, so a helicopter setting
@@ -1075,6 +1085,11 @@ GAME.vehicles = (function () {
           if (exposedRider(a)) knockOffRider(a, b, rel);
           if (exposedRider(b)) knockOffRider(b, a, rel);
         }
+        // ...and so does the player, past the same knock that throws them off
+        // against a wall. Only the AI were ever rammed off: broadsided at
+        // 30 m/s, the player stayed in the saddle at full health.
+        var pb = GAME.player;
+        if (rel > PLAYER_BIKE_KNOCK && pb.inCar && pb.onBike && (a === pb.car || b === pb.car)) GAME.ejectBike(rel);
         if (rel > 3 && (a.hitCd || 0) <= 0 && (b.hitCd || 0) <= 0) {
           a.hitCd = 0.25; b.hitCd = 0.25;
           var dmg = Math.min(26, rel * 1.3);
@@ -1115,6 +1130,36 @@ GAME.vehicles = (function () {
         b.speed += push * (nx * fwdX(b) + nz * fwdZ(b)) * 0.5;
       }
     }
+  }
+
+  // Separating axes for two car bodies (each a box l x w about its heading):
+  // false if they are apart, else the axis of least overlap is left in boxN,
+  // pointing from a to b. Filled rather than returned — this runs for every
+  // close pair, every tick.
+  var boxN = { x: 0, z: 0, depth: 0 };
+  function bodyOverlap(a, b, dx, dz) {
+    var afx = Math.sin(a.heading), afz = Math.cos(a.heading);
+    var bfx = Math.sin(b.heading), bfz = Math.cos(b.heading);
+    var ahl = a.spec.l / 2 - 0.1, ahw = a.spec.w / 2;
+    var bhl = b.spec.l / 2 - 0.1, bhw = b.spec.w / 2;
+    var best = Infinity;
+    for (var k = 0; k < 4; k++) {
+      // a's forward, a's side, b's forward, b's side
+      var ux = k === 0 ? afx : k === 1 ? afz : k === 2 ? bfx : bfz;
+      var uz = k === 0 ? afz : k === 1 ? -afx : k === 2 ? bfz : -bfx;
+      var ra = ahl * Math.abs(afx * ux + afz * uz) + ahw * Math.abs(afz * ux - afx * uz);
+      var rb = bhl * Math.abs(bfx * ux + bfz * uz) + bhw * Math.abs(bfz * ux - bfx * uz);
+      var dist = dx * ux + dz * uz;
+      var o = ra + rb - Math.abs(dist);
+      if (o <= 0) return false;
+      if (o < best) {
+        best = o;
+        var sg = dist >= 0 ? 1 : -1;
+        boxN.x = ux * sg; boxN.z = uz * sg;
+      }
+    }
+    boxN.depth = best;
+    return true;
   }
 
   function damageCar(car, amt, source, byPlayer) {
@@ -1342,6 +1387,20 @@ GAME.vehicles = (function () {
     if (!ai.node) {
       ai.node = city.nearestNode(car.pos.x, car.pos.z);
       ai.prev = null;
+      // ...and one AHEAD of it. The nearest node is as often behind a car as
+      // in front of it, and a driver handed one behind swung round mid-block
+      // and drove back up the oncoming lane (or onto the pavement) to reach
+      // it. Behind, it becomes where the car came from, and the car carries
+      // on to whichever of its neighbours lies furthest along its nose.
+      var hx0 = Math.sin(car.heading), hz0 = Math.cos(car.heading);
+      if ((ai.node.x - car.pos.x) * hx0 + (ai.node.z - car.pos.z) * hz0 < 0) {
+        var nb0 = city.neighbors(ai.node), ahead = null, aheadD = 0;
+        for (var k = 0; k < nb0.length; k++) {
+          var fwd = (nb0[k].x - car.pos.x) * hx0 + (nb0[k].z - car.pos.z) * hz0;
+          if (fwd > aheadD) { aheadD = fwd; ahead = nb0[k]; }
+        }
+        if (ahead) { ai.prev = ai.node; ai.node = ahead; }
+      }
       // Take a lane straight away, off the way the car is already pointing.
       //
       // The offset below is only worked out on ARRIVAL at a node, when the
@@ -1424,8 +1483,12 @@ GAME.vehicles = (function () {
       var odx = o.pos.x - car.pos.x, odz = o.pos.z - car.pos.z;
       var fd = odx * fx + odz * fz;
       if (fd < 1 || fd > lookA + 3) continue;
+      // In the way means the two BODIES would meet, with a hand's breadth
+      // spare. A flat 2.6 m took a car parked at the kerb — 2.2 m off the
+      // lane line, with 0.3 m between the bodies — for a car in the lane,
+      // and the traffic behind it sat there rocking for good.
       var side = Math.abs(odx * fz - odz * fx);
-      if (side < 2.6) { blocked = true; if (fd < 7) hard = true; }
+      if (side < (car.spec.w + o.spec.w) / 2 + 0.2) { blocked = true; if (fd < 7) hard = true; }
     }
     var P = GAME.player;
     if (!P.inCar && Math.abs(P.pos.y - car.pos.y) < 3) {

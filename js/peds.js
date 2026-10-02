@@ -916,7 +916,12 @@ GAME.peds = (function () {
     // man being chased, and never two real ones.
     var answering = foe && foe.kind === 'ped' && foe.ped &&
       foe.ped.state === 'attack' && foe.ped.foe && foe.ped.foe.ped === ped;
-    if (!answering && ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
+    // And swinging back at YOU is not the city's trouble at all: the ceiling
+    // rates strangers fighting each other, and counting the player's fights
+    // against it meant that at CITY: OFF (a ceiling of nothing) a hot-tempered
+    // man you punched simply ran away — which the setting promises not to touch.
+    var vsPlayer = !foe || foe.kind === 'player';
+    if (!answering && !vsPlayer && ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
     ped.state = 'attack';
     ped.attackT = secs || 9;
     ped.foe = foe || null;

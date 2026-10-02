@@ -248,12 +248,21 @@ GAME.city = (function () {
   };
   // top surface at a point: the tallest solid building roof containing it,
   // else the terrain height. Used so aircraft can set down on rooftops.
+  //
+  // With `atY` — the height of whoever is asking — a roof more than a step
+  // above it is not underfoot: somebody standing in the street who has been
+  // shoved inside a building's footprint is in the street, not on the roof.
+  // Without that, any way of getting your feet inside a wall (a car pinning
+  // you against it, getting out beside one) stood you on top of the building.
+  // Asked with no height (the aircraft do), it is the tallest roof as before.
+  var SURFACE_STEP = 0.6;
   city.surfaceY = function (x, z, atY) {
     var y = city.groundY(x, z, atY);
     var boxes = city.hash.queryInto(x, z, 1, surfBoxes);
     for (var i = 0; i < boxes.length; i++) {
       var b = boxes[i];
       if (b.tag !== 'building') continue; // land on buildings, not props/fences
+      if (atY !== undefined && b.h > atY + SURFACE_STEP) continue;
       if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ && b.h > y) y = b.h;
     }
     return y;
@@ -1460,16 +1469,31 @@ GAME.city = (function () {
     // strips lives on its own height tier: where the west fringe crosses the
     // north and south runs at the map corners, same-tier overlaps shimmered
     // from the air just like the beach bands did.
+    //
+    // Each fringe runs inland FROM the waterline. They used to be centred six
+    // metres in, which drew seven metres of sand out over the water — and the
+    // ends of the west run, like the west ends of the north and south ones,
+    // ran on past the corners into the sea. It looked like beach and was a
+    // swim: you drowned walking onto it. Clipped to the island, with the same
+    // colour drawn for every strip as before (the rng stream feeds the rest
+    // of the city), including the ones that now have no dry land to cover.
+    function fringe(x0, x1, z0, z1, y, color) {
+      x0 = Math.max(x0, city.westShore((z0 + z1) / 2));
+      z0 = Math.max(z0, city.northShore((x0 + x1) / 2));
+      z1 = Math.min(z1, city.southShore((x0 + x1) / 2));
+      if (x1 - x0 < 0.5 || z1 - z0 < 0.5) return;
+      sand.addGroundQuad((x0 + x1) / 2, y, (z0 + z1) / 2, x1 - x0, z1 - z0, 0, color);
+    }
     for (var fz = -520; fz < 520; fz += 20) {
       var wsh = city.westShore(fz + 10);
-      sand.addGroundQuad(wsh + 6, 0.22 + (sIdx % 2) * 0.06, fz + 10, 26, 20.5, 0, U.pick(rng, sandShades));
+      fringe(wsh, wsh + 26, fz - 0.25, fz + 20.25, 0.22 + (sIdx % 2) * 0.06, U.pick(rng, sandShades));
       sIdx++;
     }
     for (var fx = -520; fx < 380; fx += 20) {
       var nsh = city.northShore(fx + 10);
-      sand.addGroundQuad(fx + 10, 0.46 + (sIdx % 2) * 0.06, nsh + 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      fringe(fx - 0.25, fx + 20.25, nsh, nsh + 26, 0.46 + (sIdx % 2) * 0.06, U.pick(rng, sandShades));
       var ssh = city.southShore(fx + 10);
-      sand.addGroundQuad(fx + 10, 0.46 + ((sIdx + 1) % 2) * 0.06, ssh - 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      fringe(fx - 0.25, fx + 20.25, ssh - 26, ssh, 0.46 + ((sIdx + 1) % 2) * 0.06, U.pick(rng, sandShades));
       sIdx++;
     }
     var sandMesh = new THREE.Mesh(sand.build(), sharedVertexLambert());

@@ -57,6 +57,7 @@ GAME.aircraft = (function () {
 
   // arcade helicopter: collective (up/down), cyclic (nose tilt = forward),
   // pedal (yaw). Called from player.js while the player flies a heli.
+  var HELI_CLIMB = 9, HELI_SINK = 9;   // m/s at full collective, each way
   function updateHeli(dt) {
     var P = GAME.player, car = P.car, inp = GAME.input, T = inp.touch;
     var up = 0, fwd = 0, yaw = 0;
@@ -73,9 +74,13 @@ GAME.aircraft = (function () {
 
     car.heading += yaw * 1.7 * dt;
 
-    // vertical: lift vs gravity, hover a touch above neutral so it drifts down slowly
-    car.vy = (car.vy || 0) + (up * 16 - 9.2) * dt;
-    car.vy = U.clamp(car.vy * Math.exp(-0.8 * dt), -14, 15);
+    // Vertical: the collective sets a climb rate and the airframe eases to it.
+    // Hands off, it HOLDS its height. It used to be lift against gravity with
+    // gravity winning whenever Space was up — no input meant falling, at
+    // eleven metres a second within three, and a hands-off descent from
+    // thirty metres was a crash landing. Space climbs, Shift comes down.
+    var climb = up > 0 ? HELI_CLIMB * up : up < 0 ? HELI_SINK * up : 0;
+    car.vy = U.damp(car.vy || 0, climb, 2.4, dt);
     car.pos.y += car.vy * dt;
 
     // horizontal: tilt the nose to slide in the facing direction

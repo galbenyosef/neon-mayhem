@@ -829,7 +829,9 @@ GAME.police = (function () {
       }
     }
     // arrest needs a cop holding you for a moment, not mere contact
-    if (anyGrab) { grabTimer += dt; if (grabTimer > 0.6) GAME.playerBusted(); }
+    // (and the hold starts again from nothing afterwards: left where it was,
+    // the next arrest of your next life took one tick of contact)
+    if (anyGrab) { grabTimer += dt; if (grabTimer > 0.6) { grabTimer = 0; GAME.playerBusted(); } }
     else grabTimer = Math.max(0, grabTimer - dt * 2);
 
     // roadblocks
@@ -908,7 +910,7 @@ GAME.police = (function () {
       }
       if (pinned) {
         pinTimer += dt;
-        if (pinTimer > 2.6) GAME.playerBusted();
+        if (pinTimer > 2.6) { pinTimer = 0; GAME.playerBusted(); }
       } else pinTimer = Math.max(0, pinTimer - dt);
     } else pinTimer = 0;
 

@@ -84,7 +84,17 @@ GAME.hud = (function () {
     }
     pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
-    pauseBtn('pause-mute', function () { var m = GAME.audio.toggleMute(); $('pause-mute').textContent = m ? '🔇 MUTED' : '🔊 SOUND'; });
+    // Mute is one switch however you reach it — the button here or M — and it
+    // is remembered like the others. M used to flip the sound behind this
+    // label's back (it still said SOUND) and nothing kept it past a reload.
+    function paintMute() { $('pause-mute').textContent = GAME.audio.muted ? '🔇 MUTED' : '🔊 SOUND'; }
+    api.toggleMute = function () {
+      var m = GAME.audio.toggleMute();
+      if (GAME.prefs) { GAME.prefs.muted = m; GAME.save(); }
+      paintMute();
+      return m;
+    };
+    pauseBtn('pause-mute', function () { api.toggleMute(); });
     // music and effects are separate taps: kill the radio and keep the crashes,
     // or the other way round. The choice is remembered.
     function paintAudioBtns() {
@@ -104,8 +114,10 @@ GAME.hud = (function () {
     if (GAME.prefs) {
       if (GAME.prefs.musicOff) GAME.audio.setMusicOn(false);
       if (GAME.prefs.sfxOff) GAME.audio.setSfxOn(false);
+      if (GAME.prefs.muted && !GAME.audio.muted) GAME.audio.toggleMute();
     }
     paintAudioBtns();
+    paintMute();
     // Rumble sits with the other outputs and is remembered the same way. The
     // button only appears where a buzz could actually happen: a phone with the
     // API. Desktop Chrome has navigator.vibrate and no motor to run it, and a

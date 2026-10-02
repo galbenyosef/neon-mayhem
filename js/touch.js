@@ -4,16 +4,22 @@ GAME.touch = (function () {
   var baseX = 0, baseY = 0;
   var footBtns = [], carBtns = [];
   var btns = {};
-  var enabled = false;
+  var enabled = false;     // the layer has been built (once, on first use)
+  var touchMode = false;   // ...and is what the player is using right now
   var lastCarRef = null;   // the vehicle (or null) the flags were last cleared for
   var wasPlaying = false;  // were the on-foot/in-car controls applying last frame
   var lefty = false;       // stick under the right thumb, buttons under the left
 
+  // Start on touch only where a finger is the main way in. Being ABLE to
+  // take a touch is not that: a touchscreen laptop, a Surface, a Chromebook
+  // all report touch points, and treating them as phones put the buttons over
+  // the screen, cut the crowd and switched the mouse off. Those start on the
+  // mouse; touching the screen switches over, and the mouse switches back.
   function detect() {
-    if ('ontouchstart' in window) return true;
-    if (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) return true;
-    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
-    return false;
+    var mq = window.matchMedia;
+    if (mq && mq('(pointer: coarse)').matches) return true;
+    if (mq && mq('(any-pointer: fine)').matches) return false;
+    return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   }
 
   function mkBtn(label, right, bottom, size, opts) {
@@ -58,27 +64,96 @@ GAME.touch = (function () {
 
   function init() {
     if (detect()) enable();
-    // a real touch at any point enables the layer even if boot-time detection missed
-    window.addEventListener('touchstart', function () { enable(); }, { passive: true, once: true });
+    // a real touch at any point switches to touch, whatever boot decided...
+    window.addEventListener('touchstart', function () { if (!touchMode) enable(); }, { passive: true });
+    // ...and a real mouse switches back. Pointer events, not mouse ones: the
+    // mouse events a browser makes up after a tap must not count, and those
+    // never arrive as a pointer of type 'mouse'.
+    var back = function (e) { if (touchMode && e.pointerType === 'mouse') useMouse(); };
+    window.addEventListener('pointerdown', back, true);
+    window.addEventListener('pointermove', function (e) {
+      if (touchMode && e.pointerType === 'mouse' && (e.movementX || e.movementY)) useMouse();
+    }, true);
+  }
+
+  // What switching to touch changes outside the layer, so switching back can
+  // put it back as it was.
+  var saved = null;
+  var TOUCH_BUDGET = { pixelRatioCap: 1.4, bubbleRadius: 110, maxTraffic: 8, maxPeds: 12, maxParked: 9 };
+  function applySettings(vals, fogFar) {
+    var S = GAME.settings;
+    for (var k in vals) S[k] = vals[k];
+    // after boot: apply what the renderer already consumed
+    if (GAME.renderer) GAME.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, S.pixelRatioCap));
+    if (GAME.scene && GAME.scene.fog && fogFar) GAME.scene.fog.far = fogFar;
+  }
+  function moveCorner(el, css) {
+    if (!el) return;
+    if (el.__mouseCss === undefined) el.__mouseCss = el.getAttribute('style') || '';
+    for (var k in css) el.style[k] = css[k];
+  }
+  function restoreCorner(el) {
+    if (el && el.__mouseCss !== undefined) el.setAttribute('style', el.__mouseCss);
   }
 
   function enable() {
-    if (enabled) return;
-    enabled = true;
+    if (touchMode) return;
+    touchMode = true;
     GAME.isTouch = true;
+    GAME.input.touch.active = true;
     var S = GAME.settings;
-    S.pixelRatioCap = 1.4;
-    S.bubbleRadius = 110;
-    S.maxTraffic = 8;
-    S.maxPeds = 12;
-    S.maxParked = 9;
-    // late enable (after boot): apply what the renderer already consumed
-    if (GAME.renderer) GAME.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, S.pixelRatioCap));
-    if (GAME.scene && GAME.scene.fog) GAME.scene.fog.far = 320;
+    if (!saved) {
+      saved = { fogFar: GAME.scene && GAME.scene.fog ? GAME.scene.fog.far : 0, vals: {} };
+      for (var k in TOUCH_BUDGET) saved.vals[k] = S[k];
+    }
+    applySettings(TOUCH_BUDGET, 320);
     if (!GAME.started) {
       var pe = document.getElementById('press-enter');
       if (pe) pe.textContent = 'TAP TO START';
     }
+    // the radar moves to the top-left on touch: the bottom-left corner is the
+    // virtual stick's zone, and the two were fighting for the same thumb.
+    // PAUSE sits just right of it, and fullscreen keeps its own corner
+    // control, shown on the menus (see hud.refreshFsBtn)
+    moveCorner(document.getElementById('minimap-wrap'), { bottom: 'auto', left: '10px', top: '10px', width: '132px', height: '132px', pointerEvents: 'auto' });
+    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: '206px', top: '12px', width: '46px', height: '46px' });
+    if (enabled) {
+      if (layer) layer.style.display = '';
+      checkOrientation();
+      return;
+    }
+    build();
+  }
+
+  // Back to the mouse and keyboard: the layer goes, the HUD corners and the
+  // crowd budget come back, and the mouse fires and looks again.
+  function useMouse() {
+    if (!touchMode) return;
+    touchMode = false;
+    GAME.isTouch = false;
+    var T = GAME.input.touch;
+    T.active = false;
+    T.stickX = T.stickY = 0;
+    releaseButtons();
+    stickId = null; camId = null;
+    if (stickBase) { stickBase.style.display = 'none'; stickNub.style.display = 'none'; }
+    if (layer) { layer.style.display = 'none'; layer._disp = 'none'; }
+    var rh = document.getElementById('rotate-hint');
+    if (rh) rh.style.display = 'none';
+    GAME.isPortrait = false;
+    if (saved) applySettings(saved.vals, saved.fogFar);
+    restoreCorner(document.getElementById('minimap-wrap'));
+    restoreCorner(document.getElementById('fs-btn'));
+    if (!GAME.started) {
+      var pe = document.getElementById('press-enter');
+      if (pe) pe.textContent = 'PRESS ENTER';
+    }
+    // (the controls bar comes back on the HUD's own refresh)
+    if (GAME.hud && GAME.hud.refreshFsBtn) GAME.hud.refreshFsBtn();
+  }
+
+  function build() {
+    enabled = true;
 
     layer = document.getElementById('touch-layer');
     stickZone = document.getElementById('tstick-zone');
@@ -114,16 +189,9 @@ GAME.touch = (function () {
     btns.gsRkt = mkBtn('RKT', 232, 112, 62, { flag: 'aim' });
     carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt);
 
-    // the radar moves to the top-left on touch: the bottom-left corner is the
-    // virtual stick's zone, and the two were fighting for the same thumb
+    // the radar (moved top-left by enable()) opens the full map on a tap
     var mm = document.getElementById('minimap-wrap');
     if (mm) {
-      mm.style.bottom = 'auto';
-      mm.style.left = '10px';
-      mm.style.top = '10px';
-      mm.style.width = '132px';
-      mm.style.height = '132px';
-      mm.style.pointerEvents = 'auto';
       // tap the radar to open the full map
       mm.addEventListener('touchend', function (e) { e.preventDefault(); e.stopPropagation(); GAME.hud.toggleMap(true); }, { passive: false });
     }
@@ -133,16 +201,6 @@ GAME.touch = (function () {
     pauseB.style.right = ''; pauseB.style.bottom = '';
     pauseB.style.left = '152px'; pauseB.style.top = '12px';
     pauseB.style.fontSize = '15px';
-    // fullscreen keeps its own corner control, shown on the menus (see hud.refreshFsBtn)
-    var fsb = document.getElementById('fs-btn');
-    if (fsb) {
-      fsb.style.bottom = 'auto';
-      fsb.style.right = 'auto';
-      fsb.style.left = '206px';
-      fsb.style.top = '12px';
-      fsb.style.width = '46px';
-      fsb.style.height = '46px';
-    }
 
     // virtual stick
     stickZone.addEventListener('touchstart', function (e) {
@@ -293,7 +351,7 @@ GAME.touch = (function () {
   }
 
   function update() {
-    if (!enabled || !GAME.started) return;
+    if (!enabled || !touchMode || !GAME.started) return;
     var T = GAME.input.touch;
     var P = GAME.player;
     // hide all controls behind menus / death screens
@@ -376,7 +434,7 @@ GAME.touch = (function () {
   }
 
   return {
-    init: init, update: update,
+    init: init, update: update, useMouse: useMouse, useTouch: enable,
     get lefty() { return lefty; },
     setLefty: function (v) { lefty = !!v; applyHandedness(); return lefty; }
   };

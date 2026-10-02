@@ -22,6 +22,17 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3y. THE PLAYER-FACING AUDIT — things that happened to somebody playing:
+//       a car hurts you on foot and cannot lift you onto a roof; the camera
+//       stays out of the wall and your head; a fall that ends in the
+//       on-your-feet margin still lands; a mission marker is somewhere you
+//       pull up, not a tripwire, and does not restart under you; traffic gets
+//       past a kerb-parked car and never U-turns to a junction behind it; the
+//       helicopter hovers; a car between you and the police is cover; a car
+//       can knock you off a bike; you fight back at CITY: OFF; mute is one
+//       remembered switch; the closed bridge says so once, on the deck; the
+//       next arrest takes as long as the first; a touchscreen laptop keeps
+//       its mouse.
 //   3x. OUT IN THE AIR — getting out of a car leaves you at the car's level:
 //       in mid-air you fall from there, and on a roof you stay on the roof.
 //   3w. BOOSTERS — a booster strip pushes whether or not your foot is down,
@@ -781,6 +792,494 @@ function withTimeout(p, ms) {
   check('exit: out of a car parked on a roof, they stay on the roof',
     outAir.found && Math.abs(outAir.roofCarY - outAir.roofY) < 0.3 && Math.abs(outAir.roofOutY - outAir.roofY) < 0.3,
     'car y=' + (outAir.roofCarY || 0).toFixed(1) + ' player y=' + (outAir.roofOutY || 0).toFixed(1) + ' roof=' + (outAir.roofY || 0).toFixed(1));
+
+  // ---------- 3y: the player-facing audit ----------
+  // A pass over the game as a player meets it, each of these something that
+  // happened to somebody playing rather than a corner of the code: a car that
+  // could not hurt you, a car that put you on a roof, a mission you drove
+  // through, traffic jammed behind a parked car, a laptop with a touchscreen
+  // losing its mouse, a helicopter that could not hover, cover that only
+  // worked for the police, a camera inside the wall, a fall that did nothing,
+  // and a handful of smaller ones.
+
+  // a tall building with open street along its south face, for the wall checks
+  var wallSpot = function () {
+    var all = GAME.city.hash.all, best = null;
+    for (var i = 0; i < all.length && !best; i++) {
+      var b = all[i];
+      if (b.tag !== 'building' || !(b.h > 15) || b.minY !== undefined) continue;
+      if (b.maxX - b.minX < 12 || b.maxZ - b.minZ < 12) continue;
+      var cx = (b.minX + b.maxX) / 2;
+      if (GAME.city.hash.segmentClear(cx - 5, b.minZ - 0.6, cx - 5, b.minZ - 12) &&
+        GAME.city.hash.segmentClear(cx + 5, b.minZ - 0.6, cx + 5, b.minZ - 12) &&
+        !GAME.city.isInWater(cx, b.minZ - 6)) best = b;
+    }
+    return best;
+  };
+
+  var foot = await page.evaluate(function (wallSrc) {
+    var wallSpot = new Function('return (' + wallSrc + ')')();
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100; P.armor = 0;
+    // run over: a sedan at 15 m/s, straight at someone standing on the strip
+    GAME.test.teleport(356, 60);
+    GAME.test.fastForward(0.3);
+    var car = GAME.vehicles.spawnCar('sedan', 356, 40, 0, {});
+    car.speed = 15;
+    var h0 = P.health;
+    for (var i = 0; i < 150 && P.health === h0; i++) GAME.test.fastForward(1 / 60);
+    r.runOver = h0 - P.health;
+    GAME.vehicles.removeCar(car);
+    P.health = 100;
+    // and getting out of your own car at speed is not being run over by it
+    var own = GAME.vehicles.spawnCar('sedan', 356, 24, 0, {});
+    GAME.test.teleport(352, 24);
+    GAME.test.fastForward(0.2);
+    GAME.test.enterNearestCar(own);
+    GAME.test.fastForward(0.8);
+    own.speed = 25;
+    GAME.test.fastForward(0.2);
+    GAME.test.exitCar();
+    GAME.test.fastForward(0.5);
+    r.bailHurt = 100 - P.health;
+    GAME.vehicles.removeCar(own);
+    P.health = 100;
+
+    var b = wallSpot();
+    r.wall = !!b;
+    if (b) {
+      var bx = (b.minX + b.maxX) / 2;
+      r.roofH = b.h;
+      // parked flank-on to the wall, and out of the wall side
+      var hug = GAME.vehicles.spawnCar('sedan', bx + 3, b.minZ - 0.95 - 0.15, Math.PI / 2, {});
+      GAME.test.teleport(bx + 3, b.minZ - 6);
+      GAME.test.fastForward(0.2);
+      GAME.test.enterNearestCar(hug);
+      GAME.test.fastForward(1.0);
+      r.hugIn = P.inCar;
+      GAME.test.exitCar();
+      var top = 0;
+      for (var s2 = 0; s2 < 30; s2++) { GAME.test.fastForward(1 / 60); top = Math.max(top, P.pos.y); }
+      r.exitTop = top;
+      GAME.vehicles.removeCar(hug);
+      // pinned against the wall by a car rolling in
+      GAME.test.teleport(bx - 3, b.minZ - 0.5);
+      GAME.test.fastForward(0.2);
+      var roll = GAME.vehicles.spawnCar('sedan', bx - 3, b.minZ - 6, 0, {});
+      top = 0;
+      for (var s3 = 0; s3 < 80; s3++) {
+        roll.pos.z += 0.05;
+        GAME.test.fastForward(1 / 60);
+        top = Math.max(top, P.pos.y);
+        if (roll.pos.z > b.minZ - 1.2) break;
+      }
+      r.pinTop = top;
+      GAME.vehicles.removeCar(roll);
+      // the camera with your back to the wall, all the way round
+      GAME.test.teleport(bx, b.minZ - 0.5);
+      GAME.test.fastForward(0.3);
+      var inside = 0, near = 0, all = GAME.city.hash.all;
+      for (var yi = 0; yi < 16; yi++) {
+        GAME.cam.yaw = yi / 16 * Math.PI * 2 - Math.PI;
+        GAME.cam.pitch = 0.32;
+        GAME.test.fastForward(0.3);
+        var cp = GAME.cameraObj.position;
+        for (var k = 0; k < all.length; k++) {
+          var q = all[k];
+          if (q.noLOS || q.h === undefined) continue;
+          if (cp.x > q.minX && cp.x < q.maxX && cp.z > q.minZ && cp.z < q.maxZ && cp.y < q.h &&
+            (q.minY === undefined || cp.y > q.minY)) { inside++; break; }
+        }
+        var hx = cp.x - P.pos.x, hy = cp.y - (P.pos.y + 1.55), hz = cp.z - P.pos.z;
+        if (Math.sqrt(hx * hx + hy * hy + hz * hz) < 1.0) near++;
+      }
+      r.camInside = inside; r.camInHead = near;
+    }
+    // a fall whose last airborne step ends inside the on-your-feet margin
+    GAME.test.teleport(356, 60);
+    GAME.test.fastForward(0.3);
+    P.health = 100;
+    var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
+    P.pos.y = surf + 0.04; P.velY = -40; P.airborne = false;
+    GAME.test.fastForward(1 / 60);
+    r.fallHurt = 100 - P.health;
+    P.health = 100;
+    GAME.test.fastForward(0.3);
+    r.alive = P.state === 'alive';
+    return r;
+  }, wallSpot.toString());
+  check('audit: a car at speed hurts you on foot',
+    foot.runOver > 5, 'took ' + (foot.runOver || 0).toFixed(1) + ' hp from a sedan at 15 m/s');
+  check('audit: and getting out of your own car at speed is not being run over by it',
+    foot.bailHurt < 1, 'took ' + (foot.bailHurt || 0).toFixed(1) + ' hp bailing out at 25 m/s');
+  check('audit: there is a tall building with open street in front of it (anchor sanity)',
+    foot.wall === true && foot.hugIn === true, JSON.stringify({ wall: foot.wall, in: foot.hugIn, h: foot.roofH }));
+  check('audit: out of a car parked against a wall, you stay in the street',
+    foot.exitTop < 1, 'highest point ' + (foot.exitTop || 0).toFixed(1) + ' m (roof at ' + (foot.roofH || 0).toFixed(1) + ')');
+  check('audit: and pinned against one by a car, you are not lifted onto the roof',
+    foot.pinTop < 1, 'highest point ' + (foot.pinTop || 0).toFixed(1) + ' m');
+  check('audit: back to the wall, the camera is never inside the building',
+    foot.camInside === 0, foot.camInside + ' of 16 angles inside');
+  check('audit: nor inside your own head',
+    foot.camInHead === 0, foot.camInHead + ' of 16 angles within 1 m of the head');
+  check('audit: a fall that ends inside the on-your-feet margin still lands',
+    foot.fallHurt > 50, 'took ' + (foot.fallHurt || 0).toFixed(1) + ' hp coming down at 40 m/s');
+  check('audit: and the group leaves the player alive (anchor sanity)', foot.alive === true);
+
+  // A mission marker is a place you pull up at, not a tripwire, and the one
+  // that just ended waits for you to leave before it starts again.
+  var marker = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    if (GAME.missions.active) GAME.missions.failActive('test');
+    P.health = 100;
+    var def = GAME.missions.DEFS.filter(function (d) { return d.id === 'race0'; })[0];
+    GAME.test.teleport(def.start.x, def.start.z - 40);
+    GAME.test.fastForward(0.5);
+    var ride = GAME.test.spawnCar('sedan', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(ride);
+    GAME.test.fastForward(1.2);
+    r.driving = P.inCar;
+    // through it at 22 m/s
+    GAME.test.teleport(def.start.x, def.start.z);
+    P.car.speed = 22;
+    GAME.test.fastForward(0.4);
+    r.throughStarted = !!GAME.missions.active;
+    if (GAME.missions.active) GAME.missions.failActive('test');
+    // pulled up in it
+    GAME.test.teleport(def.start.x + 30, def.start.z);
+    GAME.test.fastForward(0.3);
+    GAME.test.teleport(def.start.x, def.start.z);
+    GAME.test.fastForward(0.5);
+    r.stoppedStarted = !!(GAME.missions.active && GAME.missions.active.def.id === 'race0');
+    // fail it where you stand
+    if (GAME.missions.active) GAME.missions.failActive('test');
+    GAME.test.teleport(def.start.x, def.start.z);
+    GAME.test.fastForward(1.5);
+    r.restartedInPlace = !!GAME.missions.active;
+    if (GAME.missions.active) GAME.missions.failActive('test');
+    // leave, come back, pull up
+    GAME.test.teleport(def.start.x + 30, def.start.z);
+    GAME.test.fastForward(0.3);
+    GAME.test.teleport(def.start.x, def.start.z);
+    GAME.test.fastForward(0.5);
+    r.again = !!GAME.missions.active;
+    if (GAME.missions.active) GAME.missions.failActive('test');
+    GAME.test.teleport(def.start.x + 30, def.start.z);
+    GAME.test.fastForward(0.3);
+    GAME.exitCar();
+    GAME.vehicles.removeCar(ride);
+    GAME.test.fastForward(0.3);
+    r.clean = !GAME.missions.active && !P.inCar;
+    return r;
+  });
+  check('audit: driving a car to race0 (anchor sanity)', marker.driving === true);
+  check('audit: driving through a race start at speed does not start the race',
+    marker.throughStarted === false, 'started=' + marker.throughStarted);
+  check('audit: pulling up in the ring does (anchor sanity)', marker.stoppedStarted === true);
+  check('audit: failing it on its own start line does not start it again',
+    marker.restartedInPlace === false, 'restarted=' + marker.restartedInPlace);
+  check('audit: leave the ring and come back, and it starts again',
+    marker.again === true && marker.clean === true, JSON.stringify(marker));
+
+  // Traffic gets past a car parked at the kerb, and a fresh driver does not
+  // U-turn back to a junction behind it.
+  var traffic = await page.evaluate(function () {
+    var C = GAME.city, P = GAME.player, S = GAME.settings, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    var keep = { t: S.maxTraffic, p: S.maxParked };
+    S.maxTraffic = 0; S.maxParked = 0;
+    // a straight block of mainland road along z, clear in its +z lane
+    var R = [-250, -150, -50, 50, 150, 250], spot = null;
+    for (var i = 0; i < R.length && !spot; i++) {
+      for (var j = 0; j < R.length - 1 && !spot; j++) {
+        var x = R[i], z0 = R[j] + 12, z1 = R[j] + 88;
+        if (C.isInWater(x, z0) || C.isInWater(x, z1)) continue;
+        if (C.hash.segmentClear(x + 3.1, z0, x + 3.1, z1) && C.hash.segmentClear(x + 5.3, z0 + 10, x + 5.3, z0 + 40)) spot = { x: x, z: R[j] };
+      }
+    }
+    r.found = !!spot;
+    if (!spot) { S.maxTraffic = keep.t; S.maxParked = keep.p; return r; }
+    function clearNear() {
+      GAME.world.cars.slice().forEach(function (c) {
+        if (U.dist2(c.pos.x, c.pos.z, spot.x, spot.z + 50) < 120 * 120) GAME.vehicles.removeCar(c);
+      });
+    }
+    GAME.test.teleport(spot.x - 30, spot.z + 40);
+    GAME.test.fastForward(0.3);
+    clearNear();
+    var parked = GAME.vehicles.spawnCar('sedan', spot.x + 5.3, spot.z + 40, 0, { ai: { mode: 'parked' } });
+    var driver = GAME.vehicles.spawnCar('sedan', spot.x + 3.1, spot.z + 14, 0,
+      { occupied: 'ai', ai: { mode: 'traffic', desired: 11, laneX: 0, laneZ: 0 } });
+    var hp0 = driver.hp, t = 0, passed = false;
+    for (; t < 15 && !passed; t += 1 / 60) {
+      GAME.test.fastForward(1 / 60);
+      if (driver.pos.z > parked.pos.z + 6) passed = true;
+    }
+    r.passed = passed; r.t = +t.toFixed(1); r.dented = hp0 - driver.hp;
+    r.lane = +(driver.pos.x - spot.x).toFixed(2);
+    GAME.vehicles.removeCar(parked); GAME.vehicles.removeCar(driver);
+    // a fresh driver mid-block with the nearest junction BEHIND it
+    var fresh = GAME.vehicles.spawnCar('sedan', spot.x + 3.1, spot.z + 9, 0,
+      { occupied: 'ai', ai: { mode: 'traffic', desired: 11, laneX: 0, laneZ: 0 } });
+    fresh.speed = 6;
+    var zf0 = fresh.pos.z;
+    GAME.test.fastForward(3);
+    r.freshAhead = +(fresh.pos.z - zf0).toFixed(1);
+    r.freshHeading = +Math.cos(fresh.heading).toFixed(2);
+    GAME.vehicles.removeCar(fresh);
+    S.maxTraffic = keep.t; S.maxParked = keep.p;
+    return r;
+  });
+  check('audit: a straight block of road to test traffic on (anchor sanity)', traffic.found === true);
+  check('audit: traffic gets past a car parked at the kerb',
+    traffic.passed === true && traffic.dented < 1, JSON.stringify(traffic));
+  check('audit: and keeps its lane doing it',
+    Math.abs(traffic.lane - 3.1) < 1, 'ended ' + traffic.lane + ' m off the centreline (lane 3.1)');
+  check('audit: a fresh driver carries on ahead rather than U-turning to a junction behind',
+    traffic.freshAhead > 10 && traffic.freshHeading > 0.7,
+    'moved ' + traffic.freshAhead + ' m along its nose, heading cos=' + traffic.freshHeading);
+
+  // The helicopter holds its height hands-off; police rounds stop on a car
+  // between you and them; a car hit throws you off a bike; you fight back at
+  // CITY: OFF; the next arrest after a bust takes as long as the first.
+  var misc = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.teleport(356, 60);
+    GAME.test.fastForward(0.3);
+    // hover
+    var heli = GAME.vehicles.spawnCar('helicopter', 352, 60, 0, {});
+    GAME.test.fastForward(0.2);
+    GAME.test.enterNearestCar(heli);
+    GAME.test.fastForward(1);
+    r.flying = P.inCar && P.car === heli;
+    heli.pos.y = GAME.city.groundY(heli.pos.x, heli.pos.z) + 30; heli.vy = 0;
+    var y0 = heli.pos.y;
+    GAME.test.fastForward(3);
+    r.hoverDrop = +(y0 - heli.pos.y).toFixed(2);
+    heli.pos.y = GAME.city.groundY(heli.pos.x, heli.pos.z) + 0.05;
+    GAME.test.fastForward(0.2);
+    GAME.exitCar();
+    GAME.vehicles.removeCar(heli);
+    // cover
+    GAME.test.teleport(356, 60);
+    GAME.test.fastForward(0.3);
+    var hits = 0, dmg0 = GAME.playerDamage;
+    GAME.playerDamage = function () { hits++; };
+    var cop = GAME.peds.spawnPed(356, 72, { cop: true });
+    cop.state = 'idle';
+    function volley() {
+      hits = 0;
+      for (var v = 0; v < 300; v++) {
+        cop.lastShotT = GAME.time;   // past the first-shot wobble every time
+        GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.35, 8, cop);
+      }
+      return hits / 300;
+    }
+    r.openRate = volley();
+    var van = GAME.vehicles.spawnCar('van', 356, 66, Math.PI / 2, {});
+    r.coverRate = volley();
+    GAME.playerDamage = dmg0;
+    GAME.vehicles.removeCar(van);
+    GAME.peds.removePed(cop);
+    P.health = 100;
+    // a bike, run into from behind at 20 m/s
+    var bike = GAME.vehicles.spawnCar('motorcycle', 352, 60, 0, {});
+    GAME.test.fastForward(0.2);
+    GAME.test.enterNearestCar(bike);
+    GAME.test.fastForward(1);
+    r.riding = P.inCar && P.onBike;
+    var ram = GAME.vehicles.spawnCar('sedan', bike.pos.x, bike.pos.z - 14, 0, {});
+    ram.speed = 20;
+    for (var b2 = 0; b2 < 90 && P.inCar; b2++) GAME.test.fastForward(1 / 60);
+    r.thrown = !P.inCar;
+    if (P.inCar) GAME.exitCar();
+    GAME.vehicles.removeCar(ram); GAME.vehicles.removeCar(bike);
+    P.health = 100;
+    GAME.test.fastForward(0.5);
+    // fighting back with the city switched off
+    var was = GAME.chaos.level;
+    GAME.chaos.set(0);
+    var tough = GAME.peds.spawnPed(P.pos.x, P.pos.z + 1.6);
+    tough.state = 'idle'; tough.speed = 0; tough.temper = 0.95; tough.hp = 200;
+    GAME.cam.yaw = 0; P.heading = 0;
+    GAME.peds.damage(tough, 4, true);
+    r.foughtBack = tough.state === 'attack';
+    GAME.peds.removePed(tough);
+    GAME.chaos.set(was);
+    P.health = 100;
+    r.alive = P.state === 'alive';
+    return r;
+  });
+  check('audit: in a helicopter, thirty metres up (anchor sanity)', misc.flying === true);
+  check('audit: hands off, the helicopter holds its height',
+    Math.abs(misc.hoverDrop) < 1, 'moved ' + misc.hoverDrop + ' m in 3 s');
+  check('audit: an officer at 12 m hits you in the open (anchor sanity)',
+    misc.openRate > 0.15, 'hit rate in the open=' + misc.openRate.toFixed(2));
+  check('audit: and not through a van between you',
+    misc.coverRate === 0, 'hit rate behind the van=' + misc.coverRate.toFixed(2));
+  check('audit: on a bike (anchor sanity)', misc.riding === true);
+  check('audit: a car running into the bike throws you off it', misc.thrown === true);
+  check('audit: at CITY: OFF a hot-tempered man you hit still fights back',
+    misc.foughtBack === true, 'state after the punch: ' + (misc.foughtBack ? 'attack' : 'not attack'));
+  check('audit: and the group leaves the player alive (anchor sanity)', misc.alive === true);
+
+  // mute: one switch, remembered, and the pause screen says which way it is
+  var mute = await page.evaluate(function () {
+    var r = {};
+    var before = GAME.audio.muted;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyM', key: 'm', bubbles: true }));
+    r.muted = GAME.audio.muted;
+    r.label = document.getElementById('pause-mute').textContent;
+    r.pref = !!(GAME.prefs && GAME.prefs.muted);
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyM', key: 'm', bubbles: true }));
+    r.back = GAME.audio.muted === before;
+    r.backPref = !!(GAME.prefs && GAME.prefs.muted);
+    return r;
+  });
+  check('audit: M mutes, says so on the pause screen, and is remembered',
+    mute.muted === true && mute.label.indexOf('MUTED') >= 0 && mute.pref === true, JSON.stringify(mute));
+  check('audit: and M again undoes all three', mute.back === true && mute.backPref === false, JSON.stringify(mute));
+
+  // The closed bridge explains itself once per approach, up on the deck — not
+  // every six seconds to whoever is on the beach underneath.
+  var gate = await page.evaluate(function () {
+    var C = GAME.city, P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    var was = GAME.isla.isOpen();
+    GAME.isla.setOpen(false);
+    var g = null;
+    C.hash.all.forEach(function (b) {
+      if (!g && b.tag === 'gate' && b.gateH !== undefined &&
+        !C.isInWater((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2, 0)) g = b;
+    });
+    r.found = !!g;
+    if (!g) { GAME.isla.setOpen(was); return r; }
+    var gx = (g.minX + g.maxX) / 2, gz = (g.minZ + g.maxZ) / 2, deckY = g.gateH - 2.6;
+    // the deck runs along the barrier's short side; take the mainland end
+    var ax = (g.maxX - g.minX) < (g.maxZ - g.minZ) ? 1 : 0, az = 1 - ax;
+    var sgn = U.dist2(gx + ax * 10, gz + az * 10, -70, 0) < U.dist2(gx - ax * 10, gz - az * 10, -70, 0) ? 1 : -1;
+    var told = function () { return window.__msgs.filter(function (m) { return m.indexOf('BRIDGE CLOSED') >= 0; }).length; };
+    // underneath, on the sand
+    window.__msgs = [];
+    var ux = gx + ax * sgn * 3, uz = gz + az * sgn * 3;
+    GAME.test.teleport(ux, uz);
+    P.pos.y = C.groundY(ux, uz, 0); P.velY = 0;
+    GAME.test.fastForward(8);
+    r.under = told(); r.underY = +P.pos.y.toFixed(1); r.deckY = +deckY.toFixed(1);
+    // on the deck, walking up to it
+    window.__msgs = [];
+    GAME.test.teleport(gx + ax * sgn * 12, gz + az * sgn * 12);
+    r.onDeckY = +P.pos.y.toFixed(1);
+    GAME.test.fastForward(2);
+    r.first = told();
+    GAME.test.fastForward(10);
+    r.stayed = told();
+    GAME.isla.setOpen(was);
+    GAME.test.teleport(-60, 40);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('audit: a closed bridge gate standing over dry land (anchor sanity)',
+    gate.found === true && gate.onDeckY > gate.underY + 1.5, JSON.stringify(gate));
+  check('audit: underneath it on the sand, nobody tells you the bridge is closed',
+    gate.under === 0, gate.under + ' banners in 8 s at y=' + gate.underY + ' under a deck at ' + gate.deckY);
+  check('audit: up on the deck, it says so once — and not again while you stand there',
+    gate.first === 1 && gate.stayed === 1, 'first=' + gate.first + ' after 12 s=' + gate.stayed);
+
+  // The next arrest after a bust takes as long as the first one. The hold
+  // timer used to be left where the last arrest put it, so the second came
+  // after a single tick of contact.
+  var bustOnce = function () {
+    return page.evaluate(function () {
+      var P = GAME.player;
+      if (P.inCar) GAME.exitCar();
+      P.health = 100;
+      GAME.test.teleport(-60, 40);
+      GAME.test.fastForward(0.3);
+      GAME.test.setWanted(1);
+      var cop = GAME.peds.spawnPed(P.pos.x + 1.2, P.pos.z, { cop: true });
+      cop.state = 'chase';
+      var t = 0;
+      while (P.state === 'alive' && t < 6) { GAME.test.fastForward(0.05); t += 0.05; }
+      return { state: P.state, t: +t.toFixed(2) };
+    });
+  };
+  var comeBack = async function () {
+    for (var w = 0; w < 25; w++) {
+      var up = await page.evaluate(function () {
+        GAME.test.pressKey('KeyR', true);
+        return GAME.player.state === 'alive';
+      });
+      await page.waitForTimeout(300);
+      await page.evaluate(function () { GAME.test.pressKey('KeyR', false); });
+      if (up) break;
+      await page.waitForTimeout(300);
+    }
+    return page.evaluate(function () {
+      GAME.police.clearWanted();
+      GAME.player.health = 100;
+      return GAME.player.state;
+    });
+  };
+  var bust1 = await bustOnce();
+  var back1 = await comeBack();
+  var bust2 = bust1.state === 'busted' && back1 === 'alive' ? await bustOnce() : { state: 'skipped', t: 0 };
+  var back2 = bust2.state === 'busted' ? await comeBack() : back1;
+  check('audit: an officer holding you busts you (anchor sanity)',
+    bust1.state === 'busted' && back1 === 'alive' && back2 === 'alive', JSON.stringify([bust1, back1, bust2, back2]));
+  check('audit: and the next arrest takes the same hold as the first',
+    bust2.state === 'busted' && bust2.t >= 0.5, 'first ' + bust1.t + ' s, second ' + bust2.t + ' s');
+
+  // A touchscreen laptop is a laptop: it starts on the mouse, a touch on the
+  // screen switches to the touch controls, and the mouse switches back.
+  var hctx = await browser.newContext({ viewport: { width: 1000, height: 600 } });
+  await hctx.addInitScript(function () {
+    Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: function () { return 10; } });
+    window.ontouchstart = null;
+  });
+  var hpage = await hctx.newPage();
+  var hybridErrors = [];
+  hpage.on('pageerror', function (e) { hybridErrors.push(String(e.message).slice(0, 200)); });
+  await hpage.goto(origin + '/index.html');
+  await hpage.waitForFunction(function () {
+    return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
+  }, null, { timeout: 30000 });
+  var hybrid = await hpage.evaluate(function () {
+    GAME.test.start();
+    GAME.test.fastForward(0.5);
+    var layer = document.getElementById('touch-layer');
+    var r = { touchPoints: navigator.maxTouchPoints, bootTouch: GAME.isTouch };
+    var t = new Touch({ identifier: 3, target: document.body, clientX: 500, clientY: 300 });
+    document.body.dispatchEvent(new TouchEvent('touchstart', { touches: [t], changedTouches: [t], bubbles: true }));
+    GAME.test.fastForward(0.2);
+    r.afterTouch = GAME.isTouch;
+    r.layerShown = getComputedStyle(layer).display !== 'none';
+    window.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', bubbles: true }));
+    GAME.test.fastForward(0.2);
+    r.afterMouse = GAME.isTouch;
+    r.layerHidden = getComputedStyle(layer).display === 'none';
+    r.stickOff = GAME.input.touch.active === false;
+    return r;
+  });
+  await hctx.close();
+  check('audit: a laptop reporting touch points (anchor sanity)', hybrid.touchPoints === 10, JSON.stringify(hybrid));
+  check('audit: starts on the mouse and keyboard, not the phone controls', hybrid.bootTouch === false);
+  check('audit: a touch on the screen switches to the touch controls',
+    hybrid.afterTouch === true && hybrid.layerShown === true, JSON.stringify(hybrid));
+  check('audit: and the mouse switches back',
+    hybrid.afterMouse === false && hybrid.layerHidden === true && hybrid.stickOff === true, JSON.stringify(hybrid));
+  check('audit: with no page errors on the way', hybridErrors.length === 0, hybridErrors.join(' | '));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

@@ -87,7 +87,7 @@
       if (code === 'KeyC' && GAME.mapOpen) GAME.hud.mapClear();
       if (code === 'KeyH') GAME.hud.toggleControlsBar();
       if (code === 'KeyM') {
-        var m = GAME.audio.toggleMute();
+        var m = GAME.hud.toggleMute();
         GAME.hud.message(m ? 'Muted' : 'Sound on', 1.2);
       }
       if (code === 'KeyT') GAME.hud.toggleCRT();
