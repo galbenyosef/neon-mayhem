@@ -966,8 +966,11 @@ GAME.missions = (function () {
   function start(def) {
     var P = GAME.player;
     GAME.track('mission-started-' + def.type);
+    retry = null;
     active = {
       def: def, t: 0, cpIndex: 0, score: 0,
+      // what you set off in, for a retry to hand back if it did not survive
+      carType: P.inCar && P.car && !P.car.spec.heli && !P.car.spec.plane ? P.car.type : null,
       timeLeft: def.time || 0, racers: [], state: 'fade', countdown: 3,
       // a fresh set of drops every time you take the run
       stops: def.type === 'courier' ? rollCourierStops(def) : null
@@ -1182,9 +1185,67 @@ GAME.missions = (function () {
           ? '  ·  finished ' + ordinal(racePosition()) + ' / ' + f2
           : '  ·  DNF';
       }
-      GAME.hud.message('MISSION FAILED — ' + reason + tail, 4);
+      // a death or an arrest offers it once you are back on your feet
+      var down = GAME.player.state !== 'alive';
+      if (!d.job) retry = { def: d, carType: active.carType, until: GAME.time + RETRY_WINDOW, waitRespawn: down };
+      GAME.hud.message('MISSION FAILED — ' + reason + tail + (retry && !down ? '  ·  ' + RETRY_HINT : ''), 4);
     }
     cleanup();
+  }
+
+  // A failed run left you to make your own way back to its marker: often a
+  // kilometre from where a race or a delivery came apart, and further still
+  // from the hospital. For a few seconds after it fails, Y (or RETRY) puts
+  // you back on the start line in what you set off in and runs it again. The
+  // heat still closes every start line, this one included.
+  var RETRY_WINDOW = 12, RETRY_HINT = 'Y to retry';
+  var retry = null;
+  function stepRetry(dt, P, hot) {
+    if (retry.fadeT !== undefined) {
+      retry.fadeT -= dt;
+      if (retry.fadeT <= 0) { var r = retry; retry = null; relaunch(r); }
+      return true;
+    }
+    if (retry.waitRespawn) {
+      retry.waitRespawn = false;
+      retry.until = GAME.time + RETRY_WINDOW;
+      GAME.hud.message(RETRY_HINT + ': ' + retry.def.name, 4);
+    }
+    if (GAME.time > retry.until || !defAvailable(retry.def)) { retry = null; return false; }
+    if (GAME.keyPressed('KeyY') || GAME.input.touch.retry) {
+      GAME.input.touch.retry = false;
+      if (hot) {
+        GAME.hud.message('Lose the stars first — nobody starts a run with the heat on you.', 2.5);
+        return true;
+      }
+      retry.fadeT = 0.45;
+      GAME.hud.fadeSet(1);
+      return true;
+    }
+    return false;
+  }
+  function relaunch(r) {
+    var P = GAME.player, d = r.def;
+    var need = d.type === 'race' || d.type === 'courier';
+    var ride = P.inCar && P.car && !P.car.dead && !P.car.sinking && !P.car.spec.heli && !P.car.spec.plane ? P.car : null;
+    if (P.inCar && !ride) GAME.exitCar();
+    if (need && !ride) {
+      ride = GAME.vehicles.spawnCar(r.carType || 'sedan', d.start.x, d.start.z, 0, {});
+      if (ride) GAME.seatInCar(ride);
+    }
+    if (ride && P.car === ride) {
+      ride.pos.set(d.start.x, GAME.city.groundY(d.start.x, d.start.z), d.start.z);
+      ride.speed = 0; ride.lat = 0; ride.vy = 0; ride.air = 0; ride.jumpRamp = null;
+      ride.airVX = ride.airVZ = undefined;
+    } else {
+      P.pos.set(d.start.x, GAME.city.groundY(d.start.x, d.start.z), d.start.z);
+      P.velY = 0; P.airborne = false;
+    }
+    start(d);
+    // a run with no first objective to turn you toward arms at once, with no
+    // blackout of its own to lift
+    if (active && active.state !== 'fade') GAME.hud.fadeSet(0);
+    if (!active) GAME.hud.fadeSet(0);
   }
 
   function cleanup() {
@@ -1373,6 +1434,8 @@ GAME.missions = (function () {
       // bribe, or lie low.
       var hot = GAME.police.wanted > 0;
       GAME.jobAvailable = hot ? null : jobKind;
+      GAME.retryAvailable = !!retry && !retry.waitRespawn && retry.fadeT === undefined;
+      if (retry && stepRetry(dt, P, hot)) return;
       if (jobKind && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
         GAME.input.touch.job = false;
         if (hot) {
@@ -1433,6 +1496,7 @@ GAME.missions = (function () {
       return;
     }
     GAME.jobAvailable = null;
+    GAME.retryAvailable = false;
     GAME.hud.setPoiHint('');
     // J (or the JOB button) again clocks off an ongoing shift
     if (active.def.job && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {

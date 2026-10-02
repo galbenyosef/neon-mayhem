@@ -836,6 +836,16 @@ GAME.vehicles = (function () {
   var REST_WALL = 0.4, MAX_BOUNCE = 3.5;
 
   var wallBoxes = [];   // collideStatic's list of nearby boxes, refilled per car
+  var KNOCK_SPEED = 7, KNOCK_KEEP = 0.8, KNOCK_DENT = 4;
+  // the body-vs-box separating-axis test collideStatic runs, as a yes/no
+  function overlapsBody(car, b, dxc, dzc, bhx, bhz) {
+    var fx = fwdX(car), fz = fwdZ(car), hl = car.spec.l / 2 - 0.2, hw = car.spec.w / 2;
+    var afx = Math.abs(fx), afz = Math.abs(fz);
+    if ((afx * hl + afz * hw) + bhx - Math.abs(dxc) <= 0) return false;
+    if ((afz * hl + afx * hw) + bhz - Math.abs(dzc) <= 0) return false;
+    if (hl + (bhx * afx + bhz * afz) - Math.abs(dxc * fx + dzc * fz) <= 0) return false;
+    return hw + (bhx * afz + bhz * afx) - Math.abs(dxc * fz - dzc * fx) > 0;
+  }
   function collideStatic(car, dt) {
     var fx = fwdX(car), fz = fwdZ(car);
     var sxv = fz, szv = -fx;
@@ -861,6 +871,19 @@ GAME.vehicles = (function () {
       var bcx = (b.minX + b.maxX) / 2, bcz = (b.minZ + b.maxZ) / 2;
       var bhx = (b.maxX - b.minX) / 2, bhz = (b.maxZ - b.minZ) / 2;
       var dxc = car.pos.x - bcx, dzc = car.pos.z - bcz;
+      // A lamp post, a hydrant, a bench: anything moving goes through it and
+      // it goes down, for a fifth of the pace and a dent. A post this thin
+      // used to stop a car at 29 m/s as dead as a building. Not on a bike —
+      // that still throws the rider (below).
+      var kspd = b.knock && !car.spec.bike ? Math.sqrt(car.vx * car.vx + car.vz * car.vz) : 0;
+      if (kspd > KNOCK_SPEED && overlapsBody(car, b, dxc, dzc, bhx, bhz) && GAME.city.knockProp(b, Math.atan2(car.vx, car.vz))) {
+        car.speed *= KNOCK_KEEP; car.lat *= KNOCK_KEEP; car.vx *= KNOCK_KEEP; car.vz *= KNOCK_KEEP;
+        damageCar(car, KNOCK_DENT, 'wall');
+        GAME.audio.crash(0.35, car.pos.x, car.pos.z);
+        GAME.fx.spawn(bcx, car.pos.y + 0.8, bcz, { count: 6, color: 0xd0d4dc, spread: 2.5, life: 0.45, grav: -6 });
+        if (car === GAME.player.car) GAME.cameraShake = Math.max(GAME.cameraShake || 0, 0.25);
+        continue;
+      }
       var oX = (afx * hl + Math.abs(sxv) * hw) + bhx - Math.abs(dxc);
       if (oX <= 0) continue;
       var oZ = (afz * hl + Math.abs(szv) * hw) + bhz - Math.abs(dzc);

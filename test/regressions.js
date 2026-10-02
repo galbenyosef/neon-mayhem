@@ -22,6 +22,12 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   4z. THE PLAY LOOP — a roof is not a hiding place: officers below see
+//       and shoot up at its edge, its middle is cover, and nobody climbing
+//       after you brings the helicopter early. A failed run can be retried
+//       from where it failed, or from the hospital, for a few seconds.
+//       A car at a crawl knocks people down rather than killing them, and a
+//       lamp post goes down to a car at speed instead of stopping it dead.
 //   3z. THE LAW CAN BE LOST — break contact and the police hunt where they
 //       last saw you; lie low and even four stars go, though not in a hurry.
 //       Sleeping off a manhunt takes two stars, not all of them; the same
@@ -466,14 +472,25 @@ function withTimeout(p, ms) {
   // sinking, the car never asked again: it carried on under the last throttle,
   // skimmed out across the water and stopped on the surface for good. Bail out
   // on the sand as the wheels reached the water and it was still yours on the
-  // tick it got there, so the same. The beach at z = -60 runs straight from the
-  // sand into open sea, with no pier in the way.
+  // tick it got there, so the same. The beach near z = -60 runs straight from
+  // the sand into open sea, with no pier in the way — but the beach palms are
+  // solid trunks now, so take the nearest lane with nothing standing in it.
   var intoSea = await page.evaluate(function () {
     var P = GAME.player, C = GAME.city, r = {};
     GAME.police.clearWanted();
     P.health = 100;
     if (P.inCar) GAME.exitCar();
-    var z = -60, sh = C.shoreline(z);
+    window.__beachZ = function () {
+      for (var k = 0; k < 20; k++) {
+        var z = -60 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 2, sh = C.shoreline(z), ok = true;
+        for (var x = sh - 50; x < sh + 6 && ok; x += 1) {
+          ok = !C.hash.query(x, z, 2.2).some(function (b) { return b.h > 0.4 && b.minY === undefined; });
+        }
+        if (ok) return z;
+      }
+      return -60;
+    };
+    var z = window.__beachZ(), sh = C.shoreline(z);
     GAME.test.teleport(sh - 50, z);
     GAME.test.fastForward(0.2);
     var car = GAME.vehicles.spawnCar('sedan', sh - 46, z, Math.PI / 2, {});
@@ -518,7 +535,7 @@ function withTimeout(p, ms) {
   // bailing out on the sand, short of the water, with the car still rolling
   var bail = await page.evaluate(function () {
     var P = GAME.player, C = GAME.city, r = {};
-    var z = -60, sh = C.shoreline(z);
+    var z = window.__beachZ(), sh = C.shoreline(z);
     GAME.test.teleport(sh - 50, z);
     GAME.test.fastForward(0.2);
     var car = GAME.vehicles.spawnCar('sedan', sh - 46, z, Math.PI / 2, {});
@@ -1515,6 +1532,317 @@ function withTimeout(p, ms) {
   check('rampage: running, at four stars (anchor sanity)', rage.running === true && rage.during === 4, JSON.stringify(rage));
   check('rampage: passing it cools you to two stars',
     rage.passed === true && rage.after === 2, 'passed=' + rage.passed + ' stars after=' + rage.after);
+
+  // ---------- 4z: the play loop ----------
+  // A roof was a safe house. Officers would not shoot at anyone more than
+  // 3 m above them, and the flat sight line from the street runs into the
+  // building you are standing on, so at two or three stars you could wait
+  // the heat out up there untouched. Officers' own shots are counted here,
+  // so the helicopter's do not blur the edge/middle answer.
+  var roof = await page.evaluate(function () {
+    var C = GAME.city, P = GAME.player, out = { found: false };
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    var pick = null, spots = [[-100, -100], [100, 100], [-100, 100], [100, -100]];
+    for (var sp = 0; sp < spots.length && !pick; sp++) {
+      var cands = C.hash.query(spots[sp][0], spots[sp][1], 60);
+      for (var i = 0; i < cands.length && !pick; i++) {
+        var b = cands[i];
+        if (b.tag !== 'building' || b.noLOS || !(b.h > 10 && b.h < 30) || b.minY !== undefined) continue;
+        if (b.maxX - b.minX < 16 || b.maxZ - b.minZ < 10) continue;
+        var bz = (b.minZ + b.maxZ) / 2;
+        if (C.hash.query(b.maxX + 12, bz, 4).length || C.isInWater(b.maxX + 12, bz)) continue;
+        if (!C.hash.segmentClear(b.maxX + 0.2, bz, b.maxX + 18, bz)) continue;
+        pick = b;
+      }
+    }
+    if (!pick) return out;
+    out.found = true;
+    var cz = (pick.minZ + pick.maxZ) / 2;
+    var shoot0 = GAME.combat.npcShoot, copShots = 0;
+    GAME.combat.npcShoot = function () {
+      var sh = arguments[5];
+      if (sh && (sh.isCop || sh.isPolice) && !arguments[6]) copShots++;
+      return shoot0.apply(GAME.combat, arguments);
+    };
+    function trial(inset) {
+      GAME.police.clearWanted();
+      GAME.world.peds.slice().forEach(function (p) { if (p.isCop) GAME.peds.removePed(p); });
+      GAME.test.teleport(pick.maxX - inset, cz);
+      P.pos.y = pick.h;
+      GAME.test.fastForward(0.3);
+      var o = { standY: P.pos.y, h: pick.h, air0: GAME.police.airUnitCount };
+      GAME.test.setWanted(2);
+      window.__msgs = [];
+      copShots = 0;
+      var heliAt = null;
+      for (var t = 0; t < 60 * 8; t++) {
+        // two officers held on the pavement below, square on to the face
+        var cops = GAME.world.peds.filter(function (p) { return p.isCop && !p.dead; });
+        for (var k = 0; k < Math.min(2, cops.length); k++) { cops[k].pos.x = pick.maxX + 12; cops[k].pos.z = cz + (k ? 3 : -3); }
+        GAME.test.setWanted(2);
+        P.health = 100;
+        GAME.test.fastForward(1 / 60);
+        if (heliAt === null && GAME.police.airUnitCount > 0) heliAt = +(t / 60).toFixed(1);
+      }
+      o.copShots = copShots;
+      o.heliAt = heliAt;
+      o.told = window.__msgs.some(function (m) { return m.indexOf('air support') >= 0; });
+      o.stillUp = P.pos.y > pick.h - 0.5;
+      return o;
+    }
+    try {
+      out.edge = trial(0.6);
+      out.middle = trial((pick.maxX - pick.minX) / 2);
+    } finally {
+      GAME.combat.npcShoot = shoot0;
+      GAME.police.clearWanted();
+      GAME.world.peds.slice().forEach(function (p) { if (p.isCop) GAME.peds.removePed(p); });
+      GAME.test.teleport(pick.maxX + 12, cz);
+      GAME.test.fastForward(0.5);
+      P.health = 100;
+    }
+    return out;
+  });
+  check('roof: a roof to stand on with a clear street below (anchor sanity)',
+    roof.found && roof.edge.standY === roof.edge.h && roof.edge.stillUp && roof.middle.stillUp && roof.edge.air0 === 0,
+    JSON.stringify(roof));
+  check('roof: at its edge, the officers below shoot up at you',
+    roof.found && roof.edge.copShots > 0, 'shots from the street in 8 s: ' + (roof.edge && roof.edge.copShots));
+  check('roof: well back from the edge, the roof is cover',
+    roof.found && roof.middle.copShots === 0, 'shots from the street in 8 s: ' + (roof.middle && roof.middle.copShots));
+  check('roof: and nobody can climb up, so the helicopter comes early',
+    roof.found && roof.edge.heliAt !== null && roof.edge.told,
+    'air unit up after ' + (roof.edge && roof.edge.heliAt) + ' s at two stars, told=' + (roof.edge && roof.edge.told));
+
+  // No retry after a failed run: you drove back to its marker yourself, a
+  // kilometre and more, and from the hospital after a death. Now Y (or
+  // RETRY) puts you back on the start line for a few seconds after it fails,
+  // in what you set off in — once you are back on your feet, after a death.
+  var rt = await page.evaluate(function () {
+    var P = GAME.player, M = GAME.missions, C = GAME.city, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    if (M.active) M.failActive('test');
+    var def = M.DEFS.filter(function (d) { return d.id === 'race0'; })[0];
+    function line() { var f = GAME.focus(); return Math.hypot(f.x - def.start.x, f.z - def.start.z); }
+    function lineUp(car) {
+      GAME.test.teleport(def.start.x, def.start.z);
+      for (var i = 0; i < 60 * 6 && !(M.active && M.active.state === 'run'); i++) GAME.test.fastForward(1 / 60);
+      return !!(M.active && M.active.def === def && M.active.state === 'run' && P.car === car);
+    }
+    function pressY() { GAME.test.pressKey('KeyY'); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyY', false); }
+    GAME.test.teleport(def.start.x + 40, def.start.z);
+    var car = GAME.test.spawnCar('sports', 2, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(car);
+    GAME.test.fastForward(1.2);
+    r.ran = lineUp(car);
+    // the run comes apart a long way off
+    var far = C.nearestRoadPoint(def.start.x - 450, def.start.z + 350);
+    GAME.test.teleport(far.x, far.z);
+    window.__msgs = [];
+    M.failActive('test');
+    GAME.test.fastForward(1 / 60);
+    r.far = Math.round(line());
+    r.offered = window.__msgs.some(function (m) { return m.indexOf('Y to retry') >= 0; });
+    r.button = GAME.retryAvailable === true;
+    // not with the heat on
+    GAME.test.setWanted(1);
+    window.__msgs = [];
+    pressY();
+    GAME.test.fastForward(1);
+    r.hotRefused = !M.active && window.__msgs.some(function (m) { return m.indexOf('Lose the stars') >= 0; });
+    GAME.police.clearWanted();
+    pressY();
+    GAME.test.fastForward(1.2);
+    r.back = !!(M.active && M.active.def === def);
+    r.backAt = Math.round(line());
+    r.sameCar = P.inCar && P.car === car;
+    for (var i = 0; i < 60 * 6 && !(M.active && M.active.state === 'run'); i++) GAME.test.fastForward(1 / 60);
+    r.racing = !!(M.active && M.active.state === 'run' && M.active.racers.length > 0);
+    // and an offer left alone lapses
+    M.failActive('test');
+    GAME.test.fastForward(13);
+    pressY();
+    GAME.test.fastForward(1.2);
+    r.lapsed = !M.active && GAME.retryAvailable === false;
+    // a death: lined up again, then wasted mid-run
+    GAME.test.teleport(def.start.x + 40, def.start.z);
+    GAME.test.fastForward(0.5);
+    r.ranAgain = lineUp(car);
+    window.__msgs = [];
+    GAME.godMode = false;
+    GAME.playerWasted('test');
+    r.carType = car.type;
+    return r;
+  });
+  await page.evaluate(function () {
+    GAME.input.keys['KeyR'] = true;
+    GAME.test.fastForward(1.2);
+    GAME.input.keys['KeyR'] = false;
+  });
+  try {
+    await page.waitForFunction(function () { return GAME.player.state === 'alive'; }, null, { timeout: 10000 });
+  } catch (e) { /* reported below */ }
+  var rt2 = await page.evaluate(function () {
+    var P = GAME.player, M = GAME.missions, r = {};
+    var def = M.DEFS.filter(function (d) { return d.id === 'race0'; })[0];
+    GAME.test.fastForward(0.2);
+    r.alive = P.state === 'alive';
+    r.offered = window.__msgs.some(function (m) { return m.indexOf('Y to retry: ' + def.name) >= 0; });
+    r.onFoot = !P.inCar;
+    GAME.test.pressKey('KeyY'); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyY', false);
+    GAME.test.fastForward(1.2);
+    var f = GAME.focus();
+    r.back = !!(M.active && M.active.def === def);
+    r.backAt = Math.round(Math.hypot(f.x - def.start.x, f.z - def.start.z));
+    r.rideType = P.inCar && P.car ? P.car.type : null;
+    // leave nothing running for the groups after this one
+    if (M.active) M.failActive('test');
+    GAME.test.fastForward(13);
+    if (P.inCar) { var c = P.car; GAME.exitCar(); GAME.vehicles.removeCar(c); }
+    // and the car the death left on the line
+    GAME.world.cars.slice().forEach(function (wc) {
+      if (!wc.occupied && wc.type === 'sports' && Math.hypot(wc.pos.x - def.start.x, wc.pos.z - def.start.z) < 30) GAME.vehicles.removeCar(wc);
+    });
+    GAME.test.fastForward(0.5);
+    P.health = 100;
+    return r;
+  });
+  check('retry: a race to fail, run from its line (anchor sanity)', rt.ran && rt.far > 300, JSON.stringify(rt));
+  check('retry: failing it offers a retry, on the key and the button',
+    rt.offered && rt.button, 'message=' + rt.offered + ' button=' + rt.button);
+  check('retry: not with stars on you', rt.hotRefused);
+  check('retry: Y puts you back on its start line, in your own car, and runs it',
+    rt.back && rt.backAt < 25 && rt.sameCar && rt.racing,
+    'back=' + rt.back + ' ' + rt.backAt + ' m from the line, same car=' + rt.sameCar + ', racing=' + rt.racing);
+  check('retry: an offer left alone lapses', rt.lapsed);
+  check('retry: after a death it is offered once you are back on your feet',
+    rt.ranAgain && rt2.alive && rt2.offered && rt2.onFoot, JSON.stringify(rt2));
+  check('retry: and hands you back the kind of car you set off in',
+    rt2.back && rt2.backAt < 25 && rt2.rideType === rt.carType,
+    'back=' + rt2.back + ' ' + rt2.backAt + ' m from the line in a ' + rt2.rideType + ' (set off in a ' + rt.carType + ')');
+
+  // Too fragile and too solid. Every touch from 4 m/s up killed whoever it
+  // touched — a jog — and two of them were a wanted star; while a half-metre
+  // lamp post stopped a car at 29 m/s as dead as a building, and the car
+  // went straight through benches and the beach palms.
+  var soft = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, S = GAME.settings, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    var keep = { t: S.maxTraffic, p: S.maxParked };
+    S.maxTraffic = 0; S.maxParked = 0;
+    // a clear straight on a mainland street, and a car on it
+    var x = -150 + 3.1, z0 = -40;
+    GAME.test.teleport(x - 4, z0);
+    GAME.world.cars.slice().forEach(function (c) { if (Math.hypot(c.pos.x - x, c.pos.z - z0) < 120) GAME.vehicles.removeCar(c); });
+    var car = GAME.vehicles.spawnCar('sedan', x, z0, 0, {});
+    GAME.test.enterNearestCar(car);
+    GAME.test.fastForward(1);
+    r.driving = P.car === car;
+    // walk into someone at a crawl, twice; then at a proper speed — with
+    // somebody across the street to see it, or no crime is ever reported
+    GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - x, p.pos.z - z0) < 60) GAME.peds.removePed(p); });
+    var wit = GAME.peds.spawnPed(x + 10, z0 + 6);
+    function hold() { wit.pos.x = x + 10; wit.pos.z = z0 + 6; wit.state = 'idle'; wit.speed = 0; }
+    function hitAt(sp) {
+      GAME.world.peds.slice().forEach(function (p) { if (p !== wit && Math.hypot(p.pos.x - car.pos.x, p.pos.z - car.pos.z) < 40) GAME.peds.removePed(p); });
+      car.pos.set(x, C.groundY(x, z0), z0); car.heading = 0; car.lat = 0; car.vy = 0;
+      var ped = GAME.peds.spawnPed(x, z0 + 6);
+      ped.state = 'idle'; ped.speed = 0; ped.temper = 0;
+      var o = { hp0: ped.hp, wasDive: false, peakHeat: 0 };
+      for (var t = 0; t < 60 * 3; t++) {
+        car.speed = o.wasDive ? 0 : sp; car.controls.throttle = 0;   // and stop once you have hit them
+        hold();
+        GAME.test.fastForward(1 / 60);
+        o.peakHeat = Math.max(o.peakHeat, Math.round(GAME.police.heat));
+        if (ped.state === 'dive') o.wasDive = true;
+        if (ped.dead || Math.hypot(ped.pos.x - car.pos.x, ped.pos.z - car.pos.z) > 25) break;
+      }
+      for (var t2 = 0; t2 < 60 && !ped.dead; t2++) { car.speed = 0; hold(); GAME.test.fastForward(1 / 60); }
+      o.dead = !!ped.dead; o.hp = ped.hp; o.state = ped.state;
+      if (!ped.dead) GAME.peds.removePed(ped);
+      return o;
+    }
+    r.bump1 = hitAt(6);
+    r.bump2 = hitAt(6);
+    r.starsAfterBumps = GAME.police.wanted;
+    r.heatAfterBumps = Math.max(r.bump1.peakHeat, r.bump2.peakHeat);   // the witness saw them (anchor)
+    r.fast = hitAt(16);
+    GAME.police.clearWanted();
+    GAME.peds.removePed(wit);
+    // a lamp post at speed, and one at a crawl
+    // a lamp post is the 0.5 m, 6 m tall prop (found by shape, not by the
+    // flag the fix added, so this reads the same on code without it)
+    function isPost(b) { return b.tag === 'prop' && Math.abs(b.maxX - b.minX - 0.5) < 0.01 && b.h === 6; }
+    function isDown(b) { return !!(b.knock && b.knock.down); }
+    var posts = C.hash.all.filter(isPost);
+    r.posts = posts.length;
+    function postAt(sp) {
+      // the nearest standing post to the west street, approached along +z
+      var px = 0, best = null;
+      for (var i = 0; i < posts.length; i++) {
+        var b = posts[i]; if (isDown(b)) continue;
+        var bx = (b.minX + b.maxX) / 2, bz = (b.minZ + b.maxZ) / 2;
+        if (C.isInWater(bx, bz - 20) || !C.hash.segmentClear(bx, bz - 20, bx, bz - 1)) continue;
+        if (!best || Math.hypot(bx + 150, bz) < Math.hypot(px + 150, best.z)) { best = { b: b, x: bx, z: bz }; px = bx; }
+      }
+      if (!best) return { found: false };
+      car.pos.set(best.x, C.groundY(best.x, best.z - 10), best.z - 10); car.heading = 0; car.lat = 0; car.vy = 0;
+      car.speed = sp; car.hp = car.spec.hp;
+      // the most it lost in any one tick, as a share of what it had: a dead
+      // stop is all of it
+      var o = { found: true, before: sp, maxDrop: 0 };
+      for (var t = 0; t < 60 * 2; t++) {
+        car.controls.throttle = 0;
+        var was = car.speed;
+        GAME.test.fastForward(1 / 60);
+        if (was > 0.5) o.maxDrop = Math.max(o.maxDrop, (was - car.speed) / was);
+        if (car.pos.z > best.z + 4) break;
+      }
+      o.past = car.pos.z > best.z + 2;
+      o.down = isDown(best.b);
+      o.inHash = C.hash.all.indexOf(best.b) >= 0;
+      o.box = best.b;
+      return o;
+    }
+    var fastPost = postAt(26);
+    r.fastPost = { found: fastPost.found, maxDrop: +fastPost.maxDrop.toFixed(2), past: fastPost.past, down: fastPost.down, inHash: fastPost.inHash };
+    var slowPost = postAt(3);
+    r.slowPost = { found: slowPost.found, past: slowPost.past, down: slowPost.down };
+    // the beach palms and the boardwalk benches are solid now
+    r.beachPalm = C.hash.query(372.8, 0, 14).some(function (b) { return b.tag === 'prop' && b.maxX - b.minX < 1 && b.minX > 370; });
+    r.bench = C.hash.query(367.5, 0, 30).some(function (b) { return b.tag === 'prop' && b.h < 1.5 && b.maxZ - b.minZ > 2; });
+    // and a flattened post is put back up once nobody is near it
+    GAME.exitCar();
+    GAME.vehicles.removeCar(car);
+    if (fastPost.box) {
+      var fb = fastPost.box;
+      GAME.test.teleport((fb.minX + fb.maxX) / 2 + 300 > 340 ? (fb.minX + fb.maxX) / 2 - 300 : (fb.minX + fb.maxX) / 2 + 300, (fb.minZ + fb.maxZ) / 2);
+      GAME.test.fastForward(50);
+      r.backUp = !isDown(fb) && C.hash.all.indexOf(fb) >= 0;
+    }
+    S.maxTraffic = keep.t; S.maxParked = keep.p;
+    P.health = 100;
+    return r;
+  });
+  check('bump: a car on a clear street (anchor sanity)', soft.driving, JSON.stringify(soft));
+  check('bump: a car at a crawl knocks someone down, it does not kill them',
+    !soft.bump1.dead && soft.bump1.wasDive && soft.bump1.hp < soft.bump1.hp0 && !soft.bump2.dead,
+    JSON.stringify([soft.bump1, soft.bump2]));
+  check('bump: and two of those are not a wanted star, in front of a witness',
+    soft.starsAfterBumps === 0 && soft.heatAfterBumps > 0, 'stars=' + soft.starsAfterBumps + ' on heat ' + soft.heatAfterBumps);
+  check('bump: a car at speed still kills', soft.fast.dead, JSON.stringify(soft.fast));
+  check('props: a lamp post at speed goes down, and the car goes on through',
+    soft.fastPost.found && soft.fastPost.down && !soft.fastPost.inHash && soft.fastPost.past && soft.fastPost.maxDrop < 0.3,
+    JSON.stringify(soft.fastPost));
+  check('props: at a crawl it is still a post', soft.slowPost.found && !soft.slowPost.down && !soft.slowPost.past,
+    JSON.stringify(soft.slowPost));
+  check('props: the beach palms and the boardwalk benches are solid', soft.beachPalm && soft.bench,
+    'palm=' + soft.beachPalm + ' bench=' + soft.bench);
+  check('props: and a flattened post is back up once nobody is near it', soft.backUp === true, 'backUp=' + soft.backUp);
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

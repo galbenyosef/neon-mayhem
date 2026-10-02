@@ -253,6 +253,59 @@ GAME.police = (function () {
     }
     return true;
   }
+
+  // Eyes from the street to someone a storey or more above or below. The
+  // flat sight line cannot answer that — the roof you stand on is in the way
+  // of every one of them — so it was no shot at all, and no sighting either,
+  // and any rooftop was a safe house you could wait out the heat on. This
+  // follows the real line instead, each building it passes over tested as the
+  // block it is: the edge of a roof is exposed, the middle of it is cover. A
+  // bridge deck keeps the old rule (no shooting through a floor), since a
+  // line from under it to on top of it passes through it.
+  var losBoxes = [], slabT = [0, 1];
+  function slab(p, d, lo, hi) {
+    if (Math.abs(d) < 1e-9) return p > lo && p < hi;
+    var a = (lo - p) / d, c = (hi - p) / d;
+    if (a > c) { var tmp = a; a = c; c = tmp; }
+    if (a > slabT[0]) slabT[0] = a;
+    if (c < slabT[1]) slabT[1] = c;
+    return slabT[0] < slabT[1];
+  }
+  function lineClear(ex, ey, ez, px, py, pz) {
+    var C = GAME.city;
+    var dx = px - ex, dy = py - ey, dz = pz - ez;
+    var steps = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dz * dz) / 2));
+    for (var i = 0; i <= steps; i++) {
+      var t = i / steps;
+      var boxes = C.hash.queryInto(ex + dx * t, ez + dz * t, 1.5, losBoxes);
+      for (var b = 0; b < boxes.length; b++) {
+        var q = boxes[b];
+        if (q.noLOS || q.h === undefined) continue;
+        slabT[0] = 0; slabT[1] = 1;
+        if (slab(ex, dx, q.minX, q.maxX) && slab(ez, dz, q.minZ, q.maxZ) &&
+          slab(ey, dy, q.minY !== undefined ? q.minY : -1e6, q.h)) return false;
+      }
+    }
+    return true;
+  }
+  function eyesOn(ox, oy, oz, px, py, pz, shooting) {
+    var C = GAME.city;
+    if (Math.abs(py - oy) < 3) return C.hash.segmentClear(ox, oz, px, pz);
+    if (C.crossingY(ox, oz) !== null || C.crossingY(px, pz) !== null) {
+      return !shooting && C.hash.segmentClear(ox, oz, px, pz);
+    }
+    return lineClear(ox, oy + 1.5, oz, px, py + 1.2, pz);
+  }
+  // On foot somewhere no officer can follow: up on a roof, not on a ramp, a
+  // bridge or a flight of steps (groundY counts those as ground). Nobody
+  // climbs after you, so at two stars and up the helicopter comes early.
+  var PERCH_H = 4;
+  function perched() {
+    var P = GAME.player;
+    if (P.inCar || P.parachuting || P.state !== 'alive') return false;
+    return P.pos.y - GAME.city.groundY(P.pos.x, P.pos.z, P.pos.y) > PERCH_H;
+  }
+  var perchToldAt = -1e9;
   // The searchlight never changes shape or colour, so every bird carries the
   // same cone and material, built the first time one lifts off. Shared, so
   // disposeTree leaves them for the next one.
@@ -302,7 +355,12 @@ GAME.police = (function () {
   }
   function updateAirUnits(dt, s) {
     var P = GAME.player;
-    var want = s >= 5 ? 2 : s >= 4 ? 1 : 0;
+    var up = s >= 2 && s < 4 && perched();
+    var want = s >= 5 ? 2 : s >= 4 ? 1 : up ? 1 : 0;
+    if (up && airUnits.length === 0 && GAME.time - perchToldAt > 60) {
+      perchToldAt = GAME.time;
+      GAME.hud.message('Nobody can climb up after you — air support is on its way.', 3);
+    }
     // compacted in place: this runs every tick, birds or no birds
     var keep = 0;
     for (var k = 0; k < airUnits.length; k++) {
@@ -341,7 +399,7 @@ GAME.police = (function () {
         if (d > 240) { GAME.vehicles.removeCar(h); airUnits.splice(i, 1); }
         continue;
       }
-      if (s >= 4) {
+      if (s >= 4 || up) {
         h.fireT = (h.fireT || 0) - dt;
         var tdx = f.x - h.pos.x, tdz = f.z - h.pos.z;
         if (h.fireT <= 0 && tdx * tdx + tdz * tdz < 85 * 85 && airCanSee(h, f.x, fy, f.z)) {
@@ -549,7 +607,7 @@ GAME.police = (function () {
         cop.shootT -= dt;
         if (cop.shootT <= 0) {
           cop.shootT = U.randRange(Math.random, 1.0, 1.9);
-          GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.35, 8, cop, sus);
+          GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, 0.35, 8, cop, sus);
         }
         continue;
       }
@@ -699,10 +757,9 @@ GAME.police = (function () {
         var pz2 = P.inCar && P.car ? P.car.pos.z : P.pos.z;
         var py2 = P.inCar && P.car ? P.car.pos.y : P.pos.y;
         var d2 = U.dist2(car.pos.x, car.pos.z, px2, pz2);
-        // no shooting at someone a storey above or below you
-        if (d2 < 40 * 40 && Math.abs(py2 - car.pos.y) < 3
-            && GAME.city.hash.segmentClear(car.pos.x, car.pos.z, px2, pz2)) {
-          GAME.combat.npcShoot(car.pos.x, 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5, car);
+        // a storey above or below takes a real line up to you (eyesOn)
+        if (d2 < 40 * 40 && eyesOn(car.pos.x, car.pos.y, car.pos.z, px2, py2, pz2, true)) {
+          GAME.combat.npcShoot(car.pos.x, car.pos.y + 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5, car);
         }
         car.shootT = U.randRange(Math.random, 1.1, 2.2) / Math.max(1, s * 0.5);
       }
@@ -751,8 +808,7 @@ GAME.police = (function () {
     // every tick even when the stars, the range or your speed had already
     // ruled a shot out
     var wantShoot = s >= 2 && dist < 28 && playerSlow
-      && Math.abs(f.y - cop.pos.y) < 3   // not through a floor
-      && GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, f.x, f.z);
+      && eyesOn(cop.pos.x, cop.pos.y, cop.pos.z, f.x, f.y, f.z, true);   // up at a roof edge too
     var chaseSpeed = 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
     var cx0 = cop.pos.x, cz0 = cop.pos.z;
@@ -776,7 +832,7 @@ GAME.police = (function () {
       j.armR.rotation.x = -Math.PI / 2;
       cop.shootT -= dt;
       if (cop.shootT <= 0) {
-        GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s, cop);
+        GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s, cop);
         cop.shootT = U.randRange(Math.random, 0.9, 1.8);
       }
     } else {
@@ -938,14 +994,15 @@ GAME.police = (function () {
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
     if (flownOff) active = []; // nothing on the ground can hold eyes on you up there
+    var py = P.inCar && P.car ? P.car.pos.y : P.pos.y;
     for (var v = 0; v < active.length; v++) {
-      if (U.dist2(active[v].pos.x, active[v].pos.z, px, pz) < 70 * 70 &&
-        GAME.city.hash.segmentClear(active[v].pos.x, active[v].pos.z, px, pz)) { seen = true; break; }
+      var av0 = active[v];
+      if (U.dist2(av0.pos.x, av0.pos.z, px, pz) < 70 * 70 &&
+        eyesOn(av0.pos.x, av0.pos.y, av0.pos.z, px, py, pz)) { seen = true; break; }
     }
     // the air unit's eyes work at altitude — a 4-5 star bird on your tail
     // means climbing away no longer cools the heat. But they are eyes: a
     // tower between you and it, or a bridge deck over you, and it has lost you
-    var py = P.inCar && P.car ? P.car.pos.y : P.pos.y;
     for (var av = 0; !seen && av < airUnits.length; av++) {
       if (U.dist2(airUnits[av].pos.x, airUnits[av].pos.z, px, pz) < 90 * 90 &&
         airCanSee(airUnits[av], px, py, pz)) { seen = true; break; }
@@ -955,7 +1012,7 @@ GAME.police = (function () {
       for (var fc = 0; fc < peds.length; fc++) {
         var pd = peds[fc];
         if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60 &&
-          GAME.city.hash.segmentClear(pd.pos.x, pd.pos.z, px, pz)) { seen = true; break; }
+          eyesOn(pd.pos.x, pd.pos.y, pd.pos.z, px, py, pz)) { seen = true; break; }
       }
     }
     spotted = seen;

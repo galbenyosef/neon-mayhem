@@ -678,6 +678,7 @@ GAME.combat = (function () {
     var inCar = atPlayer && !!(P.inCar && P.car);
     var tx = atPlayer ? (inCar ? P.car.pos.x : P.pos.x) : victim.pos.x;
     var tz = atPlayer ? (inCar ? P.car.pos.z : P.pos.z) : victim.pos.z;
+    var ty = (atPlayer ? (inCar ? P.car.pos.y : P.pos.y) : victim.pos.y) + 1.2;
     var d = U.dist(fromX, fromZ, tx, tz);
 
     // Officers are individuals. One spawns a better shot than the next and
@@ -715,7 +716,9 @@ GAME.combat = (function () {
       var tc = rayCarBody(fromX, fromZ, dx, dz, cv);
       if (tc >= 0 && tc < stop) stop = tc;
     }
-    GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * stop, 1.2, fromZ + dz * stop);
+    // to wherever it stopped, at the height it had got to on the way there
+    // (up at a roof edge, down from a deck), not at a fixed 1.2 m off sea level
+    GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * stop, fromY + (ty - fromY) * (stop / (d || 1)), fromZ + dz * stop);
     if (stop < d - 0.3) return false;
     // how far off it passes at your range, against how wide you are: what you
     // saw happen is now what happened

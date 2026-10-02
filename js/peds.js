@@ -155,6 +155,10 @@ function buildPedMesh(opts) {
 
 GAME.peds = (function () {
   var world = GAME.world;
+  // a car that touches someone below RUNOVER_KILL m/s knocks them down for
+  // RUNOVER_HURT hp per m/s; at or above it, or if that is all they have, it
+  // kills them
+  var RUNOVER_KILL = 10, RUNOVER_HURT = 2.5;
   var pushOut = { x: 0, z: 0 };   // resolveCircle's answer for the walkers, reused
 
   function spawnPed(x, z, opts) {
@@ -195,6 +199,7 @@ GAME.peds = (function () {
       fleeX: 0, fleeZ: 0,
       diveX: 0, diveY: 0, diveZ: 0, diveDur: 0,
       knockX: 0, knockY: NaN, knockZ: 0, knockSpin: 0,
+      knockT: 0, knockedBy: null,   // knocked down by a slow car, and which
       prevX2: NaN, prevZ2: NaN, stuckT: 0,
       stolenCar: null, hadDriver: undefined, yankT: 0, yankWarned: false, leftCar: 0,
       jobPed: false, iceServed: false, carrying: undefined,
@@ -522,7 +527,7 @@ GAME.peds = (function () {
               // officer, which was tolerable while he could only ever hit
               // another NPC and is not now. At 0.15 he lands about a quarter
               // of his rounds at twelve metres where an officer lands a third.
-              GAME.combat.npcShoot(ped.pos.x, 1.35, ped.pos.z, 0.15, 6, ped,
+              GAME.combat.npcShoot(ped.pos.x, ped.pos.y + 1.35, ped.pos.z, 0.15, 6, ped,
                 F.kind === 'ped' ? F.ped : undefined);
               // A gun in the street is a police matter whoever it is aimed at,
               // so this is reported either way — the officer who turns up
@@ -780,10 +785,12 @@ GAME.peds = (function () {
       if (ped.state !== 'dive') animateWalk(ped, dt);
 
       // run over check
+      if (ped.knockT > 0) ped.knockT -= dt;
       for (var c2 = 0; c2 < world.cars.length; c2++) {
         var car2 = world.cars[c2];
         var sp2 = Math.abs(car2.speed);
         if (sp2 < 4) continue;
+        if (ped.knockT > 0 && ped.knockedBy === car2) continue;   // already on the bonnet
         if (Math.abs(car2.pos.y - ped.pos.y) > 3) continue;   // it's up on a roof
         // The bodywork, not a circle around it. This was `dist2 < 5.2` — a
         // 2.28 m circle measured from the car's CENTRE — while a sedan is
@@ -797,6 +804,28 @@ GAME.peds = (function () {
         if (Math.abs(rdx * fz2 - rdz * fx2) > car2.spec.w / 2 + 0.45) continue;
         {
           var byPlayer = (car2 === P.car && P.inCar);
+          // A bump is not a death. Every touch from 4 m/s up killed outright
+          // — a jog — and two of them were a wanted star. Below RUNOVER_KILL
+          // they go down hurt and get back up: thrown clear of the car's line
+          // (faster than it, or it would only run into them again), then off
+          // and away from it. It is still a crime, a lesser one.
+          var hurt = sp2 * RUNOVER_HURT;
+          if (sp2 < RUNOVER_KILL && ped.hp > hurt) {
+            ped.hp -= hurt;
+            ped.knockT = 1.2; ped.knockedBy = car2;
+            if (!ped.jobPed) {   // a customer or a fare stays steered by the job
+              var lat3 = rdx * fz2 - rdz * fx2 >= 0 ? 1 : -1;
+              ped.state = 'dive';
+              ped.diveT = ped.diveDur = 0.85;
+              ped.diveX = fx2 * (sp2 * 1.2 + 1) + fz2 * lat3 * 3;
+              ped.diveZ = fz2 * (sp2 * 1.2 + 1) - fx2 * lat3 * 3;
+              ped.foe = null; ped.aimPose = false;
+            }
+            if (byPlayer) GAME.police.reportCrime('hit_ped', ped.pos);
+            GAME.audio.crash(0.2, ped.pos.x, ped.pos.z);
+            GAME.audio.yelp(ped.pos.x, ped.pos.z);
+            break;
+          }
           kill(ped, 'car', byPlayer);
           if (byPlayer) GAME.haptics.splat(Math.min(1, sp2 / 26));
           // thrown along the bonnet rather than dropping on the spot

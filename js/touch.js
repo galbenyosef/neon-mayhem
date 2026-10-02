@@ -188,6 +188,8 @@ GAME.touch = (function () {
     btns.gsGun = mkBtn('GUN', 232, 30, 68, { flag: 'fire' });
     btns.gsRkt = mkBtn('RKT', 232, 112, 62, { flag: 'aim' });
     carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt);
+    // a failed run's retry offer, on foot or at the wheel (missions.js)
+    btns.retry = mkBtn('RETRY', 24, 236, 62, { press: function () { T.retry = true; } });
 
     // the radar (moved top-left by enable()) opens the full map on a tap
     var mm = document.getElementById('minimap-wrap');
@@ -342,7 +344,7 @@ GAME.touch = (function () {
     var T = GAME.input.touch;
     T.gas = T.brake = T.handbrake = T.driveByAuto = false;
     T.fire = T.jump = T.aim = T.run = T.enter = false;
-    T.firePressed = T.weaponCycle = T.job = false;
+    T.firePressed = T.weaponCycle = T.job = T.retry = false;
     for (var k in btns) {
       if (!btns[k]) continue;
       btns[k].classList.remove('held');
@@ -365,9 +367,11 @@ GAME.touch = (function () {
       if (wasPlaying) { wasPlaying = false; releaseButtons(); }
       for (var i = 0; i < footBtns.length; i++) setDisplay(footBtns[i], 'none');
       for (var j = 0; j < carBtns.length; j++) setDisplay(carBtns[j], 'none');
+      show(btns.retry, false);
       return;
     }
     wasPlaying = true;
+    show(btns.retry, !!GAME.retryAvailable);
     var inCar = P.inCar;
 
     // Stepping into or out of any vehicle lets the whole set go. The two sides

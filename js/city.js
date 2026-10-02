@@ -359,7 +359,8 @@ GAME.city = (function () {
   // `minY`, when given, is the level the solid starts at — anything well below
   // it passes underneath instead of hitting it
   function addSolid(cx, cz, sx, sz, h, tag, noLOS, minY) {
-    var box = { minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS };
+    // `knock` is set on the few props a car can flatten (knockProp)
+    var box = { minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS, knock: null };
     if (minY !== undefined) box.minY = minY;
     city.hash.insert(box);
     return box;
@@ -1734,7 +1735,9 @@ GAME.city = (function () {
       dummy.updateMatrix();
       trunkMesh.setMatrixAt(p, dummy.matrix);
       frondMesh.setMatrixAt(p, dummy.matrix);
-      if (pp.x < 356) addSolid(pp.x, pp.z, 0.8, 0.8, 6, 'prop', true);
+      // every trunk is solid: the beach ones were left out, and a car went
+      // straight through them
+      addSolid(pp.x, pp.z, 0.8, 0.8, 6, 'prop', true);
     }
     scene.add(trunkMesh); scene.add(frondMesh);
 
@@ -1774,7 +1777,8 @@ GAME.city = (function () {
       dummy.updateMatrix();
       poleMesh.setMatrixAt(L, dummy.matrix);
       headMesh.setMatrixAt(L, dummy.matrix);
-      addSolid(ls.x, ls.z, 0.5, 0.5, 6, 'prop', true);
+      addSolid(ls.x, ls.z, 0.5, 0.5, 6, 'prop', true).knock =
+        { kind: 'pole', mesh: poleMesh, extra: headMesh, i: L, x: ls.x, z: ls.z, rot: ls.rot, down: false, t: 0, m0: null };
     }
     scene.add(poleMesh); scene.add(headMesh);
     // warm pools of light on the road
@@ -1804,7 +1808,8 @@ GAME.city = (function () {
       dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
       dummy.updateMatrix();
       hydMesh.setMatrixAt(hh, dummy.matrix);
-      addSolid(hyd[hh].x, hyd[hh].z, 0.6, 0.6, 1, 'prop', true);
+      addSolid(hyd[hh].x, hyd[hh].z, 0.6, 0.6, 1, 'prop', true).knock =
+        { kind: 'flat', mesh: hydMesh, extra: null, i: hh, x: 0, z: 0, rot: 0, down: false, t: 0, m0: null };
     }
     scene.add(hydMesh);
 
@@ -1821,6 +1826,9 @@ GAME.city = (function () {
       dummy.position.set(benches[bb].x, 0.3, benches[bb].z);
       dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix();
       benchMesh.setMatrixAt(bb, dummy.matrix);
+      // solid, as a bench is — a car went through these as if they were paint
+      addSolid(benches[bb].x, benches[bb].z, 0.7, 2.2, 0.9, 'prop', true).knock =
+        { kind: 'flat', mesh: benchMesh, extra: null, i: bb, x: 0, z: 0, rot: 0, down: false, t: 0, m0: null };
     }
     scene.add(benchMesh);
 
@@ -2536,7 +2544,53 @@ GAME.city = (function () {
     city.pickupSpots.push({ x: 365, z: 250, type: 'pistol' });
   }
 
+  // ---------- things a car can knock down ----------
+  // Lamp posts, hydrants and boardwalk benches. A half-metre post stopped a
+  // car at 29 m/s as dead as a building would; now something moving takes it
+  // down for a little of its pace and a dent (vehicles.js collideStatic), and
+  // it is put back up once nobody has been near it for a while.
+  var knocked = [], knockCheckT = 0, KNOCK_BACK_AFTER = 45, KNOCK_BACK_R = 120;
+  var kq = new THREE.Quaternion(), kq2 = new THREE.Quaternion(), kAxis = new THREE.Vector3();
+  var kPos = new THREE.Vector3(), kScl = new THREE.Vector3(1, 1, 1), kM = new THREE.Matrix4();
+  function setKnock(k, m) {
+    k.mesh.setMatrixAt(k.i, m); k.mesh.instanceMatrix.needsUpdate = true;
+    if (k.extra) { k.extra.setMatrixAt(k.i, m); k.extra.instanceMatrix.needsUpdate = true; }
+  }
+  city.knockProp = function (box, heading) {
+    var k = box.knock;
+    if (!k || k.down) return false;
+    k.down = true; k.t = 0;
+    city.hash.remove(box);
+    if (!k.m0) { k.m0 = new THREE.Matrix4(); k.mesh.getMatrixAt(k.i, k.m0); }
+    if (k.kind === 'pole') {
+      // laid over in the direction it was hit, hinged at its foot
+      kq.setFromAxisAngle(kAxis.set(Math.cos(heading), 0, -Math.sin(heading)), Math.PI * 0.46);
+      kq2.setFromAxisAngle(kAxis.set(0, 1, 0), k.rot);
+      kq.multiply(kq2);
+      kM.compose(kPos.set(k.x, 0, k.z), kq, kScl.set(1, 1, 1));
+    } else kM.makeScale(0, 0, 0);
+    setKnock(k, kM);
+    knocked.push(box);
+    return true;
+  };
+  function standKnockedBack(dt) {
+    if (!knocked.length || (knockCheckT -= dt) > 0) return;
+    knockCheckT = 2;
+    var f = GAME.focus();
+    for (var i = knocked.length - 1; i >= 0; i--) {
+      var b = knocked[i], k = b.knock;
+      k.t += 2;
+      if (k.t < KNOCK_BACK_AFTER) continue;
+      if (U.dist2(f.x, f.z, (b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2) < KNOCK_BACK_R * KNOCK_BACK_R) continue;
+      k.down = false;
+      city.hash.insert(b);
+      setKnock(k, k.m0);
+      knocked.splice(i, 1);
+    }
+  }
+
   city.update = function (dt, t) {
+    standKnockedBack(dt);
     // the swell's two phases (see the ocean in buildBeach)
     if (city.oceanWave) city.oceanWave.set((t * 1.1) % (Math.PI * 2), (t * 0.7) % (Math.PI * 2));
     if (city.wheelSpin) {

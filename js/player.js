@@ -394,24 +394,42 @@ function stepEnter(dt) {
   if (e.t >= e.dur) {
     P.entering = null;
     j.legL.rotation.x = j.legR.rotation.x = j.armL.rotation.x = j.armR.rotation.x = 0;
-    car.controls = { throttle: 0, steer: 0, handbrake: false };
-    P.inCar = true;
-    P.car = car;
-    P.onBike = !!car.spec.bike;
-    P.mesh.visible = P.onBike; // riders stay visible on a bike
-    GAME.cam.freeT = 0;
-    GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
-    GAME.hud.message(car.spec.label, 1.6);
-    // the radio comes on tuned to whatever the last driver left it on
-    if (!car.spec.heli && !car.spec.plane) GAME.hud.radioPopup(GAME.audio.radio.randomStation());
-    if (car.spec.gunship) GAME.hud.message('TALON — Space up · Shift down · WASD fly · LMB/GUN chin gun · RMB/RKT rockets · F to exit', 5);
-    else if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
-    else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
-    else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
-    else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
-    else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
+    sitIn(car);
   }
 }
+
+// In the seat: the end of the walk to the door, and all of a mission retry,
+// which hands you the wheel on the start line behind a fade.
+function sitIn(car) {
+  var P = GAME.player;
+  car.controls = { throttle: 0, steer: 0, handbrake: false };
+  P.inCar = true;
+  P.car = car;
+  P.onBike = !!car.spec.bike;
+  P.mesh.visible = P.onBike; // riders stay visible on a bike
+  GAME.cam.freeT = 0;
+  GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
+  GAME.hud.message(car.spec.label, 1.6);
+  // the radio comes on tuned to whatever the last driver left it on
+  if (!car.spec.heli && !car.spec.plane) GAME.hud.radioPopup(GAME.audio.radio.randomStation());
+  if (car.spec.gunship) GAME.hud.message('TALON — Space up · Shift down · WASD fly · LMB/GUN chin gun · RMB/RKT rockets · F to exit', 5);
+  else if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
+  else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
+  else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
+  else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
+  else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
+}
+
+GAME.seatInCar = function (car) {
+  var P = GAME.player;
+  if (!car || car.dead || P.inCar) return false;
+  P.entering = null;
+  if (car.parkedSpot) { car.parkedSpot.live = null; car.parkedSpot = null; }
+  car.occupied = 'player';
+  car.ai = null;
+  sitIn(car);
+  return true;
+};
 
 function forceExitCar(silent) {
   var P = GAME.player;

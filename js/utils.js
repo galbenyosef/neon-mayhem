@@ -445,6 +445,23 @@ SpatialHash.prototype.insert = function (box) {
     arr.push(box);
   }
 };
+// The other way: a lamp post a car has flattened stops being in the way of
+// anything until it is put back up (insert again).
+SpatialHash.prototype.remove = function (box) {
+  var ai = this.all.indexOf(box);
+  if (ai < 0) return false;
+  this.all.splice(ai, 1);
+  var c = this.cell;
+  var i0 = Math.floor(box.minX / c), i1 = Math.floor(box.maxX / c);
+  var j0 = Math.floor(box.minZ / c), j1 = Math.floor(box.maxZ / c);
+  for (var i = i0; i <= i1; i++) for (var j = j0; j <= j1; j++) {
+    var arr = this.map.get(hashCell(i, j));
+    if (!arr) continue;
+    var k = arr.indexOf(box);
+    if (k >= 0) arr.splice(k, 1);
+  }
+  return true;
+};
 // A non-finite lookup is a bug wherever it came from, but it must not take
 // the tab down with it. Math.floor(±Infinity) is ±Infinity and `i++` on an
 // infinity never advances, so `for (i = i0; i <= i1; i++)` spins forever and
