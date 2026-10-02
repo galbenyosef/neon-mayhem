@@ -468,7 +468,7 @@ GAME.vehicles = (function () {
       // stay undefined because code elsewhere clears them to that.
       gone: false, byPlayer: false, sinking: false, spiked: false, stalled: false,
       sinkT: 0, splashed: false, sinkVX: 0, sinkVZ: 0,
-      stageWarn: 0, airframeWarn: 0, boostPing: false, capPing: false,
+      stageWarn: 0, airframeWarn: 0, boostPing: false, capPing: false, deckCap: 0,
       hitCd: 0, boostT: 0, abandonT: 0, deadT: 0, fireGlowT: 0,
       vx: 0, vy: 0, vz: 0, air: 0, airVX: undefined, airVZ: undefined,
       jumpRamp: null, onRampIdx: null, jumpX: 0, jumpZ: 0, jumpSpin: 0, lastHeading: 0,
@@ -521,6 +521,13 @@ GAME.vehicles = (function () {
     var maxSp = spec.maxSpeed * boost * (surf < 1 ? 0.55 : 1) * (car.spiked ? 0.55 : 1) * edge;
     var accel = spec.accel * boost * boost * (surf < 1 ? 0.6 : 1) * edge;
     if (car.stage >= 2) { maxSp *= 0.6; accel *= 0.5; }
+    // A capped launcher sets the pace on its own deck. It hauls whatever is on
+    // it up to the cap, and the car's own top speed used to clamp that straight
+    // back down every frame — so the cap was only ever reached by something
+    // that could do it on the flat anyway. A sedan left the chain launcher at
+    // 29 of its 36 m/s, a van at 23, and both flew into the wall of the
+    // building they were meant to land on top of.
+    if (car.deckCap) maxSp = Math.max(maxSp, car.deckCap);
 
     // Wheels off the ground, nothing to push against. The trajectory is the
     // one the lip gave you and the pedals stop mattering until you land: you
@@ -534,11 +541,24 @@ GAME.vehicles = (function () {
     // below), and you want to be able to straighten up before you land.
     var flying = car.airVX !== undefined;
     if (!flying) {
-      if (c.throttle > 0) car.speed += accel * c.throttle * dt;
-      else if (c.throttle < 0) {
-        car.speed += (car.speed > 1 ? accel * 1.6 : accel * 0.6) * c.throttle * dt;
+      // A booster strip does the driving: it holds the throttle open while
+      // you are on it, whatever the pedal is doing. It only ever raised what
+      // the throttle COULD do, so lifting off on the deck launched you at
+      // whatever speed you arrived with — and the boost was still there
+      // waiting when the wheels came back down (see BOOST_TAIL below).
+      var thr = car.boostT > 0 ? 1 : c.throttle;
+      if (thr > 0) {
+        if (car.speed < maxSp) car.speed = Math.min(maxSp, car.speed + accel * thr * dt);
+      } else if (thr < 0) {
+        car.speed += (car.speed > 1 ? accel * 1.6 : accel * 0.6) * thr * dt;
       }
-      car.speed = U.clamp(car.speed, -maxSp * 0.4, maxSp);
+      // Over the top speed, the excess comes off over a second or so rather
+      // than in one frame. A boosted launch hands the wheels back up to three
+      // times what the car can do on the flat, and the hard clamp this
+      // replaces took a sports car from 77 to 40 m/s on the tick it touched
+      // down.
+      if (car.speed > maxSp) car.speed = maxSp + (car.speed - maxSp) * Math.exp(-OVERSPEED_BLEED * dt);
+      car.speed = Math.max(car.speed, -maxSp * 0.4);
       car.speed *= Math.exp(-0.25 * dt);
       // Rolling backwards with nobody asking for reverse is a shunt, not a
       // gear. The drag above models a coast — four seconds to shed 1/e — and
@@ -547,8 +567,8 @@ GAME.vehicles = (function () {
       // drivetrain against it, so it comes to rest rather than cruising. Ask
       // for reverse and this stops applying; it only ever kills a push you
       // did not ask for.
-      if (car.speed < 0 && c.throttle >= 0) car.speed *= Math.exp(-SHUNT_DRAG * dt);
-      if (Math.abs(car.speed) < 0.06 && c.throttle === 0) car.speed = 0;
+      if (car.speed < 0 && thr >= 0) car.speed *= Math.exp(-SHUNT_DRAG * dt);
+      if (Math.abs(car.speed) < 0.06 && thr === 0) car.speed = 0;
     }
 
     var steerFactor = Math.min(1, Math.abs(car.speed) / 7) / (1 + Math.abs(car.speed) * 0.022);
@@ -581,6 +601,10 @@ GAME.vehicles = (function () {
       if (!car.air) {
         // the velocity the lip handed over, held until the wheels are back down
         car.airVX = vx; car.airVZ = vz;
+        // and the deck's push stays on the deck: a booster still live on
+        // touchdown shoved the car on at nine times its acceleration, then let
+        // go of it all at once
+        car.boostT = 0; car.deckCap = 0;
         car.jumpX = car.pos.x; car.jumpZ = car.pos.z; car.jumpSpin = 0;
         // A stunt jump is EARNED at the lip: the launch only carries the
         // ramp's credit if the car left over the TOP edge, roughly along the
@@ -612,6 +636,7 @@ GAME.vehicles = (function () {
       // on a ramp the deck itself drives the climb rate; carry that off the lip
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
       car.onRampIdx = ramp ? ramp.idx : null;
+      car.deckCap = ramp && ramp.boost && ramp.cap ? ramp.cap : 0;
       if (ramp && ramp.boost) {
         if (!car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
           GAME.audio.pickup();
@@ -624,7 +649,7 @@ GAME.vehicles = (function () {
           car.boostT = 0;
           car.speed = car.speed < ramp.cap ? Math.min(ramp.cap, car.speed + 80 * dt) : ramp.cap;
         } else {
-          car.boostT = 1.4;
+          car.boostT = BOOST_TAIL;
           car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
         }
       } else car.capPing = false;
@@ -738,6 +763,14 @@ GAME.vehicles = (function () {
   // How fast an unasked-for reverse dies (see the drive step): a shunt is not
   // a gear, so it decays on its own constant rather than the coasting one.
   var SHUNT_DRAG = 2.2;
+  // How fast speed above the car's own top speed comes off (per second, on
+  // the excess): 77 m/s off a booster is down to a sports car's 40 in about
+  // a second and a half.
+  var OVERSPEED_BLEED = 2;
+  // A booster's push lasts as long as you are on its deck, plus this. It was
+  // 1.4 s from the last tick on the deck, which outlived the flight off the
+  // shorter ramps and fired the boost into the road on landing.
+  var BOOST_TAIL = 0.2;
 
   // What comes back off a wall: the same share of the closing speed as ever,
   // but never more than MAX_BOUNCE of it.

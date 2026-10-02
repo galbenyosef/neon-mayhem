@@ -22,6 +22,12 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3x. OUT IN THE AIR — getting out of a car leaves you at the car's level:
+//       in mid-air you fall from there, and on a roof you stay on the roof.
+//   3w. BOOSTERS — a booster strip pushes whether or not your foot is down,
+//       its push ends at the lip rather than firing into the road on
+//       landing, the speed it hands back comes off smoothly, and the capped
+//       chain launcher gets every car to its pace, not just the fast ones.
 //   3v. INTO THE SEA — a vehicle that goes into the water goes UNDER and is
 //       cleared away, the player's own included, rather than skimming out
 //       across the surface and stopping there for good.
@@ -539,6 +545,175 @@ function withTimeout(p, ms) {
     heliSea.found && heliSea.soft.gone && !heliSea.soft.dead, JSON.stringify(heliSea));
   check('sea: and a wreck that came down on it hard does not float there either',
     heliSea.found && heliSea.hard.gone && heliSea.hard.dead, JSON.stringify(heliSea));
+
+  // ---------- 3w: a booster pushes on its deck and nowhere else ----------
+  // A booster strip only ever raised what the throttle COULD do, so with the
+  // pedal up on the deck it did nothing; and its 1.4 s window outlived the
+  // flight off the shorter ramps, so it fired into the road on touchdown —
+  // nine times the car's acceleration, then the whole excess clamped away in
+  // one frame when it ran out. The capped chain launcher had the opposite
+  // fault: the car's own top speed clamped its pace back every frame, so only
+  // a car that could already do the cap on the flat ever reached the roof.
+  var boost = await page.evaluate(function () {
+    var C = GAME.city, P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    P.health = 100;
+    // Up to the lip from a standing approach and on until the wheels are back
+    // down; `lift` takes the foot off for as long as the car is on the deck.
+    function run(ramp, type, lift, after) {
+      if (P.inCar) GAME.exitCar();
+      var ux = Math.sin(ramp.rot), uz = Math.cos(ramp.rot);
+      var back = ramp.cap ? 18 : 30;
+      var sx = ramp.x - ux * (ramp.len / 2 + back), sz = ramp.z - uz * (ramp.len / 2 + back);
+      GAME.test.teleport(sx - uz * 4, sz + ux * 4);
+      var car = GAME.vehicles.spawnCar(type, sx, sz, ramp.rot, {});
+      if (ramp.base) { car.pos.y = ramp.base; P.pos.y = ramp.base; }
+      GAME.test.enterNearestCar(car);
+      GAME.test.fastForward(0.7);
+      var o = { reached: false };
+      if (!P.inCar) { GAME.vehicles.removeCar(car); return o; }
+      car.speed = car.spec.maxSpeed * 0.8;
+      var wasDeck = false, t = 0, landT = -1;
+      for (var i = 0; i < 60 * 8; i++) {
+        var deck = car.onRampIdx === ramp.idx && !(car.air > 0.05);
+        GAME.test.pressKey('KeyW', !(lift && deck));
+        GAME.test.fastForward(1 / 60); t += 1 / 60;
+        if (deck) { o.reached = true; wasDeck = true; }
+        if (wasDeck && o.lip === undefined && car.air > 0) o.lip = Math.hypot(car.airVX, car.airVZ);
+        if (o.lip !== undefined && landT < 0 && !(car.air > 0)) {
+          landT = t; o.land = car.speed; o.boostAtLand = car.boostT; o.landY = car.pos.y; o.maxSp = car.spec.maxSpeed;
+          GAME.test.fastForward(1 / 60); t += 1 / 60;
+          o.nextTick = car.speed; o.peak = car.speed;
+        }
+        if (landT >= 0) {
+          o.peak = Math.max(o.peak, car.speed);
+          if (t - landT > (after || 1)) break;
+        }
+      }
+      GAME.test.pressKey('KeyW', false);
+      o.endY = car.pos.y;
+      GAME.exitCar();
+      GAME.vehicles.removeCar(car);
+      return o;
+    }
+    var street = C.ramps.filter(function (q) { return q.boost && !q.cap && !q.base; });
+    r.boosters = street.length;
+    // the pedal, on one of them
+    var held = run(street[0], 'sedan', false), lifted = run(street[0], 'sedan', true);
+    r.pedal = { reached: held.reached && lifted.reached, held: held.lip, lifted: lifted.lip };
+    // touchdown, on every one of them
+    r.landings = street.map(function (q) {
+      var o = run(q, 'sedan', false);
+      return { idx: q.idx, reached: o.reached, lip: o.lip, land: o.land, boostAtLand: o.boostAtLand,
+               rise: o.peak - Math.max(o.land, o.maxSp) };
+    });
+    // and the one tick after it, on a car the boost takes well past its own top
+    var sp = run(street[0], 'sports', false);
+    r.snap = { land: sp.land, next: sp.nextTick, maxSp: sp.maxSp };
+    // the chain launcher, in cars slower than its cap
+    var launcher = C.ramps.filter(function (q) { return q.cap && !q.base; })[0];
+    var roof = C.ramps.filter(function (q) { return q.cap && q.base; })[0];
+    r.chain = launcher && roof ? ['sedan', 'van'].map(function (type) {
+      var o = run(launcher, type, false, 0.5);
+      return { type: type, reached: o.reached, cap: launcher.cap, lip: o.lip, landY: o.landY, roofY: roof.base };
+    }) : null;
+    P.health = 100;
+    return r;
+  });
+  check('booster: there are street boosters, and the car gets up them (anchor sanity)',
+    boost.boosters >= 3 && boost.pedal.reached && boost.landings.filter(function (l) { return l.reached; }).length >= 3,
+    'boosters=' + boost.boosters + ' reached=' + boost.landings.filter(function (l) { return l.reached; }).length);
+  check('booster: it pushes whether or not your foot is down on the deck',
+    boost.pedal.lifted >= boost.pedal.held * 0.95,
+    'off the lip: pedal held ' + (boost.pedal.held || 0).toFixed(1) + ' m/s, lifted ' + (boost.pedal.lifted || 0).toFixed(1));
+  check('booster: nothing of the push is left when the wheels come back down',
+    boost.landings.every(function (l) { return !l.reached || l.boostAtLand === 0; }),
+    JSON.stringify(boost.landings.map(function (l) { return [l.idx, +(l.boostAtLand || 0).toFixed(2)]; })));
+  check('booster: so the road does not shove the car on after landing',
+    boost.landings.every(function (l) { return !l.reached || l.rise <= 0.5; }),
+    JSON.stringify(boost.landings.map(function (l) { return [l.idx, +(l.rise || 0).toFixed(1)]; })));
+  check('booster: and the speed it handed over comes off smoothly, not in one frame',
+    boost.snap.land > boost.snap.maxSp * 1.3 && boost.snap.next > boost.snap.land * 0.9,
+    'touchdown ' + (boost.snap.land || 0).toFixed(1) + ' -> next tick ' + (boost.snap.next || 0).toFixed(1) +
+    ' m/s (top speed ' + boost.snap.maxSp + ')');
+  check('booster: the chain launcher and its rooftop are there (anchor sanity)',
+    !!boost.chain && boost.chain.every(function (c) { return c.reached; }), JSON.stringify(boost.chain));
+  check('booster: the chain launcher gets a car slower than its cap up to it',
+    !!boost.chain && boost.chain.every(function (c) { return c.lip >= c.cap - 0.5; }),
+    JSON.stringify((boost.chain || []).map(function (c) { return c.type + ' ' + (c.lip || 0).toFixed(1) + '/' + c.cap; })));
+  check('booster: and onto the roof it was aimed at',
+    !!boost.chain && boost.chain.every(function (c) { return Math.abs(c.landY - c.roofY) < 0.5; }),
+    JSON.stringify((boost.chain || []).map(function (c) { return c.type + ' landed y=' + (c.landY || 0).toFixed(1) + ' roof=' + c.roofY.toFixed(1); })));
+
+  // ---------- 3x: out of a car, at the car's level ----------
+  // Getting out put you at the street's height under wherever you stepped out:
+  // out of a car in mid-air off a lip you were simply on the ground, and out
+  // of one parked on a roof the collider then shoved you out of the
+  // building's footprint and down to the pavement.
+  var outAir = await page.evaluate(function () {
+    var C = GAME.city, P = GAME.player, r = {};
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    var launcher = C.ramps.filter(function (q) { return q.cap && !q.base; })[0];
+    var roof = C.ramps.filter(function (q) { return q.cap && q.base; })[0];
+    if (!launcher || !roof) return { found: false };
+    r.found = true;
+    function board(x, z, h, y) {
+      if (P.inCar) GAME.exitCar();
+      GAME.test.teleport(x - Math.cos(h) * 4, z + Math.sin(h) * 4);
+      var car = GAME.vehicles.spawnCar('sedan', x, z, h, {});
+      if (y !== undefined) { car.pos.y = y; P.pos.y = y; }
+      GAME.test.enterNearestCar(car);
+      GAME.test.fastForward(0.7);
+      return car;
+    }
+    // off the launcher, out at the top of the climb
+    var ux = Math.sin(launcher.rot), uz = Math.cos(launcher.rot);
+    var car = board(launcher.x - ux * (launcher.len / 2 + 18), launcher.z - uz * (launcher.len / 2 + 18), launcher.rot);
+    car.speed = 24;
+    GAME.test.pressKey('KeyW', true);
+    for (var i = 0; i < 600 && !(car.air > 0.2); i++) GAME.test.fastForward(1 / 60);
+    GAME.test.pressKey('KeyW', false);
+    r.carY = car.pos.y;
+    GAME.test.exitCar();
+    r.outY = P.pos.y;
+    var t = 0, falling = 0;
+    for (; t < 4; t += 1 / 60) {
+      GAME.test.fastForward(1 / 60);
+      if (P.airborne) falling += 1 / 60;
+      else if (t > 0.1) break;
+    }
+    r.fell = falling;
+    r.endY = P.pos.y;
+    r.ground = C.surfaceY(P.pos.x, P.pos.z, P.pos.y);
+    GAME.vehicles.removeCar(car);
+    P.health = 100;
+    // parked on the chain's roof, short of its second ramp
+    var u1x = Math.sin(roof.rot), u1z = Math.cos(roof.rot);
+    car = board(roof.x - u1x * (roof.len / 2 + 14), roof.z - u1z * (roof.len / 2 + 14), roof.rot, roof.base);
+    GAME.test.fastForward(0.3);
+    r.roofCarY = car.pos.y;
+    GAME.test.exitCar();
+    GAME.test.fastForward(0.5);
+    r.roofOutY = P.pos.y;
+    r.roofY = roof.base;
+    GAME.vehicles.removeCar(car);
+    // and back down to the street for whoever is next
+    GAME.test.teleport(launcher.x - ux * (launcher.len / 2 + 22), launcher.z - uz * (launcher.len / 2 + 22));
+    P.health = 100;
+    return r;
+  });
+  check('exit: the car was up in the air when they got out (anchor sanity)',
+    outAir.found && outAir.carY > 5, JSON.stringify(outAir));
+  check('exit: out in mid-air, they are in the air beside it — not on the street',
+    outAir.found && Math.abs(outAir.outY - outAir.carY) < 0.5,
+    'car at y=' + (outAir.carY || 0).toFixed(1) + ', stepped out at y=' + (outAir.outY || 0).toFixed(1));
+  check('exit: and fall from there, all the way to the ground',
+    outAir.found && outAir.fell > 0.8 && Math.abs(outAir.endY - outAir.ground) < 0.1,
+    'fell ' + (outAir.fell || 0).toFixed(2) + ' s to y=' + (outAir.endY || 0).toFixed(1));
+  check('exit: out of a car parked on a roof, they stay on the roof',
+    outAir.found && Math.abs(outAir.roofCarY - outAir.roofY) < 0.3 && Math.abs(outAir.roofOutY - outAir.roofY) < 0.3,
+    'car y=' + (outAir.roofCarY || 0).toFixed(1) + ' player y=' + (outAir.roofOutY || 0).toFixed(1) + ' roof=' + (outAir.roofY || 0).toFixed(1));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

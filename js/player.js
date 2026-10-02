@@ -311,8 +311,9 @@ function nearestEnterableCar() {
 GAME.enterCar = function (car) {
   var P = GAME.player;
   if (!car || car.dead || P.inCar || P.entering) return false;
-  // nor is one that has gone into the sea (vehicles.js is taking it down)
-  if (car.sinking) return false;
+  // nor is one that has gone into the sea (vehicles.js is taking it down),
+  // or one still in the air off a ramp
+  if (car.sinking || (car.air || 0) > 0.05) return false;
   // boarding is a same-level act everywhere it can be asked for — a rooftop
   // helicopter is not takeable from the pavement under it
   if (Math.abs(car.pos.y - P.pos.y) > 3) return false;
@@ -421,24 +422,25 @@ function forceExitCar(silent) {
   car.occupied = null;
   var side = car.heading - Math.PI / 2;
   var ex = car.pos.x + Math.sin(side) * 2.2, ez = car.pos.z + Math.cos(side) * 2.2;
-  var roofY = GAME.city.surfaceY(car.pos.x, car.pos.z);
-  var onRoof = (car.spec.heli || car.spec.plane) && roofY > GAME.city.groundY(car.pos.x, car.pos.z) + 1;
-  if (onRoof) {
-    // step out onto the rooftop beside the aircraft (don't shove out of the footprint);
-    // if you then walk off the edge, on-foot gravity takes over
-    P.pos.set(ex, roofY, ez);
-  } else {
-    var rp = GAME.resolveCircle(ex, ez, 0.45);
-    P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
-  }
-  // a hovering exit (under chute height) steps out at altitude — you drop
-  // the rest of the way on ordinary gravity rather than teleporting down
+  P.velY = 0;
   if (car.spec.heli || car.spec.plane) {
-    // the heli's origin now sits at skid level, so its cabin floor IS its pos
+    var roofY = GAME.city.surfaceY(car.pos.x, car.pos.z);
+    if (roofY > GAME.city.groundY(car.pos.x, car.pos.z) + 1) {
+      // step out onto the rooftop beside the aircraft (don't shove out of the footprint);
+      // if you then walk off the edge, on-foot gravity takes over
+      P.pos.set(ex, roofY, ez);
+    } else {
+      var rp = GAME.resolveCircle(ex, ez, 0.45);
+      P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
+    }
+    // a hovering exit (under chute height) steps out at altitude — you drop
+    // the rest of the way on ordinary gravity rather than teleporting down
+    // (the heli's origin now sits at skid level, so its cabin floor IS its pos)
     var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 0.1);
     if (feetY > P.pos.y + 0.3) { P.pos.y = feetY; P.airborne = true; }
+  } else {
+    stepOutBeside(car, ex, ez);
   }
-  P.velY = 0;
   P.heading = car.heading;
   P.inCar = false;
   P.car = null;
@@ -450,6 +452,33 @@ function forceExitCar(silent) {
   GAME.audio.skid(0);
 }
 GAME.exitCar = forceExitCar;
+
+// Where somebody getting out of a ground vehicle ends up: beside it, at ITS
+// level. Out of a car parked on a roof you stand on the roof; off a ramp
+// deck, on the deck; out of one in mid-air off a lip, you are in the air too,
+// and on-foot gravity takes you down from there. This used to put you at the
+// street's height under wherever you stepped out, whatever the car was doing
+// — in mid-air you were simply on the ground, and on a roof the collider then
+// shoved you out of the building's footprint and down to the pavement.
+//
+// The car's height goes to both lookups: resolveCircle so a roof the car is
+// standing on is not a wall to be pushed out of, and the surface lookup so a
+// bridge deck overhead does not lift you onto it.
+function stepOutBeside(car, x, z) {
+  var P = GAME.player;
+  var atY = car.pos.y;
+  var rp = GAME.resolveCircle(x, z, 0.45, atY);
+  var standY = GAME.city.surfaceY(rp.x, rp.z, atY);
+  P.pos.set(rp.x, standY, rp.z);
+  P.velY = 0;
+  P.airborne = false;
+  if (atY > standY + 0.3) {
+    P.pos.y = atY;
+    P.airborne = true;
+    // still rising off the lip, you carry on up for a moment before you drop
+    if ((car.air || 0) > 0.05) P.velY = car.vy || 0;
+  }
+}
 
 function resetRiderPose() {
   var j = GAME.player.mesh.userData.joints;
@@ -466,10 +495,9 @@ GAME.ejectBike = function (impact) {
   var car = P.car;
   var side = car.heading + (Math.random() < 0.5 ? 1.4 : -1.4);
   forceExitCar();
-  var tx = car.pos.x + Math.sin(side) * 4, tz = car.pos.z + Math.cos(side) * 4;
-  var rp = GAME.resolveCircle(tx, tz, 0.45);
-  P.pos.set(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z);
-  GAME.fx.spawn(P.pos.x, 0.6, P.pos.z, { count: 6, color: 0xffd890, spread: 3, life: 0.5 });
+  // thrown clear at the bike's level — a crash on a roof leaves you on the roof
+  stepOutBeside(car, car.pos.x + Math.sin(side) * 4, car.pos.z + Math.cos(side) * 4);
+  GAME.fx.spawn(P.pos.x, P.pos.y + 0.6, P.pos.z, { count: 6, color: 0xffd890, spread: 3, life: 0.5 });
   GAME.cameraShake = 0.8;
   GAME.playerDamage(Math.min(35, 10 + impact * 1.2), 'crash');
   GAME.hud.message('Thrown off the bike!', 2);
@@ -649,7 +677,9 @@ function updateOnFoot(dt) {
   // the closed channel's line stops walkers too — parachuting onto the
   // bridge deck past the barrier used to leave a free stroll to the island
   if (GAME.aircraft) GAME.aircraft.enforceAirspace(P.pos);
-  if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
+  // in the water, not still falling towards it: stepping out of a car in the
+  // air over the sea, you drop the rest of the way first
+  if (P.pos.y < 0.5 && GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
   var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
   // ...and car roofs count as ground: come down inside a car's rectangle at
