@@ -225,7 +225,7 @@ GAME.shops = (function () {
     if (owns(s.id)) {
       // your own bed is not merchandise: no price tag, no FREE, no BUY chip —
       // "the condo, FREE" read as a purchase you were about to make
-      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Eight hours pass. Health back, heat forgotten.', price: 0, noPrice: true, chip: 'REST' }];
+      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Eight hours pass. Health back, and the heat cools — all of it from three stars down; a four- or five-star manhunt only drops two.', price: 0, noPrice: true, chip: 'REST' }];
     }
     return [{ id: 'buy', name: 'BUY ' + s.name, ds: s.tag + '  You’ll wake up here, gear intact.', price: s.price }];
   }
@@ -314,7 +314,13 @@ GAME.shops = (function () {
         // which read as the feature being broken. Sleeping is the loudest
         // possible statement that time should move, so it unpins the sun.
         GAME.player.health = 100;
+        // Eight hours is long enough for the law to forget a three-star
+        // night, not a manhunt: five stars wake up as three, four as two.
+        // (The units that were out there have gone home either way; whoever
+        // is still looking starts again from scratch.)
+        var woke = GAME.police.wanted, still = woke >= 5 ? 3 : woke === 4 ? 2 : 0;
         GAME.police.clearWanted();
+        if (still) GAME.police.setWanted(still);
         var unpinned = GAME.timeMode !== 'auto';
         if (unpinned) GAME.setTimeMode('auto');   // persists the preference too
         GAME.dayPhase = (GAME.dayPhase + 8 / 24) % 1;
@@ -322,7 +328,9 @@ GAME.shops = (function () {
         GAME.world.pickups.forEach(function (p) {
           if (p.taken && isFinite(p.respawnT)) p.respawnT -= GAME.DAY_SECONDS / 3;
         });
-        GAME.hud.message('Eight hours later. Rested, forgotten by the law, good as new.'
+        GAME.hud.message((still
+          ? 'Eight hours later. Rested and good as new — but they have not stopped looking for you.'
+          : 'Eight hours later. Rested, forgotten by the law, good as new.')
           + (unpinned ? ' The sky is back on the clock.' : ''), 5);
         GAME.track('safehouse-rest');
       });

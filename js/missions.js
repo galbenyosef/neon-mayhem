@@ -245,6 +245,8 @@ GAME.missions = (function () {
   // through it: race starts sit on the road, so cruising the Strip pulled
   // people into BEACH RUN at 25 m/s with no way to say no.
   var START_SPEED = 4;
+  // the most heat a passed rampage leaves you with (see finish)
+  var RAMPAGE_HEAT_LEFT = 2;
   // and the one that just ended waits until you have left it — failing a race
   // you sat out on its own start line used to start it again on the next tick
   var leaveFirst = null, REARM_R2 = 9 * 9;
@@ -1141,7 +1143,14 @@ GAME.missions = (function () {
         var field = 1 + active.racers.length;
         head = 'RACE WON — 1st / ' + field + '  ·  ' + value.toFixed(1) + 's  ·  +$';
       }
-      GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : ''), 4.5);
+      // A rampage won is paid for with the heat it raised: twenty bodies
+      // walked you up to four stars, and the pass took the gun straight back
+      // (cleanup) — leaving you at a roadblock with your fists. Whoever set
+      // the job up makes the worst of it go away; two stars is still yours.
+      var cooled = d.type === 'rampage' && GAME.police.wanted > RAMPAGE_HEAT_LEFT;
+      if (cooled) GAME.police.setWanted(RAMPAGE_HEAT_LEFT);
+      GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : '') +
+        (cooled ? '  ·  your people cooled it down to two stars' : ''), 4.5);
       GAME.track('mission-completed-' + d.type);
       // a finished run is worth showing off — the card carries the numbers
       var cardStats = [{ label: 'Reward', value: '$' + reward }];

@@ -87,6 +87,7 @@ GAME.police = (function () {
     var capStar = Math.max(type === 'kill_cop' ? 2 : 0, Math.min(5, before + 1));
     if (capStar < 5) heat = Math.min(heat, THRESH[capStar + 1] - 8);
     lastSeen = 0;
+    spotted = true;   // a witness puts them back on you
     var after = stars();
     if (after > before) { GAME.hud.wantedChanged(after); if (after >= 3) GAME.track('wanted-' + after); }
   }
@@ -108,6 +109,7 @@ GAME.police = (function () {
     heat = Math.max(heat + 55 * (1 + before * ESCALATION), THRESH[1] + 5);
     heat = Math.min(HEAT_CEIL, heat);
     lastSeen = 0;
+    spotted = true;
     if (stars() > before) GAME.hud.wantedChanged(stars());
   }
 
@@ -115,7 +117,7 @@ GAME.police = (function () {
     n = U.clamp(Math.floor(n), 0, 5);
     heat = n === 0 ? 0 : THRESH[n] + 25;
     // treat it like a fresh offence so the level doesn't bleed away instantly
-    if (n > 0) lastCrime = GAME.time;
+    if (n > 0) { lastCrime = GAME.time; spotted = true; lastSeen = 0; }
     GAME.hud.wantedChanged(n);
     if (n === 0) clearCops();
   }
@@ -190,6 +192,59 @@ GAME.police = (function () {
   // two warnings first, and the THIRD violation is the 5-star response,
   // birds up and firing.
   var airUnits = [];
+
+  // ---------- what the police actually know ----------
+  // Every unit used to steer for where you ARE, from anywhere: cruisers drove
+  // straight at your live position across blocks, and the air unit flew at
+  // you and counted as eyes on you within 90 m through any building. Out of
+  // sight was never out of mind, so at four stars and up nothing you did
+  // could cool the heat — measured, nobody got away from three or more.
+  //
+  // Now they hunt. While any unit has you in sight they chase you; once none
+  // has, they all make for where you were last seen and search around it,
+  // further out the longer you stay hidden, until somebody spots you again.
+  var spotted = true;                  // some unit had line of sight last tick
+  var knownX = 0, knownZ = 0;          // where they last saw you
+  var searchX = 0, searchZ = 0, searchT = 0;
+  function huntX() { return spotted ? GAME.focus().x : searchX; }
+  function huntZ() { return spotted ? GAME.focus().z : searchZ; }
+  function updateHunt(dt, unseenFor) {
+    var f = GAME.focus();
+    if (spotted) { knownX = searchX = f.x; knownZ = searchZ = f.z; searchT = 0; return; }
+    searchT -= dt;
+    if (searchT > 0) return;
+    // somewhere near the last sighting, widening as the trail goes cold
+    var r = Math.min(90, 15 + unseenFor * 4), a = Math.random() * Math.PI * 2;
+    searchX = knownX + Math.cos(a) * r * Math.random();
+    searchZ = knownZ + Math.sin(a) * r * Math.random();
+    searchT = U.randRange(Math.random, 4, 7);
+  }
+  // Line of sight from up in the air: building tops along the way have to
+  // stay under the line from the bird down to you, and a deck overhead — the
+  // bridge you parked under — hides you outright.
+  var airBoxes = [];
+  function airCanSee(h, px, py, pz) {
+    var C = GAME.city;
+    for (var c = 0; c < C.crossings.length; c++) {
+      var dy = C.crossings[c].deckY(px, pz);
+      if (dy !== null && dy > py + 2.5) return false;
+    }
+    var ty = py + 1.2;
+    var dx = px - h.pos.x, dz = pz - h.pos.z;
+    var steps = Math.max(2, Math.ceil(Math.sqrt(dx * dx + dz * dz) / 4));
+    for (var i = 1; i < steps; i++) {
+      var t = i / steps;
+      var x = h.pos.x + dx * t, z = h.pos.z + dz * t, y = h.pos.y + (ty - h.pos.y) * t;
+      var boxes = C.hash.queryInto(x, z, 0.5, airBoxes);
+      for (var b = 0; b < boxes.length; b++) {
+        var q = boxes[b];
+        if (q.noLOS || q.h === undefined || q.h <= y) continue;
+        if (q.minY !== undefined && q.minY > y) continue;
+        if (x > q.minX && x < q.maxX && z > q.minZ && z < q.maxZ) return false;
+      }
+    }
+    return true;
+  }
   // The searchlight never changes shape or colour, so every bird carries the
   // same cone and material, built the first time one lifts off. Shared, so
   // disposeTree leaves them for the next one.
@@ -253,7 +308,10 @@ GAME.police = (function () {
     for (var i = airUnits.length - 1; i >= 0; i--) {
       var h = airUnits[i];
       var leaving = i >= want;
-      var dx = f.x - h.pos.x, dz = f.z - h.pos.z;
+      // the airspace escort (zero stars) always knows where you are; a
+      // pursuit bird flies the hunt like everybody else
+      var hx = s > 0 ? huntX() : f.x, hz = s > 0 ? huntZ() : f.z;
+      var dx = hx - h.pos.x, dz = hz - h.pos.z;
       var d = Math.sqrt(dx * dx + dz * dz) || 1;
       // hold station ~20m off the target; a spare or dismissed bird flies out
       var spd = leaving ? 26 : U.clamp((d - 20) * 0.8, 0, 38);
@@ -277,7 +335,8 @@ GAME.police = (function () {
       }
       if (s >= 4) {
         h.fireT = (h.fireT || 0) - dt;
-        if (d < 85 && h.fireT <= 0) {
+        var tdx = f.x - h.pos.x, tdz = f.z - h.pos.z;
+        if (h.fireT <= 0 && tdx * tdx + tdz * tdz < 85 * 85 && airCanSee(h, f.x, fy, f.z)) {
           h.fireT = 1.35;
           GAME.audio.gunshot('smg', h.pos.x, h.pos.z);
           // a fast target is hard to hit from a hovering doorway — and a
@@ -304,9 +363,10 @@ GAME.police = (function () {
   }
 
   function spawnCruiser() {
-    var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    // sent to where they think you are: you, while somebody can see you,
+    // otherwise the search — a unit dispatched straight at a suspect nobody
+    // has eyes on is the clairvoyance the hunt is there to remove
+    var px = huntX(), pz = huntZ();
     for (var tries = 0; tries < 6; tries++) {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 130, 190);
@@ -351,7 +411,10 @@ GAME.police = (function () {
     var footCount = 0;
     for (var i = 0; i < GAME.world.peds.length; i++) if (GAME.world.peds[i].isCop && !GAME.world.peds[i].dead) footCount++;
     if (footCount >= Math.min(1 + s, 6)) return;
-    var f = GAME.focus();
+    // officers come in on foot around where they think you are. This ring was
+    // centred on you every couple of seconds whatever anybody knew, so one of
+    // them always turned up within sight of wherever you had hidden.
+    var f = { x: huntX(), z: huntZ() };
     for (var t = 0; t < 8; t++) {
       var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 26, 48);
       var rp = GAME.city.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
@@ -561,11 +624,12 @@ GAME.police = (function () {
   }
   function chaseControls(car, dt, s) {
     var P = GAME.player;
-    var pxr = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pzr = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    // a modest lead on a moving target — enough to cut a corner, not clairvoyant
-    var aimX = pxr + (P.inCar && P.car ? (P.car.vx || 0) * 0.3 : 0);
-    var aimZ = pzr + (P.inCar && P.car ? (P.car.vz || 0) * 0.3 : 0);
+    var pxr = huntX(), pzr = huntZ();
+    // a modest lead on a moving target they can see — enough to cut a
+    // corner, not clairvoyant; out of sight they head for the search point
+    var lead = spotted && P.inCar && P.car;
+    var aimX = pxr + (lead ? (P.car.vx || 0) * 0.3 : 0);
+    var aimZ = pzr + (lead ? (P.car.vz || 0) * 0.3 : 0);
     // reaction lag: pursue a smoothed estimate of the target, so cruisers don't
     // mirror sharp turns the instant you make them
     if (isNaN(car.aiTX)) { car.aiTX = aimX; car.aiTZ = aimZ; }
@@ -591,7 +655,7 @@ GAME.police = (function () {
     var steer = car.aiSteer;
 
     // pull up and stop near an on-foot target so officers can get out
-    if (!P.inCar && dist < 22) { setControls(car.controls, car.speed > 2 ? -0.7 : 0, steer, dist < 12); return; }
+    if (spotted && !P.inCar && dist < 22) { setControls(car.controls, car.speed > 2 ? -0.7 : 0, steer, dist < 12); return; }
 
     // keep a pursuit gap rather than gluing to the bumper
     var gap = s === 1 ? 22 : 9;
@@ -658,10 +722,12 @@ GAME.police = (function () {
 
   function updateFootCop(cop, dt, s) {
     var P = GAME.player;
-    // track wherever the player actually is (their car when driving)
+    // track wherever the player actually is (their car when driving) — or,
+    // once nobody can see them, wherever the hunt has got to
     var f = GAME.focus();
     var dx = f.x - cop.pos.x, dz = f.z - cop.pos.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
+    var hx = huntX() - cop.pos.x, hz = huntZ() - cop.pos.z;
     // officers on foot give up on a target that's flown out of reach
     var alt = (P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane))
       ? P.car.pos.y - GAME.city.groundY(P.car.pos.x, P.car.pos.z) : 0;
@@ -669,7 +735,7 @@ GAME.police = (function () {
       GAME.peds.removePed(cop);
       return;
     }
-    var th = Math.atan2(dx, dz);
+    var th = Math.atan2(hx, hz);
     cop.heading = U.angleLerp(cop.heading, th, Math.min(1, dt * 6));
     // fire at the player on foot, or at a slow/stopped car
     var playerSlow = !P.inCar || (P.car && Math.abs(P.car.speed) < 9);
@@ -715,6 +781,7 @@ GAME.police = (function () {
   function placeRoadblock(s) {
     var P = GAME.player;
     if (!P.inCar || !P.car) return;
+    if (!spotted) return;   // nobody knows which way you are heading
     var vx = P.car.vx || 0, vz = P.car.vz || 0;
     var sp = U.len(vx, vz);
     if (sp < 6) return;
@@ -868,33 +935,42 @@ GAME.police = (function () {
         GAME.city.hash.segmentClear(active[v].pos.x, active[v].pos.z, px, pz)) { seen = true; break; }
     }
     // the air unit's eyes work at altitude — a 4-5 star bird on your tail
-    // means climbing away no longer cools the heat
-    for (var av = 0; av < airUnits.length; av++) {
-      if (U.dist2(airUnits[av].pos.x, airUnits[av].pos.z, px, pz) < 90 * 90) { seen = true; break; }
+    // means climbing away no longer cools the heat. But they are eyes: a
+    // tower between you and it, or a bridge deck over you, and it has lost you
+    var py = P.inCar && P.car ? P.car.pos.y : P.pos.y;
+    for (var av = 0; !seen && av < airUnits.length; av++) {
+      if (U.dist2(airUnits[av].pos.x, airUnits[av].pos.z, px, pz) < 90 * 90 &&
+        airCanSee(airUnits[av], px, py, pz)) { seen = true; break; }
     }
+    // and an officer on foot sees down the street, not through the block
     if (!seen && !flownOff) {
       for (var fc = 0; fc < peds.length; fc++) {
         var pd = peds[fc];
-        if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60) { seen = true; break; }
+        if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60 &&
+          GAME.city.hash.segmentClear(pd.pos.x, pd.pos.z, px, pz)) { seen = true; break; }
       }
     }
+    spotted = seen;
+    updateHunt(dt, lastSeen);
+    // How long since anybody had eyes on you: the search widens with it, and
+    // out of sight is when the heat cools fastest (below). There used to be
+    // a second clock here as well, knocking a star off every 16 s and then 8
+    // s unseen and dropping the heat to the floor of the band below each
+    // time — which collapsed the whole ladder within seconds of the first
+    // drop: five stars gone in half a minute behind any corner.
     if (seen) lastSeen = 0;
-    else {
-      lastSeen += dt;
-      if (lastSeen > 16) {
-        var cur = stars();
-        heat = cur > 1 ? THRESH[cur - 1] + 20 : 0;
-        lastSeen = 8; // next star drops sooner once hidden
-        GAME.hud.wantedChanged(stars());
-        if (stars() === 0) clearCops();
-      }
-    }
+    else lastSeen += dt;
 
     // interest fades if you stop offending — otherwise a tail that keeps you in
     // sight means the heat never cools and a 1-star pursuit runs forever
     if (GAME.time - lastCrime > 8) {
       var before2 = stars();
-      heat = Math.max(0, heat - dt * (seen ? 18 : 55));
+      // and out of sight it cools faster — less so the hotter it is: lying low
+      // takes about half a minute at three stars, a minute at four and a
+      // minute and a half at five, with the search closing in on the spot
+      // they lost you. It was 55 a second at every level.
+      var cool = seen ? 18 : 55 / (1 + Math.max(0, before2 - 1) * 0.6);
+      heat = Math.max(0, heat - dt * cool);
       var after2 = stars();
       if (after2 < before2) {
         GAME.hud.wantedChanged(after2);
@@ -936,6 +1012,9 @@ GAME.police = (function () {
     noteGunfire: noteGunfire,
     airspaceStrike: airspaceStrike,
     get airUnitCount() { return airUnits.length; },
+    // whether any unit has you in sight, and for how long none has
+    get spotted() { return spotted; },
+    get unseenFor() { return lastSeen; },
     setWanted: setWanted,
     clearWanted: clearWanted,
     update: update,

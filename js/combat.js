@@ -658,6 +658,7 @@ GAME.combat = (function () {
   // somebody shooting at you.
   //
   // Everything that should make a marksman worse widens the cone instead.
+  var CAR_ROUND = 0.35;   // share of a round's damage the player's car takes
   var NPC_AIM = {
     base: 0.09,        // rad — a settled shooter at arm's length, about 5 degrees
     perMetre: 0.0032,  // range: a pistol at forty metres is a different proposition
@@ -720,7 +721,10 @@ GAME.combat = (function () {
     // saw happen is now what happened
     if (Math.abs(Math.sin(err)) * d <= (inCar ? NPC_AIM.car : NPC_AIM.torso)) {
       if (!atPlayer) GAME.peds.damage(victim, damage, false, shooter);
-      else if (inCar) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');
+      // A car is cover you are sitting in. Rounds did 70% of their damage to
+      // the bodywork, which took a sports car apart in fifteen seconds of a
+      // three-star chase — gone before any getaway could begin. Half that.
+      else if (inCar) GAME.vehicles.damageCar(P.car, damage * CAR_ROUND, 'cop');
       else GAME.playerDamage(damage, 'shot');
       return true;
     }

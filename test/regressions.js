@@ -22,6 +22,10 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3z. THE LAW CAN BE LOST — break contact and the police hunt where they
+//       last saw you; lie low and even four stars go, though not in a hurry.
+//       Sleeping off a manhunt takes two stars, not all of them; the same
+//       jump pays once per cooldown; a passed rampage leaves you on two stars.
 //   3y. THE PLAYER-FACING AUDIT — things that happened to somebody playing:
 //       a car hurts you on foot and cannot lift you onto a roof; the camera
 //       stays out of the wall and your head; a fall that ends in the
@@ -1280,6 +1284,176 @@ function withTimeout(p, ms) {
   check('audit: and the mouse switches back',
     hybrid.afterMouse === false && hybrid.layerHidden === true && hybrid.stickOff === true, JSON.stringify(hybrid));
   check('audit: with no page errors on the way', hybridErrors.length === 0, hybridErrors.join(' | '));
+
+  // ---------- 3z: the law can be lost, and the payouts have limits ----------
+  // Three stars and up could not be escaped. The police steered for where you
+  // were, not where they had seen you; the helicopter counted as eyes on you
+  // through any building; and officers on foot were spawned around your live
+  // position every couple of seconds wherever you had hidden. Now they hunt
+  // the last place they saw you — and lying low still takes a while, longer
+  // the hotter it is. Alongside it: sleeping off a manhunt takes two stars,
+  // not all of them; the same jump pays once per cooldown; and passing a
+  // rampage cools you to two stars rather than leaving you at four with
+  // your fists.
+  var lost = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.5);
+    GAME.test.teleport(150, -100);
+    var car = GAME.test.spawnCar('sports', 2, 0);
+    GAME.test.enterNearestCar(car);
+    GAME.test.fastForward(1.5);
+    r.driving = P.inCar;
+    GAME.godMode = true;
+    // a spree's worth of heat, held while they arrive and engage
+    for (var e = 0; e < 12; e++) {
+      GAME.test.setWanted(4);
+      for (var k = 0; k < 3; k++) GAME.police.reportCrime('kill_ped', GAME.focus());
+      if (P.car) P.car.hp = 1e6;
+      GAME.test.fastForward(1);
+    }
+    r.engaged = { stars: GAME.police.wanted, spotted: GAME.police.spotted, cruisers: GAME.test.getState().policeCars };
+    // got clean away: across town, parked down a street
+    GAME.test.teleport(-150 + 3.1, 140);
+    var t = 0, lostAt = null;
+    for (; t < 150 && GAME.police.wanted > 0 && P.state === 'alive'; t++) {
+      if (P.car) P.car.hp = 1e6;
+      GAME.test.fastForward(1);
+      if (lostAt === null && !GAME.police.spotted) lostAt = t;
+    }
+    r.lostAt = lostAt;
+    r.clearedIn = GAME.police.wanted === 0 ? t : null;
+    r.state = P.state;
+    GAME.godMode = false;
+    if (P.car) P.car.hp = P.car.spec.hp;
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    if (car && !car.gone) GAME.vehicles.removeCar(car);
+    P.health = 100;
+    return r;
+  });
+  check('law: four stars, and the police have you in sight (anchor sanity)',
+    lost.driving === true && lost.engaged.stars === 4 && lost.engaged.spotted === true && lost.engaged.cruisers > 0,
+    JSON.stringify(lost.engaged));
+  check('law: get clean away and they lose you',
+    lost.lostAt !== null && lost.lostAt <= 5, 'lost sight after ' + lost.lostAt + ' s');
+  check('law: stay hidden and four stars go — escapable',
+    lost.clearedIn !== null && lost.state === 'alive', 'cleared in ' + lost.clearedIn + ' s, ' + lost.state);
+  check('law: but not in a hurry — it takes the best part of a minute',
+    lost.clearedIn !== null && lost.clearedIn >= 35, 'cleared in ' + lost.clearedIn + ' s');
+
+  // sleeping it off: three stars or fewer is forgotten, a manhunt only cools
+  var slept = [];
+  for (var sl = 0; sl < 3; sl++) {
+    var stars0 = [5, 4, 3][sl];
+    var asleep = await page.evaluate(function (stars) {
+      var P = GAME.player;
+      if (P.inCar) GAME.exitCar();
+      var home = GAME.shops.locations().filter(function (l) { return l.kind === 'safehouse'; })[0];
+      if (!home) return { found: false };
+      GAME.prefs.safehouses = GAME.prefs.safehouses || [];
+      window.__ownedBefore = GAME.prefs.safehouses.slice();
+      if (GAME.prefs.safehouses.indexOf(home.sh.id) < 0) GAME.prefs.safehouses.push(home.sh.id);
+      GAME.test.setWanted(stars);
+      window.__msgs = [];
+      var opened = GAME.shops.open(home);
+      var rested = GAME.shops.buy('rest');
+      return { found: true, opened: opened, rested: rested, before: GAME.police.wanted };
+    }, stars0);
+    // the night passes behind a real fade, so wait for morning rather than a clock
+    try {
+      await page.waitForFunction(function () {
+        return window.__msgs.some(function (m) { return m.indexOf('Eight hours later') >= 0; });
+      }, null, { timeout: 8000 });
+    } catch (e) { /* reported below as an unchanged level */ }
+    var woke = await page.evaluate(function () {
+      var r = { after: GAME.police.wanted, health: GAME.player.health };
+      GAME.prefs.safehouses = window.__ownedBefore;
+      if (GAME.shops.isOpen) GAME.shops.close();
+      GAME.police.clearWanted();
+      return r;
+    });
+    slept.push({ from: stars0, found: asleep.found, rested: asleep.rested, before: asleep.before, after: woke.after });
+  }
+  check('sleep: a safehouse to sleep in (anchor sanity)',
+    slept.every(function (s) { return s.found && s.rested && s.before === s.from; }), JSON.stringify(slept));
+  check('sleep: five stars wake up as three, four as two, three as none',
+    slept[0].after === 3 && slept[1].after === 2 && slept[2].after === 0,
+    slept.map(function (s) { return s.from + '->' + s.after; }).join(' '));
+
+  // the same jump pays once per cooldown
+  var jumps = await page.evaluate(function () {
+    var P = GAME.player, r = { pays: [] };
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(356, 50);
+    GAME.test.fastForward(0.5);
+    var car = GAME.test.spawnCar('sedan', 4, 0);
+    GAME.test.fastForward(0.3);
+    GAME.test.enterNearestCar(car);
+    GAME.test.fastForward(1.5);
+    r.driving = P.inCar;
+    function jump() {
+      var c = P.car;
+      c.pos.set(356, GAME.city.groundY(356, 60), 60);
+      c.air = 0; c.airVX = c.airVZ = undefined;
+      GAME.test.fastForward(1 / 60);
+      c.pos.set(356, GAME.city.groundY(356, 60) + 6, 60);
+      c.heading = 0; c.speed = 26; c.lat = 0; c.vy = 9; c.air = 0;
+      c.airVX = c.airVZ = undefined; c.jumpRamp = null; c.jumpSpin = 0;
+      c.hp = c.spec.hp; c.stage = 0;
+      var cash0 = P.cash;
+      for (var i = 0; i < 400; i++) { GAME.test.fastForward(1 / 60); if (!c.air && i > 2) break; }
+      c.speed = 0;
+      return P.cash - cash0;
+    }
+    r.pays.push(jump());
+    GAME.test.fastForward(20);
+    r.pays.push(jump());
+    GAME.test.fastForward(121);
+    r.pays.push(jump());
+    GAME.exitCar();
+    GAME.vehicles.removeCar(car);
+    return r;
+  });
+  check('jumps: the first jump pays (anchor sanity)', jumps.driving && jumps.pays[0] > 0, JSON.stringify(jumps.pays));
+  check('jumps: the same jump again inside two minutes does not',
+    jumps.pays[1] === 0, 'paid $' + jumps.pays[1] + ' twenty seconds later');
+  check('jumps: and once the cooldown is up it pays again',
+    jumps.pays[2] > 0, 'paid $' + jumps.pays[2] + ' after the cooldown');
+
+  // a rampage you pass leaves you on two stars, not at a roadblock with fists
+  var rage = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    if (GAME.missions.active) GAME.missions.failActive('test');
+    var def = GAME.missions.DEFS.filter(function (d) { return d.id === 'rampage0'; })[0];
+    GAME.test.teleport(def.start.x + 20, def.start.z);
+    GAME.test.fastForward(0.5);
+    GAME.test.teleport(def.start.x, def.start.z);
+    for (var i = 0; i < 60 * 8 && !(GAME.missions.active && GAME.missions.active.state === 'run'); i++) GAME.test.fastForward(1 / 60);
+    r.running = !!(GAME.missions.active && GAME.missions.active.def.id === 'rampage0' && GAME.missions.active.state === 'run');
+    if (!r.running) { if (GAME.missions.active) GAME.missions.failActive('test'); return r; }
+    GAME.godMode = true;
+    GAME.test.setWanted(4);
+    r.during = GAME.police.wanted;
+    GAME.missions.notifyChaos(def.target + 100);
+    GAME.test.fastForward(0.5);
+    r.passed = !GAME.missions.active;
+    r.after = GAME.police.wanted;
+    GAME.godMode = false;
+    if (GAME.share && GAME.share.hide) GAME.share.hide();
+    GAME.police.clearWanted();
+    GAME.test.teleport(def.start.x + 30, def.start.z);
+    GAME.test.fastForward(0.5);
+    P.health = 100;
+    return r;
+  });
+  check('rampage: running, at four stars (anchor sanity)', rage.running === true && rage.during === 4, JSON.stringify(rage));
+  check('rampage: passing it cools you to two stars',
+    rage.passed === true && rage.after === 2, 'passed=' + rage.passed + ' stars after=' + rage.after);
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

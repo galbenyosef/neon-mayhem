@@ -721,6 +721,20 @@ GAME.vehicles = (function () {
     if (GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) sinkCar(car);
   }
 
+  // How long before the same jump pays again, and what "the same jump" is:
+  // the ramp it was launched off, or failing that wherever it was launched
+  // from, to the nearest thirty metres.
+  var JUMP_COOLDOWN = 120;   // seconds of play
+  var jumpPaidAt = {};
+  function jumpKey(car) {
+    if (car.jumpRamp !== null && car.jumpRamp !== undefined) return 'r' + car.jumpRamp;
+    return 'c' + Math.round((car.jumpX || 0) / 30) + ',' + Math.round((car.jumpZ || 0) / 30);
+  }
+  function clockText(sec) {
+    var t = Math.ceil(sec);
+    return Math.floor(t / 60) + ':' + ('0' + (t % 60)).slice(-2);
+  }
+
   // a jump has ended: score it if the player pulled it off, and take the knock
   function landStunt(car, impact) {
     var airT = car.air || 0;
@@ -745,10 +759,21 @@ GAME.vehicles = (function () {
       var cash = Math.round(airT * 120 + dist * 6 + spins * 400);
       var label = spins > 0 ? (spins > 1 ? spins + 'x SPIN!' : '360 SPIN!')
         : airT > 1.6 ? 'INSANE JUMP!' : airT > 1.0 ? 'BIG AIR!' : 'NICE JUMP!';
-      GAME.addCash(cash);
-      GAME.audio.sting('win');
-      GAME.haptics.stunt();
-      GAME.hud.message(label + '   ' + airT.toFixed(1) + 's · ' + Math.round(dist) + 'm · +$' + cash, 3);
+      var stats = label + '   ' + airT.toFixed(1) + 's · ' + Math.round(dist) + 'm';
+      // The same jump pays once per cooldown. Every repeat used to pay in
+      // full, so going round one ramp again and again out-earned all thirteen
+      // missions put together.
+      var key = jumpKey(car), last = jumpPaidAt[key];
+      var wait = last === undefined ? 0 : JUMP_COOLDOWN - (GAME.time - last);
+      if (wait > 0) {
+        GAME.hud.message(stats + ' · paid out — again in ' + clockText(wait), 3);
+      } else {
+        jumpPaidAt[key] = GAME.time;
+        GAME.addCash(cash);
+        GAME.audio.sting('win');
+        GAME.haptics.stunt();
+        GAME.hud.message(stats + ' · +$' + cash, 3);
+      }
       GAME.missions.notifyChaos(60);
       // a jump launched off one of the city's ramps also logs it as found
       if (car.jumpRamp !== undefined && car.jumpRamp !== null) GAME.stunts.credit(car.jumpRamp, airT, dist);
