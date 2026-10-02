@@ -584,9 +584,14 @@ function withTimeout(p, ms) {
   // fault: the car's own top speed clamped its pace back every frame, so only
   // a car that could already do the cap on the flat ever reached the roof.
   var boost = await page.evaluate(function () {
-    var C = GAME.city, P = GAME.player, r = {};
+    var C = GAME.city, P = GAME.player, S = GAME.settings, r = {};
     GAME.police.clearWanted();
     P.health = 100;
+    // These read speeds a tick apart, so a car that meets traffic in the air
+    // or on landing reads as the booster misbehaving (84 -> 68 m/s in one
+    // tick, once in a dozen runs). Nobody else on the road for this.
+    var keep = { t: S.maxTraffic, p: S.maxParked };
+    S.maxTraffic = 0; S.maxParked = 0;
     // Up to the lip from a standing approach and on until the wheels are back
     // down; `lift` takes the foot off for as long as the car is on the deck.
     function run(ramp, type, lift, after) {
@@ -599,6 +604,9 @@ function withTimeout(p, ms) {
       // back: standing there is a swim, so it sits this out
       if (C.isInWater(sx, sz) || C.isInWater(sx - uz * 4, sz + ux * 4)) return o;
       GAME.test.teleport(sx - uz * 4, sz + ux * 4);
+      GAME.world.cars.slice().forEach(function (c) {
+        if (U.dist2(c.pos.x, c.pos.z, ramp.x, ramp.z) < 250 * 250) GAME.vehicles.removeCar(c);
+      });
       var car = GAME.vehicles.spawnCar(type, sx, sz, ramp.rot, {});
       if (ramp.base) { car.pos.y = ramp.base; P.pos.y = ramp.base; }
       GAME.test.enterNearestCar(car);
@@ -659,6 +667,7 @@ function withTimeout(p, ms) {
     }) : null;
     r.drowning = !!P.drowning;
     P.health = 100;
+    S.maxTraffic = keep.t; S.maxParked = keep.p;
     return r;
   });
   check('booster: and no run ended in the sea with a drown pending (anchor sanity)',
@@ -1267,10 +1276,12 @@ function withTimeout(p, ms) {
   var hpage = await hctx.newPage();
   var hybridErrors = [];
   hpage.on('pageerror', function (e) { hybridErrors.push(String(e.message).slice(0, 200)); });
-  await hpage.goto(origin + '/index.html');
+  // a second city building beside the first one, still running: give it
+  // longer than the default 30 s, which a loaded machine has run past
+  await hpage.goto(origin + '/index.html', { timeout: 90000 });
   await hpage.waitForFunction(function () {
     return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
-  }, null, { timeout: 30000 });
+  }, null, { timeout: 90000 });
   var hybrid = await hpage.evaluate(function () {
     GAME.test.start();
     GAME.test.fastForward(0.5);
@@ -2686,7 +2697,7 @@ function withTimeout(p, ms) {
     }
     var top = 0, atHatch = 0, served = 0, seen = 0;
     var watching = null;
-    var prevX, prevZ, ratio = 0, scared = false, fledFrames = 0;
+    var prevX, prevZ, ratio = 0, scared = false, fledFrames = 0, hurtAt = -1, hurt = 0, fledHurt = 0, watchedFor = 0;
     for (var t = 0; t < 60 * 60; t++) {
       GAME.player.car.speed = 0;                // parked, so the chimes work
       GAME.test.fastForward(1 / 60);
@@ -2717,13 +2728,19 @@ function withTimeout(p, ms) {
         // honour: the round steers them every frame regardless, so a 'flee'
         // here is a flag nobody acts on.
         if (!scared) { scared = true; GAME.peds.panic(ped.pos.x, ped.pos.z, 55, true); }
-        if (ped.state === 'flee') fledFrames++;
+        // ...and neither is a stray round. damage() sent anyone it did not
+        // kill off running, job or not, so one hit on the way over left a
+        // customer carrying six seconds of 'flee' — seen as a one-in-ten
+        // failure of the two checks either side of this, whenever a brawl
+        // nearby put a bullet in somebody's customer.
+        if (++watchedFor === 2 && ped.hp > 2) { hurt = ped.hp; GAME.peds.damage(ped, 1, false); hurt -= ped.hp; hurtAt = t; }
+        if (ped.state === 'flee') { if (hurtAt >= 0) fledHurt++; else fledFrames++; }
         if (d < 2.4) atHatch++;
         if (a.targets.indexOf(watching) < 0) { served++; break; }   // sold
       }
     }
     var out = { seen: seen, served: served, top: +top.toFixed(1), hatch: +(atHatch / 60).toFixed(2),
-      ratio: +ratio.toFixed(2), scared: scared, fled: fledFrames };
+      ratio: +ratio.toFixed(2), scared: scared, fled: fledFrames, hurt: hurt, fledHurt: fledHurt };
     // Clock off properly. A round left running keeps selling in the
     // background, and every sale fires haptics.pickup() — which lands in the
     // buzz log of the haptics group further down and breaks two of its checks
@@ -2757,6 +2774,9 @@ function withTimeout(p, ms) {
     check('ice cream: a blast beside the round leaves them to their round',
       ice.scared === true && ice.fled === 0,
       'scared them: ' + ice.scared + ', frames spent fleeing: ' + ice.fled);
+    check('ice cream: and so does a stray round on the way over',
+      ice.hurt > 0 && ice.fledHurt === 0,
+      'hurt for ' + ice.hurt + ', frames spent fleeing after: ' + ice.fledHurt);
     check('ice cream: and the group clocks off after itself (anchor sanity)',
       ice.clockedOff === true && ice.overlayClosed === true,
       'shift ended=' + ice.clockedOff + ', result card closed=' + ice.overlayClosed);

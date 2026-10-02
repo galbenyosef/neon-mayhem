@@ -958,6 +958,12 @@ GAME.peds = (function () {
     GAME.fx.spawn(ped.pos.x, 1.2, ped.pos.z, { count: 3, color: 0xc42848, spread: 1, vy: 1, life: 0.3, grav: -3 });
     if (ped.hp <= 0) { kill(ped, 'shot', byPlayer, attacker); return; }
     if (ped.isCop) return;
+    // Hurt is not scared off, for the same reason panic() leaves them out: a
+    // job ped is steered by their mission every frame, so a stray round on
+    // the way to the hatch left them carrying a 'flee' for six seconds that
+    // only the ped loop acted on — walking them off at once while the round
+    // walked them in.
+    if (ped.jobPed) return;
     // Not everyone runs — and whoever DOES turn to fight, fights. The old
     // hp floor made every brawler quit after two punches, which read as
     // no fight at all. Once committed, they go the distance; only someone
