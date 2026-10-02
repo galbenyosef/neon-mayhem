@@ -826,7 +826,7 @@ GAME.police = (function () {
     // line of sight last: it walks the grid, and every officer asked it
     // every tick even when the stars, the range or your speed had already
     // ruled a shot out
-    var wantShoot = s >= 2 && dist < 28 && playerSlow
+    var wantShoot = s >= 2 && dist < 28 && playerSlow && !P.interior
       && eyesOn(cop.pos.x, cop.pos.y, cop.pos.z, f.x, f.y, f.z, true);   // up at a roof edge too
     var chaseSpeed = 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
@@ -858,7 +858,7 @@ GAME.police = (function () {
       j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
     }
     // a cop can only cuff you if you're on foot and not sprinting away
-    if (!P.inCar && !P.swimming && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
+    if (!P.inCar && !P.swimming && !P.interior && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
   }
 
   function placeRoadblock(s) {
@@ -952,6 +952,9 @@ GAME.police = (function () {
     if (P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane)) {
       flownOff = P.car.pos.y > GAME.city.groundY(P.car.pos.x, P.car.pos.z) + 26;
     }
+    // indoors (interiors.js) is out of sight the same way: no more units sent,
+    // no eyes on you — they wait round the door for you to come back out
+    if (P.interior) flownOff = true;
 
     // pursuit cars
     var active = copCars();

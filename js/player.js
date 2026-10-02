@@ -13,7 +13,8 @@ GAME.player = {
   // in the sea (updateSwimming): how far over into a stroke the body is,
   // where the arms are in it, the next splash, and whether the how-to has
   // been shown this session
-  swimming: false, swimPitch: 0, swimPhase: 0, swimFx: 0, swimTold: false
+  swimming: false, swimPitch: 0, swimPhase: 0, swimFx: 0, swimTold: false,
+  interior: null    // the room you are in (interiors.js), or null out in the world
 };
 
 GAME.cam = { yaw: Math.PI, pitch: 0.32, dist: 6, freeT: 0, x: 0, y: 5, z: 0 };
@@ -22,6 +23,8 @@ GAME.cameraShake = 0;
 // where the player effectively is (their vehicle when driving, else on foot)
 GAME.focus = function () {
   var P = GAME.player;
+  // in a room, the world carries on round its front door (interiors.js)
+  if (P.interior && GAME.interiors && GAME.interiors.door) return GAME.interiors.door;
   return P.inCar && P.car ? P.car.pos : P.pos;
 };
 
@@ -251,6 +254,7 @@ function respawnAfterScreen() {
     GAME.timeScale = 1;
     if (P.inCar) forceExitCar(true);
     stopSwim();
+    if (GAME.interiors) GAME.interiors.reset();
     // Dying mid walk-to-the-door must cancel the entry: the pending
     // P.entering used to sit frozen through the death screen, resume on the
     // first living frame, and seat you in the car — waking you up in the
@@ -1409,6 +1413,9 @@ function updateCamera(dt) {
   cam.x = U.damp(cam.x || cx, cx, 20, dt);
   cam.y = U.damp(cam.y || cy, cy, 20, dt);
   cam.z = U.damp(cam.z || cz, cz, 20, dt);
+  // indoors, under the ceiling rather than up through it
+  var ceil = GAME.interiors && GAME.interiors.ceiling();
+  if (ceil !== null && ceil !== undefined && cam.y > ceil) cam.y = ceil;
   GAME.cameraObj.position.set(cam.x, Math.max(cam.y, GAME.city.groundY(cam.x, cam.z) + 0.5), cam.z);
   var lookY = fy + (aiming ? Math.tan(-cam.pitch + 0.2) * 10 * 0 : 0);
   // risen over a wall at your back, look out ahead of you, not down at the crown

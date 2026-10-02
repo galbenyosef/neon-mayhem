@@ -43,6 +43,11 @@
 //       shoot back; Isla Verde has ten stunt jumps on a tally of its own;
 //       thirty lost tapes hide on both islands, pay as they are found, glint
 //       on the radar up close, and all of them put a new station on the dial.
+//   5d. INDOORS — the mat of a home you own takes you inside, where the bed
+//       is how you sleep it off; walls hold, the camera stays under the
+//       ceiling, no rain falls and nobody hunting you can see in; the casino
+//       has a wheel, a bar that patches you up, and a doorman who keeps out
+//       anybody with stars; the mat by the door takes you back out.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -2895,6 +2900,129 @@ function withTimeout(p, ms) {
   check('tapes: walk over one and it is yours — paid, remembered, gone', con.tape.got === 1 && con.tape.cash === 250 && con.tape.saved && con.tape.gone, JSON.stringify(con.tape));
   check('tapes: the DJ\'s station is off the dial until every tape is found, then on it', con.lockedOut && con.unlocked);
   check('completion: a hundred per cent waits for the tapes too', con.completeNeedsAll);
+
+  // ---------- 5d: indoors ----------
+  var ind = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, I = GAME.interiors, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    window.__msgs = [];
+    var owned0 = (GAME.prefs.safehouses || []).slice();
+    function walkTo(x, z, maxT) {
+      for (var t = 0; t < (maxT || 8); t += 1 / 60) {
+        var dx = x - P.pos.x, dz = z - P.pos.z;
+        if (dx * dx + dz * dz < 0.2 || I.busy || GAME.shopOpen) break;
+        P.heading = Math.atan2(dx, dz); GAME.cam.yaw = P.heading;
+        GAME.test.pressKey('KeyW', true);
+        GAME.test.fastForward(1 / 60);
+      }
+      GAME.test.pressKey('KeyW', false);
+      GAME.test.fastForward(0.7);
+    }
+    try {
+      // a home you do not own: the mat still sells it to you
+      GAME.prefs.safehouses = [];
+      var mats = GAME.shops.blips().filter(function (b) { return b.label === '$' || b.label === '⌂'; });
+      var condo = mats.filter(function (b) { return Math.abs(b.x - 337) < 30 && Math.abs(b.z - 208) < 30; })[0];
+      GAME.test.teleport(condo.x + 8, condo.z);
+      GAME.test.fastForward(0.4);
+      walkTo(condo.x, condo.z);
+      r.forSale = GAME.shopOpen && /BUY/.test(document.getElementById('shop-items').textContent) && !P.interior;
+      if (GAME.shopOpen) GAME.shops.close();
+      // own it, and the same mat takes you in — wanted or not
+      GAME.prefs.safehouses = ['condo'];
+      GAME.test.teleport(condo.x + 8, condo.z);
+      GAME.test.fastForward(0.4);
+      GAME.test.setWanted(2);
+      walkTo(condo.x, condo.z);
+      var room = I.current;
+      r.inside = !!room && room.id === 'home_condo' && !!P.interior;
+      var F = GAME.focus();
+      r.focusAtDoor = Math.hypot(F.x - condo.x, F.z - condo.z) < 3;
+      r.dry = !P.swimming && !C.isInWater(P.pos.x, P.pos.z, P.pos.y);
+      if (room) {
+        // nobody sees in, nobody takes you
+        GAME.test.fastForward(4);
+        r.unseen = GAME.police.spotted === false && P.state === 'alive';
+        GAME.police.clearWanted();
+        // the walls hold, the camera stays under the ceiling
+        P.heading = -Math.PI / 2; GAME.cam.yaw = P.heading; GAME.cam.pitch = 1.1;
+        GAME.test.pressKey('KeyW', true); GAME.test.fastForward(4); GAME.test.pressKey('KeyW', false);
+        r.walls = P.pos.x > room.ox - room.w / 2 - 0.1 && P.pos.x < room.ox + room.w / 2 + 0.1;
+        GAME.test.fastForward(0.5);
+        r.ceiling = GAME.cameraObj.position.y <= room.h + 0.01;
+        // no rain indoors, and the room's own light at night
+        GAME.weather.testSet(1);
+        GAME.test.fastForward(0.3);
+        var lines = null;
+        GAME.scene.traverse(function (o) { if (o.isLineSegments && o.material && o.material.color && o.material.color.getHex() === 0xa9bedc) lines = o; });
+        r.noRain = !!lines && lines.visible === false;
+        GAME.weather.testSet(0);
+        var tod0 = GAME.timeOfDay;
+        GAME.applyTimeOfDay(0);
+        r.lit = GAME.lights.hemi.intensity >= 0.9;
+        GAME.applyTimeOfDay(tod0);
+        // the bed is where you sleep it off
+        var bed = room.rings[1];
+        walkTo(bed.x, bed.z, 8);
+        r.bed = GAME.shopOpen && /SLEEP IT OFF/.test(document.getElementById('shop-items').textContent);
+        if (GAME.shopOpen) GAME.shops.close();
+        // and the mat by the door takes you back out, and stays shut
+        var ex = room.rings[0];
+        walkTo(ex.x, ex.z, 10);
+        GAME.test.fastForward(1.5);
+        r.out = !P.interior && !I.current && Math.hypot(P.pos.x - condo.x, P.pos.z - condo.z) < 3 && !GAME.shopOpen;
+      }
+      // the casino: turned away with stars, let in without
+      var cas = { x: 452, z: 255.3 };
+      GAME.test.teleport(cas.x, cas.z - 8);
+      GAME.test.fastForward(0.4);
+      GAME.test.setWanted(1);
+      window.__msgs = [];
+      walkTo(cas.x, cas.z);
+      r.doorman = !P.interior && window.__msgs.some(function (m) { return /doorman/.test(m); });
+      GAME.police.clearWanted();
+      GAME.test.teleport(cas.x, cas.z - 8);
+      GAME.test.fastForward(0.4);
+      walkTo(cas.x, cas.z);
+      var cr = I.current;
+      r.casino = !!cr && cr.id === 'casino0';
+      if (cr) {
+        // a drink at the bar patches you up
+        P.health = 40;
+        var bar = cr.rings[2];
+        walkTo(bar.x, bar.z, 12);
+        r.barOpen = GAME.shopOpen && document.getElementById('shop-title').textContent === 'THE GULL BAR';
+        if (GAME.shopOpen) { GAME.addCash(200); GAME.shops.buy('cuba'); GAME.shops.close(); }
+        r.healed = P.health >= 75;
+        // and the wheel is the wheel
+        walkTo(cr.rings[1].x, cr.rings[1].z, 12);
+        r.wheel = GAME.shopOpen && /SPIN THE WHEEL/.test(document.getElementById('shop-items').textContent);
+        if (GAME.shopOpen) GAME.shops.close();
+        I.reset();
+      }
+    } finally {
+      GAME.prefs.safehouses = owned0;
+      I.reset();
+      if (GAME.shopOpen) GAME.shops.close();
+      GAME.police.clearWanted();
+    }
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('indoors: a home you do not own still sells itself at the door', ind.forSale);
+  check('indoors: the mat of a home you own takes you inside, onto a dry floor, with the world going on round its door',
+    ind.inside && ind.focusAtDoor && ind.dry, JSON.stringify({ inside: ind.inside, focus: ind.focusAtDoor, dry: ind.dry }));
+  check('indoors: nobody hunting you can see in', ind.unseen);
+  check('indoors: the walls hold and the camera stays under the ceiling', ind.walls && ind.ceiling, JSON.stringify({ walls: ind.walls, ceiling: ind.ceiling }));
+  check('indoors: no rain falls in a room, and it has its own light at night', ind.noRain && ind.lit, JSON.stringify({ noRain: ind.noRain, lit: ind.lit }));
+  check('indoors: the bed is where you sleep it off', ind.bed);
+  check('indoors: the mat by the door takes you back out to it', ind.out);
+  check('casino: the doorman keeps out anybody with stars', ind.doorman);
+  check('casino: and lets everybody else in', ind.casino);
+  check('casino: the bar sells a drink that patches you up', ind.barOpen && ind.healed, JSON.stringify({ bar: ind.barOpen, healed: ind.healed }));
+  check('casino: the wheel is up the back', ind.wheel);
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

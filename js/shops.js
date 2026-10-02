@@ -285,6 +285,25 @@ GAME.shops = (function () {
     ];
   }
 
+  // The Lucky Gull's bar: a drink puts you back together, a dear one with
+  // your vest done up as well.
+  function barItems() {
+    var P = GAME.player;
+    return [
+      { id: 'cuba', name: 'CUBA LIBRE', price: 40, ds: P.health >= 100 ? 'You’re fine — but it’s a nice drink.' : 'A good long swallow: +35 health.' },
+      { id: 'punch', name: 'NEON PUNCH', price: 120, ds: 'Back on your feet: health full.' },
+      { id: 'special', name: 'THE GULL SPECIAL', price: 400, ds: 'Health full and armor strapped on. Don’t ask what’s in it.' }
+    ];
+  }
+  function buyBar(id) {
+    var P = GAME.player;
+    if (id === 'cuba') P.health = Math.min(100, P.health + 35);
+    else P.health = 100;
+    if (id === 'special') P.armor = 100;
+    note(id === 'special' ? 'The bartender winks.' : 'Cheers.');
+    GAME.track('bar-drink');
+  }
+
   // ---------- buying ----------
   function buyHardware(id) {
     var P = GAME.player;
@@ -1097,6 +1116,7 @@ GAME.shops = (function () {
       case 'showroom': return showroomItems();
       case 'bribe': return bribeItems();
       case 'casino': return casinoItems();
+      case 'bar': return barItems();
     }
     return [];
   }
@@ -1300,7 +1320,7 @@ GAME.shops = (function () {
   }
   function setPreview(it) {
     var kind = openShop && openShop.kind;
-    var wants = it && kind;
+    var wants = it && kind && kind !== 'bar';   // (nothing to turn on a stand at the bar)
     var side = $('shop-side');
     pv.on = !!wants;
     if (side) side.style.display = wants ? 'block' : 'none';
@@ -1403,6 +1423,7 @@ GAME.shops = (function () {
       case 'showroom': buyShowroom(openShop, id); break;
       case 'bribe': buyBribe(id); break;
       case 'casino': spinWheel(it.price); break;
+      case 'bar': buyBar(id); break;
     }
     if (openShop) render();   // a purchase can close the shop (share card) — guard
     GAME.audio.pickup();
@@ -1505,6 +1526,13 @@ GAME.shops = (function () {
       if (P.inCar || d2 > 2.6 * 2.6) continue;
       if (leftSince[loc.id] === false) continue;   // still standing where it closed
       if (leftSince[loc.id] === undefined || jumped) { leftSince[loc.id] = false; continue; }
+      // a home you own and the casino are rooms now: the mat takes you in
+      // (or the doorman turns you away), and either way it waits until you
+      // have stepped off it again
+      if (GAME.interiors && GAME.interiors.enterable(loc) && GAME.interiors.enter(loc)) {
+        leftSince[loc.id] = false;
+        return;
+      }
       open(loc);
       return;
     }

@@ -456,8 +456,9 @@ GAME.hud = (function () {
     }
     // route + destination
     var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var PF = GAME.focus();
+    var px = PF.x;
+    var pz = PF.z;
     if (GAME.nav.dest && catVis('dest')) {
       // an empty path is "no route" (a destination the streets can't reach,
       // e.g. the island while the bridges are closed) — stroking through it
@@ -828,8 +829,10 @@ GAME.hud = (function () {
   function drawMinimap() {
     var cv = el.minimap, g = cv.getContext('2d');
     var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    // (GAME.focus: the car when driving — and the front door from a room)
+    var F = GAME.focus();
+    var px = F.x;
+    var pz = F.z;
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.clearRect(0, 0, 180, 180);
     var zoom = P.inCar ? 0.62 : 0.85;
@@ -1514,9 +1517,9 @@ GAME.nav = (function () {
 
   function computePath() {
     if (!dest) { path = []; return; }
-    var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var PF = GAME.focus();
+    var px = PF.x;
+    var pz = PF.z;
     // route to the road nearest the destination, then a short hop off the road,
     // so the drawn line stays on the streets instead of cutting through blocks
     var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
@@ -1541,8 +1544,9 @@ GAME.nav = (function () {
       recompT -= dt;
       if (recompT <= 0) { recompT = 1.5; computePath(); }
       var P = GAME.player;
-      var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-      var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+      var PF = GAME.focus();
+      var px = PF.x;
+      var pz = PF.z;
       // Arrived means near, not on top of. A map click often lands mid-block,
       // somewhere no road passes — so pulling up on the kerb beside it counts,
       // and a car counts from further out than a person walking the last bit.

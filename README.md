@@ -57,9 +57,9 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 ## Money, property, style
 
 - **GRAN ROSA MOTORS** — a glass showroom with display cars on spotlit pads and a rotating totem. Every vehicle is on the floor from day one, helicopter and TALON gunship included; money is the only gate. Every purchase is a deed: **a fresh copy of your fleet waits at the showroom and at every property you own.**
-- **Three properties** — a dockside flat, a strip condo, a marina villa across the channel. Own one and you wake up at home after a hospital-grade night, gear intact. **SLEEP IT OFF** actually sleeps: eight hours cross the clock, the sky moves, the law forgets you (or most of you, after a manhunt), and your health comes back.
+- **Three properties** — a dockside flat, a strip condo, a marina villa across the channel. Own one and you wake up at home after a hospital-grade night, gear intact. **Step on the mat and you go inside**: a room of your own with a bed at the back, a couch, a TV and a window on the night — and nobody hunting you can see in, so home is where you lie low. **SLEEP IT OFF** actually sleeps: eight hours cross the clock, the sky moves, the law forgets you (or most of you, after a manhunt), and your health comes back.
 - Finish **everything** — every mission, every jump and every lost tape, both islands — and the TALON gunship waits on the mainland helipad, with a one-off million dollars on top. (Money stays money: nothing pins your cash afterwards.)
-- **THE LUCKY GULL** casino on the pier — three stakes, a wheel that really spins, and a gull that usually wins.
+- **THE LUCKY GULL** casino on the pier is a room you walk into — the wheel up on the back wall (three stakes, and a gull that usually wins), card tables, blinking slot machines, music, and a bar whose drinks patch you up. The doorman turns away anybody with the law on their tail.
 - **THREADS** and **CORTES CUTS** — shirts, pants, cuts, hair colors and skin tones, previewed on a mirror that shows *you*, exactly as you stand, before a dollar moves.
 - **ROSA HARDWARE** (and VERDE HARDWARE across the channel) sells armor, medkits and iron — and street weapon racks restock only once per in-game day, so the counter matters.
 

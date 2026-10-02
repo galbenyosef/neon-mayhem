@@ -193,7 +193,7 @@ GAME.tapes = (function () {
 
   function update(dt) {
     var P = GAME.player;
-    if (P.state !== 'alive' || !list.length) return;
+    if (P.state !== 'alive' || !list.length || P.interior) return;
     var f = GAME.focus(), spin = dt * 2.2, bob = Math.sin(GAME.time * 2.4) * 0.12;
     for (var i = 0; i < list.length; i++) {
       var t = list[i];

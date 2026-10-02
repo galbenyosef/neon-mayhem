@@ -50,6 +50,7 @@
     GAME.controls.init();
     GAME.share.init();
     GAME.shops.init(scene);
+    GAME.interiors.build();
     GAME.initInput(canvas);
     GAME.combat.refreshWeaponHud();
     GAME.hud.wantedChanged(0);
@@ -204,6 +205,13 @@
     if (wet > 0 || bolt > 0) {
       L.hemi.intensity = L.hemi.intensity * (1 - 0.3 * wet) + bolt * 1.4;
       L.dir.intensity *= 1 - 0.55 * wet;
+    }
+    // indoors (interiors.js): the room's own light whatever the hour, and no
+    // fog across a room — the people in it were lit by the night outside
+    if (GAME.player && GAME.player.interior) {
+      L.hemi.color.setHex(0xfff0e0); L.hemi.groundColor.setHex(0x40303a);
+      L.hemi.intensity = 0.95; L.dir.intensity = 0.3; L.ambient.intensity = 0.6;
+      scene.fog.near = 400; scene.fog.far = 900;
     }
     lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT);
     if (wet > 0) _cT.lerp(scene.fog.color, wet * 0.8);
@@ -364,6 +372,8 @@
       GAME.audio.radio.setVolume(0);
     } else if (P && P.inCar && P.car && P.state === 'alive') {
       GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
+    } else if (P && P.interior && P.interior.music && P.state === 'alive') {
+      GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.45);   // the casino's music
     }
   };
 
@@ -448,6 +458,7 @@
     GAME.tapes.update(dt);
     if (GAME.isla) GAME.isla.tick(dt);
     GAME.shops.update(dt);
+    GAME.interiors.update(dt);
     // slow autosave heartbeat: health and ammo drift without touching cash,
     // and the save should never be more than ten seconds behind the life
     if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
@@ -636,6 +647,7 @@
         P.car.airVX = P.car.airVZ = undefined;
       } else {
         if (GAME.stopSwim) GAME.stopSwim();   // (into water, you start again there)
+        if (GAME.interiors) GAME.interiors.reset();
         P.pos.set(x, GAME.city.groundY(x, z), z);
         P.velY = 0; P.airborne = false;
       }
