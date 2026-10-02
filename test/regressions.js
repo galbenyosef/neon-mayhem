@@ -1343,6 +1343,44 @@ function withTimeout(p, ms) {
   check('law: but not in a hurry — it takes the best part of a minute',
     lost.clearedIn !== null && lost.clearedIn >= 35, 'cleared in ' + lost.clearedIn + ' s');
 
+  // A new offence somewhere else puts the hunt on you — not back on wherever
+  // they lost you last time. Being marked spotted used to leave the last
+  // sighting where the previous chase had ended, and every unit dispatched
+  // for the new one drove off across town to search it.
+  var fresh = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    GAME.test.fastForward(1);
+    GAME.godMode = true;
+    GAME.test.teleport(-250, -150);
+    GAME.test.fastForward(0.5);
+    GAME.test.setWanted(3);
+    GAME.test.fastForward(8);
+    GAME.test.teleport(-300, 300);          // lost them
+    GAME.test.fastForward(6);
+    GAME.police.clearWanted();
+    GAME.test.fastForward(1);
+    GAME.test.teleport(350, 300);           // and later, across the map
+    GAME.test.fastForward(0.5);
+    GAME.test.setWanted(3);
+    var t = 0, near = 1e9;
+    for (; t < 15 * 60 && near > 130; t++) {
+      GAME.test.fastForward(1 / 60);
+      GAME.world.cars.forEach(function (c) {
+        if (c.isPolice && c.ai && c.ai.mode === 'chase') near = Math.min(near, U.dist(c.pos.x, c.pos.z, P.pos.x, P.pos.z));
+      });
+    }
+    r.near = Math.round(near); r.t = +(t / 60).toFixed(1);
+    GAME.godMode = false;
+    GAME.police.clearWanted();
+    GAME.test.fastForward(1);
+    P.health = 100;
+    return r;
+  });
+  check('law: a new offence brings them to you, not to where the last chase was lost',
+    fresh.near <= 130, 'nearest cruiser ' + fresh.near + ' m after ' + fresh.t + ' s');
+
   // sleeping it off: three stars or fewer is forgotten, a manhunt only cools
   var slept = [];
   for (var sl = 0; sl < 3; sl++) {

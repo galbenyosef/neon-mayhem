@@ -87,7 +87,7 @@ GAME.police = (function () {
     var capStar = Math.max(type === 'kill_cop' ? 2 : 0, Math.min(5, before + 1));
     if (capStar < 5) heat = Math.min(heat, THRESH[capStar + 1] - 8);
     lastSeen = 0;
-    spotted = true;   // a witness puts them back on you
+    sighted();   // a witness puts them back on you
     var after = stars();
     if (after > before) { GAME.hud.wantedChanged(after); if (after >= 3) GAME.track('wanted-' + after); }
   }
@@ -109,7 +109,7 @@ GAME.police = (function () {
     heat = Math.max(heat + 55 * (1 + before * ESCALATION), THRESH[1] + 5);
     heat = Math.min(HEAT_CEIL, heat);
     lastSeen = 0;
-    spotted = true;
+    sighted();
     if (stars() > before) GAME.hud.wantedChanged(stars());
   }
 
@@ -117,7 +117,7 @@ GAME.police = (function () {
     n = U.clamp(Math.floor(n), 0, 5);
     heat = n === 0 ? 0 : THRESH[n] + 25;
     // treat it like a fresh offence so the level doesn't bleed away instantly
-    if (n > 0) { lastCrime = GAME.time; spotted = true; lastSeen = 0; }
+    if (n > 0) { lastCrime = GAME.time; sighted(); lastSeen = 0; }
     GAME.hud.wantedChanged(n);
     if (n === 0) clearCops();
   }
@@ -206,6 +206,14 @@ GAME.police = (function () {
   var spotted = true;                  // some unit had line of sight last tick
   var knownX = 0, knownZ = 0;          // where they last saw you
   var searchX = 0, searchZ = 0, searchT = 0;
+  // seen just now, wherever that is — and the search starts over from there.
+  // Marking you spotted without moving the last sighting left the hunt on
+  // wherever an EARLIER chase had lost you, and every unit drove there.
+  function sighted() {
+    var f = GAME.focus();
+    spotted = true;
+    knownX = searchX = f.x; knownZ = searchZ = f.z; searchT = 0;
+  }
   function huntX() { return spotted ? GAME.focus().x : searchX; }
   function huntZ() { return spotted ? GAME.focus().z : searchZ; }
   function updateHunt(dt, unseenFor) {
