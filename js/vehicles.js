@@ -636,7 +636,7 @@ GAME.vehicles = (function () {
       // on a ramp the deck itself drives the climb rate; carry that off the lip
       car.vy = ramp ? Math.max(0, car.speed) * ramp.slope : 0;
       car.onRampIdx = ramp ? ramp.idx : null;
-      car.deckCap = ramp && ramp.boost && ramp.cap ? ramp.cap : 0;
+      car.deckCap = ramp && ramp.cap ? ramp.cap : 0;
       if (ramp && ramp.boost) {
         if (!car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
           GAME.audio.pickup();
@@ -647,11 +647,20 @@ GAME.vehicles = (function () {
           // it — the landing is a rooftop, and the rooftop is only so deep
           car.capPing = true;
           car.boostT = 0;
-          car.speed = car.speed < ramp.cap ? Math.min(ramp.cap, car.speed + 80 * dt) : ramp.cap;
+          meterTo(car, ramp, car.speed < ramp.cap ? 80 : 0, dt);
         } else {
           car.boostT = BOOST_TAIL;
           car.speed = Math.max(car.speed, 12);   // a standing start still gets launched
         }
+      } else if (ramp && ramp.cap) {
+        // A metered drop — the chain's rooftop ramp. It sets the pace you
+        // leave its lip at, so the drop lands on the street below rather than
+        // in the wall of the next block. That pace is slower than nearly
+        // anything drives, so this is no booster and does not dress as one
+        // (it used to: the boost ping, the shake, the paint, and then the car
+        // snapped down to 22 m/s on the first tick of the deck).
+        car.capPing = false;
+        meterTo(car, ramp, METER_RATE, dt);
       } else car.capPing = false;
       if (car.air) landStunt(car, 0);
     }
@@ -763,6 +772,20 @@ GAME.vehicles = (function () {
   // How fast an unasked-for reverse dies (see the drive step): a shunt is not
   // a gear, so it decays on its own constant rather than the coasting one.
   var SHUNT_DRAG = 2.2;
+  // Brings a car to a capped deck's pace by the time it reaches the lip — as
+  // hard as the deck left to do it in requires, and never gentler than
+  // `rate` — instead of setting it there on the first tick of the deck.
+  function meterTo(car, ramp, rate, dt) {
+    var left = Math.max(0.5, (1 - ramp.t) * GAME.city.ramps[ramp.idx].len);
+    var need = Math.abs(car.speed * car.speed - ramp.cap * ramp.cap) / (2 * left);
+    var step = Math.max(rate, need) * dt;
+    car.speed = car.speed > ramp.cap ? Math.max(ramp.cap, car.speed - step)
+      : Math.min(ramp.cap, car.speed + step);
+  }
+  // the least a metered deck changes your speed by, per second, on the way
+  // to its pace
+  var METER_RATE = 8;
+
   // How fast speed above the car's own top speed comes off (per second, on
   // the excess): 77 m/s off a booster is down to a sports car's 40 in about
   // a second and a half.

@@ -172,7 +172,7 @@ GAME.city = (function () {
       if (Math.abs(lx) > r.w / 2 || lz < -r.len / 2 || lz > r.len / 2) continue;
       var t = (lz + r.len / 2) / r.len;
       // a ramp can sit on a roof: base lifts the whole wedge
-      return { idx: r.idx, y: (r.base || 0) + r.h * t, slope: r.h / r.len, rot: r.rot, boost: r.boost, cap: r.cap };
+      return { idx: r.idx, y: (r.base || 0) + r.h * t, t: t, slope: r.h / r.len, rot: r.rot, boost: r.boost, cap: r.cap };
     }
     return null;
   };
@@ -2128,10 +2128,13 @@ GAME.city = (function () {
             }
           }
           if (!ok2) continue;
-          // The drop is metered too: ramp2 is a capped strip (22 m/s), so
-          // the landing falls a known ~30 m past the parapet. The corridor
-          // check covers that plus margin; thin posts (lamps) don't count —
-          // only real massing closes a landing zone.
+          // The drop is metered too: ramp2 sets a 22 m/s pace by its lip, so
+          // the landing falls a known ~30 m past the parapet. It is a plain
+          // ramp, not a booster — that pace brings almost everything DOWN,
+          // and a car thrown off it any faster lands against the wall of the
+          // next block. The corridor check covers that plus margin; thin
+          // posts (lamps) don't count — only real massing closes a landing
+          // zone.
           for (var t3 = 4; t3 <= 40 && ok2; t3 += 4) {
             var lx2 = (axisX ? far + sgn * t3 : across), lz2 = (axisX ? across : far + sgn * t3);
             if (lx2 < -466 || lx2 > 392 || Math.abs(lz2) > 472 || city.isInWater(lx2, lz2)) { ok2 = false; break; }
@@ -2147,7 +2150,7 @@ GAME.city = (function () {
           // launcher over the roofline, and the second lip at the far edge
           out.push({ x: lx, z: lz, rot: rot, w: 12, len: 26, h: hL, boost: true, cap: cap2 });
           var c2a = far - sgn * (0.5 + 8);               // ramp2 centre (len 16), lip at the edge
-          out.push({ x: axisX ? c2a : across, z: axisX ? across : c2a, rot: rot, w: 12, len: 16, h: 4.6, base: roofY2, boost: true, cap: 22 });
+          out.push({ x: axisX ? c2a : across, z: axisX ? across : c2a, rot: rot, w: 12, len: 16, h: 4.6, base: roofY2, cap: 22 });
           return true;
         }
         }

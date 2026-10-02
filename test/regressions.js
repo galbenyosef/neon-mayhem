@@ -28,6 +28,8 @@
 //       its push ends at the lip rather than firing into the road on
 //       landing, the speed it hands back comes off smoothly, and the capped
 //       chain launcher gets every car to its pace, not just the fast ones.
+//       The chain's rooftop ramp is a metered drop and no longer poses as a
+//       booster; it eases you to its pace instead of snapping you to it.
 //   3v. INTO THE SEA — a vehicle that goes into the water goes UNDER and is
 //       cleared away, the player's own included, rather than skimming out
 //       across the surface and stopping there for good.
@@ -565,12 +567,15 @@ function withTimeout(p, ms) {
       var ux = Math.sin(ramp.rot), uz = Math.cos(ramp.rot);
       var back = ramp.cap ? 18 : 30;
       var sx = ramp.x - ux * (ramp.len / 2 + back), sz = ramp.z - uz * (ramp.len / 2 + back);
+      var o = { reached: false };
+      // one of the coastal ramps has its run-up out over the water this far
+      // back: standing there is a swim, so it sits this out
+      if (C.isInWater(sx, sz) || C.isInWater(sx - uz * 4, sz + ux * 4)) return o;
       GAME.test.teleport(sx - uz * 4, sz + ux * 4);
       var car = GAME.vehicles.spawnCar(type, sx, sz, ramp.rot, {});
       if (ramp.base) { car.pos.y = ramp.base; P.pos.y = ramp.base; }
       GAME.test.enterNearestCar(car);
       GAME.test.fastForward(0.7);
-      var o = { reached: false };
       if (!P.inCar) { GAME.vehicles.removeCar(car); return o; }
       car.speed = car.spec.maxSpeed * 0.8;
       var wasDeck = false, t = 0, landT = -1;
@@ -579,6 +584,14 @@ function withTimeout(p, ms) {
         GAME.test.pressKey('KeyW', !(lift && deck));
         GAME.test.fastForward(1 / 60); t += 1 / 60;
         if (deck) { o.reached = true; wasDeck = true; }
+        // Never on to the sea. A car knocked off line short of a deck near
+        // the coast drove on, foot down, and into the water — and the drown
+        // fade that starts runs on a real timer, so it washed the player
+        // ashore in the middle of whichever group came next. Give up on a
+        // deck that has not been reached in a few seconds, and stop the
+        // moment anything starts to sink (before the splash, which is where
+        // the drown begins).
+        if (car.sinking || (!wasDeck && t > 4)) break;
         if (wasDeck && o.lip === undefined && car.air > 0) o.lip = Math.hypot(car.airVX, car.airVZ);
         if (o.lip !== undefined && landT < 0 && !(car.air > 0)) {
           landT = t; o.land = car.speed; o.boostAtLand = car.boostT; o.landY = car.pos.y; o.maxSp = car.spec.maxSpeed;
@@ -617,9 +630,12 @@ function withTimeout(p, ms) {
       var o = run(launcher, type, false, 0.5);
       return { type: type, reached: o.reached, cap: launcher.cap, lip: o.lip, landY: o.landY, roofY: roof.base };
     }) : null;
+    r.drowning = !!P.drowning;
     P.health = 100;
     return r;
   });
+  check('booster: and no run ended in the sea with a drown pending (anchor sanity)',
+    boost.drowning === false, 'drowning=' + boost.drowning);
   check('booster: there are street boosters, and the car gets up them (anchor sanity)',
     boost.boosters >= 3 && boost.pedal.reached && boost.landings.filter(function (l) { return l.reached; }).length >= 3,
     'boosters=' + boost.boosters + ' reached=' + boost.landings.filter(function (l) { return l.reached; }).length);
@@ -644,6 +660,57 @@ function withTimeout(p, ms) {
   check('booster: and onto the roof it was aimed at',
     !!boost.chain && boost.chain.every(function (c) { return Math.abs(c.landY - c.roofY) < 0.5; }),
     JSON.stringify((boost.chain || []).map(function (c) { return c.type + ' landed y=' + (c.landY || 0).toFixed(1) + ' roof=' + c.roofY.toFixed(1); })));
+
+  // The chain's rooftop ramp is a metered drop, not a booster: it sets the
+  // pace the drop leaves at (any faster and it lands against the next block),
+  // which is slower than nearly anything drives. It used to dress as a booster
+  // — the ping, the shake, the paint — and then snap the car down to that pace
+  // on its first tick of deck.
+  var drop = await page.evaluate(function () {
+    var C = GAME.city, P = GAME.player;
+    var roof = C.ramps.filter(function (q) { return q.cap && q.base; })[0];
+    if (!roof) return { found: false };
+    if (P.inCar) GAME.exitCar();
+    var ux = Math.sin(roof.rot), uz = Math.cos(roof.rot);
+    var sx = roof.x - ux * (roof.len / 2 + 14), sz = roof.z - uz * (roof.len / 2 + 14);
+    GAME.test.teleport(sx - uz * 4, sz + ux * 4);
+    var car = GAME.vehicles.spawnCar('sports', sx, sz, roof.rot, {});
+    car.pos.y = roof.base; P.pos.y = roof.base;
+    GAME.test.enterNearestCar(car);
+    GAME.test.fastForward(0.7);
+    var r = { found: true, boost: roof.boost, cap: roof.cap, aboard: P.inCar };
+    car.speed = car.spec.maxSpeed;
+    r.entry = car.speed;
+    var pings = 0, pk0 = GAME.audio.pickup;
+    GAME.audio.pickup = function () { pings++; return pk0.apply(GAME.audio, arguments); };
+    GAME.test.pressKey('KeyW', true);
+    var onDeck = false, maxStep = 0, lip = null, landY = null;
+    for (var i = 0; i < 400; i++) {
+      var before = car.speed;
+      GAME.test.fastForward(1 / 60);
+      if (car.onRampIdx === roof.idx && !(car.air > 0.05)) { onDeck = true; maxStep = Math.max(maxStep, before - car.speed); }
+      if (onDeck && lip === null && car.air > 0) lip = Math.hypot(car.airVX, car.airVZ);
+      if (lip !== null && !(car.air > 0)) { landY = car.pos.y; break; }
+    }
+    GAME.test.pressKey('KeyW', false);
+    GAME.audio.pickup = pk0;
+    r.onDeck = onDeck; r.pings = pings; r.maxStep = maxStep; r.lip = lip; r.landY = landY;
+    r.street = landY === null ? null : C.groundY(car.pos.x, car.pos.z, 0);
+    GAME.exitCar();
+    GAME.vehicles.removeCar(car);
+    P.health = 100;
+    return r;
+  });
+  check('drop: a sports car rides onto the rooftop ramp at full pace (anchor sanity)',
+    drop.found && drop.aboard && drop.onDeck && drop.entry > drop.cap + 10, JSON.stringify(drop));
+  check('drop: the rooftop ramp is not dressed as a booster, and does not ping as one',
+    drop.found && !drop.boost && drop.pings === 0, 'boost=' + drop.boost + ' pings=' + drop.pings);
+  check('drop: it brings the car to its pace over the deck, not on the first tick',
+    drop.found && drop.maxStep < 3, 'largest drop in one tick ' + (drop.maxStep || 0).toFixed(2) + ' m/s');
+  check('drop: and still sends it off the lip at that pace, down onto the street',
+    drop.found && drop.lip >= drop.cap - 0.5 && drop.lip <= drop.cap + 1.5 && drop.landY !== null &&
+    Math.abs(drop.landY - drop.street) < 0.3,
+    'lip ' + (drop.lip || 0).toFixed(1) + ' m/s (pace ' + drop.cap + '), landed y=' + drop.landY + ' street=' + drop.street);
 
   // ---------- 3x: out of a car, at the car's level ----------
   // Getting out put you at the street's height under wherever you stepped out:

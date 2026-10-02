@@ -606,7 +606,9 @@ GAME.shops = (function () {
         var r = ramps[i];
         var ux = Math.sin(r.rot), uz = Math.cos(r.rot);
         var lx = r.x + ux * r.len / 2, lz = r.z + uz * r.len / 2;
-        var L = r.boost ? 260 : 90;
+        // (a metered ramp keeps the corridor it had when it was dressed as
+        // a booster, so taking the dress off moved no shop)
+        var L = r.boost || r.cap ? 260 : 90;
         var t = ((cx - lx) * ux + (cz - lz) * uz) / L;
         if (t < -0.15 || t > 1) continue;
         var px = lx + ux * t * L, pz = lz + uz * t * L;
