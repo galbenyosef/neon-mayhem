@@ -194,6 +194,18 @@ function withTimeout(p, ms) {
   page.on('pageerror', function (e) { pageErrors.push(String(e.message).slice(0, 200)); });
   page.on('console', function (m) { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 200)); });
 
+  // Playwright's evaluate carries a user gesture, so every overlay that hands
+  // the screen back (GAME.regainPointer) really took the pointer lock here.
+  // Headless grants and exits land up to a second late, and under load an
+  // exit could land past the game's 1.5 s grace — which reads, correctly for
+  // a player, as Esc, and pauses. The checks that drive the sim through
+  // fastForward ran on regardless; the few on the real loop (the radio, the
+  // shake) then measured a paused game. Nothing here is about the lock, so
+  // the page never takes one.
+  await page.addInitScript(function () {
+    Element.prototype.requestPointerLock = function () { return Promise.resolve(); };
+  });
+
   await page.goto(origin + '/index.html');
   await page.waitForFunction(function () {
     return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
