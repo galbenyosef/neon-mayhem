@@ -34,6 +34,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 - A 0–5 star wanted system that escalates from pursuing cruisers to foot pursuits, roadblocks, spike strips and visible air units — searchlight, strobes, tracer and all.
 - **Each star costs more than the one below it** — two offences for the first, then three, four, five, six. A single body you never meant to hit is heat rather than a star, and a five-star manhunt is twenty offences of work. Killing an officer is instantly serious at two stars, and climbing past that takes more of them than it used to.
 - **Out of sight is out of mind — eventually.** The police chase what they can see. Break the line of sight — round a corner, under a bridge, behind the towers where the helicopter can't look down on you — and every unit heads for where you were last seen and searches outward from there. Stay hidden and the heat cools: about half a minute at three stars, a minute at four, a minute and a half at five. Hide round the corner from where they lost you and the search will likely find you again.
+- **A roof is not a hiding place.** Officers on the street look up: stand at the edge and they will shoot up at you, though the middle of a roof is cover. And since nobody can climb up after you, two stars on a rooftop brings the helicopter early.
 - The law shoots like people, not turrets. A round goes where it was actually aimed rather than where a separate dice roll put it, so the tracer you watch fly wide *is* the one that missed — and range, your speed, the first shot of a burst and which officer happens to be holding the gun all decide whether it lands. Standing still at close quarters is fatal; thirty metres at a sprint is a different proposition entirely.
 - Four **respray garages** (three mainland, VERDE MOTORS on the island) repair and recolor the car for $100 — and fresh paint fools a patrol, so up to two stars die with the old color. From three up they know your *face*, and paint stops helping.
 - That's when you see the **desk sergeant**: losing the top star of a deep warrant costs more than shaking off a fender-bender ($150 a star at one star, $750 at five), and CLEAN SLATE wipes the whole ladder for exactly the sum of its steps. No discounts, no traps. (Or sleep it off at home — free, if you can spare eight hours: it wipes three stars or fewer, and takes two off a four- or five-star manhunt.)
@@ -43,6 +44,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 - **Street races** against a field that turns up in something quicker than you brought — the best of your own class, so a bike race is still a bike race — lined up on the grid ahead of you. You start on the back row, and the rubber band has real teeth, so the field is something you have to pass rather than something you leave at the lights. **Timed couriers** with fresh drops every run, and **rampages** — each opening with a fade-out and a big 3-2-1 countdown before you're let loose. Pass one and whoever set it up cools the heat down to two stars, so you aren't left facing a manhunt with your fists.
 - Continuous **taxi, paramedic and ice-cream shifts** that level up: more people, further out, marked by floating arrows. The clocks are tuned as a high-score run, not a loop you can hold forever — early fares bank a little, the mid-shift breaks even, the deep shift bleeds. The ice-cream round works backwards: nobody waits for you, the chimes pull them to the hatch.
 - Isla Verde carries four missions of its own, and they stay on the island — nothing asks you to cross mid-run.
+- **Fail a run and you can go again from where it went wrong.** For a few seconds after a failure `Y` (or RETRY) puts you back on its start line, in the car you set off in, and runs it again — after a death or an arrest, once you're back on your feet. Stars still close the start line.
 - Finish something worth finishing and a shareable **result card** is drawn for it — save it, copy it, or send it to your phone's share sheet.
 
 ## Money, property, style
@@ -55,13 +57,15 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 ## The feel
 
-- 3 procedurally generated radio stations — every note synthesized at runtime with the Web Audio API, with slow synth pads over the title screen.
+- 3 procedurally generated radio stations — every note synthesized at runtime with the Web Audio API, with slow synth pads over the title screen. Every car keeps its own dial, and one more click past the last station turns the radio off.
+- **Soft things and hard things.** A car at a crawl knocks somebody down rather than killing them, and a bump is not a wanted star. A lamp post, a hydrant or a boardwalk bench goes down to a car at speed instead of stopping it like concrete — and stands back up once you're gone — while the beach palms are as solid as the street ones.
 - The crowd is spent against the frame, not a fixed number: when frames start arriving late — a deep chase, a slow machine — the city quietly thins the traffic and pavement it spawns, and fills back in when the frames recover. It never culls what is already on screen, so the street thins out rather than blinking.
 - On a phone with a motor for it, the world is something you can **feel** — and in shapes, not just lengths, because a channel that only ever says the same thing at different volumes is one you learn to ignore. A knock scales with the impact; a body under the wheels is not the sharp thud of a wall; a star is counted out in taps and shaking one off is that shape upside down; a canopy opens hard and sets you down soft; the ride catching fire is the only pattern allowed to insist. Blasts, jumps scored, checkpoints, refusals at a counter, and every thumb button — a control with no travel has to feel pressed somehow. The one thing that rumbles continuously is a takeoff run, wheels down and at speed on tarmac, and it stops itself the moment any of that stops being true. Everything is rationed by tier, so a thumb resting on GAS can never talk over a crash and nothing at all can cut a death short. Switchable from the pause screen — where it demonstrates itself as you turn it on, because a setting you cannot feel is a promise rather than a thing that happened.
 - The world is **audible in stereo**: sirens, crashes, gunfire, explosions and the people you startle all play from where they happen, panned across the direction the camera is facing — so a cruiser closing on your left is heard on your left before it is seen. Your own car and radio stay where they belong, centred.
 - The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
-- A heading-up radar minimap; a full map (`P`) with legend, POI badges, pickups and street-following mission routes — click anywhere to set a destination.
-- CRT filter, separate music/SFX switches, and a day/night pin if you want the city permanently at golden hour or midnight (a night's sleep politely overrules it).
+- A heading-up radar minimap; a full map (`P`) with legend, POI badges, pickups and street-following mission routes — click anywhere to set a destination, scroll or `+`/`−` to zoom, drag to move. Districts and missions are named on it, and a mission you've beaten is ticked off.
+- Messages stack rather than replacing each other; a hit shows which way it came from; low health pulses the edges of the screen. If you own a place, a new session starts there.
+- CRT filter, separate music/SFX switches, a camera-shake switch, a **GFX: HIGH / MEDIUM / LOW** setting (resolution, draw distance and crowd), and a day/night pin if you want the city permanently at golden hour or midnight (a night's sleep politely overrules it). The pause screen works from the keyboard too: arrows and `Enter`.
 
 ## Controls
 
@@ -76,14 +80,14 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 | F | Enter / jack car | Exit car |
 | J | — | Start the shift a working vehicle offers |
 | 1–5 | Weapon select | — |
-| , / . | — | Radio station |
+| , / . | — | Radio station (and off) |
 | Shift | Sprint | — |
 
-`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Esc` pause · `⛶` fullscreen
+`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `Esc` pause · `⛶` fullscreen
 
 **In the air:** helicopter — climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Plane — `W` to roll down the runway, `Space` to rotate once you're fast, `Q/E` to barrel-roll, and pull hard enough on the elevator for a full loop. `F` bails out with a parachute.
 
-📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape. **Left-handed?** One tap on the pause screen mirrors the whole cluster — stick to the right thumb, buttons to the left, and the camera drag swaps sides to match — and it is remembered.
+📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape (on an iPhone, where Safari has no fullscreen for pages, add it to the home screen instead — it runs full screen from there). **Left-handed?** One tap on the pause screen mirrors the whole cluster — stick to the right thumb, buttons to the left, and the camera drag swaps sides to match — and it is remembered.
 
 ## Run it locally
 

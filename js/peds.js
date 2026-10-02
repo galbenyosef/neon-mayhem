@@ -623,7 +623,7 @@ GAME.peds = (function () {
                 // the receiving end gets to decide whether to swing back
                 damage(F.ped, 6, false, ped);
               } else {
-                GAME.playerDamage(6, 'fists');
+                GAME.playerDamage(6, 'fists', ped.pos.x, ped.pos.z);
               }
               GAME.audio.crash(0.18, ped.pos.x, ped.pos.z);
             }

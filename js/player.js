@@ -128,9 +128,12 @@ GAME.importSave = function (text) {
   } catch (e) { return { ok: false, why: 'Could not write the save.' }; }
 };
 
-GAME.playerDamage = function (amt, cause) {
+// `fromX`/`fromZ`, when the caller knows them, are where it came from: the
+// HUD turns an arc toward it
+GAME.playerDamage = function (amt, cause, fromX, fromZ) {
   var P = GAME.player;
   if (!GAME.started || P.state !== 'alive' || GAME.godMode) return;
+  if (fromX !== undefined) GAME.hud.hitFrom(fromX, fromZ);
   if (P.armor > 0) {
     var absorbed = Math.min(P.armor, amt * 0.7);
     P.armor -= absorbed;
@@ -410,8 +413,14 @@ function sitIn(car) {
   GAME.cam.freeT = 0;
   GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
   GAME.hud.message(car.spec.label, 1.6);
-  // the radio comes on tuned to whatever the last driver left it on
-  if (!car.spec.heli && !car.spec.plane) GAME.hud.radioPopup(GAME.audio.radio.randomStation());
+  // the radio comes on tuned to whatever the last driver left it on — the
+  // first time, wherever a stranger had it; after that wherever YOU did.
+  // It was re-rolled at random every time you got in.
+  if (!car.spec.heli && !car.spec.plane) {
+    var R = GAME.audio.radio;
+    GAME.hud.radioPopup(car.radioStation >= 0 ? R.tune(car.radioStation) : R.randomStation());
+    car.radioStation = R.index;
+  }
   if (car.spec.gunship) GAME.hud.message('TALON — Space up · Shift down · WASD fly · LMB/GUN chin gun · RMB/RKT rockets · F to exit', 5);
   else if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
   else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
@@ -419,6 +428,13 @@ function sitIn(car) {
   else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
   else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
 }
+
+// a turn of the dial is this car's from now on (sitIn tunes back to it)
+GAME.switchRadio = function (dir) {
+  var R = GAME.audio.radio, name = R.switchStation(dir);
+  if (GAME.player.inCar && GAME.player.car) GAME.player.car.radioStation = R.index;
+  GAME.hud.radioPopup(name);
+};
 
 GAME.seatInCar = function (car) {
   var P = GAME.player;
@@ -704,7 +720,7 @@ function updateOnFoot(dt) {
     // one hit per contact: gate by a short cooldown so a single bump can't
     // drain health across many frames of overlap
     if (Math.abs(c.speed) > 8 && P.carHurtCd <= 0) {
-      GAME.playerDamage(Math.min(30, Math.abs(c.speed) * 0.9), 'car');
+      GAME.playerDamage(Math.min(30, Math.abs(c.speed) * 0.9), 'car', c.pos.x, c.pos.z);
       P.carHurtCd = 0.8;
       var kb = 3.2;
       nx += ox * kb; nz += oz * kb;
@@ -859,8 +875,8 @@ function updateDriving(dt) {
     }
     if (car.spec.plane) GAME.aircraft.updatePlane(dt);
     else GAME.aircraft.updateHeli(dt);
-    if (GAME.keyPressed('Comma')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(-1));
-    if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
+    if (GAME.keyPressed('Comma')) GAME.switchRadio(-1);
+    if (GAME.keyPressed('Period')) GAME.switchRadio(1);
     return;
   }
   // ground vehicles answer to the closed channel's line too (a truck that
@@ -911,8 +927,8 @@ function updateDriving(dt) {
   if (P.onBike) updateBikeRider(dt);
 
   // radio switching
-  if (GAME.keyPressed('Comma')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(-1));
-  if (GAME.keyPressed('Period')) GAME.hud.radioPopup(GAME.audio.radio.switchStation(1));
+  if (GAME.keyPressed('Comma')) GAME.switchRadio(-1);
+  if (GAME.keyPressed('Period')) GAME.switchRadio(1);
 }
 
 // what coming down at `impact` m/s does to you
@@ -1032,9 +1048,13 @@ function updateCamera(dt) {
     // airframe — so one read here covers all of them without a hook at each.
     if (GAME.cameraShake > shakePrev + 0.05) GAME.haptics.knock(GAME.cameraShake - shakePrev);
     GAME.cameraShake *= Math.exp(-5 * dt);
-    cx += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
-    cy += (Math.random() - 0.5) * GAME.cameraShake * 0.5;
-    cz += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
+    // SHAKE: OFF in the pause menu keeps the picture still; the knock above
+    // still reaches the rumble, which is its own switch
+    if (!(GAME.prefs && GAME.prefs.noShake)) {
+      cx += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
+      cy += (Math.random() - 0.5) * GAME.cameraShake * 0.5;
+      cz += (Math.random() - 0.5) * GAME.cameraShake * 0.6;
+    }
   }
   shakePrev = GAME.cameraShake;
 

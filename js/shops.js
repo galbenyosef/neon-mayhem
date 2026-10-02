@@ -141,6 +141,20 @@ GAME.shops = (function () {
     return best;
   }
 
+  // Where a new session starts: the bed you last slept in (or bought), else
+  // any you own. It was always the strip, so owning a place changed nothing
+  // about coming back to the game.
+  function startSpawn() {
+    var unlocked = !GAME.isla || GAME.isla.isOpen();
+    var last = GAME.prefs && GAME.prefs.lastHome, pick = null;
+    for (var i = 0; i < SAFEHOUSES.length; i++) {
+      var s = SAFEHOUSES[i];
+      if (!owns(s.id) || !s.at || (s.isla && !unlocked)) continue;
+      if (!pick || s.id === last) pick = s;
+    }
+    return pick ? { x: pick.at.x, z: pick.at.z, name: pick.name } : null;
+  }
+
   // ---------- placement ----------
   // nudge a doormat off roads, water, ramps and out of walls — the same spiral
   // hunt the island uses for its POIs
@@ -305,6 +319,7 @@ GAME.shops = (function () {
       // no sleeping on the clock: a fare in the back seat or a race half
       // run does not pause for a nap
       if (GAME.missions && GAME.missions.active) { note('No sleeping on the clock.'); return; }
+      GAME.prefs.lastHome = loc.sh.id;   // and the next load starts here (startSpawn)
       close();
       GAME.hud.fade(function () {
         // eight hours pass behind the blackout: a third of the day wheel,
@@ -337,6 +352,7 @@ GAME.shops = (function () {
       return;
     }
     ownedList().push(loc.sh.id);
+    GAME.prefs.lastHome = loc.sh.id;
     GAME.save();
     refreshGarageSpots();   // this lot joins the fleet's rounds
     GAME.track('safehouse-bought');
@@ -1547,7 +1563,7 @@ GAME.shops = (function () {
   return {
     init: init, update: update, open: open, close: close, buy: buy,
     nearHint: nearHint, blips: blips, applyOutfit: applyOutfit,
-    homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns,
+    homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns, startSpawn: startSpawn,
     renderPreview: renderPreview,
     garage: function () { return garage().slice(); },
     garageSpot: function (type) {

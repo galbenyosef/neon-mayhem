@@ -83,8 +83,9 @@ GAME.touch = (function () {
   function applySettings(vals, fogFar) {
     var S = GAME.settings;
     for (var k in vals) S[k] = vals[k];
-    // after boot: apply what the renderer already consumed
-    if (GAME.renderer) GAME.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, S.pixelRatioCap));
+    // after boot: apply what the renderer already consumed (through the
+    // graphics setting, which scales whatever is authored here)
+    if (GAME.applyQuality) GAME.applyQuality();
     if (GAME.scene && GAME.scene.fog && fogFar) GAME.scene.fog.far = fogFar;
   }
   function moveCorner(el, css) {
@@ -109,14 +110,15 @@ GAME.touch = (function () {
     applySettings(TOUCH_BUDGET, 320);
     if (!GAME.started) {
       var pe = document.getElementById('press-enter');
-      if (pe) pe.textContent = 'TAP TO START';
+      if (pe && !pe.classList.contains('loading')) pe.textContent = 'TAP TO START';
     }
     // the radar moves to the top-left on touch: the bottom-left corner is the
     // virtual stick's zone, and the two were fighting for the same thumb.
     // PAUSE sits just right of it, and fullscreen keeps its own corner
     // control, shown on the menus (see hud.refreshFsBtn)
     moveCorner(document.getElementById('minimap-wrap'), { bottom: 'auto', left: '10px', top: '10px', width: '132px', height: '132px', pointerEvents: 'auto' });
-    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: '206px', top: '12px', width: '46px', height: '46px' });
+    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(206px + env(safe-area-inset-left, 0px))',
+      top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
     if (enabled) {
       if (layer) layer.style.display = '';
       checkOrientation();
@@ -146,7 +148,7 @@ GAME.touch = (function () {
     restoreCorner(document.getElementById('fs-btn'));
     if (!GAME.started) {
       var pe = document.getElementById('press-enter');
-      if (pe) pe.textContent = 'PRESS ENTER';
+      if (pe && !pe.classList.contains('loading')) pe.textContent = 'PRESS ENTER';
     }
     // (the controls bar comes back on the HUD's own refresh)
     if (GAME.hud && GAME.hud.refreshFsBtn) GAME.hud.refreshFsBtn();
@@ -182,7 +184,7 @@ GAME.touch = (function () {
     btns.exit = mkBtn('EXIT', 122, 124, 62, { flag: 'enter' });
     btns.driveby = mkBtn('FIRE', 232, 30, 68, { flag: 'driveByAuto' });
     btns.job = mkBtn('JOB', 116, 200, 54, { press: function () { T.job = true; } });
-    btns.radio = mkBtn('♪', 200, 200, 50, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } });
+    btns.radio = mkBtn('♪', 200, 200, 50, { press: function () { GAME.switchRadio(1); } });
     // the TALON's arsenal: chin gun and rockets, shown only in the gunship
     // (they drive the same fire/aim flags the gunship reads in aircraft.js)
     btns.gsGun = mkBtn('GUN', 232, 30, 68, { flag: 'fire' });

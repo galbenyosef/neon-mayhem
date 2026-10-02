@@ -230,9 +230,12 @@ GAME.missions = (function () {
   // straight away and never keeps it. (Written by index and cut to length at
   // the end: emptied with `length = 0` it would drop its storage every time.)
   var blipList = [], blipPool = [], blipN = 0;
-  function putBlip(x, z, color, size, kind) {
+  // `name` and `done` are for the big map: a mission marker is labelled, and
+  // one you have beaten is drawn as such rather than like a new one
+  function putBlip(x, z, color, size, kind, name, done) {
     var b = blipPool[blipN] || (blipPool[blipN] = {});
     b.x = x; b.z = z; b.color = color; b.size = size; b.kind = kind;
+    b.name = name || ''; b.done = !!done;
     blipList[blipN++] = b;
   }
   var TYPE_LABEL = { race: 'STREET RACE', courier: 'COURIER RUN', rampage: 'RAMPAGE' };
@@ -1154,6 +1157,12 @@ GAME.missions = (function () {
       if (cooled) GAME.police.setWanted(RAMPAGE_HEAT_LEFT);
       GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : '') +
         (cooled ? '  ·  your people cooled it down to two stars' : ''), 4.5);
+      // what it counts toward, while the channel is still shut — said only on
+      // the title and pause screens before, never in play
+      if (!d.job && !opened && GAME.isla && !GAME.isla.isOpen()) {
+        var up = GAME.isla.unlockProgress();
+        GAME.hud.message(up.done + ' of ' + up.need + ' missions toward the bridges to Isla Verde', 4.5);
+      }
       GAME.track('mission-completed-' + d.type);
       // a finished run is worth showing off — the card carries the numbers
       var cardStats = [{ label: 'Reward', value: '$' + reward }];
@@ -1816,7 +1825,7 @@ GAME.missions = (function () {
           var d = markers[i].def;
           if (!defAvailable(d)) continue;
           var kind = d.type === 'race' ? 'race' : d.type === 'courier' ? 'courier' : 'rampage';
-          putBlip(d.start.x, d.start.z, MARKER_HEX[d.type], 4, kind);
+          putBlip(d.start.x, d.start.z, MARKER_HEX[d.type], 4, kind, d.name, (GAME.bests || {})[d.id] !== undefined);
         }
       } else {
         // every waiting fare/patient shows on the map, not just the nearest

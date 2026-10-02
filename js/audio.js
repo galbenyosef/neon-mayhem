@@ -269,11 +269,21 @@ GAME.audio = (function () {
     // the end of it — but a clock that built its ~60 voices a second anyway.
     // A step nobody can hear is still counted, so the beat is where it would
     // have been when the radio comes back, rather than restarting the bar.
+    // one more click on the dial is OFF: the clock keeps counting (on the
+    // first station's tempo) so nothing jumps when it comes back on
+    var OFF = stations.length;
+    function nameOf(i) { return i === OFF ? 'RADIO OFF' : stations[i].name; }
+    function retune(i) {
+      current = i;
+      step = 0;
+      if (ctx) nextTime = ctx.currentTime + 0.08;
+      return nameOf(current);
+    }
     function schedule() {
       if (!ctx || !playing || ctx.state !== 'running') return;
-      var s = stations[current];
+      var s = stations[current] || stations[0];
       var spb = 60 / s.bpm / 4;
-      var quiet = radioSilent();
+      var quiet = radioSilent() || current === OFF;
       while (nextTime < ctx.currentTime + 0.25) {
         var bar = Math.floor(step / 16);
         var ci = bar % s.chords.length;
@@ -284,26 +294,20 @@ GAME.audio = (function () {
     }
     return {
       stations: stations,
-      get name() { return stations[current].name; },
+      get name() { return nameOf(current); },
+      get index() { return current; },
+      get off() { return current === OFF; },
       start: function () {
         if (playing || !ctx) return;
         playing = true;
         nextTime = ctx.currentTime + 0.1; step = 0;
         timer = setInterval(schedule, 90);
       },
-      switchStation: function (dir) {
-        current = (current + dir + stations.length) % stations.length;
-        step = 0;
-        if (ctx) nextTime = ctx.currentTime + 0.08;
-        return stations[current].name;
-      },
-      // tune to a random station — the dial isn't always left where you found it
-      randomStation: function () {
-        current = Math.floor(Math.random() * stations.length) % stations.length;
-        step = 0;
-        if (ctx) nextTime = ctx.currentTime + 0.08;
-        return stations[current].name;
-      },
+      switchStation: function (dir) { return retune((current + dir + OFF + 1) % (OFF + 1)); },
+      // a car you have not been in yet: wherever its last driver left it
+      randomStation: function () { return retune(Math.floor(Math.random() * stations.length) % stations.length); },
+      // and one you have: where you left it (OFF included)
+      tune: function (i) { return retune(Math.max(0, Math.min(OFF, i | 0))); },
       setVolume: function (v) {
         if (!ctx) return;
         // keep playing into the fade rather than cutting it off short

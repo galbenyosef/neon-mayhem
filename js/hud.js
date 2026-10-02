@@ -6,7 +6,7 @@ GAME.hud = (function () {
   var lastHealthW = -1, lastArmorW = -1, lastAirPct = -2, lastAirCol = '', vehicleLine;
   var lastPoiHint = null;
   var shownCash = 0, targetCash = 0;
-  var msgT = 0, countT = 0, zoneT = 0, lastZone = '';
+  var countT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
   // the star count as the HUD last drew it, so wantedChanged can tell going up
   // from coming down — nothing that calls it passes the level you were on
@@ -16,7 +16,7 @@ GAME.hud = (function () {
   var dmgFlash = null;
   var PICKUP_BLIP = {
     pistol: '#eef0ff', smg: '#ffe14f', shotgun: '#ff8a3d',
-    health: '#ff4d6a', armor: '#39c8ff', rifle: '#8dffd8'
+    health: '#ff4d6a', armor: '#4a6cff', rifle: '#8dffd8'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -73,9 +73,9 @@ GAME.hud = (function () {
       $('game-modal-cancel').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); closeDialog(false); });
     });
 
-    // pause: tap anywhere resumes; buttons stop the bubble
-    el['pause-screen'].addEventListener('click', function () { if (GAME.paused) GAME.togglePause(); });
-    el['pause-screen'].addEventListener('touchend', function (e) { e.preventDefault(); if (GAME.paused) GAME.togglePause(); });
+    // pause: RESUME or Esc carries on. A tap anywhere used to as well, so a
+    // finger or a click that just missed a button threw you back into the
+    // game; the background now does nothing.
     function pauseBtn(id, fn) {
       var b = $(id);
       ['click', 'touchend'].forEach(function (ev) {
@@ -173,6 +173,24 @@ GAME.hud = (function () {
       $('pause-lefty').style.display = 'none';
     }
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
+    // camera shake, for anyone it makes ill (remembered like the rest)
+    function paintShakeBtn() { $('pause-shake').textContent = GAME.prefs && GAME.prefs.noShake ? '🎥 SHAKE: OFF' : '🎥 SHAKE: ON'; }
+    pauseBtn('pause-shake', function () {
+      GAME.prefs = GAME.prefs || {};
+      GAME.prefs.noShake = !GAME.prefs.noShake;
+      GAME.save();
+      paintShakeBtn();
+    });
+    paintShakeBtn();
+    // graphics: resolution, draw distance and crowd, in three steps (main.js)
+    function paintGfxBtn() { $('pause-gfx').textContent = '🖥 GFX: ' + GAME.quality.toUpperCase(); }
+    pauseBtn('pause-gfx', function () {
+      var order = ['high', 'medium', 'low'];
+      GAME.setQuality(order[(order.indexOf(GAME.quality) + 1) % order.length]);
+      paintGfxBtn();
+    });
+    if (GAME.prefs && GAME.prefs.quality) GAME.setQuality(GAME.prefs.quality, true);
+    paintGfxBtn();
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
     api.refreshTimeBtn(GAME.timeMode);
     // the save travels: export downloads a file, import reads one back and
@@ -247,6 +265,42 @@ GAME.hud = (function () {
     });
 
     el['bigmap'].addEventListener('click', onMapClick);
+    // the wheel zooms about the pointer, a drag pans (and is then not a
+    // click), two fingers pinch
+    el['bigmap'].addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var r = el.bigmap.getBoundingClientRect();
+      zoomMapAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.35 : 1 / 1.35);
+    }, { passive: false });
+    var mapPtrs = {}, mapMoved = 0, pinchD = 0;
+    el['bigmap'].addEventListener('pointerdown', function (e) {
+      mapPtrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+      mapMoved = 0; pinchD = 0; mapDragged = false;
+    });
+    el['bigmap'].addEventListener('pointermove', function (e) {
+      var p = mapPtrs[e.pointerId];
+      if (!p) return;
+      var ids = Object.keys(mapPtrs);
+      if (ids.length >= 2) {
+        p.x = e.clientX; p.y = e.clientY;
+        var a = mapPtrs[ids[0]], b = mapPtrs[ids[1]];
+        var d = Math.hypot(a.x - b.x, a.y - b.y), r = el.bigmap.getBoundingClientRect();
+        if (pinchD > 0 && d > 0) zoomMapAt((a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, d / pinchD);
+        pinchD = d; mapDragged = true;
+        return;
+      }
+      var dx = e.clientX - p.x, dy = e.clientY - p.y;
+      p.x = e.clientX; p.y = e.clientY;
+      mapMoved += Math.abs(dx) + Math.abs(dy);
+      if (mapMoved > 6 && mapZoom > 1) { mapDragged = true; mapPanX -= dx; mapPanY -= dy; drawBigMap(); }
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+      el['bigmap'].addEventListener(ev, function (e) { delete mapPtrs[e.pointerId]; pinchD = 0; });
+    });
+    ['click', 'touchend'].forEach(function (ev) {
+      $('map-zin').addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); api.mapZoom(1.5); });
+      $('map-zout').addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); api.mapZoom(1 / 1.5); });
+    });
     // the full map is drawn to size each time it opens (drawBigMap), so while
     // it is shut its canvas holds nothing — ~1.7 MB it used to keep for the
     // rest of the session after the first look
@@ -267,13 +321,17 @@ GAME.hud = (function () {
   }
 
   // ---------- toggleable legend ----------
+  var HOSPITAL_HEX = '#f2f4f8', DEST_HEX = '#c6ff3d', DEPOT_HEX = '#ffe9b0';
   var LEGEND = [
     ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'],
-    ['#c86bff', 'S — Respray', 'respray'], ['#ff8aa8', 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
-    ['#eef0ff', 'Weapon', 'weapon'], ['#ff4d6a', 'Health', 'health'], ['#39c8ff', 'Armor', 'armor'],
-    ['#8de0ff', '✈ Airport · Ⓗ Helipad', 'airport'], ['#ffd7e4', '☀ Ice cream depot', 'icecream'],
+    // no two families a near-match: armour was the courier's cyan, and the
+    // hospital, the destination and the depot were three more pinks beside
+    // the rampage's
+    ['#c86bff', 'S — Respray', 'respray'], [HOSPITAL_HEX, 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
+    ['#eef0ff', 'Weapon', 'weapon'], ['#ff4d6a', 'Health', 'health'], ['#4a6cff', 'Armor', 'armor'],
+    ['#8de0ff', '✈ Airport · Ⓗ Helipad', 'airport'], [DEPOT_HEX, '☀ Ice cream depot', 'icecream'],
     ['#8de8b0', '$ Shops & property', 'shops'], ['#5dff9e', '⌂ Your safehouse', 'home'],
-    ['#ff8aff', 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
+    [DEST_HEX, 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
   ];
   // Tap-to-SOLO, like muting a mixing desk: tap a legend and everything ELSE
   // is struck — only that category (plus navigation) stays on the map. Tap it
@@ -331,7 +389,27 @@ GAME.hud = (function () {
   }
 
   // ---------- full-screen map ----------
-  var mapScale = 1, mapOffY = 0;
+  // It zooms now (wheel, pinch, the +/- buttons or keys) and pans by drag;
+  // the pan is in canvas pixels at the current zoom, held inside the map.
+  var mapScale = 1, mapZoom = 1, mapPanX = 0, mapPanY = 0, MAP_ZOOM_MAX = 5;
+  var mapDragged = false, mapCentreOnYou = false;
+  // where each district's name is written on the big map
+  var DISTRICT_LABELS = [['OCEAN STRIP', 262, -230], ['CENTRO ALTO', -100, -150], ['PUERTO VIEJO', -330, 330],
+    ['LAS COLINAS', 40, 330], ['LAS COLINAS', -340, -320]];
+  function clampMapPan(cv) {
+    mapPanX = U.clamp(mapPanX, 0, Math.max(0, MAP_W * mapScale - cv.width));
+    mapPanY = U.clamp(mapPanY, 0, Math.max(0, MAP_H * mapScale - cv.height));
+  }
+  // zoom by `f` keeping the map point under canvas pixel (cx, cy) where it is
+  function zoomMapAt(cx, cy, f) {
+    var z1 = U.clamp(mapZoom * f, 1, MAP_ZOOM_MAX);
+    if (z1 === mapZoom) return;
+    var k = z1 / mapZoom;
+    mapPanX = (cx + mapPanX) * k - cx;
+    mapPanY = (cy + mapPanY) * k - cy;
+    mapZoom = z1;
+    drawBigMap();
+  }
   function drawBigMap() {
     var cv = el.bigmap;
     // short screens hand more of their height to the legend and buttons —
@@ -341,12 +419,36 @@ GAME.hud = (function () {
     var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * hFactor * MAP_W / MAP_H, 900));
     cv.width = size; cv.height = Math.floor(size * MAP_H / MAP_W);
     var g = cv.getContext('2d');
-    mapScale = size / MAP_W; mapOffY = 0;
+    mapScale = size / MAP_W;   // the whole map across the canvas: zoom 1 (times mapZoom below)
     g.fillStyle = '#141020';
     g.fillRect(0, 0, cv.width, cv.height);
-    g.drawImage(mapBuffer, 0, 0, MAP_W * mapScale, MAP_H * mapScale);
-    function w2mx(x) { return (x + MAP_OX) * MAP_S * mapScale; }
-    function w2my(z) { return mapOffY + (z + MAP_OY) * MAP_S * mapScale; }
+    mapScale = mapScale * mapZoom;
+    if (mapCentreOnYou) {
+      // opened zoomed in: start on wherever you are, not where you last looked
+      mapCentreOnYou = false;
+      var you = GAME.focus();
+      mapPanX = (you.x + MAP_OX) * MAP_S * mapScale - cv.width / 2;
+      mapPanY = (you.z + MAP_OY) * MAP_S * mapScale - cv.height / 2;
+    }
+    clampMapPan(cv);
+    g.drawImage(mapBuffer, -mapPanX, -mapPanY, MAP_W * mapScale, MAP_H * mapScale);
+    function w2mx(x) { return (x + MAP_OX) * MAP_S * mapScale - mapPanX; }
+    function w2my(z) { return (z + MAP_OY) * MAP_S * mapScale - mapPanY; }
+    // a name, outlined so it reads over streets and water alike
+    function label(text, x, y, color, px, align) {
+      g.font = '800 ' + px + 'px "Segoe UI", Arial, sans-serif';
+      g.textAlign = align || 'left'; g.textBaseline = 'middle';
+      g.lineWidth = 3; g.strokeStyle = 'rgba(8,4,18,.85)';
+      g.strokeText(text, x, y);
+      g.fillStyle = color;
+      g.fillText(text, x, y);
+    }
+    // the districts, faint and large, under everything else
+    var dpx = Math.round(U.clamp(11 * Math.sqrt(mapZoom) * cv.width / 900, 9, 22));
+    for (var dl = 0; dl < DISTRICT_LABELS.length; dl++) {
+      var D = DISTRICT_LABELS[dl];
+      label(D[0], w2mx(D[1]), w2my(D[2]), 'rgba(207,230,255,.42)', dpx, 'center');
+    }
     // route + destination
     var P = GAME.player;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
@@ -364,7 +466,7 @@ GAME.hud = (function () {
         g.lineTo(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z));
         g.stroke();
       }
-      g.fillStyle = '#ff8aff';
+      g.fillStyle = DEST_HEX;
       g.beginPath();
       g.arc(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z), 6, 0, Math.PI * 2);
       g.fill();
@@ -387,14 +489,25 @@ GAME.hud = (function () {
         g.fill();
       }
     }
-    // mission / respray blips
+    // mission / respray blips: a mission you have beaten is a ring with a
+    // tick in it, one still to do a solid dot; each named once there is room
     var mb = GAME.missions.getBlips();
+    var named = mapZoom >= 1.5 || cv.width >= 700;
     for (var i = 0; i < mb.length; i++) {
       if (mb[i].kind && !catVis(mb[i].kind)) continue;
-      g.fillStyle = mb[i].color;
+      var bx = w2mx(mb[i].x), by = w2my(mb[i].z);
       g.beginPath();
-      g.arc(w2mx(mb[i].x), w2my(mb[i].z), 5, 0, Math.PI * 2);
-      g.fill();
+      g.arc(bx, by, 5, 0, Math.PI * 2);
+      if (mb[i].done) {
+        g.fillStyle = 'rgba(12,8,22,.9)'; g.fill();
+        g.strokeStyle = mb[i].color; g.lineWidth = 2; g.stroke();
+        g.beginPath(); g.moveTo(bx - 2.4, by + 0.2); g.lineTo(bx - 0.6, by + 2); g.lineTo(bx + 2.6, by - 2.2);
+        g.lineWidth = 1.6; g.stroke();
+      } else {
+        g.fillStyle = mb[i].color; g.fill();
+        if (mb[i].name) { g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.2; g.stroke(); }
+      }
+      if (named && mb[i].name) label(mb[i].name, bx + 8, by, mb[i].done ? 'rgba(207,230,255,.6)' : mb[i].color, 10);
     }
     // labelled POI badges
     function badge(x, z, color, letter) {
@@ -417,7 +530,7 @@ GAME.hud = (function () {
       g.arc(w2mx(pk.pos.x), w2my(pk.pos.z), 3.5, 0, Math.PI * 2);
       g.fill();
     });
-    if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
+    if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, HOSPITAL_HEX, 'H'); });
     if (catVis('police')) GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
     if (catVis('respray')) GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     if (GAME.shops) GAME.shops.blips().forEach(function (s) {
@@ -439,7 +552,7 @@ GAME.hud = (function () {
       g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
     });
     if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
-    if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
+    if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, DEPOT_HEX, '☀');
     // helipads: a ringed cyan disc with an H, one per pad. Both of them —
     // the Alta Verde summit across the channel, and the one on the downtown
     // tower here, which is where the mainland's only helicopter stands.
@@ -488,10 +601,11 @@ GAME.hud = (function () {
   }
 
   function onMapClick(e) {
+    if (mapDragged) { mapDragged = false; return; }   // that was a pan, not a pick
     var rect = el.bigmap.getBoundingClientRect();
     var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    var wx = cx / mapScale / MAP_S - MAP_OX;
-    var wz = (cy - mapOffY) / mapScale / MAP_S - MAP_OY;
+    var wx = (cx + mapPanX) / mapScale / MAP_S - MAP_OX;
+    var wz = (cy + mapPanY) / mapScale / MAP_S - MAP_OY;
     wx = U.clamp(wx, -495, 1500);
     wz = U.clamp(wz, -540, 540);
     // no charting a course into open sea: a click on the water walks the pin
@@ -763,7 +877,7 @@ GAME.hud = (function () {
         g.lineTo((GAME.nav.dest.x - px) * MAP_S, (GAME.nav.dest.z - pz) * MAP_S);
         g.stroke();
       }
-      blip(GAME.nav.dest.x, GAME.nav.dest.z, '#ff8aff', 4.5 / zoom);
+      blip(GAME.nav.dest.x, GAME.nav.dest.z, DEST_HEX, 4.5 / zoom);
     }
     var mb = GAME.missions.getBlips();
     for (var i = 0; i < mb.length; i++) {
@@ -773,7 +887,7 @@ GAME.hud = (function () {
     // POI dots, live and legend-aware (they used to be baked into the base
     // image, where the legend couldn't touch them)
     var pois = GAME.city.pois, pi;
-    if (catVis('hospital')) for (pi = 0; pi < pois.hospitals.length; pi++) blip(pois.hospitals[pi].x, pois.hospitals[pi].z, '#ff8aa8', 3);
+    if (catVis('hospital')) for (pi = 0; pi < pois.hospitals.length; pi++) blip(pois.hospitals[pi].x, pois.hospitals[pi].z, HOSPITAL_HEX, 3);
     if (catVis('police')) for (pi = 0; pi < pois.stations.length; pi++) blip(pois.stations[pi].x, pois.stations[pi].z, '#5aa0ff', 3);
     if (catVis('respray')) for (pi = 0; pi < pois.resprays.length; pi++) blip(pois.resprays[pi].door.x, pois.resprays[pi].door.z, '#c86bff', 3);
     if (catVis('airport')) landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
@@ -867,7 +981,12 @@ GAME.hud = (function () {
         } else vl.style.display = 'none';
       }
     }
-    if (msgT > 0) { msgT -= dt; if (msgT <= 0) el['msg-line'].style.opacity = 0; }
+    stepMessages(dt);
+    stepLockHint();
+    if (hitT > 0) { hitT -= dt; if (hitT <= 0) $('hit-dir').style.opacity = 0; }
+    var P0 = GAME.player, low = P0.state === 'alive' && P0.health > 0 && P0.health < LOW_HEALTH;
+    if (low !== lowShown) { lowShown = low; $('low-health').style.display = low ? 'block' : 'none'; }
+    stepTips(dt);
     if (countT > 0) { countT -= dt; if (countT <= 0) el['count-big'].style.opacity = 0; }
     if (radioT > 0) { radioT -= dt; if (radioT <= 0) el['radio-popup'].style.opacity = 0; }
     zoneT -= dt;
@@ -878,9 +997,150 @@ GAME.hud = (function () {
       if (zn !== lastZone) {
         lastZone = zn;
         el['zone-popup'].textContent = zn;
+        placeZone();
         el['zone-popup'].style.opacity = 1;
         setTimeout(function () { el['zone-popup'].style.opacity = 0; }, 2600);
       }
+    }
+  }
+
+  // The district name shares the top centre with a running mission's title
+  // and objective, and was drawn straight over them: it goes underneath while
+  // one is up (and moves when one starts or ends under it).
+  function placeZone() {
+    var mh = el['mission-hud'];
+    el['zone-popup'].style.top = mh.style.display === 'block' ? (mh.offsetTop + mh.offsetHeight + 6) + 'px' : '';
+  }
+
+  // ---------- keys on the pause screen ----------
+  // It was mouse-only. The arrows walk the buttons (up and down by row),
+  // Enter or Space presses the lit one, Esc still resumes.
+  var pauseSel = 0;
+  function pauseButtons() {
+    var all = el['pause-screen'].querySelectorAll('.mbtn'), out = [];
+    for (var i = 0; i < all.length; i++) if (all[i].offsetParent !== null) out.push(all[i]);
+    return out;
+  }
+  function paintPauseSel() {
+    var bs = pauseButtons();
+    if (!bs.length) return;
+    pauseSel = (pauseSel % bs.length + bs.length) % bs.length;
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('kfocus', i === pauseSel);
+  }
+  function pauseRowStep(bs, cur, dir) {
+    var r0 = bs[cur].getBoundingClientRect(), cx = r0.left + r0.width / 2, cy = r0.top + r0.height / 2;
+    var best = cur, bd = 1e9;
+    for (var i = 0; i < bs.length; i++) {
+      var r = bs[i].getBoundingClientRect(), y = r.top + r.height / 2;
+      if ((y - cy) * dir <= 4) continue;
+      var d = Math.abs(y - cy) * 3 + Math.abs(r.left + r.width / 2 - cx);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  function pauseKey(code) {
+    var bs = pauseButtons();
+    if (!bs.length) return false;
+    if (code === 'ArrowRight' || code === 'Tab') pauseSel++;
+    else if (code === 'ArrowLeft') pauseSel--;
+    else if (code === 'ArrowDown') pauseSel = pauseRowStep(bs, pauseSel, 1);
+    else if (code === 'ArrowUp') pauseSel = pauseRowStep(bs, pauseSel, -1);
+    else if (code === 'Enter' || code === 'Space') {
+      bs[(pauseSel % bs.length + bs.length) % bs.length].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      if (GAME.paused) paintPauseSel();   // a toggle relabels; keep the light on it
+      return true;
+    } else return false;
+    paintPauseSel();
+    return true;
+  }
+
+  // ---------- what is hurting you ----------
+  // Damage was a red flash of the whole screen, with no way to tell which
+  // way to look. Now an arc turns toward whoever did it and fades over a
+  // second; and below a quarter of your health the screen's edges pulse
+  // until you patch up.
+  var hitT = 0, lowShown = false, LOW_HEALTH = 25;
+  function hitFrom(x, z) {
+    var h = $('hit-dir');
+    if (!h || !isFinite(x) || !isFinite(z)) return;
+    var f = GAME.focus(), dx = x - f.x, dz = z - f.z, d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.5) return;
+    var yaw = GAME.cam.yaw;
+    var right = dx * -Math.cos(yaw) + dz * Math.sin(yaw), ahead = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    h.style.transform = 'translate(-50%,-50%) rotate(' + Math.atan2(right, ahead).toFixed(3) + 'rad)';
+    h.style.opacity = 1;
+    hitT = 1;
+  }
+
+  // ---------- the first minute ----------
+  // The mouse needed a click nobody mentioned, at the start and again after
+  // every pause resumed from the keyboard (Esc carries no gesture the lock
+  // can use). Say so whenever it is missing.
+  var lockHintOn = false;
+  function lockHint(on) {
+    if (on === lockHintOn) return;
+    lockHintOn = on;
+    var h = $('lock-hint');
+    if (h) h.style.display = on ? 'block' : 'none';
+  }
+  function stepLockHint() {
+    lockHint(!!GAME.started && !GAME.isTouch && !GAME.input.pointerLocked && GAME.player.state === 'alive');
+  }
+  // Two tips, once per save, for someone who has not done anything yet: what
+  // the coloured rings are, and what four of them open. The welcome line was
+  // the only guidance there was.
+  var tipT = 0, TIPS = [
+    { at: 7, text: function () {
+      return 'The orange, cyan and pink rings are missions — stop in one to start it. ' +
+        (GAME.isTouch ? 'Tap the radar for the map.' : 'P opens the map.');
+    } },
+    { at: 17, text: function () {
+      return GAME.isla && !GAME.isla.isOpen() ? 'Pass any 4 of them and the bridges east to Isla Verde open.' : '';
+    } }
+  ];
+  function stepTips(dt) {
+    var pr = GAME.prefs || {};
+    if (pr.tipsSeen || !GAME.started) return;
+    // a save with missions in it already knows all this
+    for (var k in (GAME.bests || {})) { GAME.prefs = pr; pr.tipsSeen = true; return; }
+    var before = tipT;
+    tipT += dt;
+    for (var i = 0; i < TIPS.length; i++) {
+      if (before < TIPS[i].at && tipT >= TIPS[i].at) {
+        var t = TIPS[i].text();
+        if (t) api.message(t, 6);
+      }
+    }
+    if (tipT >= TIPS[TIPS.length - 1].at) {
+      GAME.prefs = pr;
+      pr.tipsSeen = true;
+      GAME.save();
+    }
+  }
+
+  // ---------- the message feed ----------
+  // One line used to carry everything, and each message wiped the one before
+  // it: "MISSION FAILED" was gone the moment the radio named a station. Now a
+  // short stack, newest at the bottom, each line on its own clock; the same
+  // message again just restarts the newest one's.
+  var MSG_MAX = 3, msgs = [];
+  function pushMessage(text, dur) {
+    var top = msgs[msgs.length - 1];
+    if (top && !top.fading && top.el.textContent === text) { top.t = dur; return; }
+    var line = document.createElement('div');
+    line.className = 'msg';
+    line.textContent = text;
+    el['msg-line'].appendChild(line);
+    msgs.push({ el: line, t: dur, fading: false });
+    while (msgs.length > MSG_MAX) msgs.shift().el.remove();
+    for (var i = 0; i < msgs.length; i++) msgs[i].el.classList.toggle('old', i < msgs.length - 1);
+  }
+  function stepMessages(dt) {
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var m = msgs[i];
+      m.t -= dt;
+      if (m.t <= 0 && !m.fading) { m.fading = true; m.el.classList.add('out'); }
+      if (m.t <= -0.35) { m.el.remove(); msgs.splice(i, 1); }
     }
   }
 
@@ -919,7 +1179,7 @@ GAME.hud = (function () {
       el['map-screen'].style.display = open ? 'flex' : 'none';
       // the sim loop halts while the map is open; syncOverlayMusic below
       // silences every voice the halted tick would otherwise leave held
-      if (open) drawBigMap();
+      if (open) { mapCentreOnYou = mapZoom > 1; drawBigMap(); }
       else {
         el.bigmap.width = el.bigmap.height = 0;
         if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
@@ -933,6 +1193,12 @@ GAME.hud = (function () {
       api.refreshFsBtn();
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
+    pauseKey: pauseKey,
+    lockHint: lockHint,
+    hitFrom: hitFrom,
+    // +/- (keys and buttons): about the middle of the map
+    mapZoom: function (f) { if (GAME.mapOpen) zoomMapAt(el.bigmap.width / 2, el.bigmap.height / 2, f); },
+    get mapZoomLevel() { return mapZoom; },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },
     toggleControlsBar: function () {
       GAME.prefs = GAME.prefs || {};
@@ -957,11 +1223,7 @@ GAME.hud = (function () {
       if (!el['weapon-line']) return; // may fire before the HUD is wired up
       el['weapon-line'].textContent = name + (ammo === '' ? '' : '  ·  ' + ammo);
     },
-    message: function (text, dur) {
-      el['msg-line'].textContent = text;
-      el['msg-line'].style.opacity = 1;
-      msgT = dur || 2.5;
-    },
+    message: function (text, dur) { pushMessage(String(text), dur || 2.5); },
     // the huge centre numeral for mission countdowns. Callers repeat it every
     // frame while the count runs; it lets go of the screen on its own once
     // they stop (which is how "GO!" gets its moment and then clears itself)
@@ -987,6 +1249,7 @@ GAME.hud = (function () {
       el['mission-title'].textContent = title;
       el['mission-obj'].textContent = obj;
       el['mission-timer'].textContent = '';
+      placeZone();
     },
     missionObjective: function (obj) { el['mission-obj'].textContent = obj; },
     missionTimer: function (t, countdown) {
@@ -995,14 +1258,15 @@ GAME.hud = (function () {
       el['mission-timer'].textContent = mm + ':' + (ss < 10 ? '0' : '') + ss;
       el['mission-timer'].style.color = countdown && s < 12 ? '#ff5d7a' : '#8dffd8';
     },
-    missionEnd: function () { el['mission-hud'].style.display = 'none'; },
+    missionEnd: function () { el['mission-hud'].style.display = 'none'; placeZone(); },
     // the corner fullscreen control — available everywhere (menus, portrait
     // overlay and in-game) and hidden only once you're actually fullscreen.
     refreshFsBtn: function () {
       var e = $('fs-btn');
       if (!e) return;
-      // always on hand until you're actually fullscreen, then it's redundant
-      e.style.display = document.fullscreenElement ? 'none' : 'flex';
+      // always on hand until you're actually fullscreen (or playing from the
+      // home screen, which is), then it's redundant
+      e.style.display = (GAME.fullscreenEl && GAME.fullscreenEl()) || (GAME.isStandalone && GAME.isStandalone()) ? 'none' : 'flex';
     },
     // AUTO runs the day/night cycle; DAY / NIGHT pin it
     refreshTimeBtn: function (mode) {
@@ -1042,6 +1306,11 @@ GAME.hud = (function () {
     // the raw dimmer, for rituals that keep their own time (mission starts
     // count the blackout in game ticks, so pausing pauses it)
     fadeSet: function (v) { el['fade-layer'].style.opacity = v; },
+    titleReady: function () {
+      var pe = el['press-enter'];
+      pe.classList.remove('loading');
+      pe.textContent = GAME.isTouch ? 'TAP TO START' : 'PRESS ENTER';
+    },
     hideTitle: function () {
       el['title-screen'].style.display = 'none';
       document.getElementById('hud').style.display = 'block';
@@ -1049,6 +1318,7 @@ GAME.hud = (function () {
     },
     setPaused: function (p) {
       el['pause-screen'].style.display = p ? 'flex' : 'none';
+      if (p) { pauseSel = 0; paintPauseSel(); }
       var sj = $('pause-stunts');
       if (sj && GAME.stunts) {
         sj.textContent = 'STUNT JUMPS  ' + GAME.stunts.found + ' / ' + GAME.stunts.total +

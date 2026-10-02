@@ -22,6 +22,14 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   4y. AROUND THE GAME — messages stack; the district name keeps out of a
+//       mission's title; every overlay uses the game's face; the title says
+//       LOADING until it can answer; pause takes keys and ignores a missed
+//       click; the map zooms, names missions and marks beaten ones in
+//       colours no two families share; a car keeps its radio dial, which has
+//       an OFF; a bed means a home start; shake and graphics have switches;
+//       a slow machine still thins; hits show their direction, low health
+//       pulses, and a browser with no fullscreen says what to do instead.
 //   4z. THE PLAY LOOP — a roof is not a hiding place: officers below see
 //       and shoot up at its edge, its middle is cover, and nobody climbing
 //       after you brings the helicopter early. A failed run can be retried
@@ -1844,6 +1852,182 @@ function withTimeout(p, ms) {
     'palm=' + soft.beachPalm + ' bench=' + soft.bench);
   check('props: and a flattened post is back up once nobody is near it', soft.backUp === true, 'backUp=' + soft.backUp);
 
+  // ---------- 4y: the screen around the game ----------
+  // Section 4 of the gameplay audit: what you see and press around the play.
+  var html = await (await fetch(origin + '/index.html')).text();
+  var ux = await page.evaluate(function () {
+    var r = {}, H = GAME.hud, P = GAME.player;
+    function $(id) { return document.getElementById(id); }
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    P.health = 100;
+    GAME.test.fastForward(0.5);
+    // messages stack, newest last, and a repeat refreshes instead of doubling
+    var box = $('msg-line');
+    for (var i = 0; i < box.children.length; i++) box.children[i].remove();
+    GAME.test.fastForward(1);
+    H.message('one', 5); H.message('two', 5); H.message('three', 5);
+    r.three = Array.prototype.map.call(box.querySelectorAll('.msg:not(.out)'), function (e) { return e.textContent; });
+    H.message('three', 5);
+    H.message('four', 5);
+    r.four = Array.prototype.map.call(box.querySelectorAll('.msg:not(.out)'), function (e) { return e.textContent; });
+    // the district name goes under a running mission's title, not over it
+    H.missionStart('TEST RUN', 'objective');
+    var zp = $('zone-popup'), mh = $('mission-hud');
+    r.zoneTop = zp.offsetTop; r.missionBottom = mh.offsetTop + mh.offsetHeight;
+    H.missionEnd();
+    r.zoneBack = zp.offsetTop;
+    // every overlay screen in the page's own face, not the browser default
+    r.fonts = ['wasted-screen', 'pause-screen', 'title-screen', 'map-screen'].map(function (id) { return getComputedStyle($(id)).fontFamily; });
+    r.hintPx = parseFloat(getComputedStyle($('controls-bar')).fontSize);
+    // the title answers when it says it will
+    r.title = { cls: $('press-enter').className, text: $('press-enter').textContent };
+    // pause: the background is not a RESUME button, and the keys work
+    GAME.togglePause();
+    $('pause-screen').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    r.stillPaused = GAME.paused === true;
+    r.lockHintUnderPause = $('lock-hint').style.display;
+    GAME.onKeyDown('ArrowRight');
+    r.lit = (document.querySelector('#pause-screen .kfocus') || {}).id;
+    GAME.onKeyDown('ArrowLeft');
+    GAME.onKeyDown('Enter');
+    r.resumedByEnter = GAME.paused === false;
+    // with no mouse capture (this page never takes one) it says how to get it
+    GAME.test.fastForward(0.1);
+    r.lockHint = $('lock-hint').style.display;
+    // the map zooms, names its missions, and tells a beaten one from a new one
+    GAME.bests = GAME.bests || {};
+    var bestKeep = GAME.bests.race0;
+    GAME.bests.race0 = 42;
+    var blips = GAME.missions.getBlips().filter(function (b) { return b.name; });
+    // ticked exactly where there is a best on file — groups before this one
+    // pass missions of their own, so the set is read, not assumed
+    var beaten = GAME.missions.DEFS.filter(function (d) { return GAME.bests[d.id] !== undefined; }).map(function (d) { return d.name; });
+    r.blips = { named: blips.length, done: blips.filter(function (b) { return b.done; }).map(function (b) { return b.name; }) };
+    r.blips.match = blips.every(function (b) { return b.done === (beaten.indexOf(b.name) >= 0); }) &&
+      r.blips.done.indexOf('STRIP SPRINT') >= 0 && r.blips.done.length < r.blips.named;
+    if (bestKeep === undefined) delete GAME.bests.race0; else GAME.bests.race0 = bestKeep;
+    H.toggleMap(true);
+    H.mapZoom(1.5); H.mapZoom(1.5);
+    r.zoom = H.mapZoomLevel;
+    H.mapZoom(1 / 10);
+    r.zoomBack = H.mapZoomLevel;
+    H.toggleMap(false);
+    var legend = Array.prototype.map.call(document.querySelectorAll('#map-legend .lgd'), function (e) {
+      return { k: e.getAttribute('data-k'), c: e.querySelector('i').style.background };
+    });
+    function col(k) { return (legend.filter(function (l) { return l.k === k; })[0] || {}).c; }
+    r.colours = { courier: col('courier'), armor: col('armor'), rampage: col('rampage'), hospital: col('hospital'), dest: col('dest') };
+    r.legendUnique = legend.length > 0 && legend.every(function (a, i) { return legend.every(function (b, j) { return i === j || a.c !== b.c; }); });
+    // the radio remembers each car's dial, and the dial has an OFF
+    var R = GAME.audio.radio;
+    var carA = GAME.test.spawnCar('sedan', 4, 0), carB = GAME.test.spawnCar('sedan', -4, 0);
+    GAME.test.fastForward(0.2);
+    GAME.test.enterNearestCar(carA); GAME.test.fastForward(1.2);
+    for (var k = 0; k < 6 && !R.off; k++) GAME.switchRadio(1);
+    r.offName = R.name;
+    GAME.exitCar(); GAME.test.fastForward(0.6);
+    GAME.test.enterNearestCar(carB); GAME.test.fastForward(1.2);
+    r.otherCar = R.name;
+    GAME.exitCar(); GAME.test.fastForward(0.6);
+    GAME.test.enterNearestCar(carA); GAME.test.fastForward(1.2);
+    r.backInA = R.name;
+    GAME.exitCar(); GAME.test.fastForward(0.3);
+    GAME.vehicles.removeCar(carA); GAME.vehicles.removeCar(carB);
+    // a save with a bed in it starts the next session there
+    var sh = GAME.shops.locations().filter(function (l) { return l.kind === 'safehouse'; })[0];
+    var owned0 = (GAME.prefs.safehouses || []).slice(), last0 = GAME.prefs.lastHome;
+    GAME.prefs.safehouses = [];
+    r.noHome = GAME.shops.startSpawn();
+    GAME.prefs.safehouses = [sh.sh.id]; GAME.prefs.lastHome = sh.sh.id;
+    var home = GAME.shops.startSpawn();
+    r.home = home ? { name: home.name, near: Math.hypot(home.x - sh.sh.at.x, home.z - sh.sh.at.z) < 1 } : null;
+    GAME.prefs.safehouses = owned0; GAME.prefs.lastHome = last0;
+    // SHAKE: OFF holds the picture still through a knock
+    function jitter() {
+      var xs = [];
+      for (var f = 0; f < 20; f++) { GAME.cameraShake = 0.9; GAME.test.fastForward(1 / 60); xs.push(GAME.cameraObj.position.y); }
+      var m = 0; for (var q = 1; q < xs.length; q++) m = Math.max(m, Math.abs(xs[q] - xs[q - 1]));
+      return m;
+    }
+    GAME.godMode = true;
+    GAME.test.fastForward(0.5);
+    r.shakeOn = +jitter().toFixed(3);
+    GAME.prefs.noShake = true;
+    r.shakeOff = +jitter().toFixed(3);
+    GAME.prefs.noShake = false;
+    GAME.cameraShake = 0;
+    GAME.godMode = false;
+    // graphics: three steps, back to where it was
+    var pr0 = GAME.renderer.getPixelRatio(), fog0 = GAME.scene.fog.far, b0 = GAME.perf.budget(20);
+    GAME.setQuality('low', true);
+    r.low = { pr: +(GAME.renderer.getPixelRatio() / pr0).toFixed(2), fog: +(GAME.scene.fog.far / fog0).toFixed(2), crowd: GAME.perf.budget(20) / b0 };
+    GAME.setQuality('high', true);
+    r.highBack = GAME.renderer.getPixelRatio() === pr0 && GAME.scene.fog.far === fog0;
+    // a device under 12 fps is still measured, and the crowd thins for it
+    GAME.perf.testReset();
+    for (var fr = 0; fr < 60; fr++) GAME.perf.sample(120);
+    GAME.perf.update(4);
+    r.slowScale = GAME.perf.scale;
+    GAME.perf.testReset();
+    // which way it came from: a hit from the camera's right lights the right
+    var f0 = GAME.focus(), yaw = GAME.cam.yaw;
+    P.health = 100;
+    GAME.playerDamage(1, 'test', f0.x - Math.cos(yaw) * 10, f0.z + Math.sin(yaw) * 10);
+    var m = /rotate\(([-0-9.]+)rad\)/.exec($('hit-dir').style.transform);
+    r.hitAngle = m ? +m[1] : null;
+    r.hitShown = $('hit-dir').style.opacity === '1';
+    // and below a quarter of your health the edges pulse
+    P.health = 12; GAME.test.fastForward(0.1);
+    r.lowOn = $('low-health').style.display;
+    P.health = 100; GAME.test.fastForward(0.1);
+    r.lowOff = $('low-health').style.display;
+    // no fullscreen API (an iPhone): the button says what does work instead
+    var can0 = GAME.canFullscreen;
+    GAME.canFullscreen = false;
+    window.__msgs = [];
+    GAME.toggleFullscreen();
+    r.iphone = window.__msgs.some(function (t) { return t.indexOf('Add to Home Screen') >= 0; });
+    GAME.canFullscreen = can0;
+    GAME.test.fastForward(1);
+    return r;
+  });
+  check('ux: messages stack, newest last, and a repeat does not double up',
+    ux.three.join() === 'one,two,three' && ux.four.join() === 'two,three,four', JSON.stringify([ux.three, ux.four]));
+  check('ux: the district name sits under a running mission title, and back up after',
+    ux.zoneTop >= ux.missionBottom && ux.zoneBack < ux.missionBottom, 'zone at ' + ux.zoneTop + ' px, mission ends at ' + ux.missionBottom + ', back to ' + ux.zoneBack);
+  check('ux: the overlay screens use the game face, not Times New Roman',
+    ux.fonts.every(function (f) { return /Arial|Segoe|Helvetica/.test(f); }), JSON.stringify(ux.fonts));
+  check('ux: the controls hint is at least 13 px', ux.hintPx >= 13, ux.hintPx + ' px');
+  check('ux: the title says LOADING until it can answer, then asks for a press',
+    /id="press-enter" class="loading"/.test(html) && ux.title.cls.indexOf('loading') < 0 && /PRESS ENTER|TAP TO START/.test(ux.title.text),
+    JSON.stringify(ux.title));
+  check('ux: a click on the pause background does not resume', ux.stillPaused);
+  check('ux: the pause buttons answer the arrows and Enter',
+    ux.lit === 'pause-map' && ux.resumedByEnter, 'lit=' + ux.lit + ' resumed=' + ux.resumedByEnter);
+  check('ux: no mouse capture says CLICK TO LOOK AROUND, but not under an overlay',
+    ux.lockHint === 'block' && ux.lockHintUnderPause === 'none', 'playing=' + ux.lockHint + ' paused=' + ux.lockHintUnderPause);
+  check('ux: the map names its missions and marks the beaten ones',
+    ux.blips.named >= 5 && ux.blips.match, JSON.stringify(ux.blips));
+  check('ux: the map zooms in and back out', ux.zoom > 2 && ux.zoomBack === 1, 'in=' + ux.zoom + ' out=' + ux.zoomBack);
+  check('ux: no two map families share a colour (armour was the courier cyan)',
+    ux.legendUnique && ux.colours.armor !== ux.colours.courier, JSON.stringify(ux.colours));
+  check('ux: the radio has an OFF, and a car keeps its own dial',
+    ux.offName === 'RADIO OFF' && ux.otherCar !== 'RADIO OFF' && ux.backInA === 'RADIO OFF',
+    'set ' + ux.offName + ', other car ' + ux.otherCar + ', back in the first ' + ux.backInA);
+  check('ux: a save with a bed starts at that bed, one without on the strip',
+    ux.noHome === null && ux.home && ux.home.near, JSON.stringify([ux.noHome, ux.home]));
+  check('ux: SHAKE: OFF holds the camera still through a knock',
+    ux.shakeOn > 0.02 && ux.shakeOff < ux.shakeOn / 3, 'frame-to-frame jitter on=' + ux.shakeOn + ' off=' + ux.shakeOff);
+  check('ux: GFX LOW lowers resolution, draw distance and crowd, and HIGH puts them back',
+    ux.low.pr < 0.7 && ux.low.fog < 0.8 && ux.low.crowd < 0.7 && ux.highBack, JSON.stringify(ux.low) + ' back=' + ux.highBack);
+  check('ux: a machine under 12 fps still thins the crowd', ux.slowScale < 1, 'scale=' + ux.slowScale);
+  check('ux: a hit from the right lights the right of the ring',
+    ux.hitShown && ux.hitAngle !== null && Math.abs(ux.hitAngle - Math.PI / 2) < 0.15, 'angle=' + ux.hitAngle);
+  check('ux: low health pulses the edges, and stops when patched up',
+    ux.lowOn === 'block' && ux.lowOff === 'none', ux.lowOn + ' / ' + ux.lowOff);
+  check('ux: with no fullscreen API the button says Add to Home Screen', ux.iphone);
+
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a
   // first threshold of 50, and the gaps grew by twenty a level while every
@@ -2728,11 +2912,13 @@ function withTimeout(p, ms) {
   var paintTwo = null;
   if (paintOne) {
     var p2 = await browser.newPage({ viewport: { width: 400, height: 300 } });
-    await p2.goto(origin + '/index.html');
+    // a second city building beside a running one (see the touchscreen
+    // laptop check): more than the default 30 s on a loaded machine
+    await p2.goto(origin + '/index.html', { timeout: 90000 });
     await p2.waitForFunction(function () {
       return window.GAME && GAME.city && GAME.city.testFacadeColors &&
         GAME.city.nodes && GAME.city.nodes.length > 0;
-    }, null, { timeout: 30000 });
+    }, null, { timeout: 90000 });
     paintTwo = await p2.evaluate(function () { return GAME.city.testFacadeColors(); });
     await p2.close();
   }
@@ -5596,10 +5782,10 @@ function withTimeout(p, ms) {
   var tpage = await tctx.newPage();
   var touchErrors = [];
   tpage.on('pageerror', function (e) { touchErrors.push(String(e.message).slice(0, 200)); });
-  await tpage.goto(origin + '/index.html');
+  await tpage.goto(origin + '/index.html', { timeout: 90000 });   // beside a running city, as above
   await tpage.waitForFunction(function () {
     return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
-  }, null, { timeout: 30000 });
+  }, null, { timeout: 90000 });
   var stick = await tpage.evaluate(function () {
     GAME.test.start();
     GAME.test.fastForward(1);

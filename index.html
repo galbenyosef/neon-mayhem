@@ -6,6 +6,12 @@
 <title>NEON MAYHEM</title>
 <meta name="description" content="Steal a ride and cruise a neon open world at night — race, deliver, evade the heat, or just drive. A free, fan-made, browser-playable open-world game set in Costa Rosa, 1986.">
 <meta name="theme-color" content="#0b0714">
+<!-- iPhone has no fullscreen for pages: from the home screen it runs as a
+     full-screen app instead (main.js toggleFullscreen says so) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Neon Mayhem">
 <!-- Open Graph / social link preview -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Neon Mayhem">
@@ -23,11 +29,17 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231b0b33'/%3E%3Ccircle cx='8' cy='7' r='4' fill='%23ff4fa3'/%3E%3Crect y='11' width='16' height='2' fill='%2338e8ff'/%3E%3C/svg%3E">
 <style>
   html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#0b0714; }
+  /* the whole page, not just the HUD: the title, pause, map and WASTED
+     screens set no face of their own and came up in Times New Roman */
+  body { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
   * { box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
   #game-canvas { display:block; width:100%; height:100%; }
   .font80s { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
 
-  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+  /* inside the notch and the home bar (viewport-fit=cover hands us the
+     whole screen, rounded corners and all) */
+  #hud { position:fixed; pointer-events:none; z-index:10; font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    inset:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px); }
   #hud .panel { position:absolute; }
 
   #minimap-wrap { left:14px; bottom:14px; width:180px; height:180px; border-radius:50%;
@@ -61,9 +73,13 @@
     letter-spacing:1px; color:#ffe08a; text-shadow:0 0 12px rgba(255,190,60,.85), 0 2px 5px rgba(0,0,0,.9);
     opacity:0; transition:opacity .25s; white-space:nowrap; }
 
-  #msg-line { left:50%; bottom:24%; transform:translateX(-50%); font-size:19px; font-weight:700; color:#fff;
-    text-shadow:0 0 10px rgba(255,120,220,.9); opacity:0; transition:opacity .3s; text-align:center;
-    max-width:70vw; white-space:normal; line-height:1.4; }
+  /* a short stack of messages, newest at the bottom (hud.js pushMessage) */
+  #msg-line { left:50%; bottom:24%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
+    gap:3px; text-align:center; width:max-content; max-width:70vw; }
+  #msg-line .msg { font-size:19px; font-weight:700; color:#fff; line-height:1.35; white-space:normal;
+    text-shadow:0 0 10px rgba(255,120,220,.9), 0 2px 4px rgba(0,0,0,.85); transition:opacity .3s; }
+  #msg-line .msg.old { font-size:16px; opacity:.75; }
+  #msg-line .msg.out { opacity:0; }
   /* the mission-start countdown: one huge numeral, dead centre, gone on GO */
   #count-big { left:50%; top:34%; transform:translate(-50%,-50%); font-size:clamp(64px,15vh,116px); font-weight:900;
     font-style:italic; color:#8dffd8; text-shadow:0 0 26px rgba(60,255,190,.9), 4px 4px 0 #0a2a20;
@@ -73,6 +89,19 @@
   #mission-obj { font-size:15px; color:#e8f6ff; text-shadow:0 1px 3px #000; margin-top:2px; }
   #mission-timer { font-size:22px; font-weight:800; color:#8dffd8; text-shadow:0 0 8px rgba(60,255,190,.8); margin-top:2px; }
 
+  /* which way the hit came from: an arc on a ring round the centre, turned
+     toward the source (hud.js hitFrom) */
+  #hit-dir { left:50%; top:50%; width:min(48vh,380px); height:min(48vh,380px); border-radius:50%;
+    border:7px solid transparent; border-top-color:rgba(255,40,90,.92); transform:translate(-50%,-50%);
+    filter:drop-shadow(0 0 8px rgba(255,40,90,.85)); opacity:0; transition:opacity .45s; }
+  /* low health: the edges of the screen pulse red until you patch up */
+  #low-health { position:fixed; inset:0; pointer-events:none; z-index:9; display:none;
+    box-shadow:inset 0 0 140px 30px rgba(255,10,60,.5); animation:lowPulse 1.1s ease-in-out infinite; }
+  @keyframes lowPulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
+  /* desktop, playing, and the mouse is not captured: say what gets it back */
+  #lock-hint { left:50%; top:58%; transform:translateX(-50%); display:none; font-size:14px; font-weight:800;
+    letter-spacing:2px; color:#9df3ff; background:rgba(8,4,20,.55); border:1px solid rgba(90,220,255,.4);
+    border-radius:8px; padding:6px 14px; text-shadow:0 0 8px rgba(60,220,255,.7); }
   #crosshair { left:50%; top:50%; transform:translate(-50%,-50%); width:26px; height:26px; display:none; }
   #crosshair::before, #crosshair::after { content:""; position:absolute; background:#8dffd8; box-shadow:0 0 5px #46ffbe; }
   #crosshair::before { left:50%; top:0; width:2px; height:100%; transform:translateX(-50%); }
@@ -145,6 +174,11 @@
     #title-footer { font-size:9.5px; bottom:4px; }
   }
   @keyframes blink { 50% { opacity:.25; } }
+  /* the city builds before anything can answer a press: say so, rather than
+     blinking PRESS ENTER at someone for four seconds it cannot hear */
+  #press-enter.loading { animation:loadPulse 0.9s ease-in-out infinite alternate; cursor:progress;
+    color:rgba(141,255,216,.6); border-style:dashed; text-shadow:none; }
+  @keyframes loadPulse { from { opacity:.45; } to { opacity:.9; } }
   #controls-card { margin-top:22px; color:#cfe6ff; font-size:12.5px; line-height:1.75; background:rgba(8,4,20,.55);
     border:1px solid rgba(120,200,255,.3); border-radius:10px; padding:10px 22px; max-height:34vh; overflow:auto; }
   #controls-card b { color:#9df3ff; }
@@ -174,14 +208,14 @@
     #pause-screen .mbtn { margin:4px 3px 0; padding:4px 9px; font-size:11.5px; }
   }
 
-  #fs-btn { position:fixed; right:14px; bottom:14px; z-index:65; width:36px; height:36px; border-radius:8px;
+  #fs-btn { position:fixed; right:calc(14px + env(safe-area-inset-right,0px)); bottom:calc(14px + env(safe-area-inset-bottom,0px)); z-index:65; width:36px; height:36px; border-radius:8px;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
     background:rgba(8,4,20,.55); border:1px solid rgba(120,200,255,.35); color:#9df3ff; font-size:19px;
     text-shadow:0 0 8px rgba(60,220,255,.7); }
   #fs-btn:active { background:rgba(60,220,255,.3); }
 
   #controls-bar { position:fixed; left:50%; bottom:8px; transform:translateX(-50%); z-index:12; display:none;
-    color:#cfe6ff; font-size:12px; background:rgba(8,4,20,.6); border:1px solid rgba(120,200,255,.25);
+    color:#cfe6ff; font-size:13.5px; background:rgba(8,4,20,.6); border:1px solid rgba(120,200,255,.25);
     border-radius:8px; padding:4px 14px; pointer-events:none; white-space:nowrap; }
   #controls-bar b { color:#9df3ff; }
 
@@ -207,6 +241,8 @@
   #map-legend .lgd.sel { background:rgba(255,255,255,.14); box-shadow:0 0 0 1px rgba(255,255,255,.45) inset; }
   /* fingers need bigger targets than mouse pointers do */
   @media (pointer:coarse) { #map-legend .lgd { padding:6px 10px; } }
+  /* the button the arrow keys are on (pause screen) */
+  .mbtn.kfocus { outline:2px solid #8dffd8; outline-offset:2px; box-shadow:0 0 14px rgba(60,255,190,.65); }
   .mbtn { display:inline-block; margin:10px 8px 0; padding:8px 22px; border-radius:8px; cursor:pointer;
     background:rgba(255,105,180,.18); border:1px solid rgba(255,150,210,.6); color:#ffd9f2; font-weight:800; font-size:14px; }
   .mbtn:active { background:rgba(255,105,180,.45); }
@@ -281,7 +317,8 @@
   #crt-layer::after { content:""; position:absolute; inset:0;
     background:radial-gradient(ellipse at center, transparent 55%, rgba(10,0,25,.5) 100%); }
 
-  #touch-layer { position:fixed; inset:0; z-index:15; display:none; pointer-events:none; font-family:inherit; }
+  #touch-layer { position:fixed; z-index:15; display:none; pointer-events:none; font-family:inherit;
+    inset:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px); }
   .tbtn { position:absolute; pointer-events:auto; min-width:60px; min-height:60px; border-radius:50%;
     background:rgba(255,105,180,.16); border:2px solid rgba(255,150,210,.55); color:#ffd9f2; font-size:13px; font-weight:800;
     display:flex; align-items:center; justify-content:center; text-shadow:0 1px 3px #000; touch-action:none; }
@@ -297,6 +334,7 @@
 <body>
 <canvas id="game-canvas"></canvas>
 
+<div id="low-health"></div>
 <div id="hud" style="display:none">
   <div class="panel" id="minimap-wrap"><canvas id="minimap" width="180" height="180"></canvas></div>
   <div class="panel" id="stat-block">
@@ -319,6 +357,8 @@
     <div id="mission-timer"></div>
   </div>
   <div class="panel" id="crosshair"></div>
+  <div class="panel" id="lock-hint">CLICK TO LOOK AROUND</div>
+  <div class="panel" id="hit-dir"></div>
 </div>
 
 <div id="wasted-screen" class="big-screen"><div class="big-word">WASTED</div><div class="big-rule"></div><div class="big-sub"></div><div class="big-hint">PRESS R TO CONTINUE</div></div>
@@ -347,6 +387,8 @@
     <span class="mbtn" id="pause-music">🎵 MUSIC: ON</span>
     <span class="mbtn" id="pause-sfx">💥 SFX: ON</span>
     <span class="mbtn" id="pause-crt">📺 CRT</span>
+    <span class="mbtn" id="pause-shake">🎥 SHAKE: ON</span>
+    <span class="mbtn" id="pause-gfx">🖥 GFX: HIGH</span>
     <span class="mbtn" id="pause-haptic">📳 RUMBLE: ON</span>
     <span class="mbtn" id="pause-lefty">🎮 CONTROLS: RIGHT</span>
     <span class="mbtn" id="pause-chaos">🌆 CITY: LIVELY</span>
@@ -357,7 +399,7 @@
     <span class="mbtn" id="pause-exit">EXIT TO TITLE</span>
   </div>
   <input type="file" id="save-file" accept=".json,application/json" style="display:none">
-  <div style="margin-top:9px;color:#8dffd8;font-weight:700;font-size:13px;">ESC or tap anywhere — resume</div>
+  <div style="margin-top:9px;color:#8dffd8;font-weight:700;font-size:13px;">ESC or RESUME to carry on &nbsp;·&nbsp; arrow keys and Enter pick a button</div>
   <div style="margin-top:5px;font-size:11.5px;"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
     style="color:#9fd8ff;" onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
 </div>
@@ -380,7 +422,7 @@
   <div class="sun"></div>
   <div id="title-logo">NEON&nbsp;MAYHEM</div>
   <div id="title-sub">COSTA ROSA &nbsp;·&nbsp; 1986</div>
-  <div id="press-enter">PRESS ENTER</div>
+  <div id="press-enter" class="loading">LOADING COSTA ROSA…</div>
   <div id="title-best"></div>
   <div id="controls-card">
     <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / Tab</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>
@@ -401,8 +443,8 @@
   <div id="map-title">COSTA ROSA</div>
   <canvas id="bigmap" width="560" height="560"></canvas>
   <div id="map-legend"></div>
-  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; tap a legend entry to show only that family, tap again for all &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
-  <div><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
+  <div id="map-hint">Click to set a destination &nbsp;·&nbsp; scroll or + / − to zoom, drag to move &nbsp;·&nbsp; tap a legend entry to show only that family &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
+  <div><span class="mbtn" id="map-zin">＋</span><span class="mbtn" id="map-zout">−</span><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
 </div>
 
 <div id="shop-screen">

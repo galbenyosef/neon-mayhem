@@ -468,6 +468,7 @@ GAME.vehicles = (function () {
       // stay undefined because code elsewhere clears them to that.
       gone: false, byPlayer: false, sinking: false, spiked: false, stalled: false,
       sinkT: 0, splashed: false, sinkVX: 0, sinkVZ: 0,
+      radioStation: -1,   // where its dial was left: -1 until somebody tunes it
       stageWarn: 0, airframeWarn: 0, boostPing: false, capPing: false, deckCap: 0,
       hitCd: 0, boostT: 0, abandonT: 0, deadT: 0, fireGlowT: 0,
       vx: 0, vy: 0, vz: 0, air: 0, airVX: undefined, airVZ: undefined,
@@ -1301,7 +1302,7 @@ GAME.vehicles = (function () {
       // the blast fades with distance: standing over it is nearly fatal, and
       // every step away is worth something — a flat 55 made "walked clear of
       // the wreck" and "stood in the fireball" the same wound
-      if (dd < 64 && dy < 7) GAME.playerDamage(Math.round(75 - Math.sqrt(dd) * 6.8), 'explosion');
+      if (dd < 64 && dy < 7) GAME.playerDamage(Math.round(75 - Math.sqrt(dd) * 6.8), 'explosion', car.pos.x, car.pos.z);
     }
     if (p.car === car) GAME.playerDamage(200, 'explosion');
     // Whoever was still aboard goes up with it. The driver was only a flag on

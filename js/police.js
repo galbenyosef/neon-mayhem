@@ -420,8 +420,8 @@ GAME.police = (function () {
           GAME.fx.tracer(h.pos.x, h.pos.y - 0.8, h.pos.z, ix, fy + 0.5, iz);
           GAME.fx.spawn(ix, fy + 0.4, iz, { count: 6, color: 0xffe0a0, spread: 1.2, life: 0.3 });
           if (hit) {
-            if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, 4, 'shot');
-            else GAME.playerDamage(3, 'shot');
+            if (P.inCar && P.car) { GAME.vehicles.damageCar(P.car, 4, 'shot'); GAME.hud.hitFrom(h.pos.x, h.pos.z); }
+            else GAME.playerDamage(3, 'shot', h.pos.x, h.pos.z);
           }
         }
       }

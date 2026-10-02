@@ -491,7 +491,7 @@ GAME.combat = (function () {
   // ---------- pickups ----------
   var PICKUP_DEFS = {
     health: { color: 0xff4d6a, label: 'HEALTH' },
-    armor: { color: 0x39c8ff, label: 'ARMOR' },
+    armor: { color: 0x4a6cff, label: 'ARMOR' },   // the map's armour blue (hud.js PICKUP_BLIP)
     pistol: { color: 0xd8d8e8, label: 'PISTOL AMMO' },
     smg: { color: 0xffe14f, label: 'SMG AMMO' },
     shotgun: { color: 0xff8a3d, label: 'SHOTGUN AMMO' },
@@ -727,8 +727,8 @@ GAME.combat = (function () {
       // A car is cover you are sitting in. Rounds did 70% of their damage to
       // the bodywork, which took a sports car apart in fifteen seconds of a
       // three-star chase — gone before any getaway could begin. Half that.
-      else if (inCar) GAME.vehicles.damageCar(P.car, damage * CAR_ROUND, 'cop');
-      else GAME.playerDamage(damage, 'shot');
+      else if (inCar) { GAME.vehicles.damageCar(P.car, damage * CAR_ROUND, 'cop'); GAME.hud.hitFrom(fromX, fromZ); }
+      else GAME.playerDamage(damage, 'shot', fromX, fromZ);
       return true;
     }
     return false;
