@@ -14,7 +14,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 ## The city
 
-- **Isla Rosa**, the neon mainland — a ~1 km² seeded city, identical on every visit: the Ocean Strip with its shops and casino pier, Centro Alto's towers, Puerto Viejo's harbor, Las Colinas — plus a curving beach, boardwalk, piers, a spinning ferris wheel, an airport, and an animated ocean under a full day/night cycle with a **live 24-hour clock** on the HUD.
+- **Isla Rosa**, the neon mainland — a ~1 km² seeded city, identical on every visit: the Ocean Strip with its shops and casino pier, Centro Alto's towers, Puerto Viejo's harbor, Las Colinas — plus a curving beach, boardwalk, piers, a spinning ferris wheel, an airport, and an animated ocean under a full day/night cycle (a day lasts twelve real minutes) with a **live 24-hour clock** on the HUD. **Weather** rolls in and out: rain greys the sky, closes the fog in, loosens the roads and brings the odd fork of lightning. Nights and rain empty the streets a little, and shorten how far anybody sees what you do.
 - **Isla Verde**, locked across the channel — close enough to leave a silhouette in the fog, far enough to keep its secrets. Beat four marked missions — or find every stunt jump — and the two bridges (and the airspace over them) open. Over there the land *rises*: two hills, a switchback to a lookout, a resort road, a coastal ring — curves, not a grid — with bungalows on the slopes and the island's only skyline down by the port.
 - **Landmarks that read like landmarks:** the casino is a pier palace with a sunburst marquee and roving searchlights, the hospitals wear glowing cross towers and EMERGENCY canopies, the police stations hang blue lanterns, the lighthouse sweeps a real rotating beam, the observatory wears a copper dome — and the marina glitters with string lights down every jetty.
 - **And ordinary streets that don't repeat.** Every anonymous block on both islands is painted in what a city is actually made of — concrete and dark glass in Centro Alto, stucco in Las Colinas, deco pastels on the Strip, brick and steel at the harbor, whitewash and terracotta on the Isla Verde hills and tropical pastels by its port — and each one is checked against what already stands beside it, so a street never comes out as one building repeated. It's seeded, so a building wears the same colour every time you pass it, and after dark each block keeps its own hours — some towers nearly dark like offices after closing, some blazing, tube-white in the offices and lamplight in the homes — so the skyline at night is a skyline rather than one tower copied. The landmarks and the shops keep the dress they were designed in.
@@ -26,7 +26,9 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 - Arcade driving with handbrake drifts across a garage's worth of machines: cars, vans, taxis, ambulances, cruisers, a motorcycle and superbike, a dune buggy, a stretch limo, an ice-cream truck, a monster truck — all with 3-stage damage (smoke → fire → boom) and honest fire warnings before anything explodes.
 - Cars sit on their springs. Open the throttle and the nose lifts; stand on the brakes and it dives — added on top of whatever grade the wheels are on, so a car climbing a ramp still squats under power instead of picking one angle or the other.
-- A **helicopter** and a **light plane**, flyable with loops and barrel rolls. The plane's takeoff run is real — about 66 meters of engine haul before the nose comes up, so you'll want the actual runway — and a stalled airframe recovers by *diving*, not throttling. Bail out of either mid-air and a **parachute** opens.
+- A **helicopter** and a **light plane**, flyable with loops and barrel rolls. The plane's takeoff run is real — about 66 meters of engine haul before the nose comes up, so you'll want the actual runway — and a stalled airframe recovers by *diving*, not throttling. Bail out of either mid-air and a **parachute** opens. The air thins out above a couple of hundred metres, and anything flying at the edge of the map is brought round rather than left hanging there.
+- **Traffic that answers.** Drivers go round a car stopped in their lane once the other lane is clear, lean on the horn when you're the one holding them up, and pull over for a siren. Ram one and it either floors it or the driver gets out to have a word. Everybody has a horn (`G`), you included.
+- On foot you can **climb**: jump facing a wall, a container or a low roof up to about two and a half metres and you pull yourself up. Lock-on holds its target and turns the view to follow it; flick the camera or press `Q`/`E` to change who it is on.
 - **25 hidden stunt jumps** on roadside ramps, a third of them boosted. Air time, distance and spins all pay — once every two minutes for the same jump, so it's the next ramp that's worth finding, not the same one twice. Find all 25 for $50,000, the full arsenal with unlimited ammo, and a monster truck that jumps on command.
 
 ## The law
@@ -36,6 +38,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 - **Out of sight is out of mind — eventually.** The police chase what they can see. Break the line of sight — round a corner, under a bridge, behind the towers where the helicopter can't look down on you — and every unit heads for where you were last seen and searches outward from there. Stay hidden and the heat cools: about half a minute at three stars, a minute at four, a minute and a half at five. Hide round the corner from where they lost you and the search will likely find you again.
 - **A roof is not a hiding place.** Officers on the street look up: stand at the edge and they will shoot up at you, though the middle of a roof is cover. And since nobody can climb up after you, two stars on a rooftop brings the helicopter early.
 - The law shoots like people, not turrets. A round goes where it was actually aimed rather than where a separate dice roll put it, so the tracer you watch fly wide *is* the one that missed — and range, your speed, the first shot of a burst and which officer happens to be holding the gun all decide whether it lands. Standing still at close quarters is fatal; thirty metres at a sprint is a different proposition entirely.
+- Steal a **cruiser** and it's yours to run: `G` for the lights and siren, and `J` for **vigilante** work — suspects called in on your radar, who run once they see you. Wreck them or make them give up the car; every one taken off the street pays more than the last and takes a star off your own record.
 - Four **respray garages** (three mainland, VERDE MOTORS on the island) repair and recolor the car for $100 — and fresh paint fools a patrol, so up to two stars die with the old color. From three up they know your *face*, and paint stops helping.
 - That's when you see the **desk sergeant**: losing the top star of a deep warrant costs more than shaking off a fender-bender ($150 a star at one star, $750 at five), and CLEAN SLATE wipes the whole ladder for exactly the sum of its steps. No discounts, no traps. (Or sleep it off at home — free, if you can spare eight hours: it wipes three stars or fewer, and takes two off a four- or five-star manhunt.)
 
@@ -51,6 +54,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 - **GRAN ROSA MOTORS** — a glass showroom with display cars on spotlit pads and a rotating totem. Every vehicle is on the floor from day one, helicopter and TALON gunship included; money is the only gate. Every purchase is a deed: **a fresh copy of your fleet waits at the showroom and at every property you own.**
 - **Three properties** — a dockside flat, a strip condo, a marina villa across the channel. Own one and you wake up at home after a hospital-grade night, gear intact. **SLEEP IT OFF** actually sleeps: eight hours cross the clock, the sky moves, the law forgets you (or most of you, after a manhunt), and your health comes back.
+- Finish **everything** — every mission and every jump, both islands — and the TALON gunship waits on the mainland helipad, with a one-off million dollars on top. (Money stays money: nothing pins your cash afterwards.)
 - **THE LUCKY GULL** casino on the pier — three stakes, a wheel that really spins, and a gull that usually wins.
 - **THREADS** and **CORTES CUTS** — shirts, pants, cuts, hair colors and skin tones, previewed on a mirror that shows *you*, exactly as you stand, before a dollar moves.
 - **ROSA HARDWARE** (and VERDE HARDWARE across the channel) sells armor, medkits and iron — and street weapon racks restock only once per in-game day, so the counter matters.
@@ -76,9 +80,10 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 | RMB / Tab | Aim (lock-on) | — |
 | LMB | Fire | Fire (drive-by w/ SMG) |
 | Q / E | Cycle lock target | Drive-by left/right (barrel roll in a plane) |
-| Space | Jump | Handbrake |
+| Space | Jump (and climb, facing a ledge) | Handbrake |
 | F | Enter / jack car | Exit car |
-| J | — | Start the shift a working vehicle offers |
+| J | — | Start the shift a working vehicle offers (vigilante in a cruiser) |
+| G | — | Horn (lights and siren in a cruiser) |
 | 1–5 | Weapon select | — |
 | , / . | — | Radio station (and off) |
 | Shift | Sprint | — |

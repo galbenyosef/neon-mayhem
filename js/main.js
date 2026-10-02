@@ -39,6 +39,7 @@
     GAME.lights = { hemi: hemi, dir: moon, ambient: warm, head: head };
 
     GAME.city.build(scene);
+    GAME.weather.build(scene);
     GAME.fx.init(scene);
     GAME.initPlayer();
     GAME.combat.initPickups();
@@ -176,7 +177,8 @@
   // night (df 0) and day (df 1) endpoint palettes; intermediate df gives dusk
   var TOD_NIGHT = { fog: 0x2a1440, near: 110, hemi: 0x4a3a7a, ground: 0x1a1024, hemiI: 0.85, dir: 0x8a94ff, dirI: 0.55, amb: 0x40203a, ambI: 0.7, clear: 0x0a0714 };
   var TOD_DAY = { fog: 0xbcd0e8, near: 150, hemi: 0xcfe0ff, ground: 0x9a8a70, hemiI: 1.05, dir: 0xfff2d0, dirI: 1.0, amb: 0x6a6674, ambI: 0.5, clear: 0x9fbce0 };
-  var _cN = new THREE.Color(), _cD = new THREE.Color(), _cT = new THREE.Color();
+  var _cN = new THREE.Color(), _cD = new THREE.Color(), _cT = new THREE.Color(), _cR = new THREE.Color();
+  var RAIN_NIGHT = 0x231c2e, RAIN_DAY = 0x7c8394;   // what the fog turns to under rain
   function lerpHex(a, b, t, target) { _cN.setHex(a); _cD.setHex(b); target.copy(_cN).lerp(_cD, t); return target; }
 
   GAME.timeOfDay = 0.4;
@@ -184,9 +186,12 @@
     GAME.timeOfDay = df;
     GAME.city.applyTimeOfDay(df);
     var scene = GAME.scene, L = GAME.lights, farBase = GAME.isTouch ? 320 : 430;
+    // rain greys and closes in the fog and dims the light; lightning lifts it
+    var wet = GAME.weather ? GAME.weather.rain : 0, bolt = GAME.weather ? GAME.weather.flash : 0;
     lerpHex(TOD_NIGHT.fog, TOD_DAY.fog, df, scene.fog.color);
-    scene.fog.near = U.lerp(TOD_NIGHT.near, TOD_DAY.near, df);
-    scene.fog.far = (farBase + df * 90) * QUALITY[GAME.quality].fog;   // GFX draws it in
+    if (wet > 0) scene.fog.color.lerp(lerpHex(RAIN_NIGHT, RAIN_DAY, df, _cR), wet * 0.7);
+    scene.fog.near = U.lerp(TOD_NIGHT.near, TOD_DAY.near, df) * (1 - 0.55 * wet);
+    scene.fog.far = (farBase + df * 90) * QUALITY[GAME.quality].fog * (1 - 0.4 * wet);   // GFX draws it in
     lerpHex(TOD_NIGHT.hemi, TOD_DAY.hemi, df, L.hemi.color);
     lerpHex(TOD_NIGHT.ground, TOD_DAY.ground, df, L.hemi.groundColor);
     L.hemi.intensity = U.lerp(TOD_NIGHT.hemiI, TOD_DAY.hemiI, df);
@@ -194,14 +199,24 @@
     L.dir.intensity = U.lerp(TOD_NIGHT.dirI, TOD_DAY.dirI, df);
     lerpHex(TOD_NIGHT.amb, TOD_DAY.amb, df, L.ambient.color);
     L.ambient.intensity = U.lerp(TOD_NIGHT.ambI, TOD_DAY.ambI, df);
-    renderer.setClearColor(lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT), 1);
+    if (wet > 0 || bolt > 0) {
+      L.hemi.intensity = L.hemi.intensity * (1 - 0.3 * wet) + bolt * 1.4;
+      L.dir.intensity *= 1 - 0.55 * wet;
+    }
+    lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT);
+    if (wet > 0) _cT.lerp(scene.fog.color, wet * 0.8);
+    if (bolt > 0) _cT.lerp(_cR.setHex(0xdfe6ff), bolt * 0.5);
+    renderer.setClearColor(_cT, 1);
   };
 
   // auto day/night cycle. Start on a bright, low-sun late afternoon that visibly
   // slides into sunset, then night, then the sun rises again and it loops.
   // df = 0.5 - 0.5*cos(2*pi*phase).
   // phase 0.63 -> df~0.85 sunny afternoon; 0.75 -> sunset; 1.0 -> night.
-  var CYCLE = 150, START_PHASE = 0.63;
+  // Twelve real minutes a day. It was two and a half, so night lasted under a
+  // minute and the clock was something that happened to the sky rather than
+  // to the evening you were having.
+  var CYCLE = 720, START_PHASE = 0.63;
   // one full in-game day in real seconds — pickups' respawn clock keys off it
   GAME.DAY_SECONDS = CYCLE;
   GAME.dayPhase = START_PHASE;
@@ -337,6 +352,7 @@
     var over = !GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen;
     if (over) GAME.hud.lockHint(false);   // an overlay is a mouse screen: no "click to look" under it
     if (!GAME.audio.ctx) return;
+    if (over) GAME.audio.rain(0);   // the tick that keeps it level stops behind an overlay
     var P = GAME.player;
     GAME.audio.titleMusic(over);
     if (over) {
@@ -417,6 +433,7 @@
     var ears = GAME.focus();
     GAME.audio.setListener(ears.x, ears.z, GAME.cam.yaw);
     GAME.advanceDayCycle(dt);
+    GAME.weather.update(dt);
     GAME.city.update(dt, GAME.time);
     GAME.vehicles.update(dt);
     GAME.peds.update(dt);
@@ -431,13 +448,8 @@
     // slow autosave heartbeat: health and ammo drift without touching cash,
     // and the save should never be more than ten seconds behind the life
     if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
-    // the endgame watch: notices the last mission or jump landing, and keeps
-    // a completed player's pockets bottomless
+    // the endgame watch: notices the last mission or jump landing
     if (GAME.frame % 300 === 150) GAME.missions.checkCompletion();
-    if (GAME.completeUnlimited && GAME.player.cash < 9999999) {
-      GAME.player.cash = 9999999;
-      GAME.hud.cashChanged();
-    }
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();

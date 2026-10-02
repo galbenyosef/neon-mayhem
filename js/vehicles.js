@@ -469,6 +469,8 @@ GAME.vehicles = (function () {
       gone: false, byPlayer: false, sinking: false, spiked: false, stalled: false,
       sinkT: 0, splashed: false, sinkVX: 0, sinkVZ: 0,
       radioStation: -1,   // where its dial was left: -1 until somebody tunes it
+      honkCd: 0,          // until it may lean on the horn again
+      sirenOn: false,     // a cruiser with its lights going (player-driven)
       stageWarn: 0, airframeWarn: 0, boostPing: false, capPing: false, deckCap: 0,
       hitCd: 0, boostT: 0, abandonT: 0, deadT: 0, fireGlowT: 0,
       vx: 0, vy: 0, vz: 0, air: 0, airVX: undefined, airVZ: undefined,
@@ -577,7 +579,7 @@ GAME.vehicles = (function () {
     car.heading += c.steer * spec.turn * steerFactor * dir * dt;
 
     if (!flying) {
-      var grip = spec.grip * surf * (c.handbrake ? 0.22 : 1) * (car.spiked ? 0.5 : 1);
+      var grip = spec.grip * surf * (c.handbrake ? 0.22 : 1) * (car.spiked ? 0.5 : 1) * GAME.weather.grip();   // wet roads
       if (c.handbrake) car.speed *= Math.exp(-0.9 * dt);
       // lateral slip decays toward zero; handbrake keeps it alive for drifts
       var slip = c.steer * car.speed * 0.16 * (c.handbrake ? 2.4 : 1);
@@ -1024,6 +1026,9 @@ GAME.vehicles = (function () {
   // less leaves them hurt in proportion, landed clear of what hit them, and
   // back on their feet. `other` is whatever they were hit by, or hit.
   var RIDER_KNOCK = 4, RIDER_KILL = 10;
+  // rammed by the player: the share of drivers who get out to have it out
+  // with you rather than getting away from you
+  var RAM_CONFRONT = 0.35;
   var PLAYER_BIKE_KNOCK = 9;   // what a wall takes to throw you (collideStatic)
   function knockOffRider(bike, other, rel) {
     var d = throwRider(bike);
@@ -1151,7 +1156,27 @@ GAME.vehicles = (function () {
             var other = a === pc ? b : a;
             // a mission rival in a cruiser is a racer, not the law
             if (other.isPolice && !other.mission) GAME.police.reportCrime('hit_cop_car', pc.pos);
-            else if (other.ai && other.ai.mode === 'traffic') GAME.police.reportCrime('hit_car', pc.pos);
+            else if (other.ai && other.ai.mode === 'traffic' && !other.perp) GAME.police.reportCrime('hit_car', pc.pos);
+          }
+          // Rammed by YOU. Traffic used to take it like weather and drive on.
+          // Now the horn goes, and then either the foot goes down and they
+          // get away from you, or the driver gets out to have it out with you.
+          if ((a === pc || b === pc) && rel > 4 && GAME.player.inCar) {
+            var hit = a === pc ? b : a;
+            if (hit.ai && hit.ai.mode === 'traffic' && hit.occupied === 'ai' && !hit.isPolice && !hit.mission && !hit.dead) {
+              hit.honkCd = 0;
+              honk(hit);
+              if (!hit.ai.reacted) {
+                hit.ai.reacted = true;
+                if (Math.random() < RAM_CONFRONT && !hit.spec.bike) {
+                  var mad = ejectDriver(hit);
+                  if (mad) {
+                    mad.temper = Math.max(mad.temper || 0, 0.7);
+                    GAME.peds.startFight(mad, { kind: 'car', car: pc }, 12);
+                  }
+                } else hit.ai.panicT = 8;
+              }
+            }
           }
         }
         // Somebody gets out about it. A shunt between two strangers used to be
@@ -1501,9 +1526,28 @@ GAME.vehicles = (function () {
       tx = ai.node.x + ai.laneX; tz = ai.node.z + ai.laneZ;
       dx = tx - car.pos.x; dz = tz - car.pos.z;
     }
+    // going round something stopped in the lane: aim twelve metres up the
+    // OTHER lane (the mirror of this one about the centreline) — aiming at
+    // the next junction instead, a hundred metres off, the car drifted across
+    // so slowly it shoved what it was passing up the road in front of it
+    if (ai.passT > 0) {
+      var sdx = ai.prev ? ai.node.x - ai.prev.x : Math.sin(car.heading);
+      var sdz = ai.prev ? ai.node.z - ai.prev.z : Math.cos(car.heading);
+      var sl = Math.sqrt(sdx * sdx + sdz * sdz) || 1; sdx /= sl; sdz /= sl;
+      var lx0 = ai.node.x - ai.laneX, lz0 = ai.node.z - ai.laneZ;
+      var along = (car.pos.x - lx0) * sdx + (car.pos.z - lz0) * sdz + 12;
+      tx = lx0 + sdx * along; tz = lz0 + sdz * along;
+      dx = tx - car.pos.x; dz = tz - car.pos.z;
+    }
+    // pulling over for a siren: edge out toward the kerb
+    if (ai.yieldT > 0 && !(ai.passT > 0)) {
+      tx += ai.laneX * 0.5; tz += ai.laneZ * 0.5;
+      dx = tx - car.pos.x; dz = tz - car.pos.z;
+    }
     var targetH = Math.atan2(dx, dz);
     var dh = U.wrapPI(targetH - car.heading);
     var steer = U.clamp(dh * 2.2, -1, 1);
+    if (car.honkCd > 0) car.honkCd -= dt;
 
     // wedged against something: back out
     if (Math.abs(car.speed) < 0.8 && distN > 8) car.unstickT += dt; else car.unstickT = 0;
@@ -1514,6 +1558,23 @@ GAME.vehicles = (function () {
     }
 
     var desired = ai.desired || 11;
+    // a cruiser coming up behind with its siren going: pull over and let it by
+    var sc = GAME.playerSiren();
+    if (sc && sc !== car) {
+      var srx = sc.pos.x - car.pos.x, srz = sc.pos.z - car.pos.z;
+      var sfd = srx * Math.sin(car.heading) + srz * Math.cos(car.heading);
+      if (sfd < 0 && sfd > -40 && Math.abs(srx * Math.cos(car.heading) - srz * Math.sin(car.heading)) < 6) ai.yieldT = 2.5;
+    }
+    if (ai.yieldT > 0) {
+      ai.yieldT -= dt;
+      desired = Math.min(desired, 3);
+    }
+    // rammed by the player and getting away from them, on the horn
+    if (ai.panicT > 0) {
+      ai.panicT -= dt;
+      desired = Math.max(desired, 17);
+      honk(car);
+    }
     // a bend is not a straight: ease off in proportion to how hard the
     // wheel is over, so hairpins are taken at hairpin speed instead of
     // overshot onto the grass
@@ -1523,11 +1584,12 @@ GAME.vehicles = (function () {
     var fx = fwdX(car), fz = fwdZ(car);
     var lookA = 5 + car.speed * 0.8;
     var ax = car.pos.x + fx * lookA, az = car.pos.z + fz * lookA;
-    var blocked = false, hard = false;
+    var blocked = false, hard = false, blockCar = null, blockD = 1e9;
     var cars = world.cars;
     for (var i = 0; i < cars.length; i++) {
       var o = cars[i];
       if (o === car) continue;
+      if (ai.passT > 0 && o === ai.passCar) continue;   // the one being passed
       if (Math.abs(o.pos.y - car.pos.y) > 3) continue;   // not on the same level
       var odx = o.pos.x - car.pos.x, odz = o.pos.z - car.pos.z;
       var fd = odx * fx + odz * fz;
@@ -1537,13 +1599,17 @@ GAME.vehicles = (function () {
       // lane line, with 0.3 m between the bodies — for a car in the lane,
       // and the traffic behind it sat there rocking for good.
       var side = Math.abs(odx * fz - odz * fx);
-      if (side < (car.spec.w + o.spec.w) / 2 + 0.2) { blocked = true; if (fd < 7) hard = true; }
+      if (side < (car.spec.w + o.spec.w) / 2 + 0.2) {
+        blocked = true; if (fd < 7) hard = true;
+        if (fd < blockD) { blockD = fd; blockCar = o; }
+      }
     }
     var P = GAME.player;
+    var byPlayer = !!blockCar && blockCar === P.car && P.inCar;
     if (!P.inCar && Math.abs(P.pos.y - car.pos.y) < 3) {
       var pdx = P.pos.x - car.pos.x, pdz = P.pos.z - car.pos.z;
       var pfd = pdx * fx + pdz * fz;
-      if (pfd > 0 && pfd < lookA + 2 && Math.abs(pdx * fz - pdz * fx) < 2.4) { blocked = true; if (pfd < 6) hard = true; }
+      if (pfd > 0 && pfd < lookA + 2 && Math.abs(pdx * fz - pdz * fx) < 2.4) { blocked = true; byPlayer = true; if (pfd < 6) hard = true; }
     }
     var peds = world.peds;
     for (var pi = 0; pi < peds.length; pi++) {
@@ -1554,11 +1620,53 @@ GAME.vehicles = (function () {
       var qfd = qdx * fx + qdz * fz;
       if (qfd > 0 && qfd < lookA && Math.abs(qdx * fz - qdz * fx) < 2.2) { blocked = true; if (qfd < 6) hard = true; }
     }
+    // Held up. Traffic used to sit behind anything stopped in its lane for as
+    // long as it stayed there — a wreck, a car its driver had left, you — in
+    // silence. Now it leans on the horn when it is YOU, and after a moment
+    // behind something that is not going anywhere it pulls out and goes
+    // round, once the other lane is clear.
+    if (ai.passT > 0) {
+      ai.passT -= dt;
+      var pc = ai.passCar;
+      var behind = !pc || pc.gone || ((pc.pos.x - car.pos.x) * fx + (pc.pos.z - car.pos.z) * fz) < -(car.spec.l + 3);
+      if (behind || ai.passT <= 0) { ai.passT = 0; ai.passCar = null; }
+    } else if (blocked && (byPlayer || (blockCar && Math.abs(blockCar.speed) < 1.5))) {
+      ai.blockT = (ai.blockT || 0) + dt;
+      if (byPlayer && ai.blockT > 1.2) honk(car);
+      if (blockCar && ai.blockT > 1.4 && otherLaneClear(car, fx, fz)) {
+        ai.passT = 7; ai.passCar = blockCar; ai.blockT = 0;
+      }
+    } else ai.blockT = 0;
     var throttle;
     if (hard) throttle = car.speed > 0.5 ? -1 : 0;
     else if (blocked) throttle = car.speed > desired * 0.4 ? -0.4 : 0.15;
     else throttle = car.speed < desired ? 0.55 : 0;
+    // pulling out round a stopped car: creep round it rather than wait for
+    // a gap that is already there
+    if (ai.passT > 0 && !hard && car.speed < 5) throttle = Math.max(throttle, 0.45);
     return setControls(out, throttle, steer, false);
+  }
+
+  function honk(car) {
+    if (car.honkCd > 0) return;
+    car.honkCd = 2.2 + Math.random() * 2.5;
+    GAME.audio.horn(car.pos.x, car.pos.z, car.spec.l > 5);
+  }
+  // Nothing coming the other way for forty metres: no car ahead (or just
+  // alongside) sitting in the lane on the far side of the centreline.
+  function otherLaneClear(car, fx, fz) {
+    var ai = car.ai, side = (ai.laneX * fz - ai.laneZ * fx) >= 0 ? 1 : -1;
+    var cars = world.cars;
+    for (var i = 0; i < cars.length; i++) {
+      var o = cars[i];
+      if (o === car || o.dead) continue;
+      var odx = o.pos.x - car.pos.x, odz = o.pos.z - car.pos.z;
+      var fd = odx * fx + odz * fz;
+      if (fd < -6 || fd > 40) continue;
+      var lat = (odx * fz - odz * fx) * -side;   // positive: over on the far side
+      if (lat > 1 && lat < 9) return false;
+    }
+    return true;
   }
 
   function spawnTraffic() {
@@ -1567,7 +1675,8 @@ GAME.vehicles = (function () {
     for (var i = 0; i < world.cars.length; i++) {
       if (world.cars[i].ai && world.cars[i].ai.mode === 'traffic') live++;
     }
-    var maxT = GAME.perf.budget(GAME.settings.maxTraffic);
+    // what the frame affords, and then thinner at night
+    var maxT = Math.max(1, Math.round(GAME.perf.budget(GAME.settings.maxTraffic) * GAME.weather.traffic()));
     if (live >= maxT) return;
     var city = GAME.city;
     for (var tries = 0; tries < 6 && live < maxT; tries++) {
@@ -1585,6 +1694,8 @@ GAME.vehicles = (function () {
         if (U.dist2(world.cars[c].pos.x, world.cars[c].pos.z, rp.x, rp.z) < 100) { clear = false; break; }
       }
       if (!clear) continue;
+      // never where you are looking (GAME.inPlainView)
+      if (GAME.inPlainView(rp.x, GAME.city.groundY(rp.x, rp.z), rp.z)) continue;
       // the island runs a different mix, so crossing a bridge changes the
       // traffic around you as well as the scenery
       var types = onIsla

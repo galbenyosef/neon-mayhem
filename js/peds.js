@@ -884,7 +884,8 @@ GAME.peds = (function () {
     var fc = GAME.focus();
     var live = 0;
     for (var i = 0; i < world.peds.length; i++) if (!world.peds[i].isCop && !world.peds[i].dead) live++;
-    var maxP = GAME.perf.budget(GAME.settings.maxPeds);
+    // what the frame affords, and then fewer at night and in the rain
+    var maxP = Math.max(1, Math.round(GAME.perf.budget(GAME.settings.maxPeds) * GAME.weather.crowd()));
     for (var tries = 0; tries < 5 && live < maxP; tries++) {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 60, GAME.settings.bubbleRadius);
@@ -905,6 +906,7 @@ GAME.peds = (function () {
       if (rp.axis !== 'net' && (px < -490 || px > 372 || Math.abs(pz) > 490)) continue;
       if (GAME.city.isInWater(px, pz)) continue;
       if (GAME.city.inAirport(px, pz)) continue; // no strollers on the runway
+      if (GAME.inPlainView(px, GAME.city.groundY(px, pz), pz)) continue;   // not out of thin air
       var ped = spawnPed(px, pz);
       newWaypoint(ped);
       live++;

@@ -37,6 +37,40 @@ GAME.aircraft = (function () {
     warnAirspace(pos.x, lim);
   }
 
+  // The other three edges (and the far one, once the bridges are open) had no
+  // warning at all: the clamp just stopped the aircraft dead in mid-air,
+  // engine running, nose still pointed at a map edge it could not cross. Now
+  // anything flying at an edge is brought round toward the middle of the map,
+  // harder the closer it gets, and told why. And there is a ceiling: above a
+  // few hundred metres the ground fades out into the fog and there is nothing
+  // left to fly over, so the air is too thin to climb past it.
+  var EDGE_WARN = 90, CEIL_HELI = 200, CEIL_PLANE = 240, edgeToldT = -99, ceilToldT = -99;
+  function edgeTurn(car, lim, dt) {
+    var west = car.pos.x + 524, east = lim.maxX - car.pos.x;
+    var north = car.pos.z - lim.minZ, south = lim.maxZ - car.pos.z;
+    // the closed channel has its own rule (warnAirspace) and keeps it
+    if (lim.maxX <= CLOSED_X) east = 1e9;
+    var d = Math.min(west, east, north, south);
+    if (d >= EDGE_WARN) return false;
+    var cx = (-524 + lim.maxX) / 2, cz = (lim.minZ + lim.maxZ) / 2;
+    var home = Math.atan2(cx - car.pos.x, cz - car.pos.z);
+    // only while it is pointed outward: flying back in is left alone
+    if (Math.cos(U.wrapPI(home - car.heading)) > 0.3) return false;
+    var pull = (1 - d / EDGE_WARN) * 2.6 + 0.4;
+    car.heading = U.angleLerp(car.heading, home, Math.min(1, pull * dt));
+    if (GAME.time - edgeToldT > 8) {
+      edgeToldT = GAME.time;
+      GAME.hud.message('Edge of the map — bringing you round.', 2.5);
+    }
+    return true;
+  }
+  function ceilingTold() {
+    if (GAME.time - ceilToldT > 10) {
+      ceilToldT = GAME.time;
+      GAME.hud.message('The air is too thin up here — she won’t climb any higher.', 3);
+    }
+  }
+
   // The airframe wears its damage out loud. Hard landings and wall grazes
   // chip aircraft hp silently, and the first anyone knew was the explosion
   // on the next takeoff — "I was at 100% health" (the PLAYER was; the
@@ -80,7 +114,13 @@ GAME.aircraft = (function () {
     // eleven metres a second within three, and a hands-off descent from
     // thirty metres was a crash landing. Space climbs, Shift comes down.
     var climb = up > 0 ? HELI_CLIMB * up : up < 0 ? HELI_SINK * up : 0;
+    // the last twenty metres under the ceiling take the climb away
+    if (climb > 0 && car.pos.y > CEIL_HELI - 20) {
+      climb *= U.clamp((CEIL_HELI - car.pos.y) / 20, 0, 1);
+      if (car.pos.y > CEIL_HELI - 3) ceilingTold();
+    }
     car.vy = U.damp(car.vy || 0, climb, 2.4, dt);
+    if (car.pos.y > CEIL_HELI && car.vy > 0) car.vy = 0;
     car.pos.y += car.vy * dt;
 
     // horizontal: tilt the nose to slide in the facing direction
@@ -97,6 +137,7 @@ GAME.aircraft = (function () {
     car.pos.x = U.clamp(nx, -524, lim.maxX);
     car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
     warnAirspace(car.pos.x, lim);
+    edgeTurn(car, lim, dt);
 
     // Land on whatever surface is below (terrain or a rooftop). The floor is
     // skid height, not cabin height — at +1.4 a "landed" helicopter hung in
@@ -318,6 +359,15 @@ GAME.aircraft = (function () {
       car.pitch = U.damp(car.pitch, -0.85, 3, dt);
       car.speed = Math.min(car.spec.maxSpeed, car.speed + 14 * Math.sin(-Math.min(car.pitch, 0)) * dt);
     }
+    // the ceiling: the climb fades out over the last thirty metres, and the
+    // nose is eased level once it is there
+    if (vy > 0 && car.pos.y > CEIL_PLANE - 30) {
+      vy *= U.clamp((CEIL_PLANE - car.pos.y) / 30, 0, 1);
+      if (car.pos.y > CEIL_PLANE - 8) {
+        ceilingTold();
+        if (car.pitch > 0 && car.pitch < Math.PI / 2) car.pitch = U.damp(car.pitch, 0, 1.5, dt);
+      }
+    }
     car.pos.y += vy * dt;
 
     var horiz = car.speed * Math.cos(car.pitch);
@@ -338,6 +388,7 @@ GAME.aircraft = (function () {
     car.pos.x = U.clamp(nx, -524, lim.maxX);
     car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
     warnAirspace(car.pos.x, lim);
+    if (!onGround) edgeTurn(car, lim, dt);
 
     var surf = GAME.city.surfaceY(car.pos.x, car.pos.z);
     if (car.pos.y < surf + car.spec.wheelH) {

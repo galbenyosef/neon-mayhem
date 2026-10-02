@@ -131,6 +131,7 @@ function serve() {
   if (booted) {
     churn = await page.evaluate(function () {
       GAME.test.start();
+      GAME.weather.setMode('clear', true);   // dry, as in the regression suite
       for (var i = 0; i < 240; i++) GAME.tick(1 / 60);
       var geo0 = GAME.renderer.info.memory.geometries;
       var t0 = GAME.time;

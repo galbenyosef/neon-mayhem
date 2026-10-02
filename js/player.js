@@ -8,7 +8,8 @@ GAME.player = {
   moveSpeed: 0,
   // run-over cooldown. It has to start as a number: left undefined, the
   // `<= 0` gate on it was never true, and no car could hurt you on foot
-  carHurtCd: 0
+  carHurtCd: 0,
+  mantle: null      // a climb onto a ledge in progress (tryMantle)
 };
 
 GAME.cam = { yaw: Math.PI, pitch: 0.32, dist: 6, freeT: 0, x: 0, y: 5, z: 0 };
@@ -405,6 +406,7 @@ function stepEnter(dt) {
 // which hands you the wheel on the start line behind a fade.
 function sitIn(car) {
   var P = GAME.player;
+  P.mantle = null;
   car.controls = { throttle: 0, steer: 0, handbrake: false };
   P.inCar = true;
   P.car = car;
@@ -427,6 +429,7 @@ function sitIn(car) {
   else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
   else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
   else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
+  else if (car.type === 'police') GAME.hud.message('Cruiser — G for lights and siren, J (or JOB) for vigilante work', 3.5);
 }
 
 // a turn of the dial is this car's from now on (sitIn tunes back to it)
@@ -624,6 +627,72 @@ function carBodyTop(c) {
 }
 
 var footPush = { x: 0, z: 0 };   // resolveCircle's answer for the player on foot, reused
+// ---------- climbing ----------
+// A jump tops out at about 1.2 m, and that was the most anything could be
+// climbed: a wall at chest height, a shipping container, a low roof were all
+// sheer. Jump facing a ledge that tops out between knee and well over head
+// height — up to 2.6 m — and you pull yourself up onto it. Only something
+// you could really stand on counts: a building, a wall or a container, at
+// least a metre and a bit across, with headroom on top.
+var MANTLE_MIN = 0.7, MANTLE_MAX = 2.6, MANTLE_REACH = 0.9;
+var mantleBoxes = [];
+function tryMantle(feet) {
+  var P = GAME.player;
+  if (P.inCar || GAME.combat.aiming) return false;
+  var h = P.moveSpeed > 0.5 && P.moveH !== undefined ? P.moveH : P.heading;
+  var fx = Math.sin(h), fz = Math.cos(h);
+  var px = P.pos.x + fx * MANTLE_REACH, pz = P.pos.z + fz * MANTLE_REACH;
+  var boxes = GAME.city.hash.queryInto(px, pz, 0.05, mantleBoxes), best = null;
+  for (var i = 0; i < boxes.length; i++) {
+    var b = boxes[i];
+    if (b.h === undefined || b.minY !== undefined) continue;
+    if (b.tag !== 'building' && b.tag !== 'prop' && b.tag !== 'fence') continue;
+    if (b.maxX - b.minX < 1.2 || b.maxZ - b.minZ < 1.2) continue;
+    if (px <= b.minX || px >= b.maxX || pz <= b.minZ || pz >= b.maxZ) continue;
+    var rise = b.h - feet;
+    if (rise < MANTLE_MIN || rise > MANTLE_MAX) continue;
+    if (!best || b.h > best.h) best = b;
+  }
+  if (!best) return false;
+  // land a little way in from the edge, and only where that top is the top
+  var lx = px + fx * 0.5, lz = pz + fz * 0.5;
+  if (lx <= best.minX || lx >= best.maxX || lz <= best.minZ || lz >= best.maxZ) { lx = px; lz = pz; }
+  if (GAME.city.surfaceY(lx, lz, best.h + 0.2) > best.h + 0.05) return false;
+  P.mantle = { t: 0, dur: 0.35 + (best.h - feet) * 0.12, x0: P.pos.x, y0: P.pos.y, z0: P.pos.z, x1: lx, y1: best.h, z1: lz,
+    lx: P.pos.x, ly: P.pos.y, lz: P.pos.z };
+  P.heading = h;
+  P.moveSpeed = 0;
+  GAME.audio.punch();
+  return true;
+}
+function stepMantle(dt) {
+  var P = GAME.player, m = P.mantle;
+  // moved by something else since the last step (a respawn, a teleport, a
+  // car): the climb is over, wherever that left you
+  if (m.t > 0 && (Math.abs(P.pos.x - m.lx) > 1.5 || Math.abs(P.pos.z - m.lz) > 1.5 || Math.abs(P.pos.y - m.ly) > 1.5)) {
+    P.mantle = null;
+    return;
+  }
+  m.t += dt;
+  var k = Math.min(1, m.t / m.dur);
+  // up first, then over the top
+  var up = Math.min(1, k / 0.6), over = U.clamp((k - 0.45) / 0.55, 0, 1);
+  P.pos.y = m.y0 + (m.y1 - m.y0) * (1 - (1 - up) * (1 - up));
+  P.pos.x = m.x0 + (m.x1 - m.x0) * over;
+  P.pos.z = m.z0 + (m.z1 - m.z0) * over;
+  P.velY = 0; P.airborne = false; P.moveSpeed = 0;
+  P.mesh.rotation.y = P.heading;
+  var j = P.mesh.userData.joints;
+  j.armL.rotation.x = j.armR.rotation.x = -2.7 * (1 - over);
+  j.legL.rotation.x = 0.7 * (1 - over); j.legR.rotation.x = -0.25 * (1 - over);
+  m.lx = P.pos.x; m.ly = P.pos.y; m.lz = P.pos.z;
+  if (k >= 1) {
+    P.mantle = null;
+    P.pos.set(m.x1, m.y1, m.z1);
+    j.armL.rotation.x = j.armR.rotation.x = j.legL.rotation.x = j.legR.rotation.x = 0;
+  }
+}
+
 function updateOnFoot(dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
   var aiming = GAME.combat.aiming;
@@ -649,6 +718,7 @@ function updateOnFoot(dt) {
       pr.x = rc.pos.x; pr.z = rc.pos.z; pr.y = rc.pos.y; pr.h = rc.heading;
     }
   }
+  if (P.mantle) { stepMantle(dt); return; }
   var mx = 0, mz = 0;
   if (GAME.key('KeyW')) mz += 1;
   if (GAME.key('KeyS')) mz -= 1;
@@ -764,6 +834,7 @@ function updateOnFoot(dt) {
   // Space jumps when you're on your feet (running gives you a longer hop)
   var grounded = P.pos.y <= surf + 0.06;
   var wantJump = GAME.key('Space') || T.jump;
+  if (grounded && wantJump && !P.jumpLatch && tryMantle(surf)) { P.jumpLatch = true; return; }
   if (grounded && wantJump && !P.jumpLatch) {
     P.velY = 7.2 + Math.min(P.moveSpeed, 6) * 0.22;
     P.pos.y = surf + 0.07;
@@ -845,6 +916,37 @@ function updateOnFoot(dt) {
   GAME.audio.engineState(false, 0);
 }
 
+// G (or the horn button): a stolen cruiser's lights and siren go on and off;
+// anything else has a horn. Neither existed — a cruiser was a white car with
+// a dead lightbar, and nobody could honk at anybody.
+function hornAndSiren(car, dt, T) {
+  var press = GAME.keyPressed('KeyG') || T.horn;
+  T.horn = false;
+  if (car.type === 'police') {
+    if (press) {
+      car.sirenOn = !car.sirenOn;
+      GAME.hud.message(car.sirenOn ? 'Lights and siren on — traffic will pull over.' : 'Lights and siren off.', 1.8);
+    }
+  } else if (press && (car.honkCd || 0) <= 0) {
+    car.honkCd = 0.35;
+    GAME.audio.horn(car.pos.x, car.pos.z, car.spec.l > 5);
+  }
+  if (car.honkCd > 0) car.honkCd -= dt;
+  // the bar: flashing with the siren on, dark with it off (police.js leaves
+  // the player's cruiser to this)
+  var bars = car.mesh.userData.lightbar;
+  if (bars) {
+    var ph = (GAME.time * 7 | 0) % 2;
+    bars[0].visible = car.sirenOn && ph === 0;
+    bars[1].visible = car.sirenOn && ph === 1;
+  }
+}
+// the player's own cruiser with its siren going, if they are in one
+GAME.playerSiren = function () {
+  var P = GAME.player;
+  return P.inCar && P.car && P.car.type === 'police' && P.car.sirenOn && !P.car.dead ? P.car : null;
+};
+
 function updateDriving(dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
   var car = P.car;
@@ -882,6 +984,7 @@ function updateDriving(dt) {
   // ground vehicles answer to the closed channel's line too (a truck that
   // hopped the barrier onto the bridge deck is not a loophole)
   if (GAME.aircraft) GAME.aircraft.enforceAirspace(car.pos);
+  hornAndSiren(car, dt, T);
   var c = car.controls;
   if (GAME.autopilot) {
     if (!car.ai || car.ai.mode !== 'traffic') car.ai = { mode: 'traffic', desired: 13, laneX: 0, laneZ: 0 };

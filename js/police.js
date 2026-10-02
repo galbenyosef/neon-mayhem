@@ -40,11 +40,12 @@ GAME.police = (function () {
   // a crime only raises the alarm if a cop (any range, LOS) or a civilian
   // (close, LOS) actually sees it — bumping a fender in an empty street is free
   function witnessed(pos) {
-    var peds = GAME.world.peds;
+    var peds = GAME.world.peds, vis = GAME.weather.visibility();
     for (var i = 0; i < peds.length; i++) {
       var p = peds[i];
       if (p.dead) continue;
-      var range = p.isCop ? 95 : 32;
+      // nobody sees as far at night, or through rain (weather.js)
+      var range = (p.isCop ? 95 : 32) * vis;
       if (U.dist2(p.pos.x, p.pos.z, pos.x, pos.z) < range * range &&
         GAME.city.hash.segmentClear(p.pos.x, p.pos.z, pos.x, pos.z)) return true;
     }
@@ -882,7 +883,9 @@ GAME.police = (function () {
     var cars = GAME.world.cars;
     for (var i = 0; i < cars.length; i++) {
       var c = cars[i];
-      if (c.isPolice && c.mesh.userData.lightbar && !c.dead) {
+      // (one the player is driving, or left with its lights going, is the
+      // player's: player.js runs its bar off the G switch)
+      if (c.isPolice && c.mesh.userData.lightbar && !c.dead && c !== P.car && !c.sirenOn) {
         var active = s > 0 && c.ai && (c.ai.mode === 'chase' || c.ai.mode === 'roadblock');
         c.mesh.userData.lightbar[0].visible = active && flashOn;
         c.mesh.userData.lightbar[1].visible = active && !flashOn;
@@ -896,7 +899,7 @@ GAME.police = (function () {
     updateAirUnits(dt, s);
 
     if (s === 0) {
-      GAME.audio.siren(0);
+      mySirenOr0();
       if (heat > 0) heat = Math.max(0, heat - dt * 16);
       // Pursuit units stand down — but the beat does not. Until now this
       // deleted every officer in the world every sixtieth frame, which is the
@@ -995,9 +998,12 @@ GAME.police = (function () {
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
     if (flownOff) active = []; // nothing on the ground can hold eyes on you up there
     var py = P.inCar && P.car ? P.car.pos.y : P.pos.y;
+    // the dark and the rain shorten every pair of eyes on the ground (the
+    // helicopter has its searchlight)
+    var seeR = GAME.weather.visibility();
     for (var v = 0; v < active.length; v++) {
       var av0 = active[v];
-      if (U.dist2(av0.pos.x, av0.pos.z, px, pz) < 70 * 70 &&
+      if (U.dist2(av0.pos.x, av0.pos.z, px, pz) < 70 * 70 * seeR * seeR &&
         eyesOn(av0.pos.x, av0.pos.y, av0.pos.z, px, py, pz)) { seen = true; break; }
     }
     // the air unit's eyes work at altitude — a 4-5 star bird on your tail
@@ -1011,7 +1017,7 @@ GAME.police = (function () {
     if (!seen && !flownOff) {
       for (var fc = 0; fc < peds.length; fc++) {
         var pd = peds[fc];
-        if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60 &&
+        if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60 * seeR * seeR &&
           eyesOn(pd.pos.x, pd.pos.y, pd.pos.z, px, py, pz)) { seen = true; break; }
       }
     }
@@ -1063,8 +1069,16 @@ GAME.police = (function () {
     }
     if (nd < 1e9) {
       var dd = Math.sqrt(nd);
-      GAME.audio.siren(U.clamp(1 - dd / 130, 0, 1), 1 + U.clamp((60 - dd) / 400, -0.1, 0.15), nx, nz);
-    } else GAME.audio.siren(0);
+      if (GAME.playerSiren() && dd > 25) mySirenOr0();   // your own is the nearer
+      else GAME.audio.siren(U.clamp(1 - dd / 130, 0, 1), 1 + U.clamp((60 - dd) / 400, -0.1, 0.15), nx, nz);
+    } else mySirenOr0();
+  }
+  // the player's own cruiser, if its siren is going — there is one siren
+  // voice, and it was being set back to silence every tick nobody chased you
+  function mySirenOr0() {
+    var mine = GAME.playerSiren();
+    if (mine) GAME.audio.siren(0.55, 1, mine.pos.x, mine.pos.z);
+    else GAME.audio.siren(0);
   }
 
   return {

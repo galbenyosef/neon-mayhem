@@ -192,6 +192,10 @@ GAME.hud = (function () {
     if (GAME.prefs && GAME.prefs.quality) GAME.setQuality(GAME.prefs.quality, true);
     paintGfxBtn();
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
+    function paintWeatherBtn() { $('pause-weather').textContent = '🌧 WEATHER: ' + GAME.weather.mode.toUpperCase(); }
+    pauseBtn('pause-weather', function () { GAME.weather.cycle(); paintWeatherBtn(); });
+    if (GAME.prefs && GAME.prefs.weather) GAME.weather.setMode(GAME.prefs.weather, true);
+    paintWeatherBtn();
     api.refreshTimeBtn(GAME.timeMode);
     // the save travels: export downloads a file, import reads one back and
     // reloads into the imported life

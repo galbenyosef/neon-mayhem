@@ -1651,11 +1651,18 @@ GAME.city = (function () {
 
   // df in [0,1]: 0 = deep night, ~0.4 = dusk/sunset, 1 = full day
   city.applyTimeOfDay = function (df) {
-    if (city.sky) city.sky.material.color.setScalar(U.clamp(0.32 + df * 1.1, 0.32, 1));
-    if (city.skyDay) city.skyDay.material.opacity = U.clamp((df - 0.6) / 0.32, 0, 1);
-    if (city.stars) { city.stars.material.opacity = U.clamp(1 - df * 2.2, 0, 1); city.stars.material.transparent = true; city.stars.visible = df < 0.5; }
-    if (city.moon) city.moon.material.opacity = U.clamp(1 - df * 1.6, 0.05, 1), city.moon.material.transparent = true;
-    if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5);
+    // under rain the sky clouds over: the blue day dome fades toward the grey
+    // the fog has turned, and the stars and the moon go in
+    var wet = GAME.weather ? GAME.weather.rain : 0, clear = 1 - wet;
+    if (city.sky) city.sky.material.color.setScalar(U.clamp(0.32 + df * 1.1, 0.32, 1) * (1 - 0.45 * wet));
+    if (city.skyDay) {
+      city.skyDay.material.opacity = U.clamp((df - 0.6) / 0.32, 0, 1);
+      // the blue taken out of it, toward a flat overcast grey
+      city.skyDay.material.color.setRGB(1 - 0.42 * wet, 1 - 0.4 * wet, 1 - 0.5 * wet);
+    }
+    if (city.stars) { city.stars.material.opacity = U.clamp(1 - df * 2.2, 0, 1) * clear; city.stars.material.transparent = true; city.stars.visible = df < 0.5 && wet < 0.9; }
+    if (city.moon) city.moon.material.opacity = U.clamp(1 - df * 1.6, 0.05, 1) * U.clamp(clear, 0.05, 1), city.moon.material.transparent = true;
+    if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5) * clear;
     // street lamps burn at night, fade out through dusk, and are off in daylight
     var lampOn = U.clamp(1 - (df - 0.45) / 0.35, 0, 1);
     // and so do the windows' own lights, building by building (see lamBlock)

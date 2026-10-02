@@ -703,3 +703,26 @@ GAME.keyPressed = function (code) {
   return true;
 };
 GAME.clearPressed = function () { GAME.input.pressed = {}; };
+
+// Somewhere the player can see right now: in front of the camera, nearer
+// than the fog swallows things, and with no building in the way. New traffic
+// and pedestrians are made where this is false — a third of the cars used to
+// appear out of nothing 100-200 m up the road in broad daylight.
+var _viewFrustum = null, _viewPM = null, _viewSphere = null;
+GAME.inPlainView = function (x, y, z) {
+  var cam = GAME.cameraObj, scene = GAME.scene;
+  if (!cam || !scene || !GAME.started) return false;
+  var cx = cam.position.x, cz = cam.position.z, dx = x - cx, dz = z - cz;
+  var far = scene.fog ? scene.fog.far * 0.92 : 400;
+  if (dx * dx + dz * dz > far * far) return false;
+  if (!_viewFrustum) { _viewFrustum = new THREE.Frustum(); _viewPM = new THREE.Matrix4(); _viewSphere = new THREE.Sphere(); }
+  cam.updateMatrixWorld();
+  _viewPM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+  if (_viewFrustum.setFromProjectionMatrix) _viewFrustum.setFromProjectionMatrix(_viewPM);
+  else _viewFrustum.setFromMatrix(_viewPM);
+  _viewSphere.center.set(x, y + 1, z);
+  _viewSphere.radius = 3;
+  if (!_viewFrustum.intersectsSphere(_viewSphere)) return false;
+  // a block between you and it hides it; things lower than your eye do not
+  return GAME.city.hash.segmentClear(cx, cz, x, z, cam.position.y);
+};

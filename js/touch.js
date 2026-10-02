@@ -185,11 +185,12 @@ GAME.touch = (function () {
     btns.driveby = mkBtn('FIRE', 232, 30, 68, { flag: 'driveByAuto' });
     btns.job = mkBtn('JOB', 116, 200, 54, { press: function () { T.job = true; } });
     btns.radio = mkBtn('♪', 200, 200, 50, { press: function () { GAME.switchRadio(1); } });
+    btns.horn = mkBtn('📢', 232, 112, 56, { press: function () { T.horn = true; } });
     // the TALON's arsenal: chin gun and rockets, shown only in the gunship
     // (they drive the same fire/aim flags the gunship reads in aircraft.js)
     btns.gsGun = mkBtn('GUN', 232, 30, 68, { flag: 'fire' });
     btns.gsRkt = mkBtn('RKT', 232, 112, 62, { flag: 'aim' });
-    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt);
+    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt, btns.horn);
     // a failed run's retry offer, on foot or at the wheel (missions.js)
     btns.retry = mkBtn('RETRY', 24, 236, 62, { press: function () { T.retry = true; } });
 
@@ -412,6 +413,7 @@ GAME.touch = (function () {
       setText(btns.brake, heli ? '▼ DN' : plane ? 'THR−' : 'BRAKE');
       show(btns.handbrake, !air);
       show(btns.radio, !air);
+      show(btns.horn, !air);
       var hasSMG = !air && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       show(btns.driveby, hasSMG);
       show(btns.job, !air && !!GAME.jobAvailable);

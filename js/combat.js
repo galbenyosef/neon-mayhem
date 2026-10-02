@@ -16,6 +16,9 @@ var WEAPON_KEYS = WEAPON_ORDER.map(function (w, i) { return 'Digit' + (i + 1); }
 GAME.combat = (function () {
   var aiming = false, lockTarget = null, lockIdx = 0;
   var cooldown = 0, aimToggle = false, aimYawRef = 0, rmbWas = false;
+  // the lock holds what it is on: the view follows it, and only a real flick
+  // of the camera (or Q/E/the wheel) moves it to somebody else
+  var flickAcc = 0, LOCK_FLICK = 0.44, LOCK_FOLLOW = 5;
   var reticle = null;
 
   function initReticle() {
@@ -131,6 +134,7 @@ GAME.combat = (function () {
       lockTarget = bestCandidate();
       lockIdx = 0;
       aimYawRef = GAME.cam.yaw;
+      flickAcc = 0;
     } else {
       lockTarget = null;
     }
@@ -365,15 +369,24 @@ GAME.combat = (function () {
       if (GAME.keyPressed('KeyQ')) { cycleTarget(-1); aimYawRef = GAME.cam.yaw; }
       if (GAME.keyPressed('KeyE')) { cycleTarget(1); aimYawRef = GAME.cam.yaw; }
       if (inp.wheel !== 0) { cycleTarget(inp.wheel > 0 ? 1 : -1); inp.wheel = 0; aimYawRef = GAME.cam.yaw; }
-      // The cursor picks the target: swing the camera while locked and the
-      // lock re-acquires whatever the hand now points at, instead of staying
-      // glued to the first thing it grabbed. A manual Q/E/wheel pick holds
-      // until the camera genuinely moves again.
-      if (Math.abs(U.wrapPI(GAME.cam.yaw - aimYawRef)) > 0.055) {
-        aimYawRef = GAME.cam.yaw;
+      // The lock holds its target. It used to re-pick on any camera turn of
+      // three degrees, so a nudge of the mouse handed it to whoever stood
+      // nearest the new line, and nothing turned the view after whoever it
+      // was on, so a runner took the lock straight out of the frame. Now what
+      // the HAND turned since the last tick is added up (and lets go of itself
+      // over a moment): past ~25 degrees it is a flick, and the lock goes to
+      // whoever the view now points at; short of that the view eases round to
+      // follow the target.
+      flickAcc = flickAcc * Math.exp(-3 * dt) + U.wrapPI(GAME.cam.yaw - aimYawRef);
+      if (Math.abs(flickAcc) > LOCK_FLICK) {
+        flickAcc = 0;
         var best = bestCandidate();
         if (best) lockTarget = best;
+      } else if (lockTarget && !P.inCar) {
+        var bearing = Math.atan2(lockTarget.pos.x - P.pos.x, lockTarget.pos.z - P.pos.z);
+        GAME.cam.yaw = U.angleLerp(GAME.cam.yaw, bearing, Math.min(1, LOCK_FOLLOW * dt));
       }
+      aimYawRef = GAME.cam.yaw;
       var keep = lockRange() + 8;
       if (lockTarget && (lockTarget.dead || lockTarget.gone || U.dist2(lockTarget.pos.x, lockTarget.pos.z, P.pos.x, P.pos.z) > keep * keep)) {
         lockTarget = bestCandidate();

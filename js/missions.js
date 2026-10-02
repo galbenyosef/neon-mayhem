@@ -398,6 +398,93 @@ GAME.missions = (function () {
     GAME.audio.pickup();
   }
 
+  // ---------- vigilante ----------
+  // A stolen cruiser had no job of its own: a white car with a lightbar,
+  // nothing more. J in one now calls in a suspect somewhere out there. Close
+  // on them and they run; wreck their car, or knock it about until they give
+  // up on it and bail. Each one taken off the street pays more than the last
+  // — and takes a star off your own record, which is the only way a car you
+  // stole off the police was ever going to be allowed to do this job.
+  var PERP_SPOT_R = 45, PERP_GIVE_UP = 0.35, PERP_TIME = 80;
+  function startVigilante() {
+    GAME.track('job-started-vigilante');
+    active = {
+      def: { type: 'vigilante', name: 'VIGILANTE', id: 'vigilante', job: true },
+      state: 'run', t: 0, cpIndex: 0, score: 0, racers: [], level: 1,
+      jobCount: 0, earned: 0, targets: [], timeLeft: PERP_TIME, perp: null, fleeing: false,
+      routeCp: null, routeT: 0, courierRoute: null
+    };
+    setMarkersVisible(false);
+    if (!spawnPerp()) { GAME.hud.message('Dispatch has nothing for you here.', 2.5); cleanup(); return; }
+    GAME.hud.missionStart(active.def.name, objectiveText());
+    GAME.hud.message('Level 1 — a suspect is marked on your radar. Run them down: wreck the car or make them give it up. Leave the cruiser to clock off.', 6);
+    GAME.audio.pickup();
+  }
+  function spawnPerp() {
+    var f = GAME.focus(), C = GAME.city;
+    var lv = active.level;
+    var types = lv >= 4 ? ['sports', 'sports', 'motorcycle'] : lv >= 2 ? ['sedan', 'sports', 'van'] : ['sedan', 'van', 'taxi'];
+    for (var tries = 0; tries < 24; tries++) {
+      var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 130, 230);
+      var rp = C.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
+      if (C.isInWater(rp.x, rp.z) || C.inAirport(rp.x, rp.z) || rp.kind === 'local') continue;
+      if (!defAvailable({ isla: GAME.isla && GAME.isla.contains(rp.x, rp.z) })) continue;
+      var heading = rp.axis === 'net' ? rp.heading : rp.axis === 'z' ? 0 : Math.PI / 2;
+      var car = GAME.vehicles.spawnCar(types[Math.floor(Math.random() * types.length)], rp.x, rp.z, heading,
+        { occupied: 'ai', ai: { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 }, mission: true, color: 0xff3b3b });
+      if (!car) continue;
+      car.perp = true;
+      active.perp = car; active.fleeing = false; active.timeLeft = PERP_TIME;
+      return true;
+    }
+    return false;
+  }
+  function perpTaken() {
+    var lv = active.level;
+    var pay = 150 + lv * 100;
+    GAME.addCash(pay);
+    active.earned += pay; active.jobCount++;
+    var w = GAME.police.wanted;
+    if (w > 0) GAME.police.setWanted(w - 1);
+    GAME.audio.sting('win');
+    GAME.haptics.win();
+    GAME.hud.message('SUSPECT DOWN  +$' + pay + (w > 0 ? '  ·  one star off your own record' : '') + '  ·  next call coming in', 4);
+    var p = active.perp;
+    if (p && !p.gone) { p.perp = false; p.mission = false; }
+    active.level++;
+    active.perp = null;
+    if (!spawnPerp()) endJob('no more calls');
+  }
+  function updateVigilante(dt, P) {
+    if (!P.inCar || !P.car || P.car.type !== 'police') { endJob('clocked off'); return; }
+    if (P.car.dead) { endJob('cruiser totalled'); return; }
+    active.timeLeft -= dt;
+    var p = active.perp;
+    if (!p || p.gone) { endJob('the suspect got away'); return; }
+    if (active.timeLeft <= 0) { endJob('the suspect got away'); return; }
+    var f = GAME.focus();
+    var d = Math.sqrt(U.dist2(f.x, f.z, p.pos.x, p.pos.z));
+    // they run once they have seen you coming
+    if (!active.fleeing && d < PERP_SPOT_R) {
+      active.fleeing = true;
+      if (p.ai) p.ai.desired = 17 + Math.min(active.level, 6) * 1.5;
+      GAME.hud.message('They have made you — they are running!', 2.5);
+    }
+    // taken: wrecked, or knocked about until the driver gives it up and bails
+    if (p.dead || p.occupied !== 'ai') { perpTaken(); return; }
+    if (p.hp < p.spec.hp * PERP_GIVE_UP) {
+      var out = GAME.vehicles.ejectDriver(p);
+      if (out) GAME.peds.startFlee(out, f.x, f.z, 10);
+      perpTaken();
+      return;
+    }
+    active.routeT -= dt;
+    if (active.routeT <= 0) { active.routeT = 1; active.courierRoute = roadRoute(f.x, f.z, p.pos.x, p.pos.z); }
+    updateCp();
+    GAME.hud.missionTimer(active.timeLeft, true);
+    GAME.hud.missionObjective(objectiveText());
+  }
+
   function iceCreamSale(tgt) {
     var i = active.targets.indexOf(tgt);
     if (i >= 0) active.targets.splice(i, 1);
@@ -470,6 +557,7 @@ GAME.missions = (function () {
     var P = GAME.player;
     if (active || !P.inCar || !P.car) return;
     if (kind === 'icecream') { startIceCream(); return; }
+    if (kind === 'vigilante') { startVigilante(); return; }
     GAME.track('job-started-' + kind);
     active = {
       def: { type: kind, name: kind === 'ambulance' ? 'PARAMEDIC' : 'TAXI DRIVER', id: kind, job: true },
@@ -890,7 +978,7 @@ GAME.missions = (function () {
   function endJob(reason) {
     if (active.def.id === 'icecream') clearIceServed();
     var count = active.jobCount, earned = active.earned, lv = active.level;
-    var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : 'fare';
+    var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : active.def.id === 'vigilante' ? 'suspect' : 'fare';
     // send any waiting people home with the shift. Someone who only wandered
     // over for an ice cream was an ordinary passer-by a minute ago, so they get
     // to carry on being one rather than vanishing off the pavement.
@@ -911,7 +999,8 @@ GAME.missions = (function () {
       var CARD = {
         ambulance: { slug: 'paramedic-shift', eyebrow: 'PARAMEDIC', sub: 'Costa Rosa General — patients delivered', accent: '#ff4d6a', unit: 'Patients' },
         taxifare: { slug: 'taxi-shift', eyebrow: 'TAXI DRIVER', sub: 'Costa Rosa cabs — fares run', accent: '#f0c020', unit: 'Fares' },
-        icecream: { slug: 'icecream-round', eyebrow: 'ICE CREAM ROUND', sub: 'Isla Verde — the chimes did their work', accent: '#ffd7e4', unit: 'Sales' }
+        icecream: { slug: 'icecream-round', eyebrow: 'ICE CREAM ROUND', sub: 'Isla Verde — the chimes did their work', accent: '#ffd7e4', unit: 'Sales' },
+        vigilante: { slug: 'vigilante-shift', eyebrow: 'VIGILANTE', sub: 'Costa Rosa — suspects taken off the street', accent: '#5aa0ff', unit: 'Suspects' }
       }[id] || { slug: id, eyebrow: 'SHIFT', sub: '', accent: '#38e8ff', unit: 'Jobs' };
       GAME.track('job-completed-' + id);
       GAME.share.show({
@@ -1091,6 +1180,12 @@ GAME.missions = (function () {
       return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
         '  ·  $' + active.earned + ' taken';
     }
+    if (d.type === 'vigilante') {
+      var pp = active.perp, ff = GAME.focus();
+      var dm = pp && !pp.gone ? Math.round(Math.sqrt(U.dist2(ff.x, ff.z, pp.pos.x, pp.pos.z))) : 0;
+      return 'Lv ' + active.level + '  ·  ' + (active.fleeing ? 'Stop the suspect' : 'Find the suspect') +
+        '  ·  ' + dm + ' m  ·  ' + active.jobCount + ' down';
+    }
     if (d.type === 'taxifare' || d.type === 'ambulance') {
       var amb = d.type === 'ambulance';
       var head = active.phase === 'pickup'
@@ -1112,6 +1207,7 @@ GAME.missions = (function () {
       return t ? [t.x, t.z] : null;
     }
     if (d.type === 'icecream') return null;   // no destination: the chimes ARE the job
+    if (d.type === 'vigilante') return active.perp && !active.perp.gone ? [active.perp.pos.x, active.perp.pos.z] : null;
     return null;
   }
 
@@ -1260,6 +1356,9 @@ GAME.missions = (function () {
   function cleanup() {
     if (active) {
       for (var i = 0; i < active.racers.length; i++) GAME.vehicles.removeCar(active.racers[i]);
+      // a vigilante suspect still out there goes back to being ordinary
+      // traffic, however the shift ended
+      if (active.perp && !active.perp.gone) { active.perp.perp = false; active.perp.mission = false; }
       if (active.targets) {
         for (var ti = 0; ti < active.targets.length; ti++) {
           var tp = active.targets[ti].ped;
@@ -1437,17 +1536,21 @@ GAME.missions = (function () {
         if (P.car.type === 'taxi') jobKind = 'taxifare';
         else if (P.car.type === 'ambulance') jobKind = 'ambulance';
         else if (P.car.type === 'icecream') jobKind = 'icecream';
+        else if (P.car.type === 'police') jobKind = 'vigilante';
       }
       // Nobody hires a driver the police are actively chasing: no mission or
       // shift starts while you carry stars. Lose the heat first — respray,
       // bribe, or lie low.
       var hot = GAME.police.wanted > 0;
-      GAME.jobAvailable = hot ? null : jobKind;
+      // ...except the one job that works off your record: a stolen cruiser is
+      // stars on you by definition, and vigilante work is how they come off
+      var jobHot = hot && jobKind !== 'vigilante';
+      GAME.jobAvailable = jobHot ? null : jobKind;
       GAME.retryAvailable = !!retry && !retry.waitRespawn && retry.fadeT === undefined;
       if (retry && stepRetry(dt, P, hot)) return;
       if (jobKind && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
         GAME.input.touch.job = false;
-        if (hot) {
+        if (jobHot) {
           GAME.hud.message('Nobody rides with the heat on you — lose the stars first.', 2.5);
           return;
         }
@@ -1630,6 +1733,8 @@ GAME.missions = (function () {
       if (active.timeLeft <= 0) { finish(false, 'Time up — $' + Math.floor(active.score) + ' of $' + d2.target); return; }
     } else if (d2.type === 'icecream') {
       updateIceCream(dt, P);
+    } else if (d2.type === 'vigilante') {
+      updateVigilante(dt, P);
     } else if (d2.type === 'taxifare' || d2.type === 'ambulance') {
       // clock off simply by leaving the vehicle; the shift also ends if it's totalled
       if (!P.inCar || !P.car) { endJob('clocked off'); return; }
@@ -1710,22 +1815,25 @@ GAME.missions = (function () {
   // ---------- full completion ----------
   // Every mission (races, rampages, deliveries, the lot) and every stunt
   // jump, both islands. Property is a pastime, not progress. The prize: the
-  // TALON gunship on the mainland helipad (and in the showroom), and money
-  // stops being a question.
+  // TALON gunship on the mainland helipad (and in the showroom), and a
+  // million dollars, once. It used to pin your cash at $9,999,999 for good,
+  // which ended the economy: nothing cost anything again, and every payout
+  // after that was a number that changed nothing.
   function completionDone() {
     var b = GAME.bests || {}, n = 0;
     for (var i = 0; i < DEFS.length; i++) if (b[DEFS[i].id] !== undefined) n++;
     return n >= DEFS.length && !!(GAME.stunts && GAME.stunts.complete);
   }
+  var COMPLETION_BONUS = 1000000;
   function applyComplete() {
     GAME.city.unlockGunship();
-    GAME.completeUnlimited = true;
   }
   function checkCompletion() {
     if (GAME.prefs && GAME.prefs.gameComplete) { applyComplete(); return true; }
     if (!completionDone()) return false;
     GAME.prefs = GAME.prefs || {};
     GAME.prefs.gameComplete = true;
+    GAME.addCash(COMPLETION_BONUS);
     GAME.save();
     applyComplete();
     GAME.track('game-complete');
@@ -1733,7 +1841,7 @@ GAME.missions = (function () {
     GAME.haptics.win();
     GAME.hud.dialog({
       title: 'COSTA ROSA, COMPLETE',
-      body: 'Every mission, every race, every jump — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and money is no longer a question.',
+      body: 'Every mission, every race, every jump — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and there is a million dollars in your pocket that was not there this morning.',
       ok: 'CARRY ON', cancel: false
     });
     return true;

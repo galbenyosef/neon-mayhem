@@ -138,6 +138,30 @@ GAME.audio = (function () {
     // makes a lot of these and a graph that only grows starts to crackle
     src.onended = function () { try { src.disconnect(); f.disconnect(); g.disconnect(); } catch (e) { } };
   }
+  // rain: a held hiss whose level follows how hard it is coming down
+  // (weather.js), built the first time it rains; thunder: a long low roll
+  var rainNode = null;
+  function rainLevel(v) {
+    if (!ctx) return;
+    if (!rainNode) {
+      if (!(v > 0)) return;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      var f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1500;
+      var g = ctx.createGain(); g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(sfxSwitch);
+      src.start();
+      rainNode = { g: g, v: -1 };
+    }
+    var lv = Math.round(Math.max(0, v) * 50) / 50;
+    if (lv === rainNode.v) return;
+    rainNode.v = lv;
+    rainNode.g.gain.setTargetAtTime(lv * 0.14, ctx.currentTime, 0.4);
+  }
+  function thunder(level) {
+    if (!ctx) return;
+    noiseBurst(2.6, 140, 0.55 * level, 'lowpass', ctx.currentTime, sfxBus);
+    noiseBurst(0.5, 600, 0.25 * level, 'lowpass', ctx.currentTime, sfxBus);
+  }
   function tone(freq, dur, gain, type, slideTo, when, bus) {
     if (!ctx) return;
     var t = when || ctx.currentTime;
@@ -399,6 +423,8 @@ GAME.audio = (function () {
       if (ctx && musicSwitch) musicSwitch.gain.setTargetAtTime(musicOn ? 1 : 0, ctx.currentTime, 0.05);
       return musicOn;
     },
+    rain: rainLevel,
+    thunder: thunder,
     setSfxOn: function (v) {
       sfxOn = !!v;
       if (ctx && sfxSwitch) sfxSwitch.gain.setTargetAtTime(sfxOn ? 1 : 0, ctx.currentTime, 0.05);
@@ -471,6 +497,17 @@ GAME.audio = (function () {
       var b = spatialBus(x, z, 0.3);
       noiseBurst(0.18 * a + 0.08, 1400, 0.5 * a, null, null, b);
       tone(140, 0.1, 0.3 * a, 'square', 50, null, b);
+    },
+    // a car horn, two notes a third apart; the bigger the car the lower it
+    // sits, and it is quieter the further off it is
+    horn: function (x, z, low) {
+      if (!ctx) return;
+      var d = Math.sqrt((x - lisX) * (x - lisX) + (z - lisZ) * (z - lisZ));
+      var a = U.clamp(1 - d / 110, 0, 1);
+      if (a <= 0.02) return;
+      var b = spatialBus(x, z, 0.6), f = low ? 300 : 410;
+      tone(f, 0.45, 0.05 * a, 'square', 0, null, b);
+      tone(f * 1.26, 0.45, 0.04 * a, 'square', 0, null, b);
     },
     yelp: function (x, z) { if (ctx) tone(500 + Math.random() * 300, 0.18, 0.14, 'triangle', 900, null, spatialBus(x, z, 0.25)); },
     pickup: function () { if (ctx) { tone(880, 0.09, 0.2, 'sine'); tone(1320, 0.14, 0.2, 'sine', 0, ctx.currentTime + 0.08); } },
