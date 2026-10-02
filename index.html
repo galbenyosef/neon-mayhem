@@ -241,6 +241,16 @@
   #map-legend .lgd.sel { background:rgba(255,255,255,.14); box-shadow:0 0 0 1px rgba(255,255,255,.45) inset; }
   /* fingers need bigger targets than mouse pointers do */
   @media (pointer:coarse) { #map-legend .lgd { padding:6px 10px; } }
+  /* CONTROLS (controls.js): over the pause screen */
+  #controls-screen { position:fixed; inset:0; z-index:37; display:none; align-items:center; justify-content:safe center;
+    flex-direction:column; background:#08040f; overflow-y:auto; padding:14px 10px; color:#cfe6ff; }
+  #controls-screen h2 { margin:4px 0 6px; color:#9df3ff; letter-spacing:4px; font-style:italic; }
+  #ctl-pad { font-size:13px; color:#8dffd8; margin-bottom:4px; }
+  #controls-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:2px 18px; width:min(94vw,820px); margin-top:8px; }
+  #controls-list .crow { display:flex; justify-content:space-between; align-items:center; font-size:13.5px; padding:1px 0; }
+  #controls-list .ckey { margin:2px 0; padding:3px 12px; min-width:80px; text-align:center; font-size:13px; }
+  #controls-list .ckey.wait { color:#ffe08a; border-color:#ffe08a; }
+  .ctl-hint { font-size:12.5px; margin-top:8px; color:#9fb4cc; }
   /* the button the arrow keys are on (pause screen) */
   .mbtn.kfocus { outline:2px solid #8dffd8; outline-offset:2px; box-shadow:0 0 14px rgba(60,255,190,.65); }
   .mbtn { display:inline-block; margin:10px 8px 0; padding:8px 22px; border-radius:8px; cursor:pointer;
@@ -389,6 +399,7 @@
     <span class="mbtn" id="pause-crt">📺 CRT</span>
     <span class="mbtn" id="pause-shake">🎥 SHAKE: ON</span>
     <span class="mbtn" id="pause-gfx">🖥 GFX: HIGH</span>
+    <span class="mbtn" id="pause-keys">🎮 CONTROLS</span>
     <span class="mbtn" id="pause-haptic">📳 RUMBLE: ON</span>
     <span class="mbtn" id="pause-lefty">🎮 CONTROLS: RIGHT</span>
     <span class="mbtn" id="pause-chaos">🌆 CITY: LIVELY</span>
@@ -403,6 +414,15 @@
   <div style="margin-top:9px;color:#8dffd8;font-weight:700;font-size:13px;">ESC or RESUME to carry on &nbsp;·&nbsp; arrow keys and Enter pick a button</div>
   <div style="margin-top:5px;font-size:11.5px;"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
     style="color:#9fd8ff;" onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
+</div>
+
+<div id="controls-screen">
+  <h2>CONTROLS</h2>
+  <div id="ctl-pad"></div>
+  <div><span class="mbtn" id="ctl-sens">MOUSE: 1.00×</span><span class="mbtn" id="ctl-invert">INVERT Y: OFF</span><span class="mbtn" id="ctl-fov">FIELD OF VIEW: 62°</span></div>
+  <div id="controls-list"></div>
+  <div class="ctl-hint">Click a key, then press the one you want. A key that is already in use swaps over.</div>
+  <div><span class="mbtn" id="ctl-reset">RESET ALL</span><span class="mbtn" id="ctl-close">DONE</span></div>
 </div>
 
 <div id="game-modal">
@@ -526,6 +546,7 @@ window.addEventListener('load', function () {
 <script src="js/share.js"></script>
 <script src="js/shops.js"></script>
 <script src="js/touch.js"></script>
+<script src="js/controls.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

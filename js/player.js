@@ -725,6 +725,7 @@ function updateOnFoot(dt) {
   if (GAME.key('KeyA')) mx -= 1;
   if (GAME.key('KeyD')) mx += 1;
   if (T.active) { mx += T.stickX; mz += -T.stickY; }
+  if (GAME.pad.on) { mx += GAME.pad.lx; mz += -GAME.pad.ly; }   // the left stick
   var mag = Math.min(1, U.len(mx, mz));
   if (P.carHurtCd > 0) P.carHurtCd -= dt;
   // Run is a CHOICE: Shift on desktop, the RUN toggle on touch. Full stick
@@ -1000,6 +1001,7 @@ function updateDriving(dt) {
       th += (T.gas ? 1 : 0) + (T.brake ? -1 : 0);
       st -= T.stickX;
     }
+    if (GAME.pad.on) { th += GAME.pad.rt - GAME.pad.lt; st -= GAME.pad.lx; }   // triggers and stick
     c.throttle = U.clamp(th, -1, 1);
     c.steer = U.clamp(st, -1, 1);
     // the monster truck's party trick: Space launches it straight up
@@ -1067,6 +1069,9 @@ function updateCamera(dt) {
   var mdx = inp.mouseDX, mdy = inp.mouseDY;
   inp.mouseDX = 0; inp.mouseDY = 0;
   if (inp.touch.camDX) { mdx += inp.touch.camDX; mdy += inp.touch.camDY; inp.touch.camDX = 0; inp.touch.camDY = 0; }
+  // the look settings (controls.js): how fast, and which way is up
+  var Cs = GAME.controls;
+  if (Cs) { mdx *= Cs.sens; mdy *= Cs.sens * (Cs.invertY ? -1 : 1); }
 
   var aiming = GAME.combat.aiming && !P.inCar;
 

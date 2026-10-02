@@ -29,7 +29,9 @@
 //       the lock-on holds and follows its target; you can climb a ledge;
 //       new traffic and people are never made where you are looking;
 //       traffic goes round what is stopped, honks at you, and answers a ram;
-//       cars have horns, a cruiser has a siren and a vigilante shift.
+//       cars have horns, a cruiser has a siren and a vigilante shift;
+//       keys rebind, the mouse has a speed and an invert, the field of view
+//       is a setting, and a controller plays the game.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -2495,6 +2497,101 @@ function withTimeout(p, ms) {
   check('cruiser: the suspect runs once they see you', cop.fleeing === true);
   check('cruiser: knock them about and they give it up — paid, a star off, next call',
     !!cop.taken && cop.taken.earned > 0 && cop.taken.level === 2 && cop.taken.stars === 0 && cop.taken.next, JSON.stringify(cop.taken));
+
+  // Controls: no rebinding, one mouse speed, no invert, no field of view
+  // and a controller did nothing.
+  var ctl = await page.evaluate(function () {
+    var P = GAME.player, Cs = GAME.controls, I = GAME.input, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(-150 + 3.1, -40);
+    GAME.test.fastForward(0.3);
+    function key(type, code) { window.dispatchEvent(new KeyboardEvent(type, { code: code, bubbles: true })); }
+    try {
+      // rebinding: F moves to V, and the old key stops doing it
+      Cs.bind('KeyF', 'KeyV');
+      I.pressed = {};
+      key('keydown', 'KeyV'); key('keyup', 'KeyV');
+      r.vIsF = !!I.pressed.KeyF;
+      I.pressed = {};
+      key('keydown', 'KeyF'); key('keyup', 'KeyF');
+      r.fIsNothing = !I.pressed.KeyF;
+      // a key already in use swaps over rather than leaving a hole
+      Cs.bind('KeyQ', 'KeyV');
+      r.swap = { f: Cs.label('KeyF'), q: Cs.label('KeyQ') };
+      GAME.test.fastForward(0.3);
+      r.barSaysIt = (document.getElementById('controls-bar').innerHTML.indexOf('<b>Q</b> enter car') >= 0);
+      Cs.reset();
+      r.resetF = Cs.label('KeyF');
+      // the mouse: twice the speed turns twice as far, and invert flips up
+      function turn(dx, dy) {
+        var y0 = GAME.cam.yaw, p0 = GAME.cam.pitch;
+        I.mouseDX = dx; I.mouseDY = dy;
+        GAME.test.fastForward(1 / 60);
+        return { yaw: U.wrapPI(GAME.cam.yaw - y0), pitch: GAME.cam.pitch - p0 };
+      }
+      Cs.setSens(1); var a = turn(50, 0);
+      Cs.setSens(2); var b = turn(50, 0);
+      r.sensRatio = +(b.yaw / a.yaw).toFixed(2);
+      Cs.setSens(1);
+      GAME.cam.pitch = 0.5;
+      var up = turn(0, 20);
+      Cs.setInvertY(true);
+      GAME.cam.pitch = 0.5;
+      var inv = turn(0, 20);
+      Cs.setInvertY(false);
+      r.invert = up.pitch * inv.pitch < 0;
+      Cs.setFov(80);
+      r.fov = GAME.cameraObj.fov;
+      Cs.setFov(62);
+      // a controller: left stick walks, right stick looks, Start pauses
+      var btn = function () { var a2 = []; for (var i = 0; i < 17; i++) a2.push({ pressed: false, value: 0 }); return a2; };
+      var fake = { connected: true, axes: [0, -1, 0.8, 0], buttons: btn() };
+      var gp0 = navigator.getGamepads;
+      navigator.getGamepads = function () { return [fake]; };
+      try {
+        var x0 = P.pos.x, z0 = P.pos.z, y0 = GAME.cam.yaw;
+        for (var t = 0; t < 60; t++) { Cs.poll(1 / 60); GAME.test.fastForward(1 / 60); }
+        r.padWalked = +Math.hypot(P.pos.x - x0, P.pos.z - z0).toFixed(1);
+        r.padLooked = +Math.abs(U.wrapPI(GAME.cam.yaw - y0)).toFixed(2);
+        fake.axes = [0, 0, 0, 0];
+        fake.buttons[9].pressed = true; Cs.poll(1 / 60);
+        r.padPaused = GAME.paused === true;
+        fake.buttons[9].pressed = false; Cs.poll(1 / 60);
+        fake.buttons[9].pressed = true; Cs.poll(1 / 60);
+        fake.buttons[9].pressed = false; Cs.poll(1 / 60);
+        r.padResumed = GAME.paused === false;
+        // and in a car, RT drives
+        var car = GAME.test.spawnCar('sedan', 3, 0);
+        GAME.seatInCar(car);
+        fake.buttons[7].value = 1; fake.buttons[7].pressed = true;
+        for (var u = 0; u < 60; u++) { Cs.poll(1 / 60); GAME.test.fastForward(1 / 60); }
+        r.padDrove = +car.speed.toFixed(1);
+        fake.buttons[7].value = 0; fake.buttons[7].pressed = false;
+        Cs.poll(1 / 60);
+        car.speed = 0;
+        GAME.exitCar(); GAME.vehicles.removeCar(car);
+      } finally {
+        navigator.getGamepads = gp0;
+        Cs.poll(1 / 60);
+      }
+    } finally {
+      Cs.reset(); Cs.setSens(1); Cs.setInvertY(false); Cs.setFov(62);
+      if (GAME.paused) GAME.togglePause();
+    }
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('controls: a rebound key does the job, and the old one stops', ctl.vIsF && ctl.fIsNothing, JSON.stringify(ctl));
+  check('controls: binding a key in use swaps it over', ctl.swap.f === 'Q' && ctl.swap.q === 'V', JSON.stringify(ctl.swap));
+  check('controls: the hint bar says the new key', ctl.barSaysIt);
+  check('controls: reset puts it back', ctl.resetF === 'F');
+  check('controls: mouse sensitivity scales the turn', ctl.sensRatio > 1.9 && ctl.sensRatio < 2.1, 'x' + ctl.sensRatio);
+  check('controls: invert Y flips the look', ctl.invert);
+  check('controls: field of view is a setting', ctl.fov === 80, 'fov=' + ctl.fov);
+  check('controls: a controller walks and looks', ctl.padWalked > 2 && ctl.padLooked > 0.3, 'walked ' + ctl.padWalked + ' m, turned ' + ctl.padLooked + ' rad');
+  check('controls: Start pauses and resumes', ctl.padPaused && ctl.padResumed);
+  check('controls: and RT drives', ctl.padDrove > 5, 'speed ' + ctl.padDrove);
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

@@ -90,6 +90,10 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 `P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `Esc` pause · `⛶` fullscreen
 
+**Your keys, your way.** Every action above can be moved to another key from **CONTROLS** on the pause screen (click the action, press the new key; a key already in use swaps over). The same screen sets mouse sensitivity, inverted look and field of view, and all of it is remembered. `Esc` always pauses.
+
+🎮 **Controllers** work as soon as one is plugged in and a button is pressed: left stick moves or steers, right stick looks, RT/LT fire and aim on foot and are throttle and brake at the wheel. A jumps (handbrake), B sprints, X starts a shift, Y gets in and out, the bumpers cycle targets, the d-pad tunes the radio, retries and swaps weapons, Start pauses — and on the pause screen the d-pad and A/B find their way round the menus.
+
 **In the air:** helicopter — climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Plane — `W` to roll down the runway, `Space` to rotate once you're fast, `Q/E` to barrel-roll, and pull hard enough on the elevator for a full loop. `F` bails out with a parachute.
 
 📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar and PAUSE along the top. Starting the game enters fullscreen and asks for landscape (on an iPhone, where Safari has no fullscreen for pages, add it to the home screen instead — it runs full screen from there). **Left-handed?** One tap on the pause screen mirrors the whole cluster — stick to the right thumb, buttons to the left, and the camera drag swaps sides to match — and it is remembered.

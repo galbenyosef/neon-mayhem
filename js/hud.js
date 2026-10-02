@@ -30,7 +30,7 @@ GAME.hud = (function () {
     var stars = '';
     for (var i = 0; i < 5; i++) stars += '<span>★</span>';
     el['wanted-stars'].innerHTML = stars;
-    el['pause-controls'].innerHTML = document.getElementById('controls-card').innerHTML;
+    paintKeyHelp();
 
     dmgFlash = document.createElement('div');
     dmgFlash.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:22;background:radial-gradient(ellipse at center, transparent 55%, rgba(255,30,60,.45) 100%);opacity:0;transition:opacity .35s;';
@@ -173,6 +173,7 @@ GAME.hud = (function () {
       $('pause-lefty').style.display = 'none';
     }
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
+    pauseBtn('pause-keys', function () { GAME.controls.show(true); });
     // camera shake, for anyone it makes ill (remembered like the rest)
     function paintShakeBtn() { $('pause-shake').textContent = GAME.prefs && GAME.prefs.noShake ? '🎥 SHAKE: OFF' : '🎥 SHAKE: ON'; }
     pauseBtn('pause-shake', function () {
@@ -625,6 +626,17 @@ GAME.hud = (function () {
 
   // ---------- controls hint bar ----------
   var ctlMode = '';
+  // the key help on the title and pause screens, in whatever the keys are
+  // bound to now (controls.js)
+  function K(code) { return GAME.controls ? GAME.controls.label(code) : code; }
+  function paintKeyHelp() {
+    var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
+      '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
+      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
+    var card = document.getElementById('controls-card');
+    if (card) card.innerHTML = h;
+    if (el['pause-controls']) el['pause-controls'].innerHTML = h;
+  }
   function refreshControlsBar() {
     if (GAME.isTouch) { el['controls-bar'].style.display = 'none'; return; }
     var hidden = GAME.prefs && GAME.prefs.hideCtl;
@@ -635,12 +647,13 @@ GAME.hud = (function () {
           : GAME.player.inCar ? 'car' : 'foot';
     if (mode === ctlMode && el['controls-bar'].style.display === 'block') return;
     ctlMode = mode;
+    var wasd = K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD');
     var txt = {
-      car: '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide',
-      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-5</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
-      heli: '<b>Space</b> up · <b>Shift</b> down · <b>W/S</b> forward · <b>A/D</b> yaw · <b>F</b> exit / bail out · <b>P</b> map',
-      plane: '<b>W/S</b> throttle · <b>Space</b> climb · <b>Shift</b> dive · <b>A/D</b> turn · <b>Q/E</b> barrel roll · <b>F</b> bail out',
-      chute: '<b>WASD</b> steer your descent · glide down to land'
+      car: '<b>' + wasd + '</b> drive · <b>' + K('Space') + '</b> handbrake · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> drive-by · <b>' + K('KeyF') + '</b> exit · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
+      foot: '<b>' + wasd + '</b> move · <b>' + K('ShiftLeft') + '</b> sprint · <b>' + K('Space') + '</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-5</b> weapons · <b>' + K('KeyF') + '</b> enter car · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
+      heli: '<b>' + K('Space') + '</b> up · <b>' + K('ShiftLeft') + '</b> down · <b>' + K('KeyW') + '/' + K('KeyS') + '</b> forward · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> yaw · <b>' + K('KeyF') + '</b> exit / bail out · <b>' + K('KeyP') + '</b> map',
+      plane: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('Space') + '</b> climb · <b>' + K('ShiftLeft') + '</b> dive · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> turn · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> barrel roll · <b>' + K('KeyF') + '</b> bail out',
+      chute: '<b>' + wasd + '</b> steer your descent · glide down to land'
     };
     el['controls-bar'].innerHTML = txt[mode];
     el['controls-bar'].style.display = 'block';
@@ -1198,6 +1211,8 @@ GAME.hud = (function () {
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
     pauseKey: pauseKey,
+    // after a rebind: the bar and both help cards say the new keys
+    keysChanged: function () { ctlMode = ''; refreshControlsBar(); paintKeyHelp(); },
     lockHint: lockHint,
     hitFrom: hitFrom,
     // +/- (keys and buttons): about the middle of the map

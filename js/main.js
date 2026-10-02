@@ -46,6 +46,7 @@
     GAME.missions.init();
     GAME.stunts.load();
     GAME.hud.init();
+    GAME.controls.init();
     GAME.share.init();
     GAME.shops.init(scene);
     GAME.initInput(canvas);
@@ -568,6 +569,8 @@
     var rawMs = now - lastT;
     var real = Math.min(0.1, rawMs / 1000);
     lastT = now;
+    // a controller is read every frame, overlays included (Start unpauses)
+    GAME.controls.poll(real);
     if (!GAME.started) {
       accumulator += real;
       var g0 = 0;

@@ -105,6 +105,8 @@ GAME.aircraft = (function () {
       fwd += -T.stickY; yaw += -T.stickX;
       up += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); // GAS climbs, BRAKE descends
     }
+    // a controller: the stick flies it, RT climbs and LT comes down
+    if (GAME.pad.on) { fwd += -GAME.pad.ly; yaw += -GAME.pad.lx; up += GAME.pad.rt - GAME.pad.lt; }
 
     car.heading += yaw * 1.7 * dt;
 
@@ -281,6 +283,7 @@ GAME.aircraft = (function () {
     // touch: THR+/THR- buttons drive throttle; the stick is a yoke — pull it
     // back (down) to bring the nose up and climb, push forward (up) to dive.
     if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; }
+    if (GAME.pad.on) { thr += GAME.pad.rt - GAME.pad.lt; pitchIn += GAME.pad.ly; yawIn += -GAME.pad.lx; }
 
     var gy = GAME.city.surfaceY(car.pos.x, car.pos.z);
     var onGround = car.pos.y <= gy + car.spec.wheelH + 0.35;
@@ -471,6 +474,7 @@ GAME.aircraft = (function () {
     if (GAME.key('KeyA')) mx -= 1;
     if (GAME.key('KeyD')) mx += 1;
     if (T.active) { mx += T.stickX; mz += -T.stickY; }
+    if (GAME.pad.on) { mx += GAME.pad.lx; mz += -GAME.pad.ly; }
     var camYaw = GAME.cam.yaw;
     var wx = Math.sin(camYaw) * mz - Math.cos(camYaw) * mx;
     var wz = Math.cos(camYaw) * mz + Math.sin(camYaw) * mx;

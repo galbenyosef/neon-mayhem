@@ -595,16 +595,28 @@ GAME.initInput = function (canvas) {
   var inp = GAME.input;
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Tab') e.preventDefault();
-    if (!e.repeat) { inp.keys[e.code] = true; inp.pressed[e.code] = true; }
+    // the CONTROLS screen owns the keyboard while it is up (a rebind, or Esc)
+    if (GAME.controls && GAME.controls.open) {
+      if (!e.repeat) GAME.controls.key(e.code);
+      e.preventDefault();
+      return;
+    }
+    // rebinding: the key as the game should hear it (controls.js)
+    var code = GAME.controls ? GAME.controls.map(e.code) : e.code;
+    if (code === null) return;
+    if (!e.repeat) { inp.keys[code] = true; inp.pressed[code] = true; }
     // Any key is a real gesture that can bring fullscreen back after the
     // browser dropped it over an Esc — EXCEPT Esc itself, which browsers
     // refuse to honor for requestFullscreen (it is the reserved exit key).
     // So resuming with Esc stays windowed for exactly one keypress: the
     // first W (or anything else) restores it.
     if (GAME.started && !e.repeat && e.code !== 'Escape' && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
-    if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(e.code);
+    if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(code);
   });
-  window.addEventListener('keyup', function (e) { inp.keys[e.code] = false; });
+  window.addEventListener('keyup', function (e) {
+    var code = GAME.controls ? GAME.controls.map(e.code) : e.code;
+    if (code !== null) inp.keys[code] = false;
+  });
   // focus loss eats the keyup, so drop the held keys AND any press nobody
   // claimed — coming back to a key the game still thinks is down is the
   // oldest stuck-input bug there is
