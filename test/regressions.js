@@ -48,6 +48,11 @@
 //       ceiling, no rain falls and nobody hunting you can see in; the casino
 //       has a wheel, a bar that patches you up, and a doorman who keeps out
 //       anybody with stars; the mat by the door takes you back out.
+//   5e. FROM THE PLAYTEST — every job you start in a vehicle starts where a
+//       vehicle can reach; a quick tap of F is never lost, and there is a
+//       prompt saying what you can get into; a block between you and the
+//       camera pulls it in even when it looks down from above the roofline;
+//       the camera stays above the drawn sand; a nudge does not dent a car.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -3023,6 +3028,111 @@ function withTimeout(p, ms) {
   check('casino: and lets everybody else in', ind.casino);
   check('casino: the bar sells a drink that patches you up', ind.barOpen && ind.healed, JSON.stringify({ bar: ind.barOpen, healed: ind.healed }));
   check('casino: the wheel is up the back', ind.wheel);
+
+  // ---------- 5e: from the playtest ----------
+  var pt = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    // every vehicle job's ring within reach of a car in the lane
+    r.far = GAME.missions.DEFS.filter(function (d) {
+      if (!d.start || d.type === 'rampage') return false;
+      var rp = C.nearestRoadPoint(d.start.x, d.start.z);
+      return Math.hypot(rp.x - d.start.x, rp.z - d.start.z) > 3.6;
+    }).map(function (d) { return d.id; });
+    // and driving up to BEACH RUN's in a van starts it
+    var d = GAME.missions.DEFS.filter(function (x) { return x.id === 'courier2'; })[0];
+    var rp = C.nearestRoadPoint(d.start.x, d.start.z);
+    var ax = rp.axis === 'z' ? 0 : 1;   // along the road
+    var vx = ax ? d.start.x - 30 : rp.x, vz = ax ? rp.z : d.start.z - 30;
+    GAME.test.teleport(vx, vz + 3);
+    GAME.test.fastForward(0.3);
+    var van = GAME.vehicles.spawnCar('van', vx, vz, ax ? Math.PI / 2 : 0, {});
+    GAME.test.enterNearestCar(van); GAME.test.fastForward(1.2);
+    // drive up the lane and brake to a stop at the ring, as anybody would
+    GAME.test.pressKey('KeyW', true);
+    var braking = false;
+    for (var t = 0; t < 10 && !GAME.missions.active; t += 1 / 60) {
+      GAME.test.fastForward(1 / 60);
+      var along = ax ? d.start.x - van.pos.x : d.start.z - van.pos.z;
+      if (!braking && along < 4 + van.speed * van.speed / 30) { braking = true; GAME.test.pressKey('KeyW', false); GAME.test.pressKey('KeyS', true); }
+      if (braking && van.speed < 0.5) GAME.test.pressKey('KeyS', false);
+    }
+    GAME.test.pressKey('KeyW', false); GAME.test.pressKey('KeyS', false);
+    GAME.test.fastForward(2);
+    r.courierStarted = !!(GAME.missions.active && GAME.missions.active.def.id === 'courier2');
+    if (GAME.missions.active) GAME.missions.failActive('test');
+    GAME.test.fastForward(0.3);
+    if (P.inCar) GAME.exitCar();
+    GAME.vehicles.removeCar(van);
+    // a tap of F that comes and goes between two ticks still gets you in,
+    // and the prompt says so first
+    GAME.test.teleport(100, -96);
+    GAME.test.fastForward(0.3);
+    var car = GAME.vehicles.spawnCar('sedan', 100, -100, 0, {});
+    P.pos.set(100, 0, -100 + 3.1);
+    GAME.test.fastForward(0.3);
+    var hint = document.getElementById('enter-hint');
+    r.prompt = !!hint && hint.style.opacity === '1' && /get in the Cadenza/.test(hint.textContent);
+    GAME.test.pressKey('KeyF', true); GAME.test.pressKey('KeyF', false);
+    GAME.test.fastForward(1.2);
+    r.tapped = P.inCar && P.car === car;
+    // a nudge is free; a crash still costs
+    var hp0 = car.hp;
+    car.pos.set(100, car.pos.y, -100); car.heading = 0;
+    var wall = C.hash.all.filter(function (b) { return b.tag === 'building' && b.h > 6 && b.maxX - b.minX > 12 && b.maxZ - b.minZ > 12 && !GAME.isla.contains(b.minX, b.minZ); })[0];
+    car.pos.set((wall.minX + wall.maxX) / 2, 0, wall.minZ - 4); car.heading = 0; car.speed = 0; car.vx = car.vz = 0;
+    GAME.test.fastForward(0.2);
+    car.speed = 4.5; car.vz = 4.5;
+    for (var k = 0; k < 90; k++) { car.controls.throttle = 0; GAME.test.fastForward(1 / 60); }
+    r.nudge = +(hp0 - car.hp).toFixed(1);
+    GAME.exitCar();
+    GAME.vehicles.removeCar(car);
+    // a mid-height block beside a car, with the free-look camera swung up
+    // over it: it rides above the roof, but the line down to the car runs
+    // through the block
+    var low = C.hash.all.filter(function (b) {
+      // (lower than the camera rides — so the old "is it below the camera"
+      // test let it through — but higher than the line to the car where
+      // that line crosses its face)
+      return b.tag === 'building' && b.h > 5.2 && b.h < 7.4 && b.maxX - b.minX > 10 && b.maxZ - b.minZ > 10 && b.minY === undefined &&
+        !GAME.isla.contains(b.minX, b.minZ) && C.hash.query((b.minX + b.maxX) / 2, b.minZ - 2.5, 1.5).every(function (q) { return q === b || q.h < 0.5; });
+    })[0];
+    r.lowFound = !!low;
+    if (low) {
+      var px = (low.minX + low.maxX) / 2, pz = low.minZ - 1.7;
+      GAME.test.teleport(px, pz);
+      GAME.test.fastForward(0.3);
+      var lc = GAME.vehicles.spawnCar('sedan', px + 3, pz, Math.PI / 2, {});
+      GAME.test.enterNearestCar(lc); GAME.test.fastForward(1.2);
+      lc.pos.set(px, C.groundY(px, pz), pz); lc.heading = Math.PI / 2; lc.speed = 0;
+      GAME.cam.freeT = 5; GAME.cam.yaw = Math.PI; GAME.cam.pitch = 1.05;   // behind the car is over the block
+      for (var cf = 0; cf < 30; cf++) { GAME.cam.freeT = 5; GAME.test.fastForward(1 / 60); }
+      var cp = GAME.cameraObj.position;
+      r.camOutside = cp.z < low.minZ + 0.05;
+      r.camY = +cp.y.toFixed(1); r.blockH = low.h;
+      GAME.exitCar();
+      GAME.vehicles.removeCar(lc);
+    }
+    // the camera does not sink under the drawn sand off the beach
+    var bz = -60, bsh = C.shoreline(bz);
+    GAME.test.teleport(bsh + 4, bz);
+    GAME.test.fastForward(0.5);
+    GAME.cam.yaw = -Math.PI / 2; GAME.cam.pitch = -0.15;
+    GAME.test.fastForward(0.6);
+    r.camAboveSand = GAME.cameraObj.position.y >= 0.69;
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('playtest: every job you start in a vehicle is in reach of the road', pt.far.length === 0, JSON.stringify(pt.far));
+  check('playtest: drive up to BEACH RUN in a van and it starts', pt.courierStarted);
+  check('playtest: walking up to a car says you can get in', pt.prompt);
+  check('playtest: a quick tap of F between frames still gets you in', pt.tapped);
+  check('playtest: a nudge into a wall does not dent the car', pt.nudge <= 3, pt.nudge + ' hp');
+  check('playtest: a low block between you and a camera above its roof pulls the camera in front of it',
+    pt.lowFound && pt.camOutside, JSON.stringify({ found: pt.lowFound, outside: pt.camOutside, camY: pt.camY, blockH: pt.blockH }));
+  check('playtest: the camera stays above the drawn sand', pt.camAboveSand);
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

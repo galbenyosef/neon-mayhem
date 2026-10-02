@@ -1497,19 +1497,26 @@ GAME.city = (function () {
       }
       return segs;
     }
+    // Each strip follows the shoreline from one end to the other, out to just
+    // past the waterline, and drops to the water in a short wet face. They
+    // were rectangles reaching six metres past the coast to cover its curve,
+    // which drew sand over open water — a swimmer there was under the beach,
+    // and a boat run in at it sat up on the "sand".
+    var EDGE = 0.5;
     for (var sz = -500; sz < 500; sz += 20) {
-      var mid = sz + 10;
-      var w = city.shoreline(mid) + 6 - SAND_X0;
       // one shade draw per strip, split or not — the rng stream feeds every
       // placement after this loop, and an extra draw would reshuffle the city
       var shade = U.pick(rng, sandShades);
       var segs = bandSegs(sz - 0.25, sz + 20.25);
+      var sy = 0.06 + (sIdx % 2) * 0.06;
       for (var sg2 = 0; sg2 < segs.length; sg2++) {
         var za = segs[sg2][0], zb = segs[sg2][1];
         if (zb - za < 0.6) continue;
-        sand.addGroundQuad(SAND_X0 + w / 2, 0.06 + (sIdx % 2) * 0.06, (za + zb) / 2, w, zb - za, 0, shade);
-        // darker wet band at the waterline
-        sand.addGroundQuad(SAND_X0 + w - 4, 0.2, (za + zb) / 2, 9, zb - za, 0, 0xb0a078);
+        var ea = city.shoreline(za) + EDGE, eb = city.shoreline(zb) + EDGE;
+        sand.addQuad([SAND_X0, sy, za], [ea, sy, za], [eb, sy, zb], [SAND_X0, sy, zb], shade, [0, 1, 0]);
+        // darker wet band at the waterline, and the face down into the sea
+        sand.addQuad([ea - 6, 0.2, za], [ea, 0.2, za], [eb, 0.2, zb], [eb - 6, 0.2, zb], 0xb0a078, [0, 1, 0]);
+        sand.addQuad([ea, 0.2, za], [eb, 0.2, zb], [eb, -1.2, zb], [ea, -1.2, za], 0x8a7a58, [1, 0, 0]);
       }
       sIdx++;
     }

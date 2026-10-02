@@ -610,6 +610,7 @@ GAME.updatePlayer = function (dt) {
     return;
   }
 
+  enterHint(dt);
   if (P.entering) { stepEnter(dt); updateCamera(dt); return; }
   if (P.parachuting) { GAME.aircraft.updateParachute(dt); updateCamera(dt); return; }
   if (P.inCar) updateDriving(dt);
@@ -622,10 +623,30 @@ GAME.updatePlayer = function (dt) {
 
 var enterLatch = false;
 function wantsEnter() {
-  var v = GAME.key('KeyF') || GAME.input.touch.enter;
-  var fired = v && !enterLatch;
-  enterLatch = v;
+  // The key is the press, buffered (GAME.keyPressed): read as "is it down
+  // right now", a quick tap between two frames on a slow machine was never
+  // seen, and getting in took three or four goes. The touch button latches.
+  var t = GAME.input.touch.enter;
+  var fired = GAME.keyPressed('KeyF') || (t && !enterLatch);
+  enterLatch = t;
   return fired;
+}
+// "F — get in": said when there is something to get into, so walking up to
+// a car is not a guess at how close is close enough (the touch layer has its
+// ENTER button for this)
+var enterHintT = 0, enterHintCar = null;
+function enterHint(dt) {
+  if (GAME.isTouch) return;
+  enterHintT -= dt;
+  if (enterHintT > 0) return;
+  enterHintT = 0.15;
+  var P = GAME.player;
+  var car = !P.inCar && !P.entering && P.state === 'alive' && !P.interior ? nearestEnterableCar() : null;
+  if (car && P.swimming && !car.spec.boat) car = null;
+  if (car === enterHintCar) return;
+  enterHintCar = car;
+  GAME.hud.enterHint(car ? (GAME.controls ? GAME.controls.label('KeyF') : 'F') + ' — ' +
+    (car.occupied === 'ai' ? 'take the ' : 'get in the ') + car.spec.label : '');
 }
 
 // The roof height of a car at a point in its own frame — what your feet
@@ -1381,10 +1402,16 @@ function updateCamera(dt) {
   var reach = (hlen + CAM_STANDOFF) / hlen, clear = 1;
   for (var i = 0; i < boxes.length; i++) {
     var b = boxes[i];
-    if (b.noLOS || (b.h && b.h < cy - 1)) continue;
+    if (b.noLOS) continue;
     if (b.minY !== undefined && b.minY > cy + 0.5) continue;   // a deck overhead
     var t = rayAABB(fx, fz, dirX * reach, dirZ * reach, b);
-    if (t < clear) clear = t;
+    if (t >= clear) continue;
+    // A block is in the way only if the line from you to the camera passes
+    // through it, not over it. Asked as "is it lower than the camera", a
+    // mid-height block between a car and a camera looking steeply down was
+    // let through — it filled the screen and hid the car behind it.
+    if (b.h !== undefined && b.h < fy + (cy - fy) * Math.min(1, t) - 0.3) continue;
+    clear = t;
   }
   // room behind, in metres
   var room = Math.min(hlen, Math.max(0, clear * (hlen + CAM_STANDOFF) - CAM_STANDOFF));
@@ -1416,7 +1443,10 @@ function updateCamera(dt) {
   // indoors, under the ceiling rather than up through it
   var ceil = GAME.interiors && GAME.interiors.ceiling();
   if (ceil !== null && ceil !== undefined && cam.y > ceil) cam.y = ceil;
-  GAME.cameraObj.position.set(cam.x, Math.max(cam.y, GAME.city.groundY(cam.x, cam.z) + 0.5), cam.z);
+  // (never below the drawn ground either: the beach slopes down to the
+  // waterline underneath, but its sand is drawn level, and a camera held off
+  // the slope sat under it — swimming off the beach you could not see yourself)
+  GAME.cameraObj.position.set(cam.x, Math.max(cam.y, Math.max(0.2, GAME.city.groundY(cam.x, cam.z)) + 0.5), cam.z);
   var lookY = fy + (aiming ? Math.tan(-cam.pitch + 0.2) * 10 * 0 : 0);
   // risen over a wall at your back, look out ahead of you, not down at the crown
   var lookAhead = (aiming ? 4 : 0) + tight * 3;

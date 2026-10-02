@@ -976,7 +976,10 @@ GAME.vehicles = (function () {
       // crash sound until it works free
       if (impact > 4 && (car.hitCd || 0) <= 0) {
         car.hitCd = 0.25;
-        damageCar(car, Math.min(32, impact * 1.5), 'wall');
+        // the first few metres a second of any knock are free: a car was
+        // smoking after three or four parking-lot bumps, so drivers learned
+        // to creep rather than to drive. A real crash still costs the same.
+        damageCar(car, Math.min(32, (impact - 3) * 1.6), 'wall');
         GAME.audio.crash(impact / 18, car.pos.x, car.pos.z);
         GAME.fx.spawn(car.pos.x + nx, car.pos.y + 0.7, car.pos.z + nz, { count: 5, color: 0xffd890, spread: 3, life: 0.4, grav: -4 });
         if (car === GAME.player.car) GAME.cameraShake = Math.min(1, impact / 16);
@@ -1185,7 +1188,7 @@ GAME.vehicles = (function () {
         if (rel > PLAYER_BIKE_KNOCK && pb.inCar && pb.onBike && (a === pb.car || b === pb.car)) GAME.ejectBike(rel);
         if (rel > 3 && (a.hitCd || 0) <= 0 && (b.hitCd || 0) <= 0) {
           a.hitCd = 0.25; b.hitCd = 0.25;
-          var dmg = Math.min(26, rel * 1.3);
+          var dmg = Math.min(26, (rel - 3) * 1.4);   // (a nudge is free; see the wall)
           damageCar(a, dmg * 0.6, b); damageCar(b, dmg * 0.6, a);
           GAME.audio.crash(rel / 20, (a.pos.x + b.pos.x) / 2, (a.pos.z + b.pos.z) / 2);
           GAME.fx.spawn((a.pos.x + b.pos.x) / 2, (a.pos.y + b.pos.y) / 2 + 0.8, (a.pos.z + b.pos.z) / 2, { count: 6, color: 0xffe0a0, spread: 3, life: 0.35 });

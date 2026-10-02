@@ -376,8 +376,26 @@ GAME.missions = (function () {
     return m;
   }
 
+  // A job you start in a vehicle starts where a vehicle can get to. Three of
+  // the mainland's sat on the pavement, eight to fourteen metres off the
+  // road behind its palms and lamp posts, while the ring takes a vehicle
+  // within four and a half — BEACH RUN was out on the boardwalk, and from
+  // the lane nobody could reach it. They are brought to the kerbside lane.
+  var KERB_LANE = 3;
+  function reachableStarts() {
+    for (var i = 0; i < DEFS.length; i++) {
+      var d = DEFS[i];
+      if (!d.start || d.type === 'rampage') continue;
+      var rp = GAME.city.nearestRoadPoint(d.start.x, d.start.z);
+      var dx = d.start.x - rp.x, dz = d.start.z - rp.z, dl = Math.sqrt(dx * dx + dz * dz);
+      if (dl <= KERB_LANE + 0.5) continue;
+      d.start = { x: rp.x + dx / dl * KERB_LANE, z: rp.z + dz / dl * KERB_LANE };
+    }
+  }
+
   function init() {
     placeIslaDefs();
+    reachableStarts();
     for (var i = 0; i < DEFS.length; i++) {
       var d = DEFS[i];
       if (d.isla && !d.start) continue;      // island never registered
@@ -1182,7 +1200,7 @@ GAME.missions = (function () {
         ]
       });
     } else {
-      GAME.hud.message('Shift over.' + (reason ? ' ' + reason + '.' : ''), 2.5);
+      GAME.hud.message('Shift over.' + (reason ? ' ' + reason.charAt(0).toUpperCase() + reason.slice(1) + '.' : ''), 2.5);
     }
     cleanup();
   }
@@ -1779,7 +1797,9 @@ GAME.missions = (function () {
         var need = d.type === 'race' || d.type === 'courier' || d.type === 'takedown';
         var air = P.car && (P.car.spec.heli || P.car.spec.plane);
         var dd = U.dist2(px, pz, d.start.x, d.start.z);
-        var inRing = dd < (need ? 20 : 7);
+        // (six metres for a vehicle: four and a half took five or ten goes
+        // of shuffling back and forth to land in)
+        var inRing = dd < (need ? 36 : 7);
         var slow = !P.inCar || Math.abs(P.car.speed) < START_SPEED;
         if (leaveFirst === d && dd > REARM_R2) leaveFirst = null;
         // name what the marker is (and what it wants) whenever you're standing near it

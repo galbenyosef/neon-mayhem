@@ -69,6 +69,10 @@
     text-shadow:0 0 12px rgba(255,100,200,.9), 2px 2px 0 #3a0f33; opacity:0; transition:opacity .6s; }
 
   /* names the marker/garage you're standing next to, and what it needs */
+  /* "F — get in the Cadenza" (player.js enterHint) */
+  #enter-hint { left:50%; bottom:36%; transform:translateX(-50%); font-size:15px; font-weight:800; letter-spacing:1px;
+    color:#e8f6ff; background:rgba(10,4,20,.6); padding:3px 10px; border-radius:4px; text-shadow:0 1px 3px #000;
+    opacity:0; transition:opacity .2s; white-space:nowrap; pointer-events:none; }
   #poi-hint { left:50%; bottom:31%; transform:translateX(-50%); text-align:center; font-size:16px; font-weight:800;
     letter-spacing:1px; color:#ffe08a; text-shadow:0 0 12px rgba(255,190,60,.85), 0 2px 5px rgba(0,0,0,.9);
     opacity:0; transition:opacity .25s; white-space:nowrap; }
@@ -367,6 +371,7 @@
   <div class="panel" id="zone-popup"></div>
   <div class="panel" id="poi-hint"></div>
   <div class="panel" id="msg-line"></div>
+  <div class="panel" id="enter-hint"></div>
   <div class="panel" id="pager"><div id="pager-from"></div><div id="pager-text"></div></div>
   <div class="panel" id="count-big"></div>
   <div class="panel" id="mission-hud">

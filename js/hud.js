@@ -25,7 +25,7 @@ GAME.hud = (function () {
     ['minimap', 'clock', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
       'msg-line', 'count-big', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
-      'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close', 'pager', 'pager-from', 'pager-text']
+      'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close', 'pager', 'pager-from', 'pager-text', 'enter-hint']
       .forEach(function (id) { el[id] = $(id); });
     var stars = '';
     for (var i = 0; i < 5; i++) stars += '<span>★</span>';
@@ -1303,6 +1303,12 @@ GAME.hud = (function () {
     },
     message: function (text, dur) { pushMessage(String(text), dur || 2.5); },
     pager: pager,
+    enterHint: function (text) {
+      var e = el['enter-hint'];
+      if (!e) return;
+      if (text) e.textContent = text;
+      e.style.opacity = text ? 1 : 0;
+    },
     get pagerText() { return paging && el['pager-text'] ? el['pager-text'].textContent : ''; },
     // the huge centre numeral for mission countdowns. Callers repeat it every
     // frame while the count runs; it lets go of the screen on its own once
@@ -1414,7 +1420,7 @@ GAME.hud = (function () {
         for (var mi = 0; mi < defs.length; mi++) if (bests[defs[mi].id] !== undefined) done++;
         var open = !GAME.isla || GAME.isla.isOpen();
         pm.textContent = 'MISSIONS  ' + done + ' / ' + defs.length +
-          (open ? (done >= defs.length ? '   ·   ALL DONE' : '') : '   ·   4 OPEN THE BRIDGES');
+          (open ? (done >= defs.length ? '   ·   ALL DONE' : '') : '   ·   ' + Math.min(done, 4) + ' / 4 TO OPEN THE BRIDGES TO ISLA VERDE');
       }
       api.refreshFsBtn();
     },
