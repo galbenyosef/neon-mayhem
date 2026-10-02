@@ -633,6 +633,7 @@
         // deaf to the pedals, because nothing else clears it but a landing
         P.car.airVX = P.car.airVZ = undefined;
       } else {
+        if (GAME.stopSwim) GAME.stopSwim();   // (into water, you start again there)
         P.pos.set(x, GAME.city.groundY(x, z), z);
         P.velY = 0; P.airborne = false;
       }

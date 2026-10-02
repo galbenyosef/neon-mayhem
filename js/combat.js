@@ -340,7 +340,8 @@ GAME.combat = (function () {
   function update(dt) {
     var P = GAME.player, inp = GAME.input, T = inp.touch;
     cooldown -= dt;
-    if (P.state !== 'alive' || P.entering) { setAiming(false); aimToggle = false; inp.lmbPressed = false; return; }
+    // (and no gunplay in the water: both hands are swimming)
+    if (P.state !== 'alive' || P.entering || P.swimming) { setAiming(false); aimToggle = false; inp.lmbPressed = false; return; }
 
     // weapon select
     for (var i = 0; i < WEAPON_ORDER.length; i++) {

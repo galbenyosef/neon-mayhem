@@ -37,6 +37,25 @@ GAME.aircraft = (function () {
     warnAirspace(pos.x, lim);
   }
 
+  // The sea has edges too. A swimmer or a boat is held to the same box as the
+  // air, and while the bridges are shut the channel is closed on the water as
+  // well — but with no strikes and no air units for it: there is no barrier
+  // out there to have ignored, just a line you cannot cross and a word on why.
+  var seaToldT = -99;
+  function enforceSea(pos) {
+    var lim = airLimit(), held = false, channel = false;
+    if (pos.x > lim.maxX) { pos.x = lim.maxX; held = true; channel = lim.maxX <= CLOSED_X; }
+    if (pos.x < -524) { pos.x = -524; held = true; }
+    if (pos.z < lim.minZ) { pos.z = lim.minZ; held = true; }
+    if (pos.z > lim.maxZ) { pos.z = lim.maxZ; held = true; }
+    if (held && GAME.time - seaToldT > 6) {
+      seaToldT = GAME.time;
+      GAME.hud.message(channel ? 'The channel is closed until the bridges open — turn back.'
+        : 'Nothing out there but open sea — turn back.', 2.5);
+    }
+    return held;
+  }
+
   // The other three edges (and the far one, once the bridges are open) had no
   // warning at all: the clamp just stopped the aircraft dead in mid-air,
   // engine running, nose still pointed at a map edge it could not cross. Now
@@ -517,7 +536,8 @@ GAME.aircraft = (function () {
     // get there is what decides which of the two it was.
     if (P.pos.y <= gy + 0.05) {
       land();
-      if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
+      // down in the sea: out of the harness and swimming
+      if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.startSwim(); return; }
       P.pos.y = gy; P.velY = 0;
       // touchdown, not the other two ways out of a canopy: land() is also what
       // drowning and dying call, and neither of those is a landing
@@ -544,6 +564,7 @@ GAME.aircraft = (function () {
     updateParachute: updateParachute,
     land: land,
     enforceAirspace: enforceAirspace,
+    enforceSea: enforceSea,
     get parachuting() { return GAME.player.parachuting; }
   };
 })();

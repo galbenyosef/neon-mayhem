@@ -301,8 +301,16 @@ GAME.police = (function () {
   // bridge or a flight of steps (groundY counts those as ground). Nobody
   // climbs after you, so at two stars and up the helicopter comes early.
   var PERCH_H = 4;
+  // out on the water — swimming, or in a boat — where no cruiser or officer
+  // on foot can follow either
+  function atSea() {
+    var P = GAME.player;
+    if (P.state !== 'alive') return false;
+    return !!(P.swimming || (P.inCar && P.car && P.car.spec.boat));
+  }
   function perched() {
     var P = GAME.player;
+    if (atSea()) return true;
     if (P.inCar || P.parachuting || P.state !== 'alive') return false;
     return P.pos.y - GAME.city.groundY(P.pos.x, P.pos.z, P.pos.y) > PERCH_H;
   }
@@ -360,7 +368,8 @@ GAME.police = (function () {
     var want = s >= 5 ? 2 : s >= 4 ? 1 : up ? 1 : 0;
     if (up && airUnits.length === 0 && GAME.time - perchToldAt > 60) {
       perchToldAt = GAME.time;
-      GAME.hud.message('Nobody can climb up after you — air support is on its way.', 3);
+      GAME.hud.message(atSea() ? 'Nobody can follow you out on the water — air support is on its way.'
+        : 'Nobody can climb up after you — air support is on its way.', 3);
     }
     // compacted in place: this runs every tick, birds or no birds
     var keep = 0;
@@ -692,6 +701,9 @@ GAME.police = (function () {
   function chaseControls(car, dt, s) {
     var P = GAME.player;
     var pxr = huntX(), pzr = huntZ();
+    // out on the water, the nearest stretch of coast is as close as a
+    // cruiser gets — they used to drive straight in after you and sink
+    if (atSea()) { var shore = GAME.city.washAshore(pxr, pzr); pxr = shore.x; pzr = shore.z; }
     // a modest lead on a moving target they can see — enough to cut a
     // corner, not clairvoyant; out of sight they head for the search point
     var lead = spotted && P.inCar && P.car;
@@ -723,6 +735,12 @@ GAME.police = (function () {
 
     // pull up and stop near an on-foot target so officers can get out
     if (spotted && !P.inCar && dist < 22) { setControls(car.controls, car.speed > 2 ? -0.7 : 0, steer, dist < 12); return; }
+    // and never over the edge into the sea, whatever is out there
+    var probe = 4 + Math.max(0, car.speed) * 0.7;
+    if (GAME.city.isInWater(car.pos.x + Math.sin(car.heading) * probe, car.pos.z + Math.cos(car.heading) * probe)) {
+      setControls(car.controls, car.speed > 0.5 ? -1 : 0, steer, false);
+      return;
+    }
 
     // keep a pursuit gap rather than gluing to the bumper
     var gap = s === 1 ? 22 : 9;
@@ -840,7 +858,7 @@ GAME.police = (function () {
       j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
     }
     // a cop can only cuff you if you're on foot and not sprinting away
-    if (!P.inCar && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
+    if (!P.inCar && !P.swimming && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
   }
 
   function placeRoadblock(s) {

@@ -155,6 +155,45 @@ GAME.city = (function () {
   city.isOpenWater = function (x, z) {
     return !city.isOnPier(x, z) && !city.islandAt(x, z);
   };
+  // The height of the sea's surface at a point, swell and all — what a swimmer
+  // keeps their head above and a hull rides on. The swell is worked out on the
+  // GPU (see the ocean below), one vertex every 50 m; between vertices the
+  // surface is a flat facet, and because the swell is a sum of one wave along
+  // x and one along z, the facet is exactly the two waves each interpolated
+  // along their own axis. So this is the drawn surface, not an approximation
+  // of it that a hull would hover over or sink into.
+  //
+  // It is worked out the way the mesh is drawn: each vertex's own height
+  // (open sea, or a land vertex held just under the coast — see the ocean),
+  // the swell on the sea ones only, and the cell's two triangles, which
+  // PlaneGeometry splits along the diagonal from (x0, z1) to (x1, z0).
+  var SEA_LEVEL = -0.35, OCEAN_SHORE = -1.05, OCEAN_X0 = -1350, OCEAN_Z0 = -1500, OCEAN_CELL = 50;
+  var OCEAN_NX = 73, OCEAN_NZ = 61;
+  city.seaLevel = SEA_LEVEL;
+  function oceanVertY(i, j, w) {
+    i = U.clamp(i, 0, OCEAN_NX - 1); j = U.clamp(j, 0, OCEAN_NZ - 1);
+    var b = city.oceanBase ? city.oceanBase[j * OCEAN_NX + i] : SEA_LEVEL;
+    if (b <= -0.5 || !w) return b;
+    return b + Math.sin((OCEAN_X0 + i * OCEAN_CELL) * 0.045 + w.x) * 0.28 + Math.sin((OCEAN_Z0 + j * OCEAN_CELL) * 0.06 + w.y) * 0.22;
+  }
+  city.seaY = function (x, z) {
+    var w = city.oceanWave;
+    var gx = (x - OCEAN_X0) / OCEAN_CELL, gz = (z - OCEAN_Z0) / OCEAN_CELL;
+    var i = Math.floor(gx), j = Math.floor(gz), u = gx - i, v = gz - j;
+    if (u + v <= 1) {
+      var ha = oceanVertY(i, j, w);
+      return ha + (oceanVertY(i + 1, j, w) - ha) * u + (oceanVertY(i, j + 1, w) - ha) * v;
+    }
+    var hc = oceanVertY(i + 1, j + 1, w);
+    return hc + (oceanVertY(i, j + 1, w) - hc) * (1 - u) + (oceanVertY(i + 1, j, w) - hc) * (1 - v);
+  };
+  // Water a hull can be on: open sea, not under a pier or a jetty's planks
+  // (a bridge overhead is fine — boats go under the bridges)
+  city.isBoatWater = function (x, z) {
+    if (!city.isOpenWater(x, z)) return false;
+    return !city.decks.length || city.deckAt(x, z) === null;
+  };
+  city.moorings = [];   // where the boats are kept (for the map)
   city.isOnSand = function (x, z) {
     if (city.isOnPier(x, z)) return false;
     return x > BOARDWALK_X1 && x <= city.shoreline(z) + 2;
@@ -194,6 +233,11 @@ GAME.city = (function () {
   // 777 frames of climbing through.
   var STEP_UP = 0.45;
   city.canWalkTo = function (fromX, fromZ, toX, toZ) {
+    // Nobody but you goes into the sea. A stroller, a fleeing driver or an
+    // officer after you stops at the water's edge — they used to walk on in
+    // and vanish, which is also how a cop "followed" a swimmer. (Land first:
+    // it is the cheap test, and almost every step is on it.)
+    if (!city.islandAt(toX, toZ) && city.isInWater(toX, toZ) && !city.isInWater(fromX, fromZ)) return false;
     if (!city.ramps.length) return true;
     var to = city.rampAt(toX, toZ);
     if (!to || to.y <= STEP_UP) return true;
@@ -1546,9 +1590,41 @@ GAME.city = (function () {
     // the ocean plane spans the whole map, so its inland vertices sit just under
     // the streets. Sink those and never animate them — otherwise wave crests rise
     // through the asphalt as flickering blue patches.
+    //
+    // Only so far, though. Every vertex on land used to go down four metres,
+    // and with one vertex every 50 m that dragged the water along each coast
+    // down with it: the last fifty metres of sea sloped away toward the
+    // shore, three metres down by the beach. Nobody was ever in it before;
+    // a swimmer or a moored boat sat a metre or more above what was drawn.
+    // Land vertices next to the sea now sit just under the lowest sand and
+    // keep the coastal water nearly level; the rest still go deep. (The
+    // water test is the land itself: under a pier or a bridge is still sea.)
+    var OX = 73, OZ = 61;
+    var base = new Float32Array(OX * OZ), wet = new Uint8Array(OX * OZ);
+    for (var iz = 0; iz < OZ; iz++) {
+      for (var ix = 0; ix < OX; ix++) {
+        wet[iz * OX + ix] = city.islandAt(OCEAN_X0 + ix * OCEAN_CELL, OCEAN_Z0 + iz * OCEAN_CELL) ? 0 : 1;
+      }
+    }
+    for (iz = 0; iz < OZ; iz++) {
+      for (ix = 0; ix < OX; ix++) {
+        var k = iz * OX + ix;
+        if (wet[k]) { base[k] = SEA_LEVEL; continue; }
+        var shore = false;
+        for (var dz2 = -1; dz2 <= 1 && !shore; dz2++) {
+          for (var dx2 = -1; dx2 <= 1; dx2++) {
+            var nx2 = ix + dx2, nz2 = iz + dz2;
+            if (nx2 >= 0 && nx2 < OX && nz2 >= 0 && nz2 < OZ && wet[nz2 * OX + nx2]) { shore = true; break; }
+          }
+        }
+        base[k] = shore ? OCEAN_SHORE : -4;
+      }
+    }
+    city.oceanBase = base;
     var op = og.attributes.position.array;
     for (var vi = 0; vi < op.length; vi += 3) {
-      if (!city.isInWater(op[vi], op[vi + 2])) op[vi + 1] = -4;
+      var gi = Math.round((op[vi] - OCEAN_X0) / OCEAN_CELL), gj = Math.round((op[vi + 2] - OCEAN_Z0) / OCEAN_CELL);
+      op[vi + 1] = base[gj * OX + gi];
     }
     var om = new THREE.MeshPhongMaterial({ color: 0x0d2242, shininess: 120, specular: 0x8899cc, transparent: true, opacity: 0.93 });
     // The swell is worked out on the GPU. It used to be a loop over all 4,453
@@ -1565,7 +1641,7 @@ GAME.city = (function () {
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform vec2 uWave;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n' +
-          'if (position.y > -1.0) transformed.y += sin(position.x * 0.045 + uWave.x) * 0.28 + sin(position.z * 0.06 + uWave.y) * 0.22;');
+          'if (position.y > -0.5) transformed.y += sin(position.x * 0.045 + uWave.x) * 0.28 + sin(position.z * 0.06 + uWave.y) * 0.22;');
     };
     city.oceanWave = wave.value;
     var ocean = new THREE.Mesh(og, om);
@@ -2540,6 +2616,12 @@ GAME.city = (function () {
     city.parkedSpots.push({ x: 360, z: -40, heading: 0, vtype: 'motorcycle' });
     city.parkedSpots.push({ x: 342, z: 200, heading: 0, vtype: 'motorcycle' });
     city.parkedSpots.push({ x: -152, z: 150, heading: 0, vtype: 'motorcycle' });
+    // a speedboat moored off each of the east piers, bow out to sea, close
+    // enough alongside to step down into from the planks
+    city.moorings.push({ x: 485, z: 238.5 }, { x: 445, z: -168.5 });
+    city.moorings.forEach(function (mo) {
+      city.parkedSpots.push({ x: mo.x, z: mo.z, y: -0.35, heading: Math.PI / 2, vtype: 'boat' });
+    });
 
     // starter pickups within sight of the spawn point (356, 40)
     city.pickupSpots.push({ x: 358, z: 34, type: 'pistol' });

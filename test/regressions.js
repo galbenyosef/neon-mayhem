@@ -32,6 +32,12 @@
 //       cars have horns, a cruiser has a siren and a vigilante shift;
 //       keys rebind, the mouse has a speed and an invert, the field of view
 //       is a setting, and a controller plays the game.
+//   5b. THE WATER — off the beach you swim, at the surface and with no guns,
+//       and climb out up the sand or onto a pier; the sea along the coast is
+//       level where you swim in it; boats moored by the piers ride the
+//       swell, stop dead at land, keep out of the closed channel and set you
+//       on the pier or over the side; cruisers stop at the water's edge and
+//       send the helicopter; nobody else walks into the sea.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -450,10 +456,10 @@ function withTimeout(p, ms) {
     r.opened = !!P.parachuting;
     // two seconds of glide, high over open water
     GAME.test.fastForward(2);
-    r.aloft = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!P.drowning };
+    r.aloft = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!(P.drowning || P.swimming) };
     // then all the way down onto it
     for (var i = 0; i < 60 * 25 && P.parachuting; i++) GAME.test.fastForward(1 / 60);
-    r.down = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!P.drowning };
+    r.down = { para: !!P.parachuting, y: Math.round(P.pos.y), wet: !!(P.drowning || P.swimming), swimming: !!P.swimming, drowning: !!P.drowning };
     r.msgs = window.__msgs.slice();
     return r;
   });
@@ -470,22 +476,20 @@ function withTimeout(p, ms) {
     !(sea.msgs || []).some(function (m) { return m.indexOf('Feet dry') >= 0; }),
     JSON.stringify((sea.msgs || []).slice(-3)));
 
-  // Drowning is not a death here — hud.fade washes you ashore, and it fades on
-  // a real setTimeout, so only wall time gets to the other side of it.
-  var washed = true;
-  try {
-    await page.waitForFunction(function () { return !GAME.player.drowning; }, null, { timeout: 10000 });
-  } catch (e) { washed = false; }
+  // The sea is not a fade back to the beach any more: you come down in it
+  // and swim, at the surface, alive.
   var ashore = await page.evaluate(function () {
-    var P = GAME.player;
+    var P = GAME.player, C = GAME.city;
     GAME.test.fastForward(0.5);
-    return { dry: !GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y), msgs: window.__msgs.slice(),
-             state: P.state };
+    return { swimming: !!P.swimming, drowning: !!P.drowning, state: P.state,
+             depth: +(C.seaY(P.pos.x, P.pos.z) - P.pos.y).toFixed(2),
+             soaked: window.__msgs.some(function (m) { return m.indexOf('soaked') >= 0; }) };
   });
-  check('parachute: and the sea does put you on the beach, soaked (anchor sanity)',
-    washed && ashore.dry === true && ashore.state === 'alive' &&
-    ashore.msgs.some(function (m) { return m.indexOf('soaked') >= 0; }),
-    'dry=' + ashore.dry + ' state=' + ashore.state + ' msgs=' + JSON.stringify(ashore.msgs.slice(-2)));
+  check('parachute: and the canopy leaves you swimming at the surface, not washed up on the beach',
+    sea.down && sea.down.swimming === true && sea.down.drowning === false &&
+    ashore.swimming === true && ashore.state === 'alive' && ashore.soaked === false &&
+    ashore.depth > 0.3 && ashore.depth < 1.6,
+    'down=' + JSON.stringify(sea.down) + ' after=' + JSON.stringify(ashore));
 
   // ---------- 3v: what goes into the sea goes under ----------
   // A sinking car used to be removed only if nobody was driving it, on a
@@ -530,29 +534,26 @@ function withTimeout(p, ms) {
     }
     r.sinking = car.sinking;
     r.surfaceRun = Math.round(surfaceRun);
+    r.swimming = !!P.swimming;
+    r.inCar = P.inCar;
     r.drowning = !!P.drowning;
     window.__seaCar = car;
     return r;
   });
   check('sea: the car went off the beach into the water (anchor sanity)',
-    intoSea.driving === true && intoSea.sinking === true && intoSea.drowning === true,
-    JSON.stringify(intoSea));
+    intoSea.driving === true && intoSea.sinking === true, JSON.stringify(intoSea));
   check('sea: the water takes the way off it — it does not skim on across the top',
     intoSea.surfaceRun < 15, 'still on the surface ' + intoSea.surfaceRun + ' m past the waterline');
-  // the drown fades on a real setTimeout, so only wall time gets past it
-  try {
-    await page.waitForFunction(function () { return !GAME.player.drowning; }, null, { timeout: 10000 });
-  } catch (e) { /* reported below */ }
+  check('sea: and the driver gets out and swims for it — no fade back to the beach',
+    intoSea.inCar === false && intoSea.swimming === true && intoSea.drowning === false, JSON.stringify(intoSea));
   var seaAfter = await page.evaluate(function () {
     var P = GAME.player, car = window.__seaCar;
     GAME.test.pressKey('KeyW', false);
     GAME.test.fastForward(5);
-    return { washed: !P.drowning && !P.inCar && !GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y),
-             gone: car.gone === true, y: +car.pos.y.toFixed(2) };
+    return { swimming: !!P.swimming, inCar: P.inCar, gone: car.gone === true, y: +car.pos.y.toFixed(2) };
   });
-  check('sea: the driver is washed ashore (anchor sanity)', seaAfter.washed, JSON.stringify(seaAfter));
   check('sea: and the car they drove in goes under and is gone, not left on the surface',
-    seaAfter.gone && seaAfter.y < -1, JSON.stringify(seaAfter));
+    seaAfter.gone && seaAfter.y < -1 && seaAfter.swimming === true, JSON.stringify(seaAfter));
 
   // bailing out on the sand, short of the water, with the car still rolling
   var bail = await page.evaluate(function () {
@@ -2592,6 +2593,164 @@ function withTimeout(p, ms) {
   check('controls: a controller walks and looks', ctl.padWalked > 2 && ctl.padLooked > 0.3, 'walked ' + ctl.padWalked + ' m, turned ' + ctl.padLooked + ' rad');
   check('controls: Start pauses and resumes', ctl.padPaused && ctl.padResumed);
   check('controls: and RT drives', ctl.padDrove > 5, 'speed ' + ctl.padDrove);
+
+  // ---------- 5b: the water ----------
+  var wat = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {};
+    // (3v's lane chooser, when this group runs on its own)
+    if (!window.__beachZ) window.__beachZ = function () {
+      for (var k = 0; k < 20; k++) {
+        var z = -60 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 2, sh = C.shoreline(z), ok = true;
+        for (var x = sh - 50; x < sh + 6 && ok; x += 1) {
+          ok = !C.hash.query(x, z, 2.2).some(function (b) { return b.h > 0.4 && b.minY === undefined; });
+        }
+        if (ok) return z;
+      }
+      return -60;
+    };
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    window.__msgs = [];
+    function press(k) { GAME.test.pressKey(k, true); GAME.test.fastForward(1 / 60); GAME.test.pressKey(k, false); }
+    // off the beach, on foot
+    var z = window.__beachZ(), sh = C.shoreline(z);
+    GAME.test.teleport(sh - 6, z);
+    GAME.test.fastForward(0.3);
+    P.heading = Math.PI / 2; GAME.cam.yaw = Math.PI / 2;
+    GAME.test.pressKey('KeyW', true);
+    var t = 0;
+    for (; t < 6 && !P.swimming; t += 1 / 60) GAME.test.fastForward(1 / 60);
+    r.inAt = +t.toFixed(1);
+    r.swimming = !!P.swimming; r.drowning = !!P.drowning;
+    var x0 = P.pos.x;
+    GAME.test.fastForward(4);
+    r.swam = +(P.pos.x - x0).toFixed(1);
+    r.stillIn = !!P.swimming && P.state === 'alive';
+    // treading water: head and shoulders out, the rest under
+    GAME.test.pressKey('KeyW', false);
+    GAME.test.fastForward(3);
+    r.depth = +(C.seaY(P.pos.x, P.pos.z) - P.pos.y).toFixed(2);
+    // no gunplay in the water
+    GAME.test.giveWeapon('pistol', 30);
+    GAME.combat.selectWeapon && GAME.combat.selectWeapon('pistol');
+    press('Tab');
+    GAME.test.fastForward(0.2);
+    r.aimed = !!GAME.combat.aiming;
+    if (GAME.combat.aiming) press('Tab');
+    // and back up the beach
+    P.heading = -Math.PI / 2; GAME.cam.yaw = -Math.PI / 2;
+    GAME.test.pressKey('KeyW', true);
+    for (t = 0; t < 15 && P.swimming; t += 1 / 60) GAME.test.fastForward(1 / 60);
+    GAME.test.fastForward(0.7);
+    GAME.test.pressKey('KeyW', false);
+    r.out = { swimming: !!P.swimming, dry: !C.isInWater(P.pos.x, P.pos.z, P.pos.y), upright: Math.abs(P.mesh.rotation.x) < 0.01 };
+    // up onto a pier from the water beside it
+    GAME.test.teleport(490, 232);
+    GAME.test.fastForward(0.4);
+    r.pierIn = !!P.swimming;
+    P.heading = 0; GAME.cam.yaw = 0;
+    GAME.test.pressKey('KeyW', true);
+    for (t = 0; t < 12 && P.swimming; t += 1 / 60) GAME.test.fastForward(1 / 60);
+    GAME.test.fastForward(0.7);
+    GAME.test.pressKey('KeyW', false);
+    r.pier = { swimming: !!P.swimming, onPier: C.isOnPier(P.pos.x, P.pos.z), y: +P.pos.y.toFixed(2) };
+    // the water along the coast is level where you swim in it — the drawn sea
+    // used to slope away three metres toward every shore
+    r.coastSea = +C.seaY(485, 238.5).toFixed(2);
+    r.openSea = +C.seaY(600, 0).toFixed(2);
+    // nobody but you steps into the sea
+    r.pedsStop = C.canWalkTo(sh - 1, z, sh + 3, z) === false && C.canWalkTo(sh - 4, z, sh - 2, z) === true;
+    return r;
+  });
+  check('water: walking off the beach puts you in the water swimming, not in a fade back to the sand',
+    wat.swimming && !wat.drowning && wat.inAt < 3, JSON.stringify({ inAt: wat.inAt, swimming: wat.swimming, drowning: wat.drowning }));
+  check('water: you swim, slower than you walk', wat.stillIn && wat.swam > 5 && wat.swam < 16, wat.swam + ' m in 4 s');
+  check('water: treading water, the head is out and the rest is under', wat.depth > 1.0 && wat.depth < 1.6, 'feet ' + wat.depth + ' m down');
+  check('water: no aiming a gun while swimming', wat.aimed === false);
+  check('water: swim back to the sand and you walk up out of it', !wat.out.swimming && wat.out.dry && wat.out.upright, JSON.stringify(wat.out));
+  check('water: swim at a pier and you haul yourself up onto it',
+    wat.pierIn && !wat.pier.swimming && wat.pier.onPier && wat.pier.y > 0.3, JSON.stringify(wat.pier));
+  check('water: the sea by the coast sits level with the open sea, not sloping away',
+    wat.coastSea > -1.0 && Math.abs(wat.coastSea - wat.openSea) < 1.0, 'coast ' + wat.coastSea + ' open ' + wat.openSea);
+  check('water: walkers stop at the water\'s edge', wat.pedsStop);
+
+  var boat = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {};
+    function press(k) { GAME.test.pressKey(k, true); GAME.test.fastForward(1 / 60); GAME.test.pressKey(k, false); }
+    window.__msgs = [];
+    // on the pier, by the mooring
+    GAME.test.teleport(485, 243.5);
+    GAME.test.fastForward(1.5);
+    var b = GAME.world.cars.filter(function (c) { return c.spec.boat && Math.abs(c.pos.x - 485) < 6 && Math.abs(c.pos.z - 238.5) < 6; })[0];
+    r.moored = !!b;
+    if (!b) return r;
+    r.afloat = Math.abs(b.pos.y - C.seaY(b.pos.x, b.pos.z)) < 0.05;
+    P.heading = Math.PI;
+    press('KeyF');
+    GAME.test.fastForward(1);
+    r.aboard = P.inCar && P.car === b;
+    // out to sea, and hold it against the closed channel
+    GAME.test.pressKey('KeyW', true);
+    GAME.test.fastForward(3);
+    r.run = { speed: +b.speed.toFixed(1), sinking: b.sinking, afloat: Math.abs(b.pos.y - C.seaY(b.pos.x, b.pos.z)) < 0.05 };
+    GAME.test.fastForward(12);
+    r.channel = { x: Math.round(b.pos.x), speed: +b.speed.toFixed(1), stars: GAME.test.getState().wanted,
+      told: window.__msgs.some(function (m) { return m.indexOf('channel is closed') >= 0; }) };
+    // straight at the beach: it stops dead on the water
+    b.pos.set(C.shoreline(window.__beachZ()) + 40, -0.35, window.__beachZ());
+    b.heading = -Math.PI / 2; b.vx = b.vz = 0; b.speed = 0;
+    GAME.test.fastForward(8);
+    GAME.test.pressKey('KeyW', false);
+    r.aground = { water: C.isBoatWater(b.pos.x, b.pos.z), speed: +Math.abs(b.speed).toFixed(1), sinking: b.sinking };
+    // back to the pier: step off onto the planks
+    b.pos.set(485, -0.35, 238.5); b.heading = Math.PI / 2; b.vx = b.vz = 0; b.speed = 0;
+    GAME.test.fastForward(0.5);
+    press('KeyF');
+    GAME.test.fastForward(0.5);
+    r.offPier = { inCar: P.inCar, swimming: !!P.swimming, onPier: C.isOnPier(P.pos.x, P.pos.z) };
+    // and out in open water, over the side — then back in from the water
+    GAME.test.enterNearestCar(b);
+    GAME.test.fastForward(1);
+    b.pos.set(520, -0.35, 0); b.heading = Math.PI / 2;
+    GAME.test.fastForward(0.5);
+    press('KeyF');
+    GAME.test.fastForward(0.5);
+    r.over = { inCar: P.inCar, swimming: !!P.swimming };
+    P.heading = Math.atan2(b.pos.x - P.pos.x, b.pos.z - P.pos.z);
+    press('KeyF');
+    GAME.test.fastForward(1);
+    r.backIn = P.inCar && P.car === b && !P.swimming;
+    GAME.exitCar();
+    GAME.test.fastForward(0.2);
+    // wanted, out on the water: cruisers stay ashore, the helicopter comes
+    GAME.test.setWanted(2);
+    var wet = 0, heli = false;
+    for (var t = 0; t < 25; t += 1 / 30) {
+      GAME.test.fastForward(1 / 30);
+      GAME.world.cars.forEach(function (c) {
+        if (c.isPolice && !c.spec.heli && (c.sinking || C.isInWater(c.pos.x, c.pos.z))) wet++;
+        if (c.aiAir) heli = true;
+      });
+    }
+    r.cops = { wet: wet, heli: heli, swimming: !!P.swimming, state: P.state };
+    GAME.police.clearWanted();
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('boats: one is moored off the pier, riding the water', boat.moored && boat.afloat, JSON.stringify(boat));
+  check('boats: step down into it from the pier', boat.aboard);
+  check('boats: it goes, and stays on the water', boat.run && boat.run.speed > 8 && !boat.run.sinking && boat.run.afloat, JSON.stringify(boat.run));
+  check('boats: the closed channel holds it back without a star — and says why',
+    boat.channel && boat.channel.x <= 561 && boat.channel.stars === 0 && boat.channel.told && boat.channel.speed < 3, JSON.stringify(boat.channel));
+  check('boats: run at the beach, it stops dead on the water rather than driving up it',
+    boat.aground && boat.aground.water && boat.aground.speed < 1 && !boat.aground.sinking, JSON.stringify(boat.aground));
+  check('boats: step off beside a pier and you are on the pier', boat.offPier && !boat.offPier.inCar && boat.offPier.onPier && !boat.offPier.swimming, JSON.stringify(boat.offPier));
+  check('boats: step off in open water and you are over the side, swimming', boat.over && !boat.over.inCar && boat.over.swimming, JSON.stringify(boat.over));
+  check('boats: and you can climb back in from the water', boat.backIn === true);
+  check('water: wanted out on the water — no cruiser follows you in, and the helicopter comes',
+    boat.cops && boat.cops.wet === 0 && boat.cops.heli, JSON.stringify(boat.cops));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

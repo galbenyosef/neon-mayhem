@@ -334,7 +334,7 @@ GAME.hud = (function () {
     // the rampage's
     ['#c86bff', 'S — Respray', 'respray'], [HOSPITAL_HEX, 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
     ['#eef0ff', 'Weapon', 'weapon'], ['#ff4d6a', 'Health', 'health'], ['#4a6cff', 'Armor', 'armor'],
-    ['#8de0ff', '✈ Airport · Ⓗ Helipad', 'airport'], [DEPOT_HEX, '☀ Ice cream depot', 'icecream'],
+    ['#8de0ff', '✈ Airport · Ⓗ Helipad · ⚓ Boats', 'airport'], [DEPOT_HEX, '☀ Ice cream depot', 'icecream'],
     ['#8de8b0', '$ Shops & property', 'shops'], ['#5dff9e', '⌂ Your safehouse', 'home'],
     [DEST_HEX, 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
   ];
@@ -573,6 +573,23 @@ GAME.hud = (function () {
       g.moveTo(hxp - 3, hyp); g.lineTo(hxp + 3, hyp);
       g.stroke();
     });
+    // boat moorings: the same disc with an anchor drawn on it (a font's ⚓
+    // cannot be counted on in a canvas) — shown with the airfield and pads,
+    // the other places to find something that is not a car
+    if (catVis('airport')) (GAME.city.moorings || []).forEach(function (mo) {
+      if (mo.isla && GAME.isla && !GAME.isla.isOpen()) return;
+      var ax = w2mx(mo.x), ay = w2my(mo.z);
+      g.fillStyle = '#8de0ff';
+      g.beginPath(); g.arc(ax, ay, 8, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+      g.strokeStyle = '#0c0816'; g.lineWidth = 1.8;
+      g.beginPath();
+      g.moveTo(ax, ay - 4.5); g.lineTo(ax, ay + 4);
+      g.moveTo(ax - 3, ay - 2); g.lineTo(ax + 3, ay - 2);
+      g.moveTo(ax - 4, ay + 1); g.quadraticCurveTo(ax - 3.5, ay + 4.5, ax, ay + 4.5);
+      g.quadraticCurveTo(ax + 3.5, ay + 4.5, ax + 4, ay + 1);
+      g.stroke();
+    });
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -644,7 +661,8 @@ GAME.hud = (function () {
     var mode = GAME.player.parachuting ? 'chute'
       : (GAME.player.inCar && GAME.player.car && GAME.player.car.spec.plane) ? 'plane'
         : (GAME.player.inCar && GAME.player.car && GAME.player.car.spec.heli) ? 'heli'
-          : GAME.player.inCar ? 'car' : 'foot';
+          : (GAME.player.inCar && GAME.player.car && GAME.player.car.spec.boat) ? 'boat'
+            : GAME.player.inCar ? 'car' : GAME.player.swimming ? 'swim' : 'foot';
     if (mode === ctlMode && el['controls-bar'].style.display === 'block') return;
     ctlMode = mode;
     var wasd = K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD');
@@ -653,7 +671,9 @@ GAME.hud = (function () {
       foot: '<b>' + wasd + '</b> move · <b>' + K('ShiftLeft') + '</b> sprint · <b>' + K('Space') + '</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-5</b> weapons · <b>' + K('KeyF') + '</b> enter car · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
       heli: '<b>' + K('Space') + '</b> up · <b>' + K('ShiftLeft') + '</b> down · <b>' + K('KeyW') + '/' + K('KeyS') + '</b> forward · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> yaw · <b>' + K('KeyF') + '</b> exit / bail out · <b>' + K('KeyP') + '</b> map',
       plane: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('Space') + '</b> climb · <b>' + K('ShiftLeft') + '</b> dive · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> turn · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> barrel roll · <b>' + K('KeyF') + '</b> bail out',
-      chute: '<b>' + wasd + '</b> steer your descent · glide down to land'
+      chute: '<b>' + wasd + '</b> steer your descent · glide down to land',
+      swim: '<b>' + wasd + '</b> swim · <b>' + K('ShiftLeft') + '</b> faster stroke · climb out at a beach, pier or low edge · <b>' + K('KeyF') + '</b> board a boat · <b>' + K('KeyP') + '</b> map',
+      boat: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> steer · <b>' + K('Space') + '</b> slide · <b>' + K('KeyF') + '</b> step off · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map'
     };
     el['controls-bar'].innerHTML = txt[mode];
     el['controls-bar'].style.display = 'block';

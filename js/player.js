@@ -9,7 +9,11 @@ GAME.player = {
   // run-over cooldown. It has to start as a number: left undefined, the
   // `<= 0` gate on it was never true, and no car could hurt you on foot
   carHurtCd: 0,
-  mantle: null      // a climb onto a ledge in progress (tryMantle)
+  mantle: null,     // a climb onto a ledge in progress (tryMantle)
+  // in the sea (updateSwimming): how far over into a stroke the body is,
+  // where the arms are in it, the next splash, and whether the how-to has
+  // been shown this session
+  swimming: false, swimPitch: 0, swimPhase: 0, swimFx: 0, swimTold: false
 };
 
 GAME.cam = { yaw: Math.PI, pitch: 0.32, dist: 6, freeT: 0, x: 0, y: 5, z: 0 };
@@ -31,6 +35,10 @@ GAME.initPlayer = function () {
   // rather than replacing them, which orphaned two fresh materials at boot
   mesh.userData.joints.torso.material.color.setHex(0xf0f0f8);
   mesh.userData.joints.legL.children[0].material.color.setHex(0x38b8c8);
+  // yaw, then pitch and roll about the body's own axes: a swimmer leans
+  // forward into the stroke whichever way they face (with no pitch this is
+  // exactly the default order, so nothing upright changes)
+  mesh.rotation.order = 'YXZ';
   GAME.scene.add(mesh);
   P.mesh = mesh;
   P.pos = mesh.position;
@@ -222,6 +230,7 @@ GAME.playerDrown = function () {
   GAME.audio.splash();
   GAME.hud.fade(function () {
     if (P.inCar) forceExitCar(true);
+    stopSwim();
     // wash up on whichever shore was crossed, on whichever island that was
     var c = GAME.city;
     var sh = c.washAshore(P.pos.x, P.pos.z);
@@ -241,6 +250,7 @@ function respawnAfterScreen() {
     GAME.hud.hideBig();
     GAME.timeScale = 1;
     if (P.inCar) forceExitCar(true);
+    stopSwim();
     // Dying mid walk-to-the-door must cancel the entry: the pending
     // P.entering used to sit frozen through the death screen, resume on the
     // first living frame, and seat you in the car — waking you up in the
@@ -371,6 +381,7 @@ GAME.enterCar = function (car) {
   car.occupied = 'player';
   if (car.ai) car.ai = null;
   car.controls = { throttle: 0, steer: 0, handbrake: true };
+  stopSwim();
   // short walk-to-the-door transition before sitting in
   P.entering = { car: car, t: 0, dur: 0.55 };
   return true;
@@ -388,7 +399,9 @@ function stepEnter(dt) {
   P.heading = U.angleLerp(P.heading, Math.atan2(doorX - P.pos.x, doorZ - P.pos.z), Math.min(1, dt * 10));
   P.pos.x = U.damp(P.pos.x, doorX, 9, dt);
   P.pos.z = U.damp(P.pos.z, doorZ, 9, dt);
-  P.pos.y = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
+  // over the side of a boat from the water or down off a pier: to the
+  // gunwale, not the "ground" under the sea
+  P.pos.y = car.spec.boat ? U.damp(P.pos.y, car.pos.y + 0.5, 8, dt) : GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
   P.mesh.rotation.y = P.heading;
   P.walkPhase = (P.walkPhase || 0) + dt * 11;
   var j = P.mesh.userData.joints;
@@ -407,11 +420,12 @@ function stepEnter(dt) {
 function sitIn(car) {
   var P = GAME.player;
   P.mantle = null;
+  stopSwim();
   car.controls = { throttle: 0, steer: 0, handbrake: false };
   P.inCar = true;
   P.car = car;
   P.onBike = !!car.spec.bike;
-  P.mesh.visible = P.onBike; // riders stay visible on a bike
+  P.mesh.visible = P.onBike || !!car.spec.boat; // riders stay visible on a bike, and at a boat's helm
   GAME.cam.freeT = 0;
   GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
   GAME.hud.message(car.spec.label, 1.6);
@@ -430,6 +444,7 @@ function sitIn(car) {
   else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
   else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
   else if (car.type === 'police') GAME.hud.message('Cruiser — G for lights and siren, J (or JOB) for vigilante work', 3.5);
+  else if (car.spec.boat) GAME.hud.message('Boat — W/S throttle · A/D steer · Space to slide it round · F to step off (onto a pier, or over the side)', 4.5);
 }
 
 // a turn of the dial is this car's from now on (sitIn tunes back to it)
@@ -462,6 +477,7 @@ function forceExitCar(silent) {
   car.occupied = null;
   var side = car.heading - Math.PI / 2;
   var ex = car.pos.x + Math.sin(side) * 2.2, ez = car.pos.z + Math.cos(side) * 2.2;
+  var overboard = false;
   P.velY = 0;
   if (car.spec.heli || car.spec.plane) {
     var roofY = GAME.city.surfaceY(car.pos.x, car.pos.z);
@@ -478,6 +494,8 @@ function forceExitCar(silent) {
     // (the heli's origin now sits at skid level, so its cabin floor IS its pos)
     var feetY = car.pos.y - (car.spec.plane ? (car.spec.wheelH || 1.1) : 0.1);
     if (feetY > P.pos.y + 0.3) { P.pos.y = feetY; P.airborne = true; }
+  } else if (car.spec.boat) {
+    overboard = !stepOffBoat(car);
   } else {
     stepOutBeside(car, ex, ez);
   }
@@ -490,8 +508,36 @@ function forceExitCar(silent) {
   GAME.audio.engineState(false, 0);
   GAME.audio.radio.setVolume(0);
   GAME.audio.skid(0);
+  if (overboard) GAME.startSwim();
 }
 GAME.exitCar = forceExitCar;
+
+// Off a boat: onto whatever is alongside, if there is something to stand on
+// within a step — a pier, a jetty, the beach it has run up on — trying the
+// side you would step out of first, then the other, then over the bow.
+// Nothing there, and it is over the side into the water. True if dry.
+function stepOffBoat(car) {
+  var P = GAME.player, C = GAME.city;
+  var sea = C.seaY(car.pos.x, car.pos.z);
+  var dirs = [car.heading - Math.PI / 2, car.heading + Math.PI / 2, car.heading];
+  for (var i = 0; i < dirs.length; i++) {
+    // (a long step: the moorings lie a couple of metres off the planks)
+    var d0 = i < 2 ? car.spec.w / 2 + 0.8 : car.spec.l / 2 + 0.6;
+    for (var d = d0; d <= d0 + 3.2; d += 0.8) {
+      var x = car.pos.x + Math.sin(dirs[i]) * d, z = car.pos.z + Math.cos(dirs[i]) * d;
+      var top = swimLanding(x, z, sea);
+      if (top === null) continue;
+      var rp = GAME.resolveCircle(x, z, 0.45, top);
+      P.pos.set(rp.x, C.surfaceY(rp.x, rp.z, top + 0.3), rp.z);
+      P.velY = 0; P.airborne = false;
+      return true;
+    }
+  }
+  var side = dirs[0], off = car.spec.w / 2 + 0.9;
+  P.pos.set(car.pos.x + Math.sin(side) * off, sea, car.pos.z + Math.cos(side) * off);
+  P.velY = 0; P.airborne = false;
+  return false;
+}
 
 // Where somebody getting out of a ground vehicle ends up: beside it, at ITS
 // level. Out of a car parked on a roof you stand on the roof; off a ramp
@@ -526,6 +572,7 @@ function resetRiderPose() {
   j.armL.rotation.set(0, 0, 0); j.armR.rotation.set(0, 0, 0);
   j.torso.rotation.x = 0;
   GAME.player.mesh.rotation.z = 0;
+  GAME.player.mesh.rotation.x = 0;   // a boat's trim, or a swimmer's lean
 }
 
 // thrown off the bike on a hard crash
@@ -682,15 +729,187 @@ function stepMantle(dt) {
   P.pos.z = m.z0 + (m.z1 - m.z0) * over;
   P.velY = 0; P.airborne = false; P.moveSpeed = 0;
   P.mesh.rotation.y = P.heading;
+  // out of the water, the swimmer's lean straightens up as they come out
+  P.mesh.rotation.x = (m.pitch0 || 0) * (1 - k);
   var j = P.mesh.userData.joints;
-  j.armL.rotation.x = j.armR.rotation.x = -2.7 * (1 - over);
-  j.legL.rotation.x = 0.7 * (1 - over); j.legR.rotation.x = -0.25 * (1 - over);
+  if (m.wade) {
+    // walking up out of the shallows: a stride, not a haul
+    var sw = Math.sin(k * Math.PI * 2) * 0.6;
+    j.legL.rotation.x = sw; j.legR.rotation.x = -sw;
+    j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
+  } else {
+    j.armL.rotation.x = j.armR.rotation.x = -2.7 * (1 - over);
+    j.legL.rotation.x = 0.7 * (1 - over); j.legR.rotation.x = -0.25 * (1 - over);
+  }
   m.lx = P.pos.x; m.ly = P.pos.y; m.lz = P.pos.z;
   if (k >= 1) {
     P.mantle = null;
     P.pos.set(m.x1, m.y1, m.z1);
+    P.mesh.rotation.x = 0;
     j.armL.rotation.x = j.armR.rotation.x = j.legL.rotation.x = j.legR.rotation.x = 0;
   }
+}
+
+// ---------- swimming ----------
+// The sea used to be a wall with a fade on it: one step off the sand and the
+// screen went dark and put you back on the beach. Now you are in it. You
+// swim at the surface — slower than you walk, a little quicker with sprint —
+// and you get out where the water lets you: up a beach, or hauled out onto a
+// pier, a jetty or a low edge. Your hands are busy, so no guns. A car that
+// goes into the sea still goes under, but you swim out of it, and a canopy
+// brought down on the water leaves you swimming rather than on the sand.
+var SWIM_SPEED = 2.4, SWIM_SPRINT = 3.6;
+var SWIM_REACH = 2.9;                    // the highest edge you can pull yourself out onto, above the water
+var SWIM_DEPTH = 1.35, SWIM_FLAT = 0.42; // feet under the surface: treading water, and stretched out in a stroke
+var SWIM_LEAN = 1.3;                     // how far over a stroke lays you
+var FULL_TURN = Math.PI * 2;
+// water thrown up going in, by the arms in a stroke, and off you climbing out
+var SWIM_SPLASH = { count: 10, color: 0xd8ecf8, spread: 2, vy: 3, life: 0.6, grav: -9, keep: true, floor: -9 };
+var SWIM_STROKE = { count: 3, color: 0xe8f4ff, spread: 0.6, vy: 1.6, life: 0.4, grav: -8, keep: true, floor: -9 };
+var SWIM_DRIP = { count: 6, color: 0xd8ecf8, spread: 1, vy: 1.5, life: 0.5, grav: -9, keep: true, floor: -9 };
+// Something to stand on at (x, z) that a swimmer could get up onto — land,
+// a pier, a jetty, the low end of a bridge — and how high it is; null for
+// open water or anything out of reach (a bridge deck far overhead, a wall).
+function swimLanding(x, z, sea) {
+  var C = GAME.city, top = null;
+  if (C.isOnPier(x, z) || C.islandAt(x, z)) top = C.surfaceY(x, z, sea + SWIM_REACH - 0.6);
+  else {
+    var cy = C.crossings.length ? C.crossingY(x, z, sea + SWIM_REACH - 2.5) : null;
+    var dy = C.decks.length ? C.deckAt(x, z) : null;
+    if (cy !== null) top = cy;
+    if (dy !== null && dy <= sea + SWIM_REACH && (top === null || dy > top)) top = dy;
+  }
+  return top !== null && top <= sea + SWIM_REACH ? top : null;
+}
+GAME.startSwim = function () {
+  var P = GAME.player;
+  if (P.swimming || P.state !== 'alive' || P.inCar) return;
+  if (P.parachuting) GAME.aircraft.land();
+  P.swimming = true;
+  P.swimPitch = 0; P.swimPhase = 0; P.swimFx = 0;
+  P.velY = 0; P.airborne = false; P.roofCar = null; P.mantle = null;
+  P.moveSpeed = Math.min(P.moveSpeed || 0, SWIM_SPEED);
+  var sea = GAME.city.seaY(P.pos.x, P.pos.z);
+  P.pos.y = sea - SWIM_DEPTH;
+  GAME.audio.splash();
+  GAME.fx.spawn(P.pos.x, sea + 0.2, P.pos.z, SWIM_SPLASH);
+  if (!P.swimTold) {
+    P.swimTold = true;
+    var fast = GAME.isTouch ? 'RUN' : (GAME.controls ? GAME.controls.label('ShiftLeft') : 'Shift');
+    GAME.hud.message('Swimming — ' + fast + ' for a faster stroke. Climb out at a beach, a pier or a low edge.', 4.5);
+  }
+};
+function stopSwim() {
+  var P = GAME.player;
+  if (!P.swimming) return;
+  P.swimming = false;
+  P.swimPitch = 0;
+  P.mesh.rotation.x = 0;
+  var j = P.mesh.userData.joints;
+  j.armL.rotation.set(0, 0, 0); j.armR.rotation.set(0, 0, 0);
+  j.legL.rotation.set(0, 0, 0); j.legR.rotation.set(0, 0, 0);
+  j.torso.rotation.x = 0;
+}
+GAME.stopSwim = stopSwim;
+// out through the window of a car going under, and swimming for it
+GAME.swimOutOf = function (car) {
+  var P = GAME.player;
+  if (!P.inCar || P.car !== car) return;
+  forceExitCar(true);
+  P.airborne = false; P.velY = 0;
+  GAME.hud.message('Out through the window — swim for it!', 2.2);
+  if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) GAME.startSwim();
+};
+
+function updateSwimming(dt) {
+  var P = GAME.player, T = GAME.input.touch, C = GAME.city;
+  var sea = C.seaY(P.pos.x, P.pos.z);
+  // put somewhere dry by something else — a respawn, a teleport — and done
+  if (!C.isInWater(P.pos.x, P.pos.z, P.pos.y) || P.pos.y > sea + 0.6) { stopSwim(); return; }
+  var mx = 0, mz = 0;
+  if (GAME.key('KeyW')) mz += 1;
+  if (GAME.key('KeyS')) mz -= 1;
+  if (GAME.key('KeyA')) mx -= 1;
+  if (GAME.key('KeyD')) mx += 1;
+  if (T.active) { mx += T.stickX; mz += -T.stickY; }
+  if (GAME.pad.on) { mx += GAME.pad.lx; mz += -GAME.pad.ly; }
+  var mag = Math.min(1, U.len(mx, mz));
+  var fast = GAME.key('ShiftLeft') || GAME.key('ShiftRight') || T.run;
+  // water is slow to get going in and slow to stop in
+  P.moveSpeed = U.damp(P.moveSpeed, mag * (fast ? SWIM_SPRINT : SWIM_SPEED), 2.5, dt);
+  if (mag > 0.05) {
+    var camYaw = GAME.cam.yaw;
+    var wx = Math.sin(camYaw) * mz - Math.cos(camYaw) * mx;
+    var wz = Math.cos(camYaw) * mz + Math.sin(camYaw) * mx;
+    P.moveH = Math.atan2(wx, wz);
+    P.heading = U.angleLerp(P.heading, P.moveH, Math.min(1, dt * 4));
+  }
+  var nx = P.pos.x + Math.sin(P.heading) * P.moveSpeed * dt;
+  var nz = P.pos.z + Math.cos(P.heading) * P.moveSpeed * dt;
+  var rp = GAME.resolveCircle(nx, nz, 0.45, P.pos.y, footPush);
+  nx = rp.x; nz = rp.z;
+  // where the water ends: up a beach, or out onto an edge within reach —
+  // only while actually swimming at it; drifting up against one is not
+  // asking to climb. Anything else that is not open water is a wall.
+  var top = swimLanding(nx, nz, sea);
+  if (top !== null) {
+    if (P.moveSpeed > 0.5 && mag > 0.05) { climbOut(nx, nz, top, sea); return; }
+    nx = P.pos.x; nz = P.pos.z;
+  } else if (!C.isInWater(nx, nz, P.pos.y)) {
+    nx = P.pos.x; nz = P.pos.z;
+  }
+  P.pos.x = nx; P.pos.z = nz;
+  if (GAME.aircraft) GAME.aircraft.enforceSea(P.pos);
+  // at the surface: low in the water treading it, stretched out along the
+  // top of it in a stroke, and riding the swell either way
+  sea = C.seaY(P.pos.x, P.pos.z);
+  var stroking = P.moveSpeed > 0.6;
+  P.swimPitch = U.damp(P.swimPitch, stroking ? SWIM_LEAN : 0.1, 4, dt);
+  var flat = U.clamp(P.swimPitch / SWIM_LEAN, 0, 1);
+  P.pos.y = sea - (SWIM_DEPTH + (SWIM_FLAT - SWIM_DEPTH) * flat);
+  P.velY = 0; P.airborne = false;
+  P.mesh.rotation.y = P.heading;
+  P.mesh.rotation.x = P.swimPitch;
+  // front crawl — the arms wheel over half a turn apart and the legs kick —
+  // blending into treading water: arms out sculling, legs cycling
+  P.swimPhase = (P.swimPhase + dt * (stroking ? 2 + P.moveSpeed * 1.2 : 2.6)) % FULL_TURN;
+  var ph = P.swimPhase, j = P.mesh.userData.joints, tread = 1 - flat;
+  var crawlL = (ph % FULL_TURN) - Math.PI, crawlR = ((ph + Math.PI) % FULL_TURN) - Math.PI;
+  j.armL.rotation.x = crawlL * flat + Math.sin(ph) * 0.35 * tread;
+  j.armR.rotation.x = crawlR * flat - Math.sin(ph) * 0.35 * tread;
+  j.armL.rotation.z = -0.95 * tread; j.armR.rotation.z = 0.95 * tread;
+  var kick = Math.sin(ph * 3) * 0.32 * flat + Math.sin(ph * 1.5) * 0.5 * tread;
+  j.legL.rotation.x = kick; j.legR.rotation.x = -kick;
+  j.torso.rotation.x = 0;
+  if (stroking) {
+    P.swimFx -= dt;
+    if (P.swimFx <= 0) {
+      P.swimFx = 0.3;
+      GAME.fx.spawn(P.pos.x + Math.sin(P.heading) * 1.3, sea + 0.1, P.pos.z + Math.cos(P.heading) * 1.3, SWIM_STROKE);
+    }
+  }
+  // a boat alongside: climb in over the side
+  if (wantsEnter()) {
+    var car = nearestEnterableCar();
+    if (car && car.spec.boat) GAME.enterCar(car);
+  }
+  GAME.audio.engineState(false, 0);
+}
+function climbOut(x, z, top, sea) {
+  var P = GAME.player;
+  // land a little way in from the edge, where the same surface carries on
+  var fx = Math.sin(P.heading), fz = Math.cos(P.heading);
+  var lx = x + fx * 0.6, lz = z + fz * 0.6;
+  var ly = swimLanding(lx, lz, sea);
+  if (ly === null || Math.abs(ly - top) > 0.5) { lx = x; lz = z; ly = top; }
+  var pitch0 = P.swimPitch, y0 = P.pos.y;
+  stopSwim();
+  // a beach runs on down under the water: walking up out of it is a stride
+  var wade = ly < sea + 0.35;
+  P.mantle = { t: 0, dur: wade ? 0.45 : 0.4 + (ly - y0) * 0.12, x0: P.pos.x, y0: y0, z0: P.pos.z, x1: lx, y1: ly, z1: lz,
+    lx: P.pos.x, ly: y0, lz: P.pos.z, wade: wade, pitch0: pitch0 };
+  P.moveSpeed = 0;
+  GAME.fx.spawn(P.pos.x, sea + 0.3, P.pos.z, SWIM_DRIP);
 }
 
 function updateOnFoot(dt) {
@@ -719,6 +938,7 @@ function updateOnFoot(dt) {
     }
   }
   if (P.mantle) { stepMantle(dt); return; }
+  if (P.swimming) { updateSwimming(dt); return; }
   var mx = 0, mz = 0;
   if (GAME.key('KeyW')) mz += 1;
   if (GAME.key('KeyS')) mz -= 1;
@@ -811,8 +1031,8 @@ function updateOnFoot(dt) {
   // bridge deck past the barrier used to leave a free stroll to the island
   if (GAME.aircraft) GAME.aircraft.enforceAirspace(P.pos);
   // in the water, not still falling towards it: stepping out of a car in the
-  // air over the sea, you drop the rest of the way first
-  if (P.pos.y < 0.5 && GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
+  // air over the sea, you drop the rest of the way first. Then you swim.
+  if (P.pos.y < 0.5 && GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.startSwim(); return; }
   // vertical: stand on the surface below (street or rooftop); walk off an edge and fall
   var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
   // ...and car roofs count as ground: come down inside a car's rectangle at
@@ -849,6 +1069,8 @@ function updateOnFoot(dt) {
     if (P.pos.y <= surf) {
       var impact = -(P.velY || 0);
       P.pos.y = surf; P.velY = 0; P.airborne = false;
+      // the sea breaks a fall that the street would not
+      if (surf < 0.5 && GAME.city.isInWater(P.pos.x, P.pos.z, surf)) { GAME.startSwim(); return; }
       landOnFeet(impact);
     }
   } else {
@@ -857,6 +1079,7 @@ function updateOnFoot(dt) {
     // impact: 56 m/s off a 72 m tower and not a scratch, one fall in fifteen.
     var landing = -(P.velY || 0);
     P.pos.y = surf; P.velY = 0;
+    if (surf < 0.5 && GAME.city.isInWater(P.pos.x, P.pos.z, surf)) { GAME.startSwim(); return; }
     landOnFeet(landing);
   }
   // grounded on a car: remember it (and snapshot its transform on first
@@ -956,7 +1179,7 @@ function updateDriving(dt) {
     return;
   }
   // Gone into the sea: nothing at the wheel answers any more. vehicles.js
-  // takes the hull down, and the drown fade takes the driver out of it.
+  // takes the hull down, and the driver swims out of it (GAME.swimOutOf).
   if (car.sinking) {
     GAME.audio.engineState(false, 0);
     GAME.audio.skid(0);
@@ -983,8 +1206,9 @@ function updateDriving(dt) {
     return;
   }
   // ground vehicles answer to the closed channel's line too (a truck that
-  // hopped the barrier onto the bridge deck is not a loophole)
-  if (GAME.aircraft) GAME.aircraft.enforceAirspace(car.pos);
+  // hopped the barrier onto the bridge deck is not a loophole); a boat keeps
+  // to the sea's own edges (vehicles.js, stepBoat)
+  if (GAME.aircraft && !car.spec.boat) GAME.aircraft.enforceAirspace(car.pos);
   hornAndSiren(car, dt, T);
   var c = car.controls;
   if (GAME.autopilot) {
@@ -1030,10 +1254,26 @@ function updateDriving(dt) {
   if (wantsEnter()) { forceExitCar(); return; }
 
   if (P.onBike) updateBikeRider(dt);
+  else if (car.spec.boat) updateHelm(car);
 
   // radio switching
   if (GAME.keyPressed('Comma')) GAME.switchRadio(-1);
   if (GAME.keyPressed('Period')) GAME.switchRadio(1);
+}
+
+// standing at a boat's wheel, behind the screen, moving with the hull
+var _helm = null;
+function updateHelm(car) {
+  var P = GAME.player, m = P.mesh;
+  if (!_helm) _helm = new THREE.Vector3();
+  _helm.set(0, 0.55, -0.15).applyEuler(car.mesh.rotation).add(car.pos);
+  m.visible = true;
+  m.position.copy(_helm);
+  m.rotation.set(car.mesh.rotation.x, car.heading, car.mesh.rotation.z);
+  var j = m.userData.joints;
+  j.legL.rotation.set(0, 0, 0.08); j.legR.rotation.set(0, 0, -0.08);
+  j.armL.rotation.set(-0.95, 0, 0); j.armR.rotation.set(-0.95, 0, 0);
+  j.torso.rotation.x = 0.06;
 }
 
 // what coming down at `impact` m/s does to you

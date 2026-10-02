@@ -1449,26 +1449,37 @@ GAME.isla = (function () {
     // string lights down every jetty, so the water's edge glitters
     city.addSign(sg, 27, POI.marina.x + 6, groundY(POI.marina.x + 6, POI.marina.z - 34) + 7,
       POI.marina.z - 34, 0, 24, 4);
+    // The jetties used to stop at the waterline, with their "moored" hulls
+    // sitting on the sand behind it. They run out over the water now, the
+    // yachts lie on it alongside, and a real speedboat waits at the end of
+    // the second one — the island's way out onto the water.
     y = 0.5;
+    var JX = POI.marina.x - 28, JW = 66;   // jetty middle and length, out to the west
     for (var j = 0; j < 4; j++) {
       var jz = POI.marina.z - 24 + j * 16;
-      b.addBox(POI.marina.x - 16, y, jz, 42, 0.6, 3.2, 0, 0x7a5a40, 0);
+      b.addBox(JX, y, jz, JW, 0.6, 3.2, 0, 0x7a5a40, 0);
       // the planks carry you: without a deck entry the ground under them is
       // the flat shore at 0, so anyone strolling the marina waded shin-deep
       // through every jetty on the way to the villa
-      city.addDeck({ x: POI.marina.x - 16, z: jz, w: 42, len: 3.2, rot: 0, y0: y + 0.3, y1: y + 0.3 });
-      batches.glow.addBox(POI.marina.x - 16, y + 2.0, jz - 1.4, 40, 0.13, 0.13, 0, 0xffd890, 0);
-      b.addBox(POI.marina.x - 35, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
+      city.addDeck({ x: JX, z: jz, w: JW, len: 3.2, rot: 0, y0: y + 0.3, y1: y + 0.3 });
+      batches.glow.addBox(JX, y + 2.0, jz - 1.4, JW - 2, 0.13, 0.13, 0, 0xffd890, 0);
+      b.addBox(JX - JW / 2 + 2, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
       b.addBox(POI.marina.x + 3, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
       for (var m = 0; m < 3; m++) {
-        var hx = POI.marina.x - 32 + m * 13;
-        b.addBox(hx, y + 0.7, jz + 5, 9, 1.6, 3.4, 0, U.pick(Math.random, [0xd8d8e0, 0xc0d8e8, 0xe8e0d0]), 0);
+        // afloat, alongside the outer half of the jetty, and solid: a boat
+        // or a swimmer goes round them, not through
+        var hx = POI.marina.x - 60 + m * 11;
+        b.addBox(hx, 0.2, jz + 5, 9, 1.6, 3.4, 0, U.pick(Math.random, [0xd8d8e0, 0xc0d8e8, 0xe8e0d0]), 0);
+        city.addSolid(hx, jz + 5, 9, 3.4, 1.0, 'prop');
         if ((j + m) % 2 === 0) {
-          b.addBox(hx, y + 5.2, jz + 5, 0.16, 7.4, 0.16, 0, 0xf0f0ea, 0);
-          batches.glow.addBox(hx, y + 9.1, jz + 5, 0.24, 0.24, 0.24, 0, 0xffe9b0, 0);
+          b.addBox(hx, 4.7, jz + 5, 0.16, 7.4, 0.16, 0, 0xf0f0ea, 0);
+          batches.glow.addBox(hx, 8.6, jz + 5, 0.24, 0.24, 0.24, 0, 0xffe9b0, 0);
         }
       }
     }
+    var bm = { x: POI.marina.x - 50, z: POI.marina.z - 12.2, isla: true };
+    city.moorings.push(bm);
+    city.parkedSpots.push({ x: bm.x, z: bm.z, y: -0.35, heading: -Math.PI / 2, vtype: 'boat', isla: true });
 
     // Container port: stacks and two gantry cranes, and every last one of them
     // checked against the road network before it goes down. A yard laid out on

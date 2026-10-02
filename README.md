@@ -28,6 +28,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 - Cars sit on their springs. Open the throttle and the nose lifts; stand on the brakes and it dives — added on top of whatever grade the wheels are on, so a car climbing a ramp still squats under power instead of picking one angle or the other.
 - A **helicopter** and a **light plane**, flyable with loops and barrel rolls. The plane's takeoff run is real — about 66 meters of engine haul before the nose comes up, so you'll want the actual runway — and a stalled airframe recovers by *diving*, not throttling. Bail out of either mid-air and a **parachute** opens. The air thins out above a couple of hundred metres, and anything flying at the edge of the map is brought round rather than left hanging there.
 - **Traffic that answers.** Drivers go round a car stopped in their lane once the other lane is clear, lean on the horn when you're the one holding them up, and pull over for a siren. Ram one and it either floors it or the driver gets out to have a word. Everybody has a horn (`G`), you included.
+- **The sea is somewhere you can be.** Walk off the beach and you swim — slower than you walk, quicker with sprint, no guns in your hands — and climb out up the sand or onto a pier, a jetty or a low edge. A car driven into the sea still goes under, but you swim out of it, and a parachute brought down on the water leaves you swimming. **Speedboats** are moored off both east piers and at the Isla Verde marina (⚓ on the map): they slide through turns, ride the swell, stop dead at the shore and let you step off onto the planks or over the side. No cruiser follows you out onto the water — the helicopter does.
 - On foot you can **climb**: jump facing a wall, a container or a low roof up to about two and a half metres and you pull yourself up. Lock-on holds its target and turns the view to follow it; flick the camera or press `Q`/`E` to change who it is on.
 - **25 hidden stunt jumps** on roadside ramps, a third of them boosted. Air time, distance and spins all pay — once every two minutes for the same jump, so it's the next ramp that's worth finding, not the same one twice. Find all 25 for $50,000, the full arsenal with unlimited ammo, and a monster truck that jumps on command.
 
@@ -81,7 +82,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 | LMB | Fire | Fire (drive-by w/ SMG) |
 | Q / E | Cycle lock target | Drive-by left/right (barrel roll in a plane) |
 | Space | Jump (and climb, facing a ledge) | Handbrake |
-| F | Enter / jack car | Exit car |
+| F | Enter / jack car (climb into a boat from the water) | Exit car (step off a boat onto a pier, or over the side) |
 | J | — | Start the shift a working vehicle offers (vigilante in a cruiser) |
 | G | — | Horn (lights and siren in a cruiser) |
 | 1–5 | Weapon select | — |

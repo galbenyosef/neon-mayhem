@@ -389,18 +389,21 @@ GAME.touch = (function () {
     }
 
     if (!inCar) {
-      show(btns.fire, true);
+      // in the water: RUN is the faster stroke, and nothing else applies
+      // but climbing into a boat
+      var swim = !!P.swimming;
+      show(btns.fire, !swim);
       show(btns.run, true);
-      show(btns.jump, true);
+      show(btns.jump, !swim);
       // AIM only with a gun drawn (fists auto-target on the fire button)
-      show(btns.aim, P.currentWeapon !== 'fist');
+      show(btns.aim, !swim && P.currentWeapon !== 'fist');
       // weapon switch only when more than one weapon is owned
       var owned = 0;
       for (var w in P.weapons) if (P.weapons[w] && P.weapons[w].have) owned++;
-      show(btns.wpn, owned > 1);
-      // ENTER only when a car is within reach
+      show(btns.wpn, !swim && owned > 1);
+      // ENTER only when a car is within reach (a boat, from the water)
       var near = GAME.vehicles.findNearestCar(P.pos.x, P.pos.z, 5.5, null);
-      show(btns.enter, !!near);
+      show(btns.enter, !!near && (!swim || !!near.spec.boat));
       for (var c = 0; c < carBtns.length; c++) setDisplay(carBtns[c], 'none');
     } else {
       var heli = P.car && P.car.spec.heli;
