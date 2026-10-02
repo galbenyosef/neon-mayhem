@@ -1566,6 +1566,15 @@ GAME.shops = (function () {
     homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns, startSpawn: startSpawn,
     renderPreview: renderPreview,
     garage: function () { return garage().slice(); },
+    // a prize, not a purchase: straight into the garage, parked at every base
+    grantVehicle: function (type) {
+      var g = garage();
+      if (g.indexOf(type) >= 0) return false;
+      g.push(type);
+      GAME.save();
+      refreshGarageSpots();
+      return true;
+    },
     garageSpot: function (type) {
       // the fleet parks at every base now — answer with the nearest copy
       var P = GAME.player, best = null, bd = 1e18;

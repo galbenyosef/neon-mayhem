@@ -85,6 +85,13 @@
     font-style:italic; color:#8dffd8; text-shadow:0 0 26px rgba(60,255,190,.9), 4px 4px 0 #0a2a20;
     opacity:0; transition:opacity .2s; text-align:center; letter-spacing:6px; }
   #mission-hud { left:50%; top:12px; transform:translateX(-50%); text-align:center; display:none; }
+  /* Lola's pager (hud.js pager): top left, clear of the mission title */
+  #pager { left:16px; top:14px; max-width:min(380px,40vw); padding:8px 12px 10px; background:rgba(10,4,20,.84);
+    border:1px solid rgba(255,79,163,.85); border-radius:6px; box-shadow:0 0 16px rgba(255,79,163,.4);
+    opacity:0; transform:translateY(-8px); transition:opacity .35s, transform .35s; pointer-events:none; }
+  #pager.on { opacity:1; transform:none; }
+  #pager-from { font-size:12px; font-weight:800; letter-spacing:2px; color:#ff8fc8; }
+  #pager-text { font-size:15px; color:#f4ecff; line-height:1.38; margin-top:3px; text-shadow:0 1px 2px #000; }
   #mission-title { font-size:18px; font-weight:800; font-style:italic; color:#ffe08a; text-shadow:0 0 10px rgba(255,190,60,.8); }
   #mission-obj { font-size:15px; color:#e8f6ff; text-shadow:0 1px 3px #000; margin-top:2px; }
   #mission-timer { font-size:22px; font-weight:800; color:#8dffd8; text-shadow:0 0 8px rgba(60,255,190,.8); margin-top:2px; }
@@ -360,6 +367,7 @@
   <div class="panel" id="zone-popup"></div>
   <div class="panel" id="poi-hint"></div>
   <div class="panel" id="msg-line"></div>
+  <div class="panel" id="pager"><div id="pager-from"></div><div id="pager-text"></div></div>
   <div class="panel" id="count-big"></div>
   <div class="panel" id="mission-hud">
     <div id="mission-title"></div>
@@ -542,6 +550,7 @@ window.addEventListener('load', function () {
 <script src="js/weather.js"></script>
 <script src="js/police.js"></script>
 <script src="js/missions.js"></script>
+<script src="js/tapes.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/share.js"></script>
 <script src="js/shops.js"></script>

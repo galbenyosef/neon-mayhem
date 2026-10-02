@@ -25,7 +25,7 @@ GAME.hud = (function () {
     ['minimap', 'clock', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
       'msg-line', 'count-big', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
-      'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
+      'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close', 'pager', 'pager-from', 'pager-text']
       .forEach(function (id) { el[id] = $(id); });
     var stars = '';
     for (var i = 0; i < 5; i++) stars += '<span>★</span>';
@@ -328,7 +328,7 @@ GAME.hud = (function () {
   // ---------- toggleable legend ----------
   var HOSPITAL_HEX = '#f2f4f8', DEST_HEX = '#c6ff3d', DEPOT_HEX = '#ffe9b0';
   var LEGEND = [
-    ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'],
+    ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'], ['#ff3b3b', 'Takedown', 'takedown'],
     // no two families a near-match: armour was the courier's cyan, and the
     // hospital, the destination and the depot were three more pinks beside
     // the rampage's
@@ -841,6 +841,11 @@ GAME.hud = (function () {
     g.scale(zoom, zoom);
     g.drawImage(mapBuffer, -(px + MAP_OX) * MAP_S, -(pz + MAP_OY) * MAP_S);
     // blips (drawn in the rotated frame so they track the map)
+    // a lost tape close by glints on the radar (only then: tapes.js)
+    if (GAME.tapes) {
+      var tn = GAME.tapes.nearby(px, pz);
+      for (var tg = 0; tg < tn.length; tg++) blip(tn[tg].x, tn[tg].z, '#ffd0ea', 2.2 / zoom);
+    }
     // weapon / health / armor pickups near the player
     var pk = GAME.world.pickups;
     for (var pu = 0; pu < pk.length; pu++) {
@@ -971,6 +976,7 @@ GAME.hud = (function () {
 
   function update(dt) {
     if (!mapBuffer) return;
+    stepPager(dt);
     GAME.nav.update(dt);
     if (GAME.frame % 3 === 0) drawMinimap();
     if (GAME.frame % 10 === 0) { refreshControlsBar(); api.refreshFsBtn(); }
@@ -1128,7 +1134,7 @@ GAME.hud = (function () {
   // the only guidance there was.
   var tipT = 0, TIPS = [
     { at: 7, text: function () {
-      return 'The orange, cyan and pink rings are missions — stop in one to start it. ' +
+      return 'The coloured rings are missions — races, deliveries, rampages and takedowns. Stop in one to start it. ' +
         (GAME.isTouch ? 'Tap the radar for the map.' : 'P opens the map.');
     } },
     { at: 17, text: function () {
@@ -1171,6 +1177,36 @@ GAME.hud = (function () {
     msgs.push({ el: line, t: dur, fading: false });
     while (msgs.length > MSG_MAX) msgs.shift().el.remove();
     for (var i = 0; i < msgs.length; i++) msgs[i].el.classList.toggle('old', i < msgs.length - 1);
+  }
+  // The pager: who the work is from, and what they have to say about it — a
+  // card of its own up in the corner, so a line of story never shoves a
+  // MISSION PASSED out of the message stack. One page at a time; the rest
+  // wait their turn.
+  var pages = [], pageT = 0, paging = false, gapT = 0;
+  function nextPage() {
+    var p = pages.shift();
+    if (!p || !el.pager) { paging = false; if (el.pager) el.pager.classList.remove('on'); return; }
+    paging = true;
+    pageT = p.dur;
+    el['pager-from'].textContent = '📟 ' + p.from;
+    el['pager-text'].textContent = p.text;
+    // under the radar on a phone, where it moves up into this corner
+    el.pager.style.top = GAME.isTouch ? '152px' : '';
+    el.pager.classList.add('on');
+    if (GAME.audio.pagerBeep) GAME.audio.pagerBeep();
+  }
+  function pager(from, text, dur) {
+    pages.push({ from: from, text: String(text), dur: dur || Math.max(5, Math.min(10, String(text).length * 0.065)) });
+    if (!paging && gapT <= 0) nextPage();
+  }
+  function stepPager(dt) {
+    if (paging) {
+      pageT -= dt;
+      if (pageT <= 0) { el.pager.classList.remove('on'); paging = false; gapT = 0.45; }
+      return;
+    }
+    if (gapT > 0) gapT -= dt;
+    if (pages.length && gapT <= 0) nextPage();
   }
   function stepMessages(dt) {
     for (var i = msgs.length - 1; i >= 0; i--) {
@@ -1263,6 +1299,8 @@ GAME.hud = (function () {
       el['weapon-line'].textContent = name + (ammo === '' ? '' : '  ·  ' + ammo);
     },
     message: function (text, dur) { pushMessage(String(text), dur || 2.5); },
+    pager: pager,
+    get pagerText() { return paging && el['pager-text'] ? el['pager-text'].textContent : ''; },
     // the huge centre numeral for mission countdowns. Callers repeat it every
     // frame while the count runs; it lets go of the screen on its own once
     // they stop (which is how "GO!" gets its moment and then clears itself)
@@ -1360,8 +1398,10 @@ GAME.hud = (function () {
       if (p) { pauseSel = 0; paintPauseSel(); }
       var sj = $('pause-stunts');
       if (sj && GAME.stunts) {
-        sj.textContent = 'STUNT JUMPS  ' + GAME.stunts.found + ' / ' + GAME.stunts.total +
-          (GAME.stunts.complete ? '   ·   ALL FOUND' : '');
+        var ST = GAME.stunts, isOpen = !GAME.isla || GAME.isla.isOpen();
+        sj.textContent = 'STUNT JUMPS  ' + ST.found + ' / ' + ST.total + (ST.complete ? ' ✓' : '') +
+          (isOpen && ST.islaTotal ? '   ·   ISLA  ' + ST.islaFound + ' / ' + ST.islaTotal + (ST.islaComplete ? ' ✓' : '') : '') +
+          (GAME.tapes && GAME.tapes.total ? '   ·   LOST TAPES  ' + GAME.tapes.found + ' / ' + GAME.tapes.total : '');
       }
       // missions alongside the jumps: distinct marked missions finished, and
       // what the count is FOR while the bridges are still shut

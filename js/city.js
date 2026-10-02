@@ -211,7 +211,10 @@ GAME.city = (function () {
       if (Math.abs(lx) > r.w / 2 || lz < -r.len / 2 || lz > r.len / 2) continue;
       var t = (lz + r.len / 2) / r.len;
       // a ramp can sit on a roof: base lifts the whole wedge
-      return { idx: r.idx, y: (r.base || 0) + r.h * t, t: t, slope: r.h / r.len, rot: r.rot, boost: r.boost, cap: r.cap };
+      // (an island ramp may sit on a gentle grade: its foot at `base`, the
+      // ground under its lip at `base1`, and the deck rising on top of that)
+      var b0 = r.base || 0, b1 = r.base1 !== undefined ? r.base1 : b0;
+      return { idx: r.idx, y: b0 + (b1 - b0 + r.h) * t, t: t, slope: (r.h + b1 - b0) / r.len, rot: r.rot, boost: r.boost, cap: r.cap };
     }
     return null;
   };
@@ -2412,10 +2415,115 @@ GAME.city = (function () {
     return out;
   }
 
+  // Isla Verde's own jumps — ten, on a tally of their own, so the mainland's
+  // twenty-five (and what finding them opens) stay exactly as they were. The
+  // island is hills and curves rather than a grid, so its ramps are found
+  // rather than laid out: flat open ground off the roads, square to the
+  // compass like every other ramp (their flanks are boxes), with a clear
+  // run-up behind, dry land ahead for the landing, and spread over the whole
+  // island. Seeded, so they are in the same places every visit.
+  var ISLA_STUNTS = 10;
+  function rollIslaStuntSpots() {
+    var I = city.isla;
+    if (!I || !GAME.isla) return [];
+    var rng = mulberry32(4271);
+    var B = I.bounds, out = [];
+    var SH = [{ w: 13, len: 22, h: 4.4 }, { w: 16, len: 26, h: 5.4 }, { w: 11, len: 18, h: 3.6 }, { w: 20, len: 30, h: 6.4 }];
+    var pois = GAME.isla.pois(), poiList = [];
+    for (var pk in pois) if (pois[pk] && pois[pk].x !== undefined) poiList.push(pois[pk]);
+    function land(x, z) { return I.contains(x, z) && !city.isInWater(x, z); }
+    function solidNear(x, z, r, topAbove) {
+      var bx = city.hash.query(x, z, r);
+      for (var i = 0; i < bx.length; i++) {
+        var b = bx[i];
+        if (b.h !== undefined && b.h <= topAbove) continue;
+        if (x + r > b.minX && x - r < b.maxX && z + r > b.minZ && z - r < b.maxZ) return true;
+      }
+      return false;
+    }
+    var why = city.islaStuntWhy = {};
+    function no(k) { why[k] = (why[k] || 0) + 1; return null; }
+    function fits(x, z, rot, sh, boost) {
+      for (var i = 0; i < out.length; i++) if (U.dist2(x, z, out[i].x, out[i].z) < 80 * 80) return no('spacing');
+      for (var j = 0; j < poiList.length; j++) if (U.dist2(x, z, poiList[j].x, poiList[j].z) < 35 * 35) return no('poi');
+      var fx = Math.sin(rot), fz = Math.cos(rot), sx = fz, sz = -fx;
+      var hw = sh.w / 2 + 2, hl = sh.len / 2 + 2;
+      // ground under the foot and under the lip: the ramp may run up or down
+      // a gentle grade, but not across one
+      var base0 = I.groundY(x - fx * sh.len / 2, z - fz * sh.len / 2);
+      var base1 = I.groundY(x + fx * sh.len / 2, z + fz * sh.len / 2);
+      if (Math.abs(base1 - base0) > sh.len * 0.16) return no('grade');
+      // set downhill, the grade eats the ramp: keep two metres of real rise
+      if (sh.h + base1 - base0 < 2.4) return no('grade');
+      var base = base0;
+      // the footprint: on land, off the roads and bridges, true to that
+      // grade, and empty
+      for (var a = -1; a <= 1; a += 0.5) {
+        var along = base0 + (base1 - base0) * (a * hl / sh.len + 0.5);
+        for (var c = -1; c <= 1; c += 0.5) {
+          var px = x + fx * hl * a + sx * hw * c, pz = z + fz * hl * a + sz * hw * c;
+          if (!land(px, pz) || I.inland(px, pz) < 0.02) return no('land');
+          if (I.onRoad(px, pz, 2) || city.nearCrossing(px, pz, 12)) return no('road');
+          if (Math.abs(I.groundY(px, pz) - along) > 0.6) return no('flat');
+        }
+      }
+      if (solidNear(x, z, Math.max(hw, hl), -1e9)) return no('solid');
+      // nor where a car gets parked
+      for (var q = 0; q < city.parkedSpots.length; q++) {
+        if (U.dist2(x, z, city.parkedSpots[q].x, city.parkedSpots[q].z) < Math.pow(Math.max(hw, hl) + 4, 2)) return no('parked');
+      }
+      // a run-up behind the low lip: land, not a cliff, nothing standing
+      for (var r = 4; r <= 28; r += 4) {
+        var rx = x - fx * (sh.len / 2 + r), rz = z - fz * (sh.len / 2 + r);
+        if (!land(rx, rz) || Math.abs(I.groundY(rx, rz) - base0) > 1 + r * 0.15) return no('runup');
+        if (solidNear(rx, rz, 2, I.groundY(rx, rz) + 0.6)) return no('runupSolid');
+      }
+      // and somewhere to come down: dry land the whole way out, not rising
+      // into a hillside, nothing tall to fly into along the line
+      var reach = boost ? 110 : 60;
+      for (var f = 8; f <= reach; f += 4) {
+        var lx = x + fx * (sh.len / 2 + f), lz = z + fz * (sh.len / 2 + f);
+        if (!land(lx, lz)) return no('landing');
+        var gy = I.groundY(lx, lz);
+        if (gy > base1 + 1 + f * 0.04 || gy < base1 - 30) return no('slope');
+        if (solidNear(lx, lz, 2, gy + 1.5)) return no('landingSolid');
+      }
+      return { x: x, z: z, rot: rot, w: sh.w, len: sh.len, h: sh.h, base: base0, base1: base1, boost: boost, isla: true };
+    }
+    var cands = [];
+    var ex = B.rx * 1.2, ez = B.rz * 1.2;
+    for (var cx = B.cx - ex; cx <= B.cx + ex; cx += 9) {
+      for (var cz = B.cz - ez; cz <= B.cz + ez; cz += 9) {
+        if (I.contains(cx, cz) && I.inland(cx, cz) > 0.06) cands.push([cx, cz]);
+      }
+    }
+    for (var k = cands.length - 1; k > 0; k--) {
+      var m = Math.floor(rng() * (k + 1)), tmp = cands[k]; cands[k] = cands[m]; cands[m] = tmp;
+    }
+    var ROTS = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+    // the shape wanted next is tried first, then the smaller ones: the hills
+    // leave room for a kicker in places a long ramp will not go
+    for (var ci = 0; ci < cands.length && out.length < ISLA_STUNTS; ci++) {
+      // (no boosters over here: launched that hard off a hillside, the
+      // landing is somewhere far down the slope, and too hard to live)
+      var want = out.length % SH.length, boost = false;
+      var r0 = Math.floor(rng() * 4), spot = null;
+      for (var si = 0; si < SH.length && !spot; si++) {
+        var sh = SH[(want + si) % SH.length];
+        for (var ri = 0; ri < 4 && !spot; ri++) spot = fits(cands[ci][0], cands[ci][1], ROTS[(r0 + ri) % 4], sh, boost);
+      }
+      if (spot) out.push(spot);
+    }
+    return out;
+  }
+
   function buildRamps(scene) {
     // 25 unique stunt jumps scattered across the city: construction ramps
-    // parked on verges and aprons near landmarks, each one a find.
-    var SPOTS = rollStuntSpots();
+    // parked on verges and aprons near landmarks, each one a find — and
+    // Isla Verde's ten after them (their own tally; see GAME.stunts).
+    // The island's come LAST so the mainland's keep the numbers a saved
+    // game knows them by.
+    var SPOTS = rollStuntSpots().concat(rollIslaStuntSpots());
     var pos = [], col = [], nrm = [];
     function tri(ax, ay, az, bx, by, bz, cx2, cy, cz2, r, g, b) {
       var ux = bx - ax, uy = by - ay, uz = bz - az;
@@ -2426,15 +2534,21 @@ GAME.city = (function () {
       pos.push(ax, ay, az, bx, by, bz, cx2, cy, cz2);
       for (var k = 0; k < 3; k++) { nrm.push(nx, ny, nz); col.push(r, g, b); }
     }
+    var islaN = 0;
     for (var i = 0; i < SPOTS.length; i++) {
       var s = SPOTS[i];
       var c = Math.cos(s.rot), sn = Math.sin(s.rot);
       // world position of a local (across, along, up) point — `base` lifts
       // the whole wedge onto a roof when the spot calls for one
       function P(lx, lz, ly) {
-        return [s.x + lx * c + lz * sn, ly + (s.base || 0), s.z - lx * sn + lz * c];
+        return [s.x + lx * c + lz * sn, ly + baseAt(lz), s.z - lx * sn + lz * c];
       }
       var hw = s.w / 2, hl = s.len / 2;
+      // the ground the wedge stands on, foot to lip (level, but for an island
+      // ramp set on a grade)
+      // (rb0/rb1: sb0/sb1 below are the side walls' corners)
+      var rb0 = s.base || 0, rb1 = s.base1 !== undefined ? s.base1 : rb0;
+      function baseAt(lz) { return rb0 + (rb1 - rb0) * U.clamp((lz + hl) / s.len, 0, 1); }
       var a0 = P(-hw, -hl, 0), b0 = P(hw, -hl, 0);      // bottom lip
       var a1 = P(-hw, hl, s.h), b1 = P(hw, hl, s.h);    // top lip
       var a1g = P(-hw, hl, 0), b1g = P(hw, hl, 0);      // top lip at ground
@@ -2477,7 +2591,8 @@ GAME.city = (function () {
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({
-        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h, base: s.base || 0, boost: !!s.boost, cap: s.cap,
+        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h, base: s.base || 0, base1: s.base1, boost: !!s.boost, cap: s.cap,
+        isla: !!s.isla, islaN: s.isla ? islaN++ : -1,
         cos: c, sin: sn,
         minX: s.x - rad, maxX: s.x + rad, minZ: s.z - rad, maxZ: s.z + rad
       });
@@ -2486,7 +2601,7 @@ GAME.city = (function () {
       // off the top sails over while one approaching from behind is stopped.
       var bc = P(0, hl + 1.1, 0);
       var across = Math.abs(Math.cos(s.rot)) > 0.5;
-      addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, (s.base || 0) + s.h * 0.62, 'building');
+      addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, rb1 + s.h * 0.62, 'building');
       // the raked flanks are solid too. Every ramp is axis-aligned, so each
       // side is three stepped boxes rising with the deck — walk or drive into
       // the side and you hit a wall, while anyone ON the deck stands above the
@@ -2505,7 +2620,7 @@ GAME.city = (function () {
           // coming at the flank from the ground, while the deck clears it.
           addSolid(wc[0], wc[2],
             across ? 1.0 : lzLen, across ? lzLen : 1.0,
-            (s.base || 0) + Math.max(0.3, s.h * t0 - 0.35), 'prop', true);
+            baseAt(-hl + s.len * t0) + Math.max(0.3, s.h * t0 - 0.35), 'prop', true);
         }
       }
     }

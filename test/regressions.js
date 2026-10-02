@@ -38,6 +38,11 @@
 //       swell, stop dead at land, keep out of the closed channel and set you
 //       on the pier or over the side; cruisers stop at the water's edge and
 //       send the helicopter; nobody else walks into the sea.
+//   5c. MORE TO DO — Lola pages a line when a job starts and another when it
+//       is done; takedowns put a target in the traffic that runs, and some
+//       shoot back; Isla Verde has ten stunt jumps on a tally of its own;
+//       thirty lost tapes hide on both islands, pay as they are found, glint
+//       on the radar up close, and all of them put a new station on the dial.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -1376,6 +1381,10 @@ function withTimeout(p, ms) {
       if (P.car) P.car.hp = 1e6;
       GAME.test.fastForward(1);
     }
+    // (back on four: three killings a second sit just under the five-star
+    // line, and a cruiser shunting the car in the last of them tips it over)
+    GAME.test.setWanted(4);
+    GAME.test.fastForward(0.2);
     r.engaged = { stars: GAME.police.wanted, spotted: GAME.police.spotted, cruisers: GAME.test.getState().policeCars };
     // got clean away: across town, parked down a street
     GAME.test.teleport(-150 + 3.1, 140);
@@ -2052,11 +2061,16 @@ function withTimeout(p, ms) {
     var M = GAME.missions, P = GAME.player, r = {};
     var bests0 = GAME.bests, complete0 = GAME.prefs.gameComplete, cash0 = P.cash;
     var desc = Object.getOwnPropertyDescriptor(GAME.stunts, 'complete');
+    var descI = Object.getOwnPropertyDescriptor(GAME.stunts, 'islaComplete');
+    var descT = Object.getOwnPropertyDescriptor(GAME.tapes, 'complete');
     var gun0 = GAME.city.unlockGunship;
     try {
       GAME.bests = {};
       M.DEFS.forEach(function (d) { GAME.bests[d.id] = 1; });
       Object.defineProperty(GAME.stunts, 'complete', { get: function () { return true; }, configurable: true });
+      // (and the island jumps and the lost tapes — a hundred per cent is all of it)
+      Object.defineProperty(GAME.stunts, 'islaComplete', { get: function () { return true; }, configurable: true });
+      Object.defineProperty(GAME.tapes, 'complete', { get: function () { return true; }, configurable: true });
       GAME.city.unlockGunship = function () {};
       delete GAME.prefs.gameComplete;
       P.cash = 1000;
@@ -2072,6 +2086,8 @@ function withTimeout(p, ms) {
       GAME.bests = bests0;
       if (complete0 === undefined) delete GAME.prefs.gameComplete; else GAME.prefs.gameComplete = complete0;
       Object.defineProperty(GAME.stunts, 'complete', desc);
+      Object.defineProperty(GAME.stunts, 'islaComplete', descI);
+      Object.defineProperty(GAME.tapes, 'complete', descT);
       GAME.city.unlockGunship = gun0;
       P.cash = cash0;
       GAME.hud.cashChanged();
@@ -2751,6 +2767,134 @@ function withTimeout(p, ms) {
   check('boats: and you can climb back in from the water', boat.backIn === true);
   check('water: wanted out on the water — no cruiser follows you in, and the helicopter comes',
     boat.cops && boat.cops.wet === 0 && boat.cops.heli, JSON.stringify(boat.cops));
+
+  // ---------- 5c: more to do ----------
+  var con = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, M = GAME.missions, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    var pages = [], pg0 = GAME.hud.pager;
+    GAME.hud.pager = function (f, t) { pages.push(f + ': ' + t); return pg0.apply(GAME.hud, arguments); };
+    try {
+      // the pager is a card of its own, on screen (once whatever Lola had
+      // already queued — her welcome, a mission line — has had its turn)
+      GAME.prefs.storyIntro = true;
+      for (var w = 0; w < 30 && GAME.hud.pagerText; w++) GAME.test.fastForward(0.5);
+      GAME.test.fastForward(0.6);
+      GAME.hud.pager('LOLA', 'test page', 2);
+      GAME.test.fastForward(0.1);
+      var pe = document.getElementById('pager');
+      r.pagerOn = pe.classList.contains('on') && getComputedStyle(pe).display !== 'none' && GAME.hud.pagerText === 'test page';
+      GAME.test.fastForward(3);
+      r.pagerOff = !pe.classList.contains('on');
+      pages.length = 0;
+      // a takedown, from its ring, in a car
+      var d = M.DEFS.filter(function (x) { return x.id === 'hit0'; })[0];
+      r.defs = M.DEFS.filter(function (x) { return x.type === 'takedown'; }).length;
+      var bests0 = GAME.bests ? GAME.bests.hit0 : undefined;
+      if (GAME.bests) delete GAME.bests.hit0;
+      GAME.test.teleport(d.start.x - 12, d.start.z);
+      GAME.test.fastForward(0.3);
+      var car = GAME.vehicles.spawnCar('sports', d.start.x - 8, d.start.z, Math.PI / 2, {});
+      GAME.test.enterNearestCar(car); GAME.test.fastForward(1.2);
+      car.pos.set(d.start.x, car.pos.y, d.start.z); car.speed = 0;
+      GAME.test.fastForward(0.5);
+      r.started = M.active && M.active.def.id;
+      GAME.test.fastForward(4);
+      var a = M.active, t = a && a.perp;
+      r.target = !!t && t.hp > t.spec.hp * 2 && t.occupied === 'ai';
+      r.far = t ? Math.round(Math.hypot(t.pos.x - car.pos.x, t.pos.z - car.pos.z)) : 0;
+      r.marked = !!M.getObjectivePoint();
+      if (t) {
+        car.pos.set(t.pos.x - Math.sin(t.heading) * 22, car.pos.y, t.pos.z - Math.cos(t.heading) * 22);
+        var hp0 = P.health;
+        GAME.test.fastForward(1.5);
+        r.ran = a.fleeing && t.ai && t.ai.desired >= 18;
+        GAME.vehicles.damageCar(t, t.hp * 0.85, 'bullet', true);
+        GAME.test.fastForward(0.5);
+      }
+      r.passed = !M.active && GAME.bests && GAME.bests.hit0 !== undefined;
+      r.pages = pages.slice();
+      if (bests0 === undefined && GAME.bests) delete GAME.bests.hit0; else if (GAME.bests) GAME.bests.hit0 = bests0;
+      GAME.exitCar();
+      GAME.vehicles.removeCar(car);
+      // Isla Verde's jumps: their own tally, the mainland's untouched
+      var ramps = C.ramps.filter(function (x) { return x.isla; });
+      r.islaRamps = ramps.length;
+      r.mainTotal = GAME.stunts.total;
+      r.islaOnIsland = ramps.every(function (x) { return GAME.isla.contains(x.x, x.z); });
+      GAME.isla.setOpen(true);
+      var rp = ramps[0], i0 = GAME.stunts.islaFound, m0 = GAME.stunts.found;
+      var fx = Math.sin(rp.rot), fz = Math.cos(rp.rot);
+      var sx = rp.x - fx * (rp.len / 2 + 26), sz = rp.z - fz * (rp.len / 2 + 26);
+      GAME.test.teleport(sx - 3, sz);
+      GAME.test.fastForward(0.3);
+      var jc = GAME.vehicles.spawnCar('sports', sx, sz, rp.rot, {});
+      GAME.test.enterNearestCar(jc); GAME.test.fastForward(1.2);
+      jc.pos.set(sx, C.groundY(sx, sz), sz); jc.heading = rp.rot; jc.speed = 0; jc.vx = jc.vz = 0;
+      var air = 0;
+      GAME.test.pressKey('KeyW', true);
+      for (var k = 0; k < 60 * 5; k++) { GAME.test.fastForward(1 / 60); air = Math.max(air, jc.air || 0); }
+      GAME.test.pressKey('KeyW', false);
+      r.islaJump = { air: +air.toFixed(2), isla: GAME.stunts.islaFound - i0, main: GAME.stunts.found - m0 };
+      GAME.exitCar();
+      GAME.vehicles.removeCar(jc);
+      // lost tapes
+      var T = GAME.tapes.list();
+      r.tapes = { n: T.length, main: T.filter(function (x) { return !x.isla; }).length, isla: T.filter(function (x) { return x.isla; }).length };
+      r.tapesDry = T.every(function (x) { return !C.isInWater(x.x, x.z, x.y); });
+      r.tapesClear = T.every(function (x) {
+        return C.hash.query(x.x, x.z, 0.3).every(function (b) {
+          return (b.h !== undefined && b.h <= x.y + 0.3) || !(x.x > b.minX && x.x < b.maxX && x.z > b.minZ && x.z < b.maxZ);
+        });
+      });
+      r.tapesSpread = T.every(function (x, i) { return T.every(function (y, j) { return i === j || Math.hypot(x.x - y.x, x.z - y.z) > 35; }); });
+      var tp = T.filter(function (x) { return !x.taken && !x.isla && x.y < 1; })[0];
+      var f0 = GAME.tapes.found, c0 = P.cash;
+      GAME.test.teleport(tp.x + 5, tp.z);
+      GAME.test.fastForward(0.3);
+      r.glint = GAME.tapes.nearby(P.pos.x, P.pos.z).indexOf(tp) >= 0;
+      GAME.test.teleport(tp.x, tp.z);
+      GAME.test.fastForward(0.3);
+      r.tape = { got: GAME.tapes.found - f0, cash: P.cash - c0, saved: !!(GAME.prefs.tapes && GAME.prefs.tapes.got[tp.id]), gone: !tp.mesh };
+      // the DJ's station: not on the dial until it is earned
+      var R = GAME.audio.radio, names = [];
+      for (var s = 0; s < 6; s++) names.push(R.switchStation(1));
+      r.lockedOut = names.indexOf('TAPE DECK FM') < 0;
+      GAME.prefs.tapeDeck = true;
+      names = [];
+      for (s = 0; s < 6; s++) names.push(R.switchStation(1));
+      r.unlocked = names.indexOf('TAPE DECK FM') >= 0;
+      delete GAME.prefs.tapeDeck;
+      R.tune(0);
+      // a hundred per cent now means the island jumps and the tapes too
+      r.completeNeedsAll = GAME.tapes.complete === false;
+    } finally {
+      GAME.hud.pager = pg0;
+    }
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('story: the pager is a card on screen, and it goes again', con.pagerOn && con.pagerOff);
+  check('story: Lola pages a line when a job starts and another when it is done the first time',
+    con.pages.length >= 2 && /^LOLA: /.test(con.pages[0]) && /^LOLA: /.test(con.pages[con.pages.length - 1]), JSON.stringify(con.pages));
+  check('takedown: there are takedown jobs on both islands', con.defs >= 3, con.defs);
+  check('takedown: pulling up in the ring starts one, with an armoured target out in the traffic',
+    con.started === 'hit0' && con.target && con.far > 100 && con.marked, JSON.stringify({ started: con.started, target: con.target, far: con.far, marked: con.marked }));
+  check('takedown: the target runs once it has seen you', con.ran);
+  check('takedown: and wrecking it passes the job', con.passed);
+  check('isla jumps: ten of them, all on the island, and the mainland still counts its own',
+    con.islaRamps === 10 && con.islaOnIsland && con.mainTotal === 25, JSON.stringify({ isla: con.islaRamps, on: con.islaOnIsland, main: con.mainTotal }));
+  check('isla jumps: one launches and counts on the island tally, not the mainland one',
+    con.islaJump.air > 0.45 && con.islaJump.isla === 1 && con.islaJump.main === 0, JSON.stringify(con.islaJump));
+  check('tapes: thirty, twenty on the mainland and ten on Isla Verde', con.tapes.n === 30 && con.tapes.main === 20 && con.tapes.isla === 10, JSON.stringify(con.tapes));
+  check('tapes: every one where you can stand to pick it up, and spread out', con.tapesDry && con.tapesClear && con.tapesSpread,
+    JSON.stringify({ dry: con.tapesDry, clear: con.tapesClear, spread: con.tapesSpread }));
+  check('tapes: close by, one glints on the radar', con.glint);
+  check('tapes: walk over one and it is yours — paid, remembered, gone', con.tape.got === 1 && con.tape.cash === 250 && con.tape.saved && con.tape.gone, JSON.stringify(con.tape));
+  check('tapes: the DJ\'s station is off the dial until every tape is found, then on it', con.lockedOut && con.unlocked);
+  check('completion: a hundred per cent waits for the tapes too', con.completeNeedsAll);
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

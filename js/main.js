@@ -44,6 +44,7 @@
     GAME.initPlayer();
     GAME.combat.initPickups();
     GAME.missions.init();
+    GAME.tapes.init(scene);
     GAME.stunts.load();
     GAME.hud.init();
     GAME.controls.init();
@@ -444,6 +445,7 @@
     GAME.combat.updatePickups(dt);
     GAME.police.update(dt);
     GAME.missions.update(dt);
+    GAME.tapes.update(dt);
     if (GAME.isla) GAME.isla.tick(dt);
     GAME.shops.update(dt);
     // slow autosave heartbeat: health and ammo drift without touching cash,

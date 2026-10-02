@@ -287,8 +287,28 @@ GAME.audio = (function () {
             tone(midi(chord[(st >> 2) % chord.length] + 24), spb * 3.4, 0.06, 'sine', 0, t, verb);
           }
         }
+      },
+      // The pirate DJ's station, back on the air once every one of the lost
+      // tapes is found (tapes.js). Italo: four on the floor, an octave
+      // gallop in the bass, a square-wave hook.
+      {
+        name: 'TAPE DECK FM', bpm: 124, secret: true,
+        chords: [[57, 60, 64], [55, 59, 62], [53, 57, 60], [55, 59, 62]],
+        bass: [45, 43, 41, 43],
+        mel: [76, 79, 81, 79, 76, 74, 72, 74, 76, 76, 79, 84, 81, 79, 76, 72],
+        play: function (t, st, bar, chord, bass) {
+          var spb = 60 / this.bpm / 4;
+          if (st % 4 === 0) tone(54, 0.12, 0.9, 'sine', 30, t, radioBus);
+          if (st % 4 === 2) noiseBurst(0.06, 7000, 0.14, 'highpass', t, radioBus);
+          if (st % 8 === 4) noiseBurst(0.1, 2000, 0.3, 'bandpass', t, radioBus);
+          tone(midi(bass + (st % 2 ? 12 : 0)), spb * 0.8, 0.2, 'sawtooth', 0, t, radioBus);
+          if (st % 2 === 0) tone(midi(this.mel[(st / 2 + bar * 2) % this.mel.length]), spb * 1.7, 0.1, 'square', 0, t, verb);
+          if (st % 16 === 0) for (var i = 0; i < chord.length; i++) tone(midi(chord[i] + 12), spb * 12, 0.05, 'sawtooth', 0, t, verb);
+        }
       }
     ];
+    // a secret station is on the dial only once it has been earned
+    function avail(i) { return i >= stations.length || !stations[i].secret || !!(GAME.prefs && GAME.prefs.tapeDeck); }
     // On foot, with MUSIC: OFF or muted, the radio is a clock with nothing on
     // the end of it — but a clock that built its ~60 voices a second anyway.
     // A step nobody can hear is still counted, so the beat is where it would
@@ -327,11 +347,19 @@ GAME.audio = (function () {
         nextTime = ctx.currentTime + 0.1; step = 0;
         timer = setInterval(schedule, 90);
       },
-      switchStation: function (dir) { return retune((current + dir + OFF + 1) % (OFF + 1)); },
+      switchStation: function (dir) {
+        var i = current;
+        for (var k = 0; k <= OFF; k++) { i = (i + dir + OFF + 1) % (OFF + 1); if (avail(i)) break; }
+        return retune(i);
+      },
       // a car you have not been in yet: wherever its last driver left it
-      randomStation: function () { return retune(Math.floor(Math.random() * stations.length) % stations.length); },
+      randomStation: function () {
+        var pool = [];
+        for (var i = 0; i < stations.length; i++) if (avail(i)) pool.push(i);
+        return retune(pool[Math.floor(Math.random() * pool.length) % pool.length]);
+      },
       // and one you have: where you left it (OFF included)
-      tune: function (i) { return retune(Math.max(0, Math.min(OFF, i | 0))); },
+      tune: function (i) { i = Math.max(0, Math.min(OFF, i | 0)); return retune(avail(i) ? i : 0); },
       setVolume: function (v) {
         if (!ctx) return;
         // keep playing into the fade rather than cutting it off short
@@ -522,6 +550,13 @@ GAME.audio = (function () {
       }
     },
     cashTick: function () { if (ctx) tone(1560, 0.04, 0.08, 'square'); },
+    // a pager going off: two short chirps
+    pagerBeep: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      tone(2100, 0.07, 0.06, 'square', 0, t);
+      tone(2100, 0.07, 0.06, 'square', 0, t + 0.13);
+    },
     splash: function () { if (ctx) noiseBurst(0.5, 700, 0.4); },
     sting: function (kind) {
       if (!ctx) return;
