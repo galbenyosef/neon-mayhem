@@ -450,9 +450,10 @@ GAME.peds = (function () {
         ped.attackT -= dt;
         if (ped.stolenCar && ped.stolenCar.gone) ped.stolenCar = null;   // despawned: nothing to take back
         // (nobody wants a car back once it is on fire — they would only be
-        // turned straight back out of it by vehicles.js)
-        var myCar = ped.stolenCar && !ped.stolenCar.dead && ped.stolenCar.stage < 2 &&
-          ped.stolenCar.occupied !== 'ai' ? ped.stolenCar : null;
+        // turned straight back out of it by vehicles.js — or once it is
+        // going down in the sea)
+        var myCar = ped.stolenCar && !ped.stolenCar.dead && !ped.stolenCar.sinking &&
+          ped.stolenCar.stage < 2 && ped.stolenCar.occupied !== 'ai' ? ped.stolenCar : null;
         var chaseCar = myCar && U.dist2(ped.pos.x, ped.pos.z, myCar.pos.x, myCar.pos.z) < 55 * 55;
         var F = foeState(ped, chaseCar ? myCar : null);
         var tcar = F.car;

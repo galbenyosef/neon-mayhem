@@ -22,6 +22,9 @@
 //   3. PARACHUTE      — a life that ends under the canopy must stow it, so
 //      it is not left hanging over the body through the wasted screen and
 //      the first living frame does not run a glide step at the hospital.
+//   3v. INTO THE SEA — a vehicle that goes into the water goes UNDER and is
+//       cleared away, the player's own included, rather than skimming out
+//       across the surface and stopping there for good.
 //   3u. WINDOW LIGHT — after dark each ordinary block lights its own share of
 //       its windows, warm or cool, and the walls keep the colours they were
 //       dealt; checked on a real render, not just on the numbers behind it.
@@ -420,6 +423,122 @@ function withTimeout(p, ms) {
     washed && ashore.dry === true && ashore.state === 'alive' &&
     ashore.msgs.some(function (m) { return m.indexOf('soaked') >= 0; }),
     'dry=' + ashore.dry + ' state=' + ashore.state + ' msgs=' + JSON.stringify(ashore.msgs.slice(-2)));
+
+  // ---------- 3v: what goes into the sea goes under ----------
+  // A sinking car used to be removed only if nobody was driving it, on a
+  // wall-clock timer, and the player's own was left to the drown fade — which
+  // takes the driver out of the seat and nothing else. Still flagged as
+  // sinking, the car never asked again: it carried on under the last throttle,
+  // skimmed out across the water and stopped on the surface for good. Bail out
+  // on the sand as the wheels reached the water and it was still yours on the
+  // tick it got there, so the same. The beach at z = -60 runs straight from the
+  // sand into open sea, with no pier in the way.
+  var intoSea = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {};
+    GAME.police.clearWanted();
+    P.health = 100;
+    if (P.inCar) GAME.exitCar();
+    var z = -60, sh = C.shoreline(z);
+    GAME.test.teleport(sh - 50, z);
+    GAME.test.fastForward(0.2);
+    var car = GAME.vehicles.spawnCar('sedan', sh - 46, z, Math.PI / 2, {});
+    GAME.test.fastForward(0.1);
+    GAME.test.enterNearestCar(car);
+    GAME.test.fastForward(1.2);
+    r.driving = P.inCar && P.car === car;
+    GAME.test.pressKey('KeyW', true);
+    // foot down, straight off the beach — and keep it down: what the old code
+    // did with that throttle once the car was in is the bug
+    var surfaceRun = 0;
+    for (var i = 0; i < 60 * 8; i++) {
+      GAME.test.fastForward(1 / 60);
+      if (car.sinking && car.pos.y > -0.3) surfaceRun = Math.max(surfaceRun, car.pos.x - sh);
+    }
+    r.sinking = car.sinking;
+    r.surfaceRun = Math.round(surfaceRun);
+    r.drowning = !!P.drowning;
+    window.__seaCar = car;
+    return r;
+  });
+  check('sea: the car went off the beach into the water (anchor sanity)',
+    intoSea.driving === true && intoSea.sinking === true && intoSea.drowning === true,
+    JSON.stringify(intoSea));
+  check('sea: the water takes the way off it — it does not skim on across the top',
+    intoSea.surfaceRun < 15, 'still on the surface ' + intoSea.surfaceRun + ' m past the waterline');
+  // the drown fades on a real setTimeout, so only wall time gets past it
+  try {
+    await page.waitForFunction(function () { return !GAME.player.drowning; }, null, { timeout: 10000 });
+  } catch (e) { /* reported below */ }
+  var seaAfter = await page.evaluate(function () {
+    var P = GAME.player, car = window.__seaCar;
+    GAME.test.pressKey('KeyW', false);
+    GAME.test.fastForward(5);
+    return { washed: !P.drowning && !P.inCar && !GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y),
+             gone: car.gone === true, y: +car.pos.y.toFixed(2) };
+  });
+  check('sea: the driver is washed ashore (anchor sanity)', seaAfter.washed, JSON.stringify(seaAfter));
+  check('sea: and the car they drove in goes under and is gone, not left on the surface',
+    seaAfter.gone && seaAfter.y < -1, JSON.stringify(seaAfter));
+
+  // bailing out on the sand, short of the water, with the car still rolling
+  var bail = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {};
+    var z = -60, sh = C.shoreline(z);
+    GAME.test.teleport(sh - 50, z);
+    GAME.test.fastForward(0.2);
+    var car = GAME.vehicles.spawnCar('sedan', sh - 46, z, Math.PI / 2, {});
+    GAME.test.fastForward(0.1);
+    GAME.test.enterNearestCar(car);
+    GAME.test.fastForward(1.2);
+    GAME.test.pressKey('KeyW', true);
+    for (var i = 0; i < 60 * 8 && P.inCar; i++) {
+      GAME.test.fastForward(1 / 60);
+      if (car.pos.x > sh - 12) { GAME.test.pressKey('KeyW', false); GAME.test.exitCar(); }
+    }
+    r.bailed = !P.inCar && !P.drowning;
+    var lowest = car.pos.y, t = 0;
+    for (; t < 8 && !car.gone; t += 1 / 60) {
+      GAME.test.fastForward(1 / 60);
+      if (!car.gone) lowest = Math.min(lowest, car.pos.y);
+    }
+    r.sank = car.sinking;
+    r.gone = car.gone === true;
+    r.t = +t.toFixed(1);
+    r.lowest = +lowest.toFixed(2);
+    r.dry = !P.drowning;
+    return r;
+  });
+  check('sea: a car left rolling at the waterline runs in (anchor sanity)',
+    bail.bailed === true && bail.sank === true && bail.dry === true, JSON.stringify(bail));
+  check('sea: and it goes under before it goes, inside a few seconds',
+    bail.gone && bail.lowest < -1 && bail.t < 6, JSON.stringify(bail));
+
+  // An empty helicopter settling on the sea — the one you stepped out of under
+  // a canopy — and one coming down hard enough to go up: neither stays on top.
+  var heliSea = await page.evaluate(function () {
+    var r = {};
+    var wx = null, wz = null;
+    for (var x = 480; x <= 900 && wx === null; x += 8) {
+      for (var z = -240; z <= 240; z += 24) {
+        if (GAME.city.isInWater(x, z) && !GAME.city.isOnPier(x, z)) { wx = x; wz = z; break; }
+      }
+    }
+    r.found = wx !== null;
+    if (!r.found) return r;
+    GAME.test.teleport(wx - 140, wz);
+    var soft = GAME.vehicles.spawnCar('helicopter', wx, wz, 0, {});
+    soft.pos.y = 1;
+    var hard = GAME.vehicles.spawnCar('helicopter', wx, wz + 30, 0, {});
+    hard.pos.y = 30;
+    GAME.test.fastForward(8);
+    r.soft = { gone: soft.gone === true, dead: soft.dead, y: +soft.pos.y.toFixed(2) };
+    r.hard = { gone: hard.gone === true, dead: hard.dead, y: +hard.pos.y.toFixed(2) };
+    return r;
+  });
+  check('sea: an empty helicopter settling on the water goes under',
+    heliSea.found && heliSea.soft.gone && !heliSea.soft.dead, JSON.stringify(heliSea));
+  check('sea: and a wreck that came down on it hard does not float there either',
+    heliSea.found && heliSea.hard.gone && heliSea.hard.dead, JSON.stringify(heliSea));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

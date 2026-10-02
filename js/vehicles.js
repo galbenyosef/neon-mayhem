@@ -467,6 +467,7 @@ GAME.vehicles = (function () {
       // turned chaser still never fires or sends officers out). airVX/airVZ
       // stay undefined because code elsewhere clears them to that.
       gone: false, byPlayer: false, sinking: false, spiked: false, stalled: false,
+      sinkT: 0, splashed: false, sinkVX: 0, sinkVZ: 0,
       stageWarn: 0, airframeWarn: 0, boostPing: false, capPing: false,
       hitCd: 0, boostT: 0, abandonT: 0, deadT: 0, fireGlowT: 0,
       vx: 0, vy: 0, vz: 0, air: 0, airVX: undefined, airVZ: undefined,
@@ -960,9 +961,12 @@ GAME.vehicles = (function () {
     var cars = world.cars;
     for (var i = 0; i < cars.length; i++) {
       var a = cars[i];
+      // something going under in the sea is not a thing to drive into
+      if (a.sinking) continue;
       var aAir = !!(a.spec.heli || a.spec.plane);
       for (var j = i + 1; j < cars.length; j++) {
         var b = cars[j];
+        if (b.sinking) continue;
         var bAir = !!(b.spec.heli || b.spec.plane);
         // two airframes are each other's business, and nobody else's
         if (aAir && bAir) continue;
@@ -1184,13 +1188,79 @@ GAME.vehicles = (function () {
     GAME.missions.notifyChaos(500);
   }
 
+  // A vehicle that has gone into the sea goes DOWN, where it went in, and is
+  // cleared away once it is under — whoever was or was not at the wheel.
+  //
+  // This used to remove only a car nobody was driving, on a wall-clock timer,
+  // and leave the player's own to the drown fade. That fade takes the driver
+  // out of the seat and nothing ever took the car anywhere: it was still
+  // flagged as sinking, so it never asked again, and it carried on under its
+  // last throttle, skimmed out across the water and parked on the surface for
+  // good. Bailing out on the sand just as the wheels reached the water did
+  // the same, because the car was still yours on the tick it got there. And a
+  // car somebody did leave in time only skated on for nearly a second and
+  // blinked out, never visibly going under at all.
+  //
+  // It runs on the tick now (update -> stepSink), so a pause holds it, and it
+  // waits for the hull to actually meet the water before it splashes: a car
+  // still in the air over the sea carries its arc down first.
+  var SINK_FLOOR = -4.5;   // fully under the swell, the tallest body included
   function sinkCar(car) {
     if (car.sinking) return;
     car.sinking = true;
+    car.sinkT = 0;
+    car.splashed = false;
+    // the way it had on as it left the land, as one world velocity: a ground
+    // vehicle's is its own (or its held arc, if it is in the air), an
+    // airframe's is along its nose
+    if (car.spec.heli || car.spec.plane) {
+      var asp = car.spec.heli ? (car.heliSpeed || 0) : (car.speed || 0);
+      car.sinkVX = fwdX(car) * asp; car.sinkVZ = fwdZ(car) * asp;
+    } else {
+      car.sinkVX = car.vx || 0; car.sinkVZ = car.vz || 0;
+    }
+    car.vy = car.vy || 0;
+    car.speed = 0; car.lat = 0;
+    car.controls.throttle = 0; car.controls.steer = 0;
+  }
+
+  // the moment the hull meets the water: the splash, and the drown for
+  // whoever is still aboard
+  function splashDown(car) {
+    car.splashed = true;
     GAME.audio.splash();
     GAME.fx.spawn(car.pos.x, 0.5, car.pos.z, { count: 14, color: 0x88bbdd, spread: 3, vy: 3, life: 0.8 });
-    if (car === GAME.player.car) GAME.playerDrown();
-    else setTimeout(function () { removeCar(car); }, 900);
+    // the water takes most of a fall rather than the car punching on down
+    car.vy *= 0.25;
+  }
+
+  // One tick of going under. True once it is gone and nobody is aboard.
+  function stepSink(car, dt) {
+    var P = GAME.player;
+    car.sinkT += dt;
+    if (car.pos.y > 0.05) {
+      // still in the air over the sea: carry the arc down to the water
+      car.vy -= 24 * dt;
+    } else {
+      if (!car.splashed) splashDown(car);
+      // the water takes the way off it inside a few lengths, and draws it
+      // under — slowly at first while the cabin floods, nose first, since
+      // that is where the engine is
+      var drag = Math.exp(-2.6 * dt);
+      car.sinkVX *= drag; car.sinkVZ *= drag;
+      car.vy = U.damp(car.vy, -1.8, 1.5, dt);
+      car.mesh.rotation.x = U.damp(car.mesh.rotation.x, 0.35, 1.2, dt);
+    }
+    car.vx = car.sinkVX; car.vz = car.sinkVZ;
+    car.pos.x += car.sinkVX * dt;
+    car.pos.z += car.sinkVZ * dt;
+    car.pos.y = Math.max(SINK_FLOOR, car.pos.y + car.vy * dt);
+    // Anyone still sitting in it goes into the water with it. That is
+    // usually the driver who took it in, and their drown has started; it
+    // can also be somebody who had already reached for the door before it
+    // went in, and would otherwise ride it to the bottom.
+    if (car.splashed && P.car === car && P.inCar) GAME.playerDrown();
+    return car.pos.y <= SINK_FLOOR && P.car !== car && !(P.entering && P.entering.car === car);
   }
 
   // ---------- traffic AI ----------
@@ -1448,7 +1518,15 @@ GAME.vehicles = (function () {
           if (car.abandonT > 18) { removeCar(car); continue; }
         } else car.abandonT = 0;
       }
+      // gone into the sea: down it goes, whatever else it was doing
+      if (car.sinking) {
+        if (stepSink(car, dt)) removeCar(car);
+        continue;
+      }
       if (car.dead) {
+        // a wreck does not float either (a plane ditched at speed goes up
+        // on the water, and the hulk would otherwise sit there smouldering)
+        if (car.pos.y < 1 && GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) { sinkCar(car); continue; }
         if (!car.deadT) car.deadT = 0;
         car.deadT += dt;
         GAME.fx.spawn(car.pos.x, car.pos.y + 1.2, car.pos.z, FX_WRECK_SMOKE);
@@ -1504,6 +1582,13 @@ GAME.vehicles = (function () {
               car.vy = 0;
             }
           }
+          // No floats: an empty airframe down on the sea goes under rather
+          // than sitting on the swell. Asked of wherever it came to rest, not
+          // only on the frame it touched — the fall stops a hair short of the
+          // rest height as often as it reaches it. (Sea level, not a roof that
+          // happens to stand over the water.)
+          if (hgy < 1 && car.pos.y <= hgy + restY + 0.05 &&
+            GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) { sinkCar(car); continue; }
           car.speed = (car.speed || 0) * Math.exp(-1.5 * dt);
         }
         car.rotorSpin = U.damp(car.rotorSpin || 0, (powered || (car.vy || 0) < -2) ? 42 : 0, 1.5, dt);

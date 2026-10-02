@@ -311,6 +311,8 @@ function nearestEnterableCar() {
 GAME.enterCar = function (car) {
   var P = GAME.player;
   if (!car || car.dead || P.inCar || P.entering) return false;
+  // nor is one that has gone into the sea (vehicles.js is taking it down)
+  if (car.sinking) return false;
   // boarding is a same-level act everywhere it can be asked for — a rooftop
   // helicopter is not takeable from the pavement under it
   if (Math.abs(car.pos.y - P.pos.y) > 3) return false;
@@ -754,6 +756,14 @@ function updateDriving(dt) {
   var car = P.car;
   if (!car || car.dead) {
     if (car && car.dead) forceExitCar();
+    return;
+  }
+  // Gone into the sea: nothing at the wheel answers any more. vehicles.js
+  // takes the hull down, and the drown fade takes the driver out of it.
+  if (car.sinking) {
+    GAME.audio.engineState(false, 0);
+    GAME.audio.skid(0);
+    if (P.onBike) updateBikeRider(dt);
     return;
   }
   if (car.spec.heli || car.spec.plane) {
