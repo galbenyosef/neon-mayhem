@@ -3,6 +3,8 @@
   GAME.frame = 0;
 
   function boot() {
+    // a save being brought in on a phone: its own light page, no city (below)
+    if (/^#import/.test(location.hash)) { importScreen(); return; }
     var canvas = document.getElementById('game-canvas');
     GAME.touch.init();
 
@@ -136,10 +138,21 @@
     return !!(navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
   };
   GAME.fullscreenEl = function () { return document.fullscreenElement || document.webkitFullscreenElement || null; };
-  GAME.enterFullscreen = function () {
+  // `asked` is the corner button, where a refusal should say so: the start
+  // tap and the resume tap try quietly, but a button that does nothing at all
+  // reads as a broken game, when it is the browser saying no.
+  GAME.enterFullscreen = function (asked) {
+    function refused(why) {
+      if (asked && GAME.hud) GAME.hud.message('The browser would not go full screen' + (why ? ' (' + why + ')' : '') +
+        '. Close this tab and open the game in a fresh one — that clears it.', 7);
+    }
     try {
-      if (GAME.fullscreenEl() || !reqFs) return;
-      var pr = reqFs.call(docEl);
+      var std = docEl.requestFullscreen, req = std || docEl.webkitRequestFullscreen;
+      if (GAME.fullscreenEl() || !req) return;
+      if (document.fullscreenEnabled === false && document.webkitFullscreenEnabled !== true) { refused('not allowed on this page'); return; }
+      // navigationUI 'hide' asks Android to fold the system bars away too
+      // (the old webkit call takes a flags number, not options)
+      var pr = std ? std.call(docEl, { navigationUI: 'hide' }) : req.call(docEl);
       if (pr && pr.then) pr
         .then(function () {
           try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(function () { }); } catch (e) { }
@@ -148,8 +161,8 @@
           // down. Holding Esc still force-exits — the browser's escape hatch.
           try { navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape']).catch(function () { }); } catch (e) { }
         })
-        .catch(function () { });
-    } catch (e) { }
+        .catch(function (e) { refused(e && e.name); });
+    } catch (e) { refused(e && e.name); }
   };
   // Esc on the pause screen also throws the browser out of fullscreen — its
   // rule, not ours, and the Esc keydown carries no user activation so we
@@ -166,7 +179,7 @@
       var ex = document.exitFullscreen || document.webkitExitFullscreen;
       var pr = ex && ex.call(document);
       if (pr && pr.catch) pr.catch(function () { });
-    } else { fsRestore = false; GAME.enterFullscreen(); }
+    } else { fsRestore = false; GAME.enterFullscreen(true); }
   };
   function onFsChange() {
     if (GAME.fullscreenEl()) { fsRestore = false; return; }
@@ -179,6 +192,46 @@
   GAME.maybeRestoreFullscreen = function () {
     if (fsRestore && !GAME.fullscreenEl()) GAME.enterFullscreen();
   };
+
+  // ---------- bringing a save in, on a page of its own ----------
+  // A phone's file picker sends the browser to the background, and a tab
+  // holding the whole city on the GPU is the first thing Android reclaims
+  // when it is short of memory: importing from inside the game could come
+  // back to a crashed tab (and Chrome, after a crash mid-fullscreen, can
+  // refuse full screen to that tab until it is closed). So on a touch
+  // device IMPORT SAVE reloads as index.html#import, which builds nothing
+  // but this card; the game loads fresh behind it once the save is in.
+  function importScreen() {
+    var title = document.getElementById('title-screen');
+    if (title) title.style.display = 'none';
+    var wrap = document.createElement('div');
+    wrap.id = 'import-screen';
+    wrap.innerHTML = '<div id="import-card"><div id="import-title">IMPORT SAVE</div>' +
+      '<div id="import-body">Pick the save you exported (neon-mayhem-save.json). It replaces the progress on this device.</div>' +
+      '<button id="import-pick" class="ibtn danger">CHOOSE SAVE FILE</button>' +
+      '<div id="import-msg"></div>' +
+      '<button id="import-back" class="ibtn">BACK TO THE GAME</button></div>';
+    document.body.appendChild(wrap);
+    var input = document.getElementById('save-file'), msg = document.getElementById('import-msg');
+    function toGame() { location.replace(location.pathname + location.search); }
+    document.getElementById('import-pick').addEventListener('click', function () { msg.textContent = ''; input.click(); });
+    document.getElementById('import-back').addEventListener('click', toGame);
+    input.addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        var r = GAME.importSave(String(rd.result));
+        if (!r.ok) { msg.textContent = r.why; msg.className = 'bad'; return; }
+        GAME.track('save-imported');
+        msg.textContent = 'Imported. Loading your game…'; msg.className = 'good';
+        setTimeout(toGame, 600);
+      };
+      rd.onerror = function () { msg.textContent = 'Could not read that file.'; msg.className = 'bad'; };
+      rd.readAsText(f);
+    });
+  }
 
   // night (df 0) and day (df 1) endpoint palettes; intermediate df gives dusk
   var TOD_NIGHT = { fog: 0x2a1440, near: 110, hemi: 0x4a3a7a, ground: 0x1a1024, hemiI: 0.85, dir: 0x8a94ff, dirI: 0.55, amb: 0x40203a, ambI: 0.7, clear: 0x0a0714 };

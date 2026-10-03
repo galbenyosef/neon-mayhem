@@ -262,6 +262,19 @@
     width:min(50vw, 420px, 100vh); border:3px solid #ffd24a; border-radius:8px; background:#0b1f16; overflow:hidden;
     box-shadow:0 6px 28px rgba(0,0,0,.55); pointer-events:none; }
   #derby-tv canvas { display:block; width:100%; height:auto; }
+  /* IMPORT SAVE on a phone: a page of its own, with no city behind it (main.js importScreen) */
+  #import-screen { position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:16px;
+    background:radial-gradient(circle at 50% 30%, #2a1040, #0a0714); font-family:'Segoe UI', Arial, Helvetica, sans-serif; }
+  #import-card { max-width:420px; width:100%; background:rgba(16,8,30,.97); border:1px solid rgba(255,150,210,.65); border-radius:14px;
+    padding:20px 18px; text-align:center; box-shadow:0 0 30px rgba(255,79,163,.35); }
+  #import-title { color:#ffe8f6; font-weight:900; font-size:20px; letter-spacing:2px; }
+  #import-body { color:#cfe6ff; font-size:14px; line-height:1.5; margin:10px 0 14px; }
+  #import-screen .ibtn { display:block; width:100%; margin:8px 0 0; padding:12px 14px; font:inherit; font-weight:800; font-size:15px; letter-spacing:1px;
+    color:#f4ecff; background:rgba(255,105,180,.16); border:1px solid rgba(255,150,210,.65); border-radius:10px; }
+  #import-screen .ibtn.danger { background:rgba(255,80,80,.2); border-color:rgba(255,120,120,.7); color:#ffd9d9; }
+  #import-msg { min-height:20px; margin-top:10px; font-size:14px; color:#cfe6ff; }
+  #import-msg.bad { color:#ff9a9a; }
+  #import-msg.good { color:#8dffd8; }
   #photo-toast { position:fixed; right:calc(18px + env(safe-area-inset-right,0px)); top:150px; z-index:33; width:172px; padding:7px 7px 6px;
     background:#f4efe4; border-radius:3px; box-shadow:0 6px 22px rgba(0,0,0,.55); transform:translateX(130%) rotate(4deg);
     transition:transform .35s cubic-bezier(.2,.9,.3,1.2); pointer-events:none; }

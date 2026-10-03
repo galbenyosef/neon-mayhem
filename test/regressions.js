@@ -8207,6 +8207,77 @@ function withTimeout(p, ms) {
   check('touch: switching back restores the original layout',
     hand.backOn === false && hand.back.zoneLeft === '0px' && hand.back.btnRight === hand.right.btnRight,
     JSON.stringify(hand.back));
+  // The top row on a touchscreen: radar, PAUSE, the camera, and the
+  // fullscreen button while you are windowed. The camera went into the slot
+  // the fullscreen button already had, so windowed the two were one muddle
+  // with ⛶ on top. And when the browser refuses full screen, the button says
+  // so instead of doing nothing.
+  // (an earlier tap here may have gone full screen for real: start windowed)
+  await tpage.evaluate(function () { return document.fullscreenElement ? document.exitFullscreen().catch(function () { }) : null; });
+  await tpage.waitForTimeout(200);
+  var fsRow = await tpage.evaluate(function () {
+    var cam = null, all = document.querySelectorAll('.tbtn');
+    for (var i = 0; i < all.length; i++) if (all[i].textContent === '📷') cam = all[i];
+    var fsb = document.getElementById('fs-btn');
+    if (!cam || !fsb) return { found: false };
+    var was = fsb.style.display;
+    fsb.style.display = 'flex';    // as it is whenever you are not full screen
+    var c = cam.getBoundingClientRect(), f = fsb.getBoundingClientRect();
+    var r = { found: true, apart: f.left >= c.right || f.right <= c.left || f.top >= c.bottom || f.bottom <= c.top,
+      camHit: document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2) === cam,
+      fsHit: document.elementFromPoint(f.left + f.width / 2, f.top + f.height / 2) === fsb };
+    fsb.style.display = was;
+    var m = [], m0 = GAME.hud.message;
+    GAME.hud.message = function (t) { m.push(String(t)); return m0.apply(GAME.hud, arguments); };
+    r.fsEl = !!GAME.fullscreenEl();
+    document.documentElement.requestFullscreen = function () { r.asked = true; return Promise.reject(new TypeError('refused')); };
+    GAME.toggleFullscreen();
+    return new Promise(function (res) {
+      setTimeout(function () {
+        GAME.hud.message = m0;
+        delete document.documentElement.requestFullscreen;   // the real one again
+        r.said = m.some(function (t) { return /would not go full screen/.test(t); });
+        res(r);
+      }, 250);
+    });
+  });
+  check('touch: the camera and fullscreen buttons each have a slot of their own', fsRow.found && fsRow.apart && fsRow.camHit && fsRow.fsHit, JSON.stringify(fsRow));
+  check('touch: a refused full screen says so', fsRow.said, JSON.stringify(fsRow));
+  // IMPORT SAVE on a touchscreen picks the file on a page with no city
+  // behind it: the phone's picker sends the tab to the background, where a
+  // game this size is what Android reclaims first — the import crashed.
+  var imp = {};
+  try {
+    var save = await tpage.evaluate(function () { GAME.player.cash = 2468; return GAME.exportSave(); });
+    var nav = tpage.waitForNavigation({ timeout: 30000 });
+    await tpage.evaluate(function () {
+      GAME.togglePause();
+      document.getElementById('pause-import').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      document.getElementById('game-modal-ok').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await nav;
+    await tpage.waitForSelector('#import-card', { timeout: 30000 });
+    imp.light = await tpage.evaluate(function () {
+      return location.hash === '#import' && !GAME.renderer && !(GAME.city.nodes && GAME.city.nodes.length);
+    });
+    // a file that is no save is turned away, on the card
+    var fc = tpage.waitForEvent('filechooser', { timeout: 10000 });
+    await tpage.evaluate(function () { document.getElementById('import-pick').click(); });
+    await (await fc).setFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
+    await tpage.waitForTimeout(400);
+    imp.refused = await tpage.evaluate(function () { return document.getElementById('import-msg').textContent; });
+    fc = tpage.waitForEvent('filechooser', { timeout: 10000 });
+    await tpage.evaluate(function () { document.getElementById('import-pick').click(); });
+    var ch = await fc;
+    nav = tpage.waitForNavigation({ timeout: 30000 });
+    await ch.setFiles({ name: 'neon-mayhem-save.json', mimeType: 'application/json', buffer: Buffer.from(save.replace('"cash\\":2468', '"cash\\":13579')) });
+    await nav;
+    await tpage.waitForFunction(function () { return window.GAME && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0; }, null, { timeout: 90000 });
+    imp.back = await tpage.evaluate(function () { return { hash: location.hash, cash: GAME.player.cash }; });
+  } catch (e) { imp.error = String(e).slice(0, 160); }
+  check('touch: IMPORT SAVE opens a page of its own, with no city loaded behind the file picker', imp.light === true, JSON.stringify(imp));
+  check('touch: a file that is not a save is turned away there', /not a Neon Mayhem save/.test(imp.refused || ''), JSON.stringify(imp));
+  check('touch: and a save comes in and the game loads with it', imp.back && imp.back.hash === '' && imp.back.cash === 13579, JSON.stringify(imp));
   check('touch: zero page errors on the touch layer', touchErrors.length === 0, touchErrors[0]);
   await tctx.close();
 

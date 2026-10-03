@@ -239,7 +239,13 @@ GAME.hud = (function () {
         title: 'IMPORT SAVE',
         body: 'Importing REPLACES your current progress — cash, property, garage, your look, everything.\nWant to keep this life? Cancel and use EXPORT SAVE first.',
         ok: 'IMPORT & OVERWRITE', danger: true,
-        onOk: function () { $('save-file').click(); }
+        onOk: function () {
+          // a phone picks the file on a page with no city behind it (main.js
+          // importScreen): the picker sends the tab to the background, where
+          // a game this size is what Android reclaims first
+          if (GAME.isTouch) { GAME.save(); location.hash = 'import'; location.reload(); return; }
+          $('save-file').click();
+        }
       });
     });
     pauseBtn('pause-reset', function () {

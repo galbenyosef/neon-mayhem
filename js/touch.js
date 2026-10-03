@@ -114,10 +114,12 @@ GAME.touch = (function () {
     }
     // the radar moves to the top-left on touch: the bottom-left corner is the
     // virtual stick's zone, and the two were fighting for the same thumb.
-    // PAUSE sits just right of it, and fullscreen keeps its own corner
-    // control, shown on the menus (see hud.refreshFsBtn)
+    // PAUSE sits just right of it, then the camera, and fullscreen keeps its
+    // own control after those (shown only while not full screen, see
+    // hud.refreshFsBtn) — last in the row, so hiding it leaves no gap, and
+    // never on top of the camera, which it covered when the two shared a slot
     moveCorner(document.getElementById('minimap-wrap'), { bottom: 'auto', left: '10px', top: '10px', width: '132px', height: '132px', pointerEvents: 'auto' });
-    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(206px + env(safe-area-inset-left, 0px))',
+    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(260px + env(safe-area-inset-left, 0px))',
       top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
     if (enabled) {
       if (layer) layer.style.display = '';
