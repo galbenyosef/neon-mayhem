@@ -198,8 +198,10 @@
 //  13b. MEMORY      — what the memory work took off stays off: spike strips
 //      are capped, the result card, the map and uploaded textures let their
 //      canvases go, the ocean moves on the GPU, batches and static meshes
-//      drop their arrays, the island is instanced and indexed, entities keep
-//      one shape, and a shop's preview renderer goes when the shop closes.
+//      drop their arrays (the interiors and shop fronts too), the island is
+//      instanced and indexed, entities keep one shape, a shop's preview
+//      renderer goes when the shop closes, and nothing is spawned out at sea
+//      only to be thrown away the next tick.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -8882,6 +8884,66 @@ function withTimeout(p, ms) {
     }));
   }
 
+  // What came after the city's own pack-and-release, and the churn out at sea.
+  var mem2 = await page.evaluate(function () {
+    var out = {}, P = GAME.player, W = GAME.world, C = GAME.city;
+    // The four pale walls kept their 512x384 canvases for the life of the
+    // page, only so the facade check could read one pixel back off them;
+    // it reads the wall as it was painted now, and the canvases go.
+    out.walls = Object.keys(C.texBlk).map(function (k) {
+      var t = C.texBlk[k], im = t.map.image, u = t.map.userData || {};
+      return { k: k, held: im ? im.width * im.height : 0, up: u.w ? u.w * u.h : 0, lum: t.wallLum };
+    });
+    // The interiors and the shop fronts are built after the city packed and
+    // released its static meshes, so they kept every float: 1.4 MB of the
+    // 2.5 MB of geometry still held in JS. Nothing outside the blocks (and
+    // the small shared shapes) should hold much now.
+    var blocks = new Set(C.blockMeshes.map(function (m) { return m.geometry; })), seen = new Set();
+    out.heldMax = 0; out.interiors = null;
+    GAME.scene.traverse(function (o) {
+      if (!o.isMesh || !o.geometry || seen.has(o.geometry)) return;
+      var g = o.geometry; seen.add(g);
+      if (g.attributes.position && g.attributes.position.count > 20000 && g.boundingSphere && g.boundingSphere.center.x < -2500)
+        out.interiors = { verts: g.attributes.position.count, released: !!g.userData.released, held: !!g.attributes.position.array };
+      if (blocks.has(g) || g.userData.shared) return;
+      var own = 0;
+      for (var k in g.attributes) if (g.attributes[k].array) own += g.attributes[k].array.byteLength;
+      if (g.index && g.index.array) own += g.index.array.byteLength;
+      out.heldMax = Math.max(out.heldMax, own);
+    });
+    // Out on the water between the landmasses the spawners' nearest road is
+    // further off than anything lasts, and every ped and car they made there
+    // was built and thrown away the next tick: fifteen and ten a second.
+    function churn(x, z) {
+      GAME.test.teleport(x, z);
+      GAME.test.fastForward(3);
+      var born = new Map(), t = 0, r = { peds: 0, cars: 0, pedsWasted: 0, carsWasted: 0 };
+      W.peds.forEach(function (p) { born.set(p, -1); });
+      W.cars.forEach(function (c) { born.set(c, -1); });
+      for (var i = 0; i < 600; i++) {
+        P.health = 100;
+        GAME.tick(1 / 60); t++;
+        W.peds.forEach(function (p) { if (!born.has(p)) { born.set(p, t); r.peds++; } });
+        W.cars.forEach(function (c) { if (!born.has(c)) { born.set(c, t); r.cars++; } });
+        born.forEach(function (b, e) {
+          if (b < 0 || W.peds.indexOf(e) >= 0 || W.cars.indexOf(e) >= 0) return;
+          if (t - b < 60) { if (e.kind === 'ped') r.pedsWasted++; else r.carsWasted++; }
+          born.set(e, -2);
+        });
+      }
+      r.livePeds = W.peds.length; r.liveCars = W.cars.length;
+      return r;
+    }
+    GAME.godMode = true;
+    if (P.inCar) GAME.exitCar();
+    out.sea = churn(560, 0);
+    out.sea.wet = C.isInWater(P.pos.x, P.pos.z);
+    var node = C.nearestNode(120, -40);
+    out.land = churn(node.x, node.z);
+    GAME.godMode = false;
+    return out;
+  });
+
   check('memory: roadblocks were laid (anchor sanity)', mem.laid >= 4 && mem.copsAdded >= 8,
     mem.laid + ' roadblocks, ' + mem.copsAdded + ' cruisers');
   check('memory: and no more than three spike strips lie about', mem.strips <= 3, mem.strips + ' strips');
@@ -8915,6 +8977,24 @@ function withTimeout(p, ms) {
     pvVisits.every(function (v) { return v.live; }), JSON.stringify(pvVisits));
   check('memory: and it is let go each time the shop closes', pvVisits.every(function (v) { return v.lost; }),
     JSON.stringify(pvVisits));
+  check('memory: the pale walls went up at full size (anchor sanity)',
+    mem2.walls.length === 4 && mem2.walls.every(function (w) { return w.up >= 512 * 384; }), JSON.stringify(mem2.walls));
+  check('memory: and their canvases no longer hold the pixels', mem2.walls.every(function (w) { return w.held <= 1; }),
+    JSON.stringify(mem2.walls));
+  check('memory: while the facade check still has each wall as painted',
+    mem2.walls.every(function (w) { return typeof w.lum === 'number' && w.lum > 0.3 && w.lum < 0.9; }), JSON.stringify(mem2.walls));
+  check('memory: the interiors are built (anchor sanity)', !!mem2.interiors && mem2.interiors.verts > 20000,
+    JSON.stringify(mem2.interiors));
+  check('memory: and their geometry is gone from JS once it is on the GPU',
+    !!mem2.interiors && mem2.interiors.released && !mem2.interiors.held, JSON.stringify(mem2.interiors));
+  check('memory: no other geometry outside the blocks holds much in JS', mem2.heldMax <= 128 * 1024,
+    Math.round(mem2.heldMax / 1024) + ' KB largest');
+  check('memory: the mainland still fills and turns over (anchor sanity)', mem2.land.livePeds >= 5 && mem2.land.liveCars >= 5,
+    JSON.stringify(mem2.land));
+  check('memory: out at sea (anchor sanity)', mem2.sea.wet, JSON.stringify(mem2.sea));
+  check('memory: and no ped or car is made there only to be thrown away',
+    mem2.sea.pedsWasted === 0 && mem2.sea.carsWasted === 0 && mem2.land.pedsWasted === 0 && mem2.land.carsWasted === 0,
+    'sea ' + JSON.stringify(mem2.sea) + ' land ' + JSON.stringify(mem2.land));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

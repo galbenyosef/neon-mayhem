@@ -1878,6 +1878,7 @@ GAME.vehicles = (function () {
     return true;
   }
 
+  var TRAFFIC_DESPAWN = 200;   // how far from the focus traffic lasts (see update)
   function spawnTraffic() {
     var fc = GAME.focus();
     var live = 0;
@@ -1893,6 +1894,10 @@ GAME.vehicles = (function () {
       var r = U.randRange(Math.random, 80, GAME.settings.bubbleRadius);
       var x = fc.x + Math.cos(ang) * r, z = fc.z + Math.sin(ang) * r;
       var rp = city.nearestRoadPoint(x, z);
+      // past where update() drops traffic, a car is made only to be thrown
+      // away next tick — which, out on the water between the landmasses,
+      // where the nearest road is that far, was every car, ten a second
+      if (U.dist2(rp.x, rp.z, fc.x, fc.z) > TRAFFIC_DESPAWN * TRAFFIC_DESPAWN) continue;
       var onIsla = rp.axis === 'net';
       if (!onIsla && (rp.x < -480 || rp.x > 352 || Math.abs(rp.z) > 480)) continue;
       if (city.inAirport(rp.x, rp.z)) continue; // keep the airfield clear
@@ -1995,7 +2000,7 @@ GAME.vehicles = (function () {
       var car = cars[i];
       // despawn far traffic
       if (car.ai && car.ai.mode === 'traffic' && !car.mission) {
-        if (U.dist2(car.pos.x, car.pos.z, fc.x, fc.z) > 200 * 200) { removeCar(car); continue; }
+        if (U.dist2(car.pos.x, car.pos.z, fc.x, fc.z) > TRAFFIC_DESPAWN * TRAFFIC_DESPAWN) { removeCar(car); continue; }
       }
       // abandoned rides don't pile up forever: anything ownerless, off-duty
       // and out of sight for long enough is towed. Parked-spot cars have

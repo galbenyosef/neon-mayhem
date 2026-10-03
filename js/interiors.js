@@ -655,6 +655,11 @@ GAME.interiors = (function () {
     var mesh = new THREE.Mesh(b.build(), sharedVertexBasic());
     mesh.matrixAutoUpdate = false;
     GAME.scene.add(mesh);
+    // built after the city packed and released its own static meshes, so it
+    // goes through the same: down to what an unlit material reads, and off
+    // this side once it is on the GPU (main.js draws everything once at boot)
+    packStatic(mesh);
+    releaseStatic(mesh);
     buildLift();
   }
 

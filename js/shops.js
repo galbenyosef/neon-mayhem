@@ -1131,6 +1131,9 @@ GAME.shops = (function () {
     }));
     poolsMesh.matrixAutoUpdate = false;
     scene.add(poolsMesh);
+    // these come after the city packed and released its static meshes, so
+    // they go through the same here (see packStatic, releaseStatic)
+    [wallMesh, trimMesh, signMesh, poolsMesh].forEach(function (m) { packStatic(m); releaseStatic(m); });
   }
 
   // one instanced-ish batch of glowing doormats, pulsing in update()

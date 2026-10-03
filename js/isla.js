@@ -349,28 +349,33 @@ GAME.isla = (function () {
     return [U.lerp(s.pts[lo][0], s.pts[hi][0], f), U.lerp(s.pts[lo][1], s.pts[hi][1], f)];
   }
   // Distance from (x,z) to edge i of s; the global parameter of the foot is
-  // left in ecT. Both answers used to come back as a fresh {d, t} per edge,
-  // and this is asked a great deal: the island's ground height asks it of
-  // every road in its cell, and the bridges ask it for every wheel, car and
-  // pedestrian's height each tick, wherever on the map they are.
-  var ecT = 0, scT = 0;
+  // left in FOOT[0]. Both answers used to come back as a fresh {d, t} per
+  // edge, and this is asked a great deal: the island's ground height asks it
+  // of every road in its cell, and the bridges ask it for every wheel, car
+  // and pedestrian's height each tick, wherever on the map they are.
+  // A typed array, not a plain variable: a fraction written to a variable a
+  // closure shares is boxed afresh by the engine on every write, and that
+  // was most of what the game allocated while it booted (260 MB, all of it
+  // garbage) and a steady trickle on the island ever after. A slot in a
+  // Float64Array holds the same double without boxing it.
+  var FOOT = new Float64Array(2);   // [edgeClosest's foot, segClosest's foot]
   function edgeClosest(s, i, x, z) {
     var a = s.pts[i], b = s.pts[i + 1];
     var vx = b[0] - a[0], vz = b[1] - a[1];
     var l2 = vx * vx + vz * vz;
     var t = l2 > 1e-9 ? U.clamp(((x - a[0]) * vx + (z - a[1]) * vz) / l2, 0, 1) : 0;
     var px = a[0] + vx * t, pz = a[1] + vz * t;
-    ecT = (s.cum[i] + Math.sqrt(l2) * t) / s.len;
+    FOOT[0] = (s.cum[i] + Math.sqrt(l2) * t) / s.len;
     return U.dist(x, z, px, pz);
   }
-  // distance from (x,z) to the whole of s; the foot's parameter is left in scT
+  // distance from (x,z) to the whole of s; the foot's parameter is left in FOOT[1]
   function segClosest(s, x, z) {
     var bd = 1e9, bt = 0;
     for (var i = 0; i < s.pts.length - 1; i++) {
       var d = edgeClosest(s, i, x, z);
-      if (d < bd) { bd = d; bt = ecT; }
+      if (d < bd) { bd = d; bt = FOOT[0]; }
     }
-    scT = bt;
+    FOOT[1] = bt;
     return bd;
   }
 
@@ -559,8 +564,8 @@ GAME.isla = (function () {
       var si = list[i], s = NET[si];
       var cd = edgeClosest(s, list[i + 1], x, z);
       if (sStamp[si] !== stampCtr) {
-        sStamp[si] = stampCtr; sBestD[si] = cd; sBestT[si] = ecT; touched.push(si);
-      } else if (cd < sBestD[si]) { sBestD[si] = cd; sBestT[si] = ecT; }
+        sStamp[si] = stampCtr; sBestD[si] = cd; sBestT[si] = FOOT[0]; touched.push(si);
+      } else if (cd < sBestD[si]) { sBestD[si] = cd; sBestT[si] = FOOT[0]; }
     }
     var wsum = 0, ysum = 0;
     for (var t = 0; t < touched.length; t++) {
@@ -597,13 +602,13 @@ GAME.isla = (function () {
     if (list) {
       for (i = 0; i < list.length; i += 2) {
         var cd = edgeClosest(NET[list[i]], list[i + 1], x, z);
-        if (cd < bestD) { bestD = cd; best = { s: NET[list[i]], t: ecT }; }
+        if (cd < bestD) { bestD = cd; best = { s: NET[list[i]], t: FOOT[0] }; }
       }
     }
     if (!best) {
       for (i = 0; i < NET.length; i++) {
         var cd2 = segClosest(NET[i], x, z);
-        if (cd2 < bestD) { bestD = cd2; best = { s: NET[i], t: scT }; }
+        if (cd2 < bestD) { bestD = cd2; best = { s: NET[i], t: FOOT[1] }; }
       }
     }
     var p = segPointAt(best.s, best.t);
@@ -638,7 +643,7 @@ GAME.isla = (function () {
         sg = NET[i]; c = segClosest(sg, px, pz);
         need = sg.w / 2 + half + gap;
         if (c >= need) continue;
-        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, scT); }
+        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, FOOT[1]); }
       }
       for (i = 0; i < SPANS.length; i++) {
         sg = SPANS[i];
@@ -646,7 +651,7 @@ GAME.isla = (function () {
         c = segClosest(sg, px, pz);
         need = sg.half + half + gap + 6;
         if (c >= need) continue;
-        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, scT); }
+        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, FOOT[1]); }
       }
       if (!worst) break;
       var dx = px - worst[0], dz = pz - worst[1], l = Math.hypot(dx, dz);
@@ -693,7 +698,7 @@ GAME.isla = (function () {
     s.deckY = function (x, z) {
       if (s.outside(x, z, s.half)) return null;
       if (segClosest(s, x, z) > s.half) return null;
-      var d = scT * s.len;
+      var d = FOOT[1] * s.len;
       if (d <= s.flatIn) return s.startY;
       if (d < s.flatIn + s.rampIn) return U.lerp(s.startY, s.h, ease((d - s.flatIn) / s.rampIn));
       if (d > s.len - s.rampOut) return U.lerp(s.endY, s.h, ease((s.len - d) / s.rampOut));

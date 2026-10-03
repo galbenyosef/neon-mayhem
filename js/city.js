@@ -537,11 +537,12 @@ GAME.city = (function () {
     // the wall's brightest channel, 0-1: where a lit window stops and wall begins
     var wv = parseInt(wall.slice(1), 16);
     var wallMax = Math.max((wv >> 16) & 255, (wv >> 8) & 255, wv & 255) / 255;
-    var map = repeatTex(cv);
-    // (a pale wall keeps its canvas: testFacadeContrast reads the wall's
-    // colour off it; its glow and every dark wall let theirs go)
-    if (!opts.glowAll) releaseAfterUpload(map);
-    return { map: map, glow: gv ? releaseAfterUpload(repeatTex(gv)) : map, cells: [cols, rows], wallMax: wallMax };
+    // the wall as painted, read back off the canvas while it still has one
+    // (x=2 is inside the plain left column), for testFacadeContrast
+    var px = g.getImageData(2, 2, 1, 1).data;
+    var wallLum = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+    var map = releaseAfterUpload(repeatTex(cv));
+    return { map: map, glow: gv ? releaseAfterUpload(repeatTex(gv)) : map, cells: [cols, rows], wallMax: wallMax, wallLum: wallLum };
   }
 
   // ---------- window light ----------
@@ -868,9 +869,9 @@ GAME.city = (function () {
     city.facadeWalls = { downtown: blkDowntown, strip: blkStrip,
                          residential: blkGeneric, harbor: blkHarbor };
     // headless hook: can a building's colour be SEEN? Per district, the wall
-    // its tint multiplies — sampled out of the map, where x=2 is inside the
-    // plain left column — times the spread of the colours actually PICKED for
-    // that district's blocks.
+    // its tint multiplies — sampled out of the map as it was painted (see
+    // windowTexture: the canvas itself is gone once it is on the GPU) — times
+    // the spread of the colours actually PICKED for that district's blocks.
     //
     // What this is: a floor against the bug it was written for, where a wall
     // at a ninth of full brightness crushed a whole palette into one block
@@ -886,10 +887,8 @@ GAME.city = (function () {
         if (!picks.length || !(d in city.facadeWalls)) return;
         var t = city.facadeWalls[d], wall = 1;
         if (t) {
-          var img = t.map && t.map.image;
-          if (!img || !img.getContext) return;
-          var px = img.getContext('2d').getImageData(2, 2, 1, 1).data;
-          wall = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+          if (typeof t.wallLum !== 'number') return;
+          wall = t.wallLum;
         }
         var lo = [255, 255, 255], hi = [0, 0, 0], spread = 0;
         for (var i = 0; i < picks.length; i++) {

@@ -400,7 +400,7 @@ GAME.peds = (function () {
         continue;
       }
       ped.bumpCd = Math.max(0, (ped.bumpCd || 0) - dt);
-      if (!ped.isCop && !ped.jobPed && d2p > 180 * 180) { removePed(ped); continue; }
+      if (!ped.isCop && !ped.jobPed && d2p > PED_DESPAWN * PED_DESPAWN) { removePed(ped); continue; }
       if (ped.isCop) {
         // movement is driven by police.js, but officers are still flesh and blood:
         // a car at speed runs them down like anyone else
@@ -936,6 +936,13 @@ GAME.peds = (function () {
     }
   }
 
+  // How far from the focus an ordinary ped lasts (update drops them past it).
+  // The spawner below snaps its pick to the nearest road, and out on the
+  // water between the landmasses the nearest road is past this: every ped it
+  // made there was built, mesh and all, and thrown away on the next tick —
+  // fifteen a second for as long as you were out in a boat. Nobody ever saw
+  // one; now they are not made.
+  var PED_DESPAWN = 180;
   function spawnBubble() {
     var fc = GAME.focus();
     var live = 0;
@@ -960,6 +967,7 @@ GAME.peds = (function () {
       else { px = rp.x; pz = rp.z + off; }
       if (!isla && x > 340 && x < 700) { px = x; pz = z; }
       if (rp.axis !== 'net' && (px < -490 || px > 372 || Math.abs(pz) > 490)) continue;
+      if (U.dist2(px, pz, fc.x, fc.z) > PED_DESPAWN * PED_DESPAWN) continue;   // gone next tick
       if (GAME.city.isInWater(px, pz)) continue;
       if (GAME.city.inAirport(px, pz)) continue; // no strollers on the runway
       if (GAME.inPlainView(px, GAME.city.groundY(px, pz), pz)) continue;   // not out of thin air

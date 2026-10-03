@@ -34,8 +34,10 @@ var ROOT = path.join(__dirname, '..');
 // vertex buffers 7.8 (were 39 before the geometry work, 43 before any of
 // it), geometry still held in JS 1.3 (were 39), textures 14.8 as uploaded,
 // and the page process's peak 290-300 (was 460-515, nearly all of it
-// the world being built).
-var LIMIT = { vbMB: 12, heldMB: 4, texMB: 18, peakMB: 400 };
+// the world being built). Held geometry later crept back to 2.5 under a
+// budget of 4, as the interiors and shop fronts came in after the city's
+// release and kept theirs; released too, it is 1.1, and the budget is 2.
+var LIMIT = { vbMB: 12, heldMB: 2, texMB: 18, peakMB: 400 };
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml' };
 
 // Peak resident memory (MB) of the renderer processes below rootPid, from
