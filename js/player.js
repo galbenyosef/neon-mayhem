@@ -323,6 +323,8 @@ function respawnAfterScreen() {
     // attribution the previous life left smouldering in the world.
     GAME.world.cars.forEach(function (wc) { wc.byPlayer = false; });
     P.state = 'alive';
+    // the first time back on your feet, what it cost and how to do better
+    if (GAME.lola) GAME.lola.first(kind === 'busted' ? 'busted' : 'wasted');
   });
 }
 
@@ -438,6 +440,7 @@ function sitIn(car) {
   GAME.cam.freeT = 0;
   GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
   GAME.hud.message(car.spec.label, 1.6);
+  if (GAME.lola) GAME.lola.first(car.spec.boat ? 'boat' : car.spec.heli ? 'heli' : car.spec.plane ? 'plane' : '');
   // the radio comes on tuned to whatever the last driver left it on — the
   // first time, wherever a stranger had it; after that wherever YOU did.
   // It was re-rolled at random every time you got in.
@@ -816,6 +819,7 @@ GAME.startSwim = function () {
   if (P.swimming || P.state !== 'alive' || P.inCar) return;
   if (P.parachuting) GAME.aircraft.land();
   P.swimming = true;
+  if (GAME.lola) GAME.lola.first('swim');
   P.swimPitch = 0; P.swimPhase = 0; P.swimFx = 0;
   P.velY = 0; P.airborne = false; P.roofCar = null; P.mantle = null;
   P.moveSpeed = Math.min(P.moveSpeed || 0, SWIM_SPEED);

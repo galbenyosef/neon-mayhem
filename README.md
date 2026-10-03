@@ -75,6 +75,11 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 - Messages stack rather than replacing each other; a hit shows which way it came from; low health pulses the edges of the screen. If you own a place, a new session starts there.
 - CRT filter, separate music/SFX switches, a camera-shake switch, a **GFX: HIGH / MEDIUM / LOW** setting (resolution, draw distance and crowd), and a day/night pin if you want the city permanently at golden hour or midnight (a night's sleep politely overrules it). The pause screen works from the keyboard too: arrows and `Enter`.
 
+## Lola, and the camera
+
+- **Lola talks you through it.** The first time you pick up a lost tape, clear a stunt ramp, catch a star (or three), wake up in hospital or a cell, take a boat, a helicopter or a plane, end up swimming, use a respray, find a shift on offer, walk up to a shop, buy a place or walk into the casino, she pages you what it is and why it matters — once each, for the life of the save. **LOLA'S TIPS** on the pause screen turns her off for anybody who knows the town.
+- **You carry a camera** — an old film SLR. `C` (📷 on a touchscreen, the left stick click on a pad) takes a shot of the city as you see it, without the HUD, developed like a 1986 print: warm film, grain, darkened corners and the orange date in the corner. Shots go to **PHOTOS** on the pause screen, kept between visits (the last thirty-six), where you can save any of them — or switch on **AUTO-DOWNLOAD** and every shot is saved the moment you take it.
+
 ## Controls
 
 | Input | On foot | In car |
@@ -92,11 +97,11 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 | , / . | — | Radio station (and off) |
 | Shift | Sprint | — |
 
-`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `X` twice to abandon a mission or clock off a shift (also **ABANDON** on the pause screen, for pads and touch; on a touchscreen the JOB button turns into **END** during a shift) · `Esc` pause · `⛶` fullscreen
+`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `C` takes a photo · `X` twice to abandon a mission or clock off a shift (also **ABANDON** on the pause screen, for pads and touch; on a touchscreen the JOB button turns into **END** during a shift) · `Esc` pause · `⛶` fullscreen
 
 **Your keys, your way.** Every action above can be moved to another key from **CONTROLS** on the pause screen (click the action, press the new key; a key already in use swaps over). The same screen sets mouse sensitivity, inverted look and field of view, and all of it is remembered. `Esc` always pauses.
 
-🎮 **Controllers** work as soon as one is plugged in and a button is pressed: left stick moves or steers, right stick looks, RT/LT fire and aim on foot and are throttle and brake at the wheel. A jumps (handbrake), B sprints, X starts a shift, Y gets in and out, the bumpers cycle targets, the d-pad tunes the radio, retries and swaps weapons, Start pauses — and on the pause screen the d-pad and A/B find their way round the menus.
+🎮 **Controllers** work as soon as one is plugged in and a button is pressed: left stick moves or steers, right stick looks, RT/LT fire and aim on foot and are throttle and brake at the wheel. A jumps (handbrake), B sprints, X starts a shift, Y gets in and out, the left stick click takes a photo, the bumpers cycle targets, the d-pad tunes the radio, retries and swaps weapons, Start pauses — and on the pause screen the d-pad and A/B find their way round the menus.
 
 **In the air:** helicopter — climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Plane — `W` to roll down the runway, `Space` to rotate once you're fast, `Q/E` to barrel-roll, and pull hard enough on the elevator for a full loop. `F` bails out with a parachute.
 

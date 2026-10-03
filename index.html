@@ -253,6 +253,28 @@
   /* fingers need bigger targets than mouse pointers do */
   @media (pointer:coarse) { #map-legend .lgd { padding:6px 10px; } }
   /* CONTROLS (controls.js): over the pause screen */
+  /* the camera (photo.js): the mirror's blink, the print that slides in, the album */
+  #shutter { position:fixed; inset:0; z-index:60; background:#000; opacity:0; pointer-events:none; }
+  #shutter.blink { animation:shutterBlink .16s ease-out; }
+  @keyframes shutterBlink { 0% { opacity:0; } 25% { opacity:1; } 100% { opacity:0; } }
+  #photo-toast { position:fixed; right:calc(18px + env(safe-area-inset-right,0px)); top:150px; z-index:33; width:172px; padding:7px 7px 6px;
+    background:#f4efe4; border-radius:3px; box-shadow:0 6px 22px rgba(0,0,0,.55); transform:translateX(130%) rotate(4deg);
+    transition:transform .35s cubic-bezier(.2,.9,.3,1.2); pointer-events:none; }
+  #photo-toast.on { transform:translateX(0) rotate(2deg); }
+  #photo-toast img { display:block; width:100%; height:auto; background:#222; }
+  #photo-toast-text { font:600 11px "Segoe UI",Arial,sans-serif; color:#3a3040; margin-top:5px; text-align:center; }
+  #photo-album { position:fixed; inset:0; z-index:38; display:none; align-items:center; justify-content:safe center;
+    flex-direction:column; background:#08040f; overflow-y:auto; padding:14px 10px; color:#cfe6ff; }
+  #photo-album h2 { margin:4px 0 4px; color:#ffd27a; letter-spacing:4px; font-style:italic; }
+  #photo-empty { font-size:14px; color:#9fb0c8; margin:18px 0; }
+  #photo-grid { display:flex; flex-wrap:wrap; justify-content:center; gap:14px; width:min(94vw,900px); margin:10px 0; }
+  .ph-card { position:relative; width:190px; background:#f4efe4; padding:6px 6px 8px; border-radius:3px; box-shadow:0 4px 14px rgba(0,0,0,.5); }
+  .ph-card img { display:block; width:100%; height:auto; }
+  .ph-when { font:600 11px "Courier New",monospace; color:#7a5030; margin:4px 0 2px; }
+  .ph-card .mbtn { margin:2px 2px 0 0; padding:3px 9px; font-size:11.5px; }
+  .ph-card .ph-save { background:#2e2240; border-color:#2e2240; color:#ffe7b0; }
+  .ph-card.kfocus { outline:3px solid #ffd27a; outline-offset:2px; }
+  .ph-card .ph-del { position:absolute; top:10px; right:10px; padding:1px 7px; background:rgba(10,4,20,.7); }
   #controls-screen { position:fixed; inset:0; z-index:37; display:none; align-items:center; justify-content:safe center;
     flex-direction:column; background:#08040f; overflow-y:auto; padding:14px 10px; color:#cfe6ff; }
   #controls-screen h2 { margin:4px 0 6px; color:#9df3ff; letter-spacing:4px; font-style:italic; }
@@ -408,6 +430,7 @@
     <span class="mbtn" id="pause-resume">RESUME</span>
     <span class="mbtn" id="pause-abandon" style="display:none">✖ ABANDON MISSION</span>
     <span class="mbtn" id="pause-map">🗺 MAP</span>
+    <span class="mbtn" id="pause-photos">📷 PHOTOS</span>
     <span class="mbtn" id="pause-mute">🔊 SOUND</span>
     <span class="mbtn" id="pause-music">🎵 MUSIC: ON</span>
     <span class="mbtn" id="pause-sfx">💥 SFX: ON</span>
@@ -416,6 +439,7 @@
     <span class="mbtn" id="pause-gfx">🖥 GFX: HIGH</span>
     <span class="mbtn" id="pause-keys">🎮 CONTROLS</span>
     <span class="mbtn" id="pause-haptic">📳 RUMBLE: ON</span>
+    <span class="mbtn" id="pause-tips">💬 LOLA'S TIPS: ON</span>
     <span class="mbtn" id="pause-lefty">🎮 CONTROLS: RIGHT</span>
     <span class="mbtn" id="pause-chaos">🌆 CITY: LIVELY</span>
     <span class="mbtn" id="pause-day">🕓 TIME: AUTO</span>
@@ -431,6 +455,15 @@
     style="color:#9fd8ff;" onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
 </div>
 
+<div id="shutter"></div>
+<div id="photo-toast"><img id="photo-toast-img" alt=""><div id="photo-toast-text"></div></div>
+<div id="photo-album">
+  <h2>📷 PHOTOS</h2>
+  <div style="font-size:12.5px;color:#9fb0c8;max-width:560px;text-align:center">Every shot you take with the camera. Save the ones you want to keep — they are kept here for you between visits, up to the last thirty-six.</div>
+  <div id="photo-empty">No photos yet — press the camera key (or 📷) while you play.</div>
+  <div id="photo-grid"></div>
+  <div><span class="mbtn" id="photo-auto">AUTO-DOWNLOAD: OFF</span><span class="mbtn" id="photo-all">⤓ SAVE ALL</span><span class="mbtn" id="photo-close">DONE</span></div>
+</div>
 <div id="controls-screen">
   <h2>CONTROLS</h2>
   <div id="ctl-pad"></div>
@@ -558,6 +591,8 @@ window.addEventListener('load', function () {
 <script src="js/police.js"></script>
 <script src="js/missions.js"></script>
 <script src="js/tapes.js"></script>
+<script src="js/lola.js"></script>
+<script src="js/photo.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/share.js"></script>
 <script src="js/shops.js"></script>

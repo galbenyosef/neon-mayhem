@@ -206,6 +206,11 @@ GAME.touch = (function () {
     pauseB.style.right = ''; pauseB.style.bottom = '';
     pauseB.style.left = '152px'; pauseB.style.top = '12px';
     pauseB.style.fontSize = '15px';
+    // and the camera beside it: a shot is always one tap away (photo.js)
+    var photoB = mkBtn('📷', 0, 0, 46, { press: function () { T.photo = true; } });
+    photoB.style.right = ''; photoB.style.bottom = '';
+    photoB.style.left = '206px'; photoB.style.top = '12px';
+    photoB.style.fontSize = '18px';
 
     // virtual stick
     stickZone.addEventListener('touchstart', function (e) {
@@ -347,7 +352,7 @@ GAME.touch = (function () {
     var T = GAME.input.touch;
     T.gas = T.brake = T.handbrake = T.driveByAuto = false;
     T.fire = T.jump = T.aim = T.run = T.enter = false;
-    T.firePressed = T.weaponCycle = T.job = T.retry = false;
+    T.firePressed = T.weaponCycle = T.job = T.retry = T.photo = false;
     for (var k in btns) {
       if (!btns[k]) continue;
       btns[k].classList.remove('held');

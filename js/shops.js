@@ -391,6 +391,7 @@ GAME.shops = (function () {
     GAME.save();
     refreshGarageSpots();   // this lot joins the fleet's rounds
     GAME.track('safehouse-bought');
+    if (GAME.lola) GAME.lola.first('home');
     note('The keys are yours.');
     GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all, with your garage parked outside.', 5);
     GAME.share.show({

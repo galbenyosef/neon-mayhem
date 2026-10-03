@@ -96,6 +96,10 @@ GAME.hud = (function () {
       b.classList.toggle('danger', abandonSure);
     }
     api.paintAbandon = function (reset) { if (reset) abandonSure = false; paintAbandon(); };
+    // Lola's first-time tips (lola.js), off for anybody who knows the town
+    function paintTips() { $('pause-tips').textContent = (GAME.lola && !GAME.lola.tips) ? '💬 LOLA\'S TIPS: OFF' : '💬 LOLA\'S TIPS: ON'; }
+    pauseBtn('pause-tips', function () { if (GAME.lola) GAME.lola.setTips(!GAME.lola.tips); paintTips(); });
+    paintTips();
     pauseBtn('pause-abandon', function () {
       if (!GAME.missions || !GAME.missions.active) return;
       if (!abandonSure) { abandonSure = true; paintAbandon(); return; }
@@ -700,7 +704,7 @@ GAME.hud = (function () {
   function paintKeyHelp() {
     var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
       '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
-      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
+      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
     var card = document.getElementById('controls-card');
     if (card) card.innerHTML = h;
     if (el['pause-controls']) el['pause-controls'].innerHTML = h;
@@ -1323,6 +1327,8 @@ GAME.hud = (function () {
       // place that sees every change — but neither of them passes the level
       // you were ON, and the direction is the whole message. Keep it here.
       if (n > wantedShown) GAME.haptics.wantedUp(n);
+      // the first star, and the first time it is three: what they mean
+      if (n > wantedShown && GAME.lola && GAME.started) GAME.lola.first(n >= 3 ? 'stars3' : 'star');
       else if (n === 0 && wantedShown > 0) GAME.haptics.wantedClear();
       wantedShown = n;
     },

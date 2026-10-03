@@ -333,6 +333,7 @@ GAME.interiors = (function () {
       if (room.music && GAME.audio.radio && !GAME.audio.muted) GAME.audio.radio.setVolume(0.45);
       GAME.applyTimeOfDay(GAME.timeOfDay);   // the room's own light (main.js)
       GAME.track('interior-' + room.id);
+      if (room.kind === 'casino' && GAME.lola) GAME.lola.first('casino');
     });
     return true;
   }

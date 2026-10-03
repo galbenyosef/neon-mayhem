@@ -66,6 +66,10 @@
 //   5h. THE WATER, AGAIN — a plane left in the air flies on and noses down;
 //       the edge of the world is well out to sea; boats hit bridge piers;
 //       a regatta against rival boats, and contraband to fish out of the bay.
+//   5i. LOLA'S TIPS, AND THE CAMERA — Lola pages what a thing is the first
+//       time you meet it, once, and the pause screen switches her off; C
+//       takes a photo of the frame, developed like a 1986 print, into an
+//       album you save from (or straight to your downloads), kept between visits.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -286,6 +290,9 @@ function withTimeout(p, ms) {
     // reading springs off. The two groups that are ABOUT the knob turn it up
     // themselves and put it back.
     GAME.chaos.set(0);
+    // And Lola's first-time tips off: every group below measures the pager
+    // as it was before she had them. Group 5i turns them on for itself.
+    if (GAME.lola) GAME.lola.setTips(false);
     GAME.test.fastForward(1);
     var a = GAME.audio;
     var engine0 = a.engineState, skid0 = a.skid, siren0 = a.siren, vol0 = a.radio.setVolume;
@@ -3756,6 +3763,149 @@ function withTimeout(p, ms) {
   check('sea: the regatta is winnable by racing it well', regatta.on && regatta.won, JSON.stringify(regatta));
   check('sea: and it is a race: every rival still aboard and close behind at the flag',
     regatta.field.length === 3 && regatta.field.every(function (f) { return f.aboard && f.cp >= 7; }), JSON.stringify(regatta.field));
+
+  // ---------- 5i: Lola's tips, and the camera ----------
+  // The first lost tape was a cassette on the pavement and nothing more;
+  // nobody said what it was. Lola now pages each first — once, for the life
+  // of the save — and LOLA'S TIPS turns her off. And the player carries an
+  // old film camera: C takes the frame as the game drew it, developed like a
+  // print, into an album you download from, or straight to your downloads.
+  var tips = await page.evaluate(function () {
+    var P = GAME.player, L = GAME.lola, r = {};
+    if (!L) return { missing: true };
+    if (P.inCar) GAME.exitCar();
+    var pages = [], pg0 = GAME.hud.pager;
+    GAME.hud.pager = function (f, t) { pages.push(f + ': ' + t); return pg0.apply(GAME.hud, arguments); };
+    try {
+      GAME.prefs.lolaSeen = {};
+      L.setTips(true);
+      // a lost tape, the first and then a second
+      var T = GAME.tapes.list().filter(function (t) { return !t.taken && !t.isla; });
+      [T[0], T[1]].forEach(function (t) {
+        GAME.test.teleport(t.x + 4, t.z);
+        GAME.test.fastForward(0.3);
+        P.pos.set(t.x, t.y, t.z);
+        GAME.test.fastForward(0.2);
+      });
+      r.tapes = T[0].taken && T[1].taken;
+      r.tapePages = pages.filter(function (p) { return /lost tape/i.test(p); }).length;
+      r.tapeSays = pages.filter(function (p) { return /lost tape/i.test(p); })[0] || '';
+      // the first star, once
+      pages.length = 0;
+      GAME.police.reportCrime('steal_police', P.pos);
+      GAME.test.fastForward(0.2);
+      GAME.police.clearWanted();
+      GAME.police.reportCrime('steal_police', P.pos);
+      GAME.test.fastForward(0.2);
+      r.starPages = pages.filter(function (p) { return /law's eye/.test(p); }).length;
+      GAME.police.clearWanted();
+      // with tips off nothing is said, but it still counts as met
+      pages.length = 0;
+      L.setTips(false);
+      r.toldOff = L.first('swim');
+      r.swimSeen = !!GAME.prefs.lolaSeen.swim;
+      L.setTips(true);
+      r.notAgain = L.first('swim') === false && pages.length === 0;
+      // the pause screen switch says which it is, and flips it
+      GAME.togglePause();
+      var b = document.getElementById('pause-tips');
+      r.btnOn = /ON/.test(b.textContent);
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.btnOff = /OFF/.test(b.textContent) && !L.tips;
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.btnBack = L.tips;
+      GAME.togglePause();
+      // every tip has words, and the ones that name a key name the bound one
+      r.allSay = L.keys().every(function (k) { return (L.line(k) || '').length > 20; });
+    } finally {
+      GAME.hud.pager = pg0;
+      L.setTips(false);
+    }
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('tips: Lola says what a lost tape is, the first time', !tips.missing && tips.tapes && tips.tapePages === 1 && /thirty/.test(tips.tapeSays),
+    JSON.stringify({ tapes: tips.tapes, pages: tips.tapePages, says: tips.tapeSays }));
+  check('tips: and the first star, once', tips.starPages === 1, 'pages=' + tips.starPages);
+  check('tips: with them switched off she stays quiet, but it still counts as met',
+    tips.toldOff === false && tips.swimSeen && tips.notAgain, JSON.stringify(tips));
+  check('tips: the pause screen switch shows the state and flips it', tips.btnOn && tips.btnOff && tips.btnBack, JSON.stringify(tips));
+  check('tips: every tip has something to say', tips.allSay);
+
+  // the camera: C, and a frame drawn (the shot is taken from the canvas
+  // straight after a render, so this waits on real frames)
+  var ph0 = await page.evaluate(function () {
+    GAME.photo.close();
+    GAME.prefs.photoAuto = false;
+    GAME.test.teleport(330, 60);
+    GAME.player.heading = Math.PI / 2; GAME.cam.yaw = Math.PI / 2;
+    GAME.test.fastForward(0.5);
+    var n = GAME.photo.count;
+    GAME.test.pressKey('KeyC', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyC', false);
+    return { n: n, bindable: GAME.controls.ACTIONS.some(function (a) { return a[0] === 'KeyC'; }) };
+  });
+  var shot = null;
+  try {
+    await page.waitForFunction(function (n) { return GAME.photo.count > n && GAME.photo.album()[GAME.photo.count - 1].url; }, ph0.n, { timeout: 10000 });
+    shot = await page.evaluate(async function () {
+      var a = GAME.photo.album(), s = a[a.length - 1], cv = document.querySelector('canvas');
+      // the print itself: its size, and the date stamp's orange in the corner
+      var img = new Image();
+      await new Promise(function (res) { img.onload = res; img.src = s.url; });
+      var c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      var g = c.getContext('2d'); g.drawImage(img, 0, 0);
+      var px = Math.round(img.height * 0.034), orange = 0;
+      var d = g.getImageData(img.width - px * 9, img.height - px * 2.4, px * 8, px * 1.6).data;
+      for (var i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 110 && d[i + 1] < 200 && d[i + 2] < 120) orange++;
+      return { type: s.blob.type, kb: Math.round(s.blob.size / 1024), w: img.width, h: img.height, canvasW: cv.width, name: s.name,
+        orange: orange, toast: document.getElementById('photo-toast').classList.contains('on') };
+    });
+  } catch (e) { shot = { error: String(e).slice(0, 120) }; }
+  check('camera: taking a photo is an action you can rebind', ph0.bindable);
+  check('camera: C takes a photo into the album, a JPEG of the frame',
+    shot && shot.type === 'image/jpeg' && shot.kb > 20 && (shot.w === shot.canvasW || shot.w === 1920 || shot.w === 1440), JSON.stringify(shot));
+  check('camera: developed like an old print, the date in orange in the corner', shot && shot.orange > 20, JSON.stringify(shot && { orange: shot.orange }));
+  check('camera: and a print slides in to say so', shot && shot.toast);
+  // saved from the album, by name
+  var dlName = null;
+  try {
+    var dl = page.waitForEvent('download', { timeout: 6000 });
+    await page.evaluate(function () { GAME.togglePause(); GAME.photo.open(); document.querySelector('#photo-grid .ph-save').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    dlName = (await dl).suggestedFilename();
+  } catch (e) { dlName = 'none: ' + String(e).slice(0, 80); }
+  var albumKeys = await page.evaluate(function () {
+    var r = { open: GAME.photo.albumOpen && document.getElementById('photo-album').style.display === 'flex' };
+    GAME.onKeyDown('Escape');
+    r.closed = !GAME.photo.albumOpen && GAME.paused;     // Esc put the album away, not the pause screen
+    GAME.togglePause();
+    r.resumed = !GAME.paused;
+    return r;
+  });
+  check('camera: SAVE in the album downloads it, named for 1986', /^costa-rosa-1986-\d{8}-\d{6}\.jpg$/.test(dlName || ''), dlName);
+  check('camera: Esc closes the album and leaves the pause screen up', albumKeys.open && albumKeys.closed && albumKeys.resumed, JSON.stringify(albumKeys));
+  // AUTO-DOWNLOAD: every shot saved the moment it is taken
+  var autoName = null;
+  try {
+    var dl2 = page.waitForEvent('download', { timeout: 8000 });
+    await page.evaluate(function () {
+      GAME.prefs.photoAuto = true;
+      GAME.test.pressKey('KeyC', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyC', false);
+    });
+    autoName = (await dl2).suggestedFilename();
+  } catch (e) { autoName = 'none: ' + String(e).slice(0, 80); }
+  await page.evaluate(function () { GAME.prefs.photoAuto = false; });
+  check('camera: with AUTO-DOWNLOAD on, a shot goes straight to your downloads', /^costa-rosa-1986-.*\.jpg$/.test(autoName || ''), autoName);
+  // and the album is still there on the next visit
+  // (dropped from memory and read back from the browser's store, as a fresh
+  // visit does — a second page here would be a second browser profile)
+  var kept = null;
+  try {
+    await page.evaluate(function () { GAME.photo.testReload(); });
+    await page.waitForFunction(function () { return GAME.photo.count >= 2; }, null, { timeout: 8000 });
+    kept = await page.evaluate(function () { return GAME.photo.count; });
+  } catch (e) { kept = 'none: ' + String(e).slice(0, 80); }
+  check('camera: the album is still there on the next visit', typeof kept === 'number' && kept >= 2, String(kept));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a
@@ -7693,6 +7843,20 @@ function withTimeout(p, ms) {
     endBtn.offered && endBtn.onShift, JSON.stringify(endBtn));
   check('touch: during the shift the button stays, as END', endBtn.endShown, JSON.stringify(endBtn));
   check('touch: and END clocks off without leaving the ambulance', endBtn.ended && endBtn.backToJob, JSON.stringify(endBtn));
+
+  // the camera is one tap away on a touchscreen too
+  var camBtn = await tpage.evaluate(function () {
+    var b = null, all = document.querySelectorAll('.tbtn');
+    for (var i = 0; i < all.length; i++) if (all[i].textContent === '📷') b = all[i];
+    if (!b) return { found: false };
+    var shown = b.style.display !== 'none' && b.offsetParent !== null;
+    var t = new Touch({ identifier: 41, target: b, clientX: 10, clientY: 10 });
+    b.dispatchEvent(new TouchEvent('touchstart', { touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true }));
+    b.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t], targetTouches: [], bubbles: true, cancelable: true }));
+    GAME.test.fastForward(1 / 60);
+    return { found: true, shown: shown, shooting: GAME.photo.pending || GAME.photo.count > 0 };
+  });
+  check('touch: there is a camera button, and a tap takes a photo', camBtn.found && camBtn.shown && camBtn.shooting, JSON.stringify(camBtn));
 
   // Press it, rather than just look at it: the markup ships with the label
   // already reading RUMBLE: ON, so a check that only reads the text passes

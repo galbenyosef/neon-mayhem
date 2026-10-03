@@ -165,6 +165,7 @@ GAME.tapes = (function () {
     GAME.haptics.pickup();
     GAME.fx.spawn(t.x, t.y + 1, t.z, { count: 10, color: 0xff8fc8, spread: 2, vy: 2.5, life: 0.6, grav: -4, keep: true });
     GAME.hud.message('LOST TAPE  ' + n + ' / ' + all + '   ·   +$250', 3.5);
+    if (GAME.lola) GAME.lola.first('tape');
     GAME.track('tape-found');
     for (var i = 0; i < MILESTONES.length; i++) {
       var m = MILESTONES[i];

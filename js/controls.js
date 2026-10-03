@@ -12,7 +12,7 @@ GAME.controls = (function () {
     ['KeyW', 'Forward / throttle'], ['KeyS', 'Back / brake'], ['KeyA', 'Left'], ['KeyD', 'Right'],
     ['Space', 'Jump · climb · handbrake'], ['ShiftLeft', 'Sprint · descend'], ['KeyF', 'Enter / exit vehicle'],
     ['KeyQ', 'Target left · drive-by left'], ['KeyE', 'Target right · drive-by right'], ['Tab', 'Aim lock (toggle)'],
-    ['KeyJ', 'Start a job'], ['KeyX', 'Abandon the mission (twice)'], ['KeyG', 'Horn · siren'], ['Comma', 'Radio back'], ['Period', 'Radio next'],
+    ['KeyJ', 'Start a job'], ['KeyX', 'Abandon the mission (twice)'], ['KeyC', 'Take a photo'], ['KeyG', 'Horn · siren'], ['Comma', 'Radio back'], ['Period', 'Radio next'],
     ['KeyY', 'Retry a failed run'], ['KeyP', 'Map'], ['KeyM', 'Mute'], ['KeyH', 'Hide the hints'], ['KeyT', 'CRT filter'],
     ['KeyR', 'Continue after WASTED / BUSTED']
   ];
@@ -99,7 +99,7 @@ GAME.controls = (function () {
   var DEAD = 0.18;
   var BUTTONS = {
     0: 'Space', 1: 'ShiftLeft', 2: 'KeyJ', 3: 'KeyF', 4: 'KeyQ', 5: 'KeyE',
-    8: 'KeyP', 9: 'Escape', 10: 'ShiftLeft', 11: 'KeyG', 12: 'KeyY', 14: 'Comma', 15: 'Period'
+    8: 'KeyP', 9: 'Escape', 10: 'KeyC', 11: 'KeyG', 12: 'KeyY', 14: 'Comma', 15: 'Period'
   };
   // what the buttons mean on a menu (pause screen arrows and Enter)
   var MENU = { 0: 'Enter', 1: 'Escape', 9: 'Escape', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight' };

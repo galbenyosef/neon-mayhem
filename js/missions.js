@@ -56,6 +56,7 @@ GAME.stunts = (function () {
     GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
       (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
     GAME.track('stunt-jump-found');
+    if (GAME.lola) GAME.lola.first('stunt');
     if (n >= total && !rewarded) grantReward();
     save();
     return bonus;
@@ -73,6 +74,7 @@ GAME.stunts = (function () {
     GAME.hud.message('ISLA VERDE STUNT JUMP  ' + n + ' / ' + all + '   ·   +$' + bonus +
       (left > 0 ? '   —   ' + left + ' more on the island' : ''), 4.5);
     GAME.track('isla-stunt-jump-found');
+    if (GAME.lola) GAME.lola.first('islaJump');
     if (n >= all && !islaRewarded) {
       islaRewarded = true;
       GAME.addCash(ISLA_PRIZE);
@@ -1897,6 +1899,7 @@ GAME.missions = (function () {
       // stars on you by definition, and vigilante work is how they come off
       var jobHot = hot && jobKind !== 'vigilante';
       GAME.jobAvailable = jobHot ? null : jobKind;
+      if (GAME.jobAvailable && GAME.lola) GAME.lola.first('job');
       GAME.retryAvailable = !!retry && !retry.waitRespawn && retry.fadeT === undefined;
       if (retry && stepRetry(dt, P, hot)) return;
       if (jobKind && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
@@ -1960,7 +1963,10 @@ GAME.missions = (function () {
       }
       // and the shops share the one readout instead of talking over it
       var sh = GAME.shops && GAME.shops.nearHint(px, pz);
-      if (sh && (!hk || sh.d < hd)) GAME.hud.setPoiHint(sh.text);
+      if (sh && (!hk || sh.d < hd)) {
+        GAME.hud.setPoiHint(sh.text);
+        if (GAME.lola && !P.inCar) GAME.lola.first('shop');   // the first door you walk up to
+      }
       else GAME.hud.setPoiHint(hk ? poiHintText(hk, ho, hn) : '');
       return;
     }
@@ -2261,6 +2267,7 @@ GAME.missions = (function () {
     // five-star manhunt made the sergeant's $2,250 rate card a joke.
     var w = GAME.police.wanted;
     if (w > 0 && w <= 2) GAME.police.clearWanted();
+    if (GAME.lola) GAME.lola.first('respray');
     // works for any driven vehicle, motorcycles included: full repair + fresh
     // paint. Hand the body back to the SHARED vertex-color material (un-
     // burning it), and free a private burnt coat if that's what it wore —

@@ -48,6 +48,7 @@
     GAME.stunts.load();
     GAME.hud.init();
     GAME.controls.init();
+    GAME.photo.init();
     GAME.share.init();
     GAME.shops.init(scene);
     GAME.interiors.build();
@@ -78,6 +79,8 @@
       if (!GAME.started) return;
       // an open dialog owns the keys — Esc must cancel it, not unpause
       if (GAME.hud.dialogOpen()) { GAME.hud.dialogKey(code); return; }
+      // and so does the photo album, over the pause screen
+      if (GAME.photo.key(code)) return;
       // the result card closes on any of the keys a hand is likely to be on —
       // it never needed the mouse
       if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {
@@ -458,6 +461,7 @@
     if (GAME.isla) GAME.isla.tick(dt);
     GAME.shops.update(dt);
     GAME.interiors.update(dt);
+    GAME.photo.update(dt);
     // slow autosave heartbeat: health and ammo drift without touching cash,
     // and the save should never be more than ten seconds behind the life
     if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
@@ -626,6 +630,8 @@
     var wantNear = relH > (cam.near > 0.2 ? 34 : 46) ? 2.0 : 0.1;
     if (wantNear !== cam.near) { cam.near = wantNear; cam.updateProjectionMatrix(); }
     renderer.render(GAME.scene, GAME.cameraObj);
+    // a photo is taken from the frame just drawn (photo.js)
+    GAME.photo.capture(renderer.domElement);
     // the shop's turntable preview spins even while the sim is frozen
     if (GAME.shops && GAME.shops.renderPreview) GAME.shops.renderPreview();
   }

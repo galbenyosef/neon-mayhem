@@ -557,6 +557,16 @@ GAME.audio = (function () {
       tone(2100, 0.07, 0.06, 'square', 0, t);
       tone(2100, 0.07, 0.06, 'square', 0, t + 0.13);
     },
+    // an old SLR going off: the mirror slapping up, the cloth shutter, the
+    // mirror coming back down
+    shutter: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      noiseBurst(0.035, 3200, 0.5, 'bandpass', t);
+      tone(180, 0.04, 0.12, 'square', 90, t);
+      noiseBurst(0.05, 2400, 0.4, 'bandpass', t + 0.075);
+      tone(140, 0.05, 0.1, 'square', 70, t + 0.075);
+    },
     splash: function () { if (ctx) noiseBurst(0.5, 700, 0.4); },
     sting: function (kind) {
       if (!ctx) return;
