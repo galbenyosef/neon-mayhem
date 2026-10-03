@@ -4395,6 +4395,11 @@ function withTimeout(p, ms) {
     } finally { V.shotAt = sa0; }
     r.realRound = !!seen && c0.hp < c0.spec.hp;
     if (c0 && !c0.dead) V.removeCar(c0);
+    // Those rounds can earn a star, and in the full suite an officer is
+    // sometimes on this corner: an arrest in the ten seconds below took the
+    // window shooter's target away (it fires only at somebody on their feet)
+    // and left the lift group starting in handcuffs. The law stays out of it.
+    GAME.police.clearWanted();
     // each way a driver can take it, forced in turn
     var rolls = { flee: 0.1, bail: 0.4, fight: 0.65, shoot: 0.8, fireback: 0.95 }, rnd = Math.random;
     var shots = 0, sh0 = GAME.combat.npcShoot;
@@ -4412,8 +4417,12 @@ function withTimeout(p, ms) {
         if (k === 'flee') { o.panic = c.ai && c.ai.panicT > 0; }
         shots = 0;
         if (k === 'shoot' || k === 'fireback') {
-          for (var t = 0; t < 5 * 60; t++) { P.pos.set(c.pos.x, P.pos.y, c.pos.z - 14); GAME.test.fastForward(1 / 60); }
+          for (var t = 0; t < 5 * 60; t++) {
+            if (t % 30 === 0) GAME.police.clearWanted();
+            P.pos.set(c.pos.x, P.pos.y, c.pos.z - 14); GAME.test.fastForward(1 / 60);
+          }
           o.shots = shots;
+          o.you = P.state;
         }
         r.kinds[k] = o;
         if (out && !out.dead) { out.state = 'walk'; out.foe = null; out.carrying = false; }
@@ -4444,6 +4453,8 @@ function withTimeout(p, ms) {
   check('drivers: keep shooting at one driving it out and they give up on the car', shot.secondVolley === 'bail', JSON.stringify(shot));
   check('drivers: a police car is still the police', shot.copIgnored, JSON.stringify(shot));
 
+  // on your feet before the lift, whatever the groups before left you as
+  await comeRound();
   var tower = await page.evaluate(function () {
     var P = GAME.player, I = GAME.interiors, L = GAME.city.towerLift, r = {};
     GAME.police.clearWanted();
