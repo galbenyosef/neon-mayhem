@@ -7,8 +7,13 @@ GAME.aircraft = (function () {
   var CLOSED_X = 560, warnT = 0, warnCount = 0;
   // two fixed answers, handed out rather than built on every ask — everything
   // that moves asks every tick, and nobody writes to them
-  var LIMIT_OPEN = { maxX: 1560, minZ: -600, maxZ: 600 };
-  var LIMIT_CLOSED = { maxX: CLOSED_X, minZ: -524, maxZ: 524 };
+  // The edges stand a good way out to sea: two hundred metres and more past
+  // the last land on every side. They sat 25-35 m off the coast, so a boat or
+  // a plane leaving the shore was turned back almost as soon as it had left
+  // — the world ended at the beach. (The closed channel is its own line.)
+  var WEST_X = -710;
+  var LIMIT_OPEN = { maxX: 1720, minZ: -720, maxZ: 720 };
+  var LIMIT_CLOSED = { maxX: CLOSED_X, minZ: -720, maxZ: 720 };
   function airLimit() {
     return GAME.isla && GAME.isla.isOpen() ? LIMIT_OPEN : LIMIT_CLOSED;
   }
@@ -45,7 +50,7 @@ GAME.aircraft = (function () {
   function enforceSea(pos) {
     var lim = airLimit(), held = false, channel = false;
     if (pos.x > lim.maxX) { pos.x = lim.maxX; held = true; channel = lim.maxX <= CLOSED_X; }
-    if (pos.x < -524) { pos.x = -524; held = true; }
+    if (pos.x < WEST_X) { pos.x = WEST_X; held = true; }
     if (pos.z < lim.minZ) { pos.z = lim.minZ; held = true; }
     if (pos.z > lim.maxZ) { pos.z = lim.maxZ; held = true; }
     if (held && GAME.time - seaToldT > 6) {
@@ -65,13 +70,13 @@ GAME.aircraft = (function () {
   // left to fly over, so the air is too thin to climb past it.
   var EDGE_WARN = 90, CEIL_HELI = 200, CEIL_PLANE = 240, edgeToldT = -99, ceilToldT = -99;
   function edgeTurn(car, lim, dt) {
-    var west = car.pos.x + 524, east = lim.maxX - car.pos.x;
+    var west = car.pos.x - WEST_X, east = lim.maxX - car.pos.x;
     var north = car.pos.z - lim.minZ, south = lim.maxZ - car.pos.z;
     // the closed channel has its own rule (warnAirspace) and keeps it
     if (lim.maxX <= CLOSED_X) east = 1e9;
     var d = Math.min(west, east, north, south);
     if (d >= EDGE_WARN) return false;
-    var cx = (-524 + lim.maxX) / 2, cz = (lim.minZ + lim.maxZ) / 2;
+    var cx = (WEST_X + lim.maxX) / 2, cz = (lim.minZ + lim.maxZ) / 2;
     var home = Math.atan2(cx - car.pos.x, cz - car.pos.z);
     // only while it is pointed outward: flying back in is left alone
     if (Math.cos(U.wrapPI(home - car.heading)) > 0.3) return false;
@@ -155,7 +160,7 @@ GAME.aircraft = (function () {
       car.heliSpeed *= 0.25;
     }
     var lim = airLimit();
-    car.pos.x = U.clamp(nx, -524, lim.maxX);
+    car.pos.x = U.clamp(nx, WEST_X, lim.maxX);
     car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
     warnAirspace(car.pos.x, lim);
     edgeTurn(car, lim, dt);
@@ -407,7 +412,7 @@ GAME.aircraft = (function () {
       car.speed *= 0.3; nx = car.pos.x; nz = car.pos.z;
     }
     var lim = airLimit();
-    car.pos.x = U.clamp(nx, -524, lim.maxX);
+    car.pos.x = U.clamp(nx, WEST_X, lim.maxX);
     car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
     warnAirspace(car.pos.x, lim);
     if (!onGround) edgeTurn(car, lim, dt);
@@ -565,6 +570,8 @@ GAME.aircraft = (function () {
     land: land,
     enforceAirspace: enforceAirspace,
     enforceSea: enforceSea,
+    // where the world stops, for whoever needs to know (and the checks)
+    edges: function () { return { west: WEST_X, closed: LIMIT_CLOSED, open: LIMIT_OPEN }; },
     get parachuting() { return GAME.player.parachuting; }
   };
 })();

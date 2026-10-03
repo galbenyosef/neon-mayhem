@@ -1880,6 +1880,11 @@ GAME.isla = (function () {
         if (py === null || s.liftAt(pp[0], pp[1]) < 4) continue;
         var base = contains(pp[0], pp[1]) ? groundY(pp[0], pp[1]) : -1.6;
         b.addBox(pp[0], (py + base) / 2, pp[1], 4, py - base, 4, 0, 0x2e2b44, 0);
+        // and solid, from the water (or the ground) to just under the deck —
+        // a boat sailed straight through them. Topped below the roadway, so
+        // the traffic on the bridge never meets them.
+        city.addSolid(pp[0], pp[1], 4, 4, py - 0.6, 'pillar');
+        if (city.bridgePiers) city.bridgePiers.push({ x: pp[0], z: pp[1], top: py - 0.6, wet: !contains(pp[0], pp[1]) });
       }
       // Lamps down the middle of the span, but only over open water. Over land
       // the deck runs low past whatever is beside it, and a lamp post there

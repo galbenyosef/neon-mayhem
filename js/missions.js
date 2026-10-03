@@ -150,6 +150,19 @@ GAME.missions = (function () {
     { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 30, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
     { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 30, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
     { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 30, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
+    // On the water, in the bay between the beach and the channel: both start
+    // beside a mooring where a boat waits, and both are run in one.
+    //   BAY REGATTA — out under both bridges (through the gaps between their
+    //   piers, where the deck is high), round a mark past the far one and
+    //   home; every leg is open water, so the field races the line.
+    //   CONTRABAND — packages a fishing crew dumped overboard when the
+    //   coastguard came by, bobbing about the bay: fish them out and bring
+    //   them in to the pier before the clock runs out. Fresh spots each run.
+    {
+      id: 'boat0', type: 'race', boat: true, name: 'BAY REGATTA', reward: 700, start: { x: 515, z: 215 },
+      cps: [[518, 150], [520, 0], [500, -180], [499, -340], [520, -440], [545, -340], [530, -180], [530, 0], [518, 150], [530, 230]]
+    },
+    { id: 'boat1', type: 'courier', boat: true, name: 'CONTRABAND', reward: 520, time: 120, start: { x: 472, z: -150 }, drops: 3, legMin: 200, legMax: 380 },
     // Isla Verde's own work, and it stays over here — every checkpoint, drop
     // and target is on the island, so nothing ever asks you to cross mid-run.
     // Coordinates come from the island itself once it has registered.
@@ -173,6 +186,10 @@ GAME.missions = (function () {
   // first time, and the story of the two islands strung between them —
   // Rico Salazar's crew pushing in on her harbour, and pushed back out.
   var LOLA = {
+    boat0: ['The yacht club thinks the bay is theirs. Take one of the boats by the pier and show them whose it is.',
+      'Sailing types don\'t lose gracefully. Enjoy it.'],
+    boat1: ['A crew dumped a cargo of mine over the side when the coastguard came sniffing. Fish it out of the bay before it drifts.',
+      'Every package, dry enough to sell. You\'re handy on the water, kid.'],
     race0: ['New in town? Then nobody knows your name. The strip racers will — win this and they stop laughing.',
       'Not bad, kid. People are asking who you are. Let\'s give them more to talk about.'],
     race1: ['The harbour crews run a loop past the warehouses every night. Beat them on their own turf.',
@@ -344,11 +361,13 @@ GAME.missions = (function () {
     blipList[blipN++] = b;
   }
   var TYPE_LABEL = { race: 'STREET RACE', courier: 'COURIER RUN', rampage: 'RAMPAGE', takedown: 'TAKEDOWN' };
+  var BOAT_LABEL = { race: 'BOAT RACE', courier: 'SEA RUN' };
+  function typeLabel(d) { return (d.boat && BOAT_LABEL[d.type]) || TYPE_LABEL[d.type]; }
   // the POI line's words for a marker (kind 1) or a respray door (kind 2),
   // made again only when what is nearest, or its note, changes
   var HINT_NOTES = ['', '   —   lose the heat first', '   —   come back in a vehicle',
     '   —   not in an aircraft', '   —   starting…', '   —   pull up in the ring to start',
-    '   —   leave the ring to go again'];
+    '   —   leave the ring to go again', '   —   come back in a boat'];
   // A car mission starts when you pull up in its ring, not when you drive
   // through it: race starts sit on the road, so cruising the Strip pulled
   // people into BEACH RUN at 25 m/s with no way to say no.
@@ -362,7 +381,7 @@ GAME.missions = (function () {
   function poiHintText(k, o, n) {
     if (k !== hintK || o !== hintO || n !== hintN) {
       hintK = k; hintO = o; hintN = n;
-      hintText = k === 1 ? TYPE_LABEL[o.type] + ' · ' + o.name + HINT_NOTES[n]
+      hintText = k === 1 ? typeLabel(o) + ' · ' + o.name + HINT_NOTES[n]
         : 'RESPRAY · $100 — repairs your ride; fresh paint clears up to two stars' + (n ? '' : '   —   drive in');
     }
     return hintText;
@@ -385,7 +404,7 @@ GAME.missions = (function () {
   function reachableStarts() {
     for (var i = 0; i < DEFS.length; i++) {
       var d = DEFS[i];
-      if (!d.start || d.type === 'rampage') continue;
+      if (!d.start || d.type === 'rampage' || d.boat) continue;
       var rp = GAME.city.nearestRoadPoint(d.start.x, d.start.z);
       var dx = d.start.x - rp.x, dz = d.start.z - rp.z, dl = Math.sqrt(dx * dx + dz * dz);
       if (dl <= KERB_LANE + 0.5) continue;
@@ -399,8 +418,8 @@ GAME.missions = (function () {
     for (var i = 0; i < DEFS.length; i++) {
       var d = DEFS[i];
       if (d.isla && !d.start) continue;      // island never registered
-      var mesh = makeMarkerMesh(MARKER_COLORS[d.type], 2.2);
-      mesh.position.set(d.start.x, GAME.city.groundY(d.start.x, d.start.z) + 1.7, d.start.z);
+      var mesh = makeMarkerMesh(MARKER_COLORS[d.type], d.boat ? 3.4 : 2.2);
+      mesh.position.set(d.start.x, markerFloor(d, d.start.x, d.start.z) + 1.7, d.start.z);
       GAME.scene.add(mesh);
       markers.push({ def: d, mesh: mesh });
     }
@@ -474,7 +493,68 @@ GAME.missions = (function () {
 
   // lay out a fresh delivery round: each drop is a leg away from the last, kept
   // apart from the others so the run covers ground instead of doubling back
+  // Packages adrift in the bay: open water a boat can reach, clear of the
+  // piers and the bridge legs, spread out, each leg a fresh length — and the
+  // last stop is home, the pier the run started from.
+  var SEA_BOX = { x0: 474, x1: 548, z0: -455, z1: 455 };
+  function seaSpotClear(x, z) {
+    var C = GAME.city;
+    if (!C.isBoatWater(x, z) || !C.isBoatWater(x + 6, z) || !C.isBoatWater(x - 6, z) ||
+      !C.isBoatWater(x, z + 6) || !C.isBoatWater(x, z - 6)) return false;
+    for (var i = 0; i < C.bridgePiers.length; i++) {
+      if (U.dist2(x, z, C.bridgePiers[i].x, C.bridgePiers[i].z) < 16 * 16) return false;
+    }
+    return true;
+  }
+  function rollSeaStops(def) {
+    var stops = [], cx = def.start.x, cz = def.start.z;
+    for (var i = 0; i < (def.drops || 3); i++) {
+      var pt = null;
+      for (var t = 0; t < 60 && !pt; t++) {
+        var x = U.randRange(Math.random, SEA_BOX.x0, SEA_BOX.x1), z = U.randRange(Math.random, SEA_BOX.z0, SEA_BOX.z1);
+        var d = Math.sqrt(U.dist2(cx, cz, x, z));
+        if (d < def.legMin * (t < 40 ? 1 : 0.6) || d > def.legMax * (t < 40 ? 1 : 1.5)) continue;
+        if (!seaSpotClear(x, z)) continue;
+        var near = false;
+        for (var j = 0; j < stops.length; j++) if (U.dist2(x, z, stops[j][0], stops[j][1]) < 90 * 90) near = true;
+        if (!near) pt = [x, z];
+      }
+      if (!pt) pt = [U.clamp(cx, SEA_BOX.x0, SEA_BOX.x1), cz > 0 ? cz - 200 : cz + 200];
+      stops.push(pt);
+      cx = pt[0]; cz = pt[1];
+    }
+    stops.push([def.start.x, def.start.z]);   // and bring them in
+    return stops;
+  }
+
+  // The package on the water at the current pickup: a crate with a float
+  // lashed to it, bobbing on the swell (a ring alone said "go here", not
+  // "pick this up").
+  var crate = null;
+  function placeCrate() {
+    var a = active, show = !!(a && a.def.boat && a.def.type === 'courier' && a.stops && a.cpIndex < a.stops.length - 1);
+    if (!show) { if (crate) crate.visible = false; return; }
+    if (!crate) {
+      var b = new GeoBatch();
+      b.addBox(0, 0.3, 0, 1.0, 0.6, 0.8, 0, 0x7a5a36, 0);
+      b.addBox(0, 0.32, 0, 1.02, 0.12, 0.82, 0, 0x2a2a30, 0);
+      b.addBox(0.62, 0.35, 0, 0.32, 0.32, 0.32, 0, 0xff7a1a, 0);
+      crate = new THREE.Mesh(b.build(), sharedVertexLambert());
+      GAME.scene.add(crate);
+    }
+    var st = a.stops[a.cpIndex];
+    crate.visible = true;
+    crate.position.set(st[0], GAME.city.seaLevel, st[1]);
+  }
+  function bobCrate() {
+    if (!crate || !crate.visible) return;
+    var t = GAME.time;
+    crate.position.y = GAME.city.seaY(crate.position.x, crate.position.z) - 0.18;
+    crate.rotation.set(Math.sin(t * 1.3) * 0.12, t * 0.25, Math.sin(t * 1.7) * 0.1);
+  }
+
   function rollCourierStops(def) {
+    if (def.boat) return rollSeaStops(def);
     var stops = [];
     var cx = def.start.x, cz = def.start.z;
     // Each leg draws its own length inside the run's band rather than every
@@ -1309,9 +1389,10 @@ GAME.missions = (function () {
         // is just a drive. Staggered left and right of the racing line so the
         // lane you launch into is open.
         for (var i = 0; i < 3; i++) {
-          var off = (i + 1) * 6;
-          var rx = def.start.x + Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-          var rz = def.start.z + Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          // (boats are longer and need room to the side: a hull's length apart)
+          var off = (i + 1) * (def.boat ? 9 : 6), side = def.boat ? 4.5 : 3.5;
+          var rx = def.start.x + Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? side : -side);
+          var rz = def.start.z + Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? side : -side);
           var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
           car.cpIndex = 0;
           // rivals shrug off scrapes — a race should be decided on the road, not by
@@ -1339,7 +1420,7 @@ GAME.missions = (function () {
           GAME.hud.message(def.early ? 'The target is running — catch and wreck them!' : 'The target is marked. Wreck the car — or make the driver give it up.', 3.5);
         };
       } else {
-        active.goSetup = function () { GAME.hud.message('First delivery is marked.', 3); };
+        active.goSetup = function () { GAME.hud.message(def.boat ? 'First package is marked — it\'s floating out in the bay.' : 'First delivery is marked.', 3); };
       }
       active.state = 'countdown';
       GAME.hud.missionObjective(objectiveText());
@@ -1387,6 +1468,10 @@ GAME.missions = (function () {
       var field = 1 + active.racers.filter(inRace).length;
       return ordinal(racePosition()) + ' / ' + field + '   ·   Checkpoint ' + (active.cpIndex + 1) + ' / ' + d.cps.length;
     }
+    if (d.type === 'courier' && d.boat) {
+      var pk = active.stops.length - 1;
+      return active.cpIndex < pk ? 'Package ' + (active.cpIndex + 1) + ' / ' + pk : 'Bring them in to the pier';
+    }
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
     if (d.type === 'icecream') {
       return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
@@ -1430,13 +1515,16 @@ GAME.missions = (function () {
     return null;
   }
 
+  // where a ring stands: the road, or for a job on the water, the sea
+  function markerFloor(d, x, z) { return d.boat ? GAME.city.seaLevel : GAME.city.groundY(x, z); }
   function updateCp() {
     if (!active || active.def.type === 'rampage') { if (cpMarker) cpMarker.visible = false; return; }
     var cp = currentCp();
     if (cp) {
       cpMarker.visible = true;
-      cpMarker.position.set(cp[0], GAME.city.groundY(cp[0], cp[1]) + 1.7, cp[1]);
+      cpMarker.position.set(cp[0], markerFloor(active.def, cp[0], cp[1]) + 1.7, cp[1]);
     } else cpMarker.visible = false;
+    placeCrate();
   }
 
   function setMarkersVisible(v) {
@@ -1500,7 +1588,7 @@ GAME.missions = (function () {
       if (opened) return cleanup();     // the bridges card takes the screen
       GAME.share.show({
         slug: d.id,
-        eyebrow: TYPE_LABEL[d.type] || 'COSTA ROSA · 1986',
+        eyebrow: typeLabel(d) || 'COSTA ROSA · 1986',
         title: d.type === 'race' ? 'RACE WON' : 'MISSION PASSED',
         subtitle: d.name,
         accent: d.type === 'race' ? '#ff8a3d' : d.type === 'rampage' ? '#ff4fa3' : d.type === 'takedown' ? '#ff3b3b' : '#38e8ff',
@@ -1558,14 +1646,15 @@ GAME.missions = (function () {
   function relaunch(r) {
     var P = GAME.player, d = r.def;
     var need = d.type === 'race' || d.type === 'courier';
-    var ride = P.inCar && P.car && !P.car.dead && !P.car.sinking && !P.car.spec.heli && !P.car.spec.plane ? P.car : null;
+    var ride = P.inCar && P.car && !P.car.dead && !P.car.sinking && !P.car.spec.heli && !P.car.spec.plane &&
+      !!P.car.spec.boat === !!d.boat ? P.car : null;
     if (P.inCar && !ride) GAME.exitCar();
     if (need && !ride) {
-      ride = GAME.vehicles.spawnCar(r.carType || 'sedan', d.start.x, d.start.z, 0, {});
+      ride = GAME.vehicles.spawnCar(d.boat ? 'boat' : r.carType || 'sedan', d.start.x, d.start.z, 0, {});
       if (ride) GAME.seatInCar(ride);
     }
     if (ride && P.car === ride) {
-      ride.pos.set(d.start.x, GAME.city.groundY(d.start.x, d.start.z), d.start.z);
+      ride.pos.set(d.start.x, d.boat ? GAME.city.seaLevel : GAME.city.groundY(d.start.x, d.start.z), d.start.z);
       ride.speed = 0; ride.lat = 0; ride.vy = 0; ride.air = 0; ride.jumpRamp = null;
       ride.airVX = ride.airVZ = undefined;
     } else {
@@ -1610,6 +1699,7 @@ GAME.missions = (function () {
     active = null;
     abandonAsk = 0;
     cpMarker.visible = false;
+    if (crate) crate.visible = false;
     setMarkersVisible(true);
     GAME.hud.fadeSet(0);   // a start that dies mid-blackout takes the black with it
     GAME.hud.missionEnd();
@@ -1652,10 +1742,13 @@ GAME.missions = (function () {
     for (var k in T) {
       var s = T[k];
       if (s.heli || s.plane || k === 'police') continue;
-      if (!!s.bike !== !!mine.bike) continue;
+      if (!!s.bike !== !!mine.bike || !!s.boat !== !!mine.boat) continue;
       if (s.maxSpeed > bestSp && s.maxSpeed <= mine.maxSpeed * RIVAL_CAP) { best = k; bestSp = s.maxSpeed; }
     }
-    return { type: best, edge: best === playerType ? RIVAL_ENGINE_EDGE : 1 };
+    // (a boat race is the one class with nothing quicker in it, and no
+    // corners or traffic to lose time to either: an edge on the engine there
+    // is a race decided at the start, so the field races the boat you brought)
+    return { type: best, edge: best === playerType && !mine.boat ? RIVAL_ENGINE_EDGE : 1 };
   }
 
   function racerControls(car, dt) {
@@ -1669,9 +1762,11 @@ GAME.missions = (function () {
     }
     // rivals drive the streets to the next checkpoint. Beelining at a diagonal
     // checkpoint just parks them against a building, which is what made the
-    // field look slow — they were stuck, not slow.
+    // field look slow — they were stuck, not slow. (A boat race is laid out
+    // in open water, every leg clear: a boat makes straight for the mark.)
     car.pathT = (car.pathT || 0) - dt;
-    if (!car.path || !car.path.length || car.pathT <= 0) {
+    if (car.spec.boat) car.path = [cp];
+    else if (!car.path || !car.path.length || car.pathT <= 0) {
       car.pathT = 2.5;
       var nodes = GAME.nav.roadPath(car.pos.x, car.pos.z, cp[0], cp[1]);
       var pts = [];
@@ -1713,15 +1808,18 @@ GAME.missions = (function () {
     // of instead, which is the only lever that can.
     var lead = car.cpIndex - active.cpIndex;
     var edge;
-    if (lead > 0) edge = 0.95;
-    else if (lead < 0) edge = 1.13;
+    // On the water the band is gentler: open-water legs are all straights,
+    // so a rival pushed past your top speed simply could not be beaten.
+    var bandUp = car.spec.boat ? 0.05 : 0.13, bandDown = car.spec.boat ? 0.09 : 0.05;
+    if (lead > 0) edge = 1 - bandDown;
+    else if (lead < 0) edge = 1 + bandUp;
     else {
       // same checkpoint, so whoever is further from it is the one behind
       var pc = GAME.player.car;
       var cpNow = d.cps[Math.min(active.cpIndex, d.cps.length - 1)];
       var mine = U.dist(car.pos.x, car.pos.z, cpNow[0], cpNow[1]);
       var yours = pc ? U.dist(pc.pos.x, pc.pos.z, cpNow[0], cpNow[1]) : mine;
-      edge = 1 + U.clamp((mine - yours) / 320, -0.05, 0.13);
+      edge = 1 + U.clamp((mine - yours) / 320, -bandDown, bandUp);
     }
     // the band rides on top of whatever edge the field started with
     car.raceEdge = edge * (active.rivalEdge || 1);
@@ -1828,6 +1926,9 @@ GAME.missions = (function () {
         // races and courier deliveries need a vehicle; rampages can start on foot
         var need = d.type === 'race' || d.type === 'courier' || d.type === 'takedown';
         var air = P.car && (P.car.spec.heli || P.car.spec.plane);
+        // and a job on the water wants a boat under you (a road job never
+        // finds one there: its ring is on the street)
+        var wrongHull = need && P.inCar && !!d.boat !== !!(P.car && P.car.spec.boat);
         var dd = U.dist2(px, pz, d.start.x, d.start.z);
         // (six metres for a vehicle: four and a half took five or ten goes
         // of shuffling back and forth to land in)
@@ -1837,11 +1938,12 @@ GAME.missions = (function () {
         // name what the marker is (and what it wants) whenever you're standing near it
         if (dd < 34 * 34 && (!hk || dd < hd)) {
           hk = 1; ho = d; hd = dd;
-          hn = hot ? 1 : need && !P.inCar ? 2 : d.type === 'race' && air ? 3
+          hn = hot ? 1 : need && !P.inCar ? (d.boat ? 7 : 2) : wrongHull ? (d.boat ? 7 : 2) : d.type === 'race' && air ? 3
             : leaveFirst === d ? 6 : inRing ? (slow ? 4 : 5) : 0;
         }
         if (hot) continue;   // wanted stars close every start line
         if (need && !P.inCar) continue;
+        if (wrongHull) continue;
         // no cheesing a street race from a helicopter or plane
         if (d.type === 'race' && air) continue;
         if (inRing && slow && leaveFirst !== d) {
@@ -1955,10 +2057,11 @@ GAME.missions = (function () {
         if (!active.legs || active.legsGated !== gated) { active.legs = []; active.legsGated = gated; }
         var pts = [];
         var here = P.car ? P.car.pos : P.pos;
-        var first = roadRoute(here.x, here.z, d2.cps[active.cpIndex][0], d2.cps[active.cpIndex][1]);
+        var wet = !!d2.boat, road = function (ax, az, bx, bz) { return wet ? [[ax, az], [bx, bz]] : roadRoute(ax, az, bx, bz); };
+        var first = road(here.x, here.z, d2.cps[active.cpIndex][0], d2.cps[active.cpIndex][1]);
         for (var si = 0; si < first.length; si++) pts.push(first[si]);
         for (var k = active.cpIndex + 1; k < d2.cps.length; k++) {
-          var seg = active.legs[k] || (active.legs[k] = roadRoute(d2.cps[k - 1][0], d2.cps[k - 1][1], d2.cps[k][0], d2.cps[k][1]));
+          var seg = active.legs[k] || (active.legs[k] = road(d2.cps[k - 1][0], d2.cps[k - 1][1], d2.cps[k][0], d2.cps[k][1]));
           for (si = 0; si < seg.length; si++) pts.push(seg[si]);
         }
         active.raceRoute = pts;
@@ -1969,12 +2072,15 @@ GAME.missions = (function () {
       if (active.timeLeft <= 0) { finish(false, 'Out of time.'); return; }
       var px2 = P.inCar ? P.car.pos.x : P.pos.x, pz2 = P.inCar ? P.car.pos.z : P.pos.z;
       var stop = currentCp();
-      if (stop && U.dist2(px2, pz2, stop[0], stop[1]) < 25) {
+      bobCrate();
+      if (stop && U.dist2(px2, pz2, stop[0], stop[1]) < (d2.boat ? 49 : 25)) {
         active.cpIndex++;
         GAME.audio.pickup();
         GAME.haptics.checkpoint();
         if (active.cpIndex >= active.stops.length) { finish(true); return; }
-        GAME.hud.message('Delivered! Next stop is marked.', 2);
+        GAME.hud.message(!d2.boat ? 'Delivered! Next stop is marked.'
+          : active.cpIndex < active.stops.length - 1 ? 'Package aboard! The next one is marked.'
+            : 'Got them all — bring them in to the pier!', 2);
         GAME.hud.missionObjective(objectiveText());
         active.routeCp = -1; // force route recompute for the new stop
         updateCp();
@@ -1984,7 +2090,8 @@ GAME.missions = (function () {
       if (active.routeT <= 0 || active.routeCp !== active.cpIndex) {
         active.routeT = 1.0; active.routeCp = active.cpIndex;
         var st2 = currentCp();
-        active.courierRoute = st2 ? roadRoute(px2, pz2, st2[0], st2[1]) : null;
+        // (on the water the line runs straight: there are no streets to follow)
+        active.courierRoute = !st2 ? null : d2.boat ? [[px2, pz2], st2] : roadRoute(px2, pz2, st2[0], st2[1]);
       }
       GAME.hud.missionTimer(active.timeLeft, true);
     } else if (d2.type === 'rampage') {

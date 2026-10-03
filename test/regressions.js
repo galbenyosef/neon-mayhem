@@ -63,6 +63,9 @@
 //   5g. FROM YOUR PLAY — Isla Verde's districts are named on the map;
 //       a delivered patient walks in through the hospital doors; a night's
 //       sleep runs the weather on; a plane you jump out of rolls on.
+//   5h. THE WATER, AGAIN — a plane left in the air flies on and noses down;
+//       the edge of the world is well out to sea; boats hit bridge piers;
+//       a regatta against rival boats, and contraband to fish out of the bay.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -2224,7 +2227,8 @@ function withTimeout(p, ms) {
     }
     window.__msgs = [];
     // a helicopter at the west edge, nose west, stick forward
-    var h = board('helicopter', -480, 0, 60, -Math.PI / 2);
+    var E = GAME.aircraft.edges();
+    var h = board('helicopter', E.west + 44, 0, 60, -Math.PI / 2);
     GAME.test.pressKey('KeyW');
     var minX = h.pos.x;
     for (var i = 0; i < 60 * 10; i++) { GAME.test.fastForward(1 / 60); minX = Math.min(minX, h.pos.x); }
@@ -2241,7 +2245,7 @@ function withTimeout(p, ms) {
     r.heliTop = +top.toFixed(1);
     r.toldCeiling = window.__msgs.some(function (m) { return m.indexOf('too thin') >= 0; });
     // a plane, flying at the north edge
-    var pl = board('airplane', 0, -470, 120, Math.PI);
+    var pl = board('airplane', 0, E.closed.minZ + 54, 120, Math.PI);
     pl.speed = 45; pl.pitch = 0; pl.roll = 0;
     var minZ = pl.pos.z;
     for (var k = 0; k < 60 * 12; k++) { pl.speed = Math.max(pl.speed, 40); GAME.test.fastForward(1 / 60); minZ = Math.min(minZ, pl.pos.z); }
@@ -3051,7 +3055,8 @@ function withTimeout(p, ms) {
     if (P.inCar) GAME.exitCar();
     // every vehicle job's ring within reach of a car in the lane
     r.far = GAME.missions.DEFS.filter(function (d) {
-      if (!d.start || d.type === 'rampage') return false;
+      // (a job run on the water starts on the water)
+      if (!d.start || d.type === 'rampage' || d.boat) return false;
       var rp = C.nearestRoadPoint(d.start.x, d.start.z);
       return Math.hypot(rp.x - d.start.x, rp.z - d.start.z) > 3.6;
     }).map(function (d) { return d.id; });
@@ -3550,6 +3555,207 @@ function withTimeout(p, ms) {
   });
   check('play: sleeping hands the sky its eight hours',
     bedWx.rested && bedCalls.calls.length === 1 && Math.abs(bedCalls.calls[0] - bedCalls.day / 3) < 0.01, JSON.stringify(bedCalls));
+
+  // ---------- 5h: the water, again ----------
+  // A plane you parachuted out of fell straight down where you left it. The
+  // edge of the world sat 25-35 m off the coast. A boat sailed through the
+  // bridge piers. And there was nothing to do in a boat: now there is a race
+  // round the bay against rival boats, and a run to fish contraband out of it.
+  var sea = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, V = GAME.vehicles, M = GAME.missions, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    if (M.active) M.failActive('test');
+    GAME.test.fastForward(0.3);
+    GAME.godMode = true;
+
+    // --- out of a plane in the air: it flies on, nose going down
+    // (boarded on dry land, then put up over the bay)
+    var lp = C.nearestRoadPoint(250, -200);
+    GAME.test.teleport(lp.x - 4, lp.z);
+    GAME.test.fastForward(0.3);
+    var pl = V.spawnCar('airplane', lp.x, lp.z, Math.PI, {});
+    GAME.test.enterNearestCar(pl); GAME.test.fastForward(1.2);
+    pl.pos.set(520, 90, -100); pl.heading = Math.PI; pl.pitch = 0; pl.roll = 0; pl.speed = 40;
+    GAME.test.fastForward(1 / 60);
+    GAME.test.pressKey('KeyF', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyF', false);
+    GAME.test.fastForward(1 / 60);
+    var bz = pl.pos.z, by = pl.pos.y;
+    r.chute = P.parachuting;
+    GAME.test.fastForward(2);
+    r.glide = { ahead: +(bz - pl.pos.z).toFixed(1), dropped: +(by - pl.pos.y).toFixed(1), pitch: +pl.pitch.toFixed(2), dead: pl.dead };
+    GAME.test.fastForward(8);
+    r.glideEnd = { dead: pl.dead, gone: pl.sinking || pl.dead };
+    if (GAME.aircraft.land) GAME.aircraft.land();
+    P.parachuting = false;
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.5);
+    if (!pl.gone) V.removeCar(pl);
+
+    // --- the edges stand well out to sea
+    var E = GAME.aircraft.edges(), land = { minX: 1e9, minZ: 1e9, maxZ: -1e9 };
+    for (var x = -900; x <= 1800; x += 20) for (var z = -900; z <= 900; z += 20) {
+      if (C.islandAt(x, z)) { land.minX = Math.min(land.minX, x); land.minZ = Math.min(land.minZ, z); land.maxZ = Math.max(land.maxZ, z); }
+    }
+    r.edge = { west: land.minX - E.west, north: land.minZ - E.closed.minZ, south: E.closed.maxZ - land.maxZ };
+    var q = { x: E.west + 40, z: 0 };
+    r.edge.freeNear = !GAME.aircraft.enforceSea(q) && q.x === E.west + 40;
+    q = { x: E.west - 40, z: 0 };
+    r.edge.heldPast = GAME.aircraft.enforceSea(q) && q.x === E.west;
+
+    // --- a boat into a bridge pier
+    var pier = C.bridgePiers.filter(function (p) { return p.wet && p.x < 540; })[0];
+    r.pierFound = !!pier;
+    if (pier) {
+      var sx = pier.x, sz = pier.z + 40, hd = Math.PI;
+      GAME.test.teleport(sx + 4, sz);
+      var boat = V.spawnCar('boat', sx, sz, hd, {});
+      GAME.test.enterNearestCar(boat); GAME.test.fastForward(1.2);
+      boat.pos.set(sx, -0.35, sz); boat.heading = hd; boat.speed = 0;
+      var hp0 = boat.hp, minD = 1e9;
+      GAME.test.pressKey('KeyW', true);
+      for (var f = 0; f < 60 * 5; f++) { GAME.test.fastForward(1 / 60); minD = Math.min(minD, Math.hypot(boat.pos.x - pier.x, boat.pos.z - pier.z)); }
+      GAME.test.pressKey('KeyW', false);
+      r.pier = { inBoat: P.car === boat, closest: +minD.toFixed(1), dented: boat.hp < hp0 };
+      GAME.exitCar(); GAME.test.fastForward(0.5);
+      V.removeCar(boat);
+    }
+
+    // --- the regatta
+    function boatTo(d) {
+      if (P.inCar) GAME.exitCar();
+      GAME.test.fastForward(0.3);
+      var b = V.spawnCar('boat', d.start.x, d.start.z + 14, Math.PI, {});
+      GAME.test.teleport(d.start.x + 3, d.start.z + 14);
+      GAME.test.enterNearestCar(b); GAME.test.fastForward(1.2);
+      b.pos.set(d.start.x, -0.35, d.start.z); b.speed = 0;
+      GAME.test.fastForward(0.5);
+      for (var k = 0; k < 60 * 6 && M.active && M.active.state !== 'run'; k++) GAME.test.fastForward(1 / 60);
+      return b;
+    }
+    var reg = M.DEFS.filter(function (d) { return d.id === 'boat0'; })[0];
+    var con = M.DEFS.filter(function (d) { return d.id === 'boat1'; })[0];
+    r.defs = !!reg && !!con && reg.boat && con.boat;
+    r.legsWet = !!reg && reg.cps.every(function (cp, i) {
+      var a = i ? reg.cps[i - 1] : [reg.start.x, reg.start.z];
+      for (var t = 0; t <= 1; t += 0.02) if (!C.isBoatWater(a[0] + (cp[0] - a[0]) * t, a[1] + (cp[1] - a[1]) * t)) return false;
+      return true;
+    });
+    // a car in the ring is not a boat
+    GAME.test.teleport(reg.start.x, reg.start.z);
+    var car = V.spawnCar('sedan', 300, 0, 0, {});
+    GAME.test.enterNearestCar(car); GAME.test.fastForward(1.2);
+    car.pos.set(reg.start.x, 0, reg.start.z); car.speed = 0;
+    GAME.test.fastForward(0.5);
+    r.carRefused = !M.active;
+    GAME.exitCar(); GAME.test.fastForward(0.3); V.removeCar(car);
+    var b1 = boatTo(reg);
+    var A = M.active;
+    r.raceOn = !!(A && A.def === reg && A.state === 'run');
+    r.field = A ? A.racers.map(function (c) { return c.type + (c.riderMesh ? '+helm' : ''); }) : [];
+    var dry = 0;
+    for (var t2 = 0; t2 < 25 && M.active; t2 += 0.25) {
+      GAME.test.fastForward(0.25);
+      A.racers.forEach(function (c) { if (!C.isBoatWater(c.pos.x, c.pos.z)) dry++; });
+    }
+    r.rivals = { cps: A.racers.map(function (c) { return c.cpIndex; }), dry: dry };
+    for (var i = 0; i < reg.cps.length && M.active; i++) {
+      b1.pos.set(reg.cps[i][0], -0.35, reg.cps[i][1]); b1.speed = 0;
+      GAME.test.fastForward(0.1);
+    }
+    r.raceWon = !M.active && !!(GAME.bests && GAME.bests.boat0 !== undefined);
+    GAME.test.fastForward(0.5);
+    if (GAME.share && GAME.share.hide) GAME.share.hide();
+
+    // --- contraband
+    boatTo(con);
+    A = M.active;
+    r.runOn = !!(A && A.def === con);
+    r.drops = A ? A.stops.map(function (st) {
+      var nearPier = C.bridgePiers.some(function (p) { return Math.hypot(p.x - st[0], p.z - st[1]) < 16; });
+      return C.isBoatWater(st[0], st[1]) && !nearPier;
+    }) : [];
+    r.homeLast = !!A && Math.hypot(A.stops[A.stops.length - 1][0] - con.start.x, A.stops[A.stops.length - 1][1] - con.start.z) < 1;
+    r.packages = A ? A.stops.length - 1 : 0;
+    var b2 = P.car;
+    for (var j = 0; A && j < A.stops.length && M.active; j++) {
+      b2.pos.set(A.stops[j][0], -0.35, A.stops[j][1]); b2.speed = 0;
+      GAME.test.fastForward(0.1);
+    }
+    r.runWon = !M.active && !!(GAME.bests && GAME.bests.boat1 !== undefined);
+    GAME.test.fastForward(0.5);
+    if (GAME.share && GAME.share.hide) GAME.share.hide();
+    if (P.inCar) { var last = P.car; GAME.exitCar(); GAME.test.fastForward(0.3); V.removeCar(last); }
+    GAME.godMode = false;
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('sea: out of a plane in the air (anchor sanity)', sea.chute, JSON.stringify(sea.glide));
+  check('sea: the empty plane flies on and noses down instead of dropping where it was',
+    sea.glide.ahead > 50 && sea.glide.dropped > 3 && sea.glide.pitch < -0.3, JSON.stringify(sea.glide));
+  check('sea: and comes down in the end', sea.glideEnd.gone, JSON.stringify(sea.glideEnd));
+  check('sea: the edge of the world stands at least two hundred metres off the land, every side',
+    sea.edge.west >= 200 && sea.edge.north >= 200 && sea.edge.south >= 200, JSON.stringify(sea.edge));
+  check('sea: open water short of it, held at it', sea.edge.freeNear && sea.edge.heldPast, JSON.stringify(sea.edge));
+  check('sea: a boat driven at a bridge pier stops against it, dented',
+    sea.pierFound && sea.pier.inBoat && sea.pier.closest > 3.5 && sea.pier.dented, JSON.stringify(sea.pier));
+  check('sea: two jobs on the water', sea.defs);
+  check('sea: every leg of the regatta is open water', sea.legsWet);
+  check('sea: a car pulled up in its ring does not start it', sea.carRefused);
+  check('sea: a boat does, against a field of three boats, each with somebody at the helm',
+    sea.raceOn && sea.field.length === 3 && sea.field.every(function (f) { return f === 'boat+helm'; }), JSON.stringify(sea.field));
+  check('sea: the rivals race the course, on the water the whole way',
+    Math.max.apply(null, sea.rivals.cps) >= 2 && sea.rivals.dry === 0, JSON.stringify(sea.rivals));
+  check('sea: and the regatta can be won', sea.raceWon);
+  check('sea: contraband: three packages out on the open water, then home to the pier',
+    sea.runOn && sea.packages === 3 && sea.drops.every(Boolean) && sea.homeLast, JSON.stringify({ drops: sea.drops, home: sea.homeLast }));
+  check('sea: and fishing them all out passes it', sea.runWon);
+
+  // Raced, not teleported: a driver taking the line round the marks — full
+  // throttle, sliding the hard turns — wins it, and the field is still
+  // racing at the end. The rivals once had a faster engine and a catch-up
+  // past your top speed, which on legs that are all straights made the race
+  // unwinnable; and a bump at a mark threw a rival's helmsman overboard.
+  var regatta = await page.evaluate(function () {
+    var P = GAME.player, M = GAME.missions, V = GAME.vehicles, r = {};
+    if (P.inCar) GAME.exitCar();
+    if (M.active) M.failActive('test');
+    GAME.test.fastForward(13);   // any retry offer lapses
+    var d = M.DEFS.filter(function (x) { return x.id === 'boat0'; })[0];
+    var b = V.spawnCar('boat', d.start.x, d.start.z + 20, Math.PI, {});
+    GAME.test.teleport(d.start.x + 3, d.start.z + 20);
+    GAME.test.enterNearestCar(b); GAME.test.fastForward(1.2);
+    b.pos.set(d.start.x, -0.35, d.start.z); b.speed = 0;
+    GAME.test.fastForward(0.5);
+    for (var k = 0; k < 60 * 6 && M.active && M.active.state !== 'run'; k++) GAME.test.fastForward(1 / 60);
+    var A = M.active, t = 0;
+    r.on = !!(A && A.def === d);
+    window.__msgs = [];
+    function key(c, on) { GAME.test.pressKey(c, on); }
+    while (A && M.active && t < 150) {
+      var cp = d.cps[Math.min(A.cpIndex, d.cps.length - 1)];
+      var dh = U.wrapPI(Math.atan2(cp[0] - b.pos.x, cp[1] - b.pos.z) - b.heading);
+      key('KeyW', Math.abs(dh) < 1.4 || b.speed < 8);
+      key('KeyA', dh > 0.06); key('KeyD', dh < -0.06);
+      key('Space', Math.abs(dh) > 0.7 && b.speed > 15);
+      GAME.test.fastForward(1 / 60); t += 1 / 60;
+    }
+    ['KeyW', 'KeyA', 'KeyD', 'Space'].forEach(function (c) { key(c, false); });
+    r.t = +t.toFixed(1);
+    r.won = window.__msgs.some(function (m) { return /RACE WON/.test(m); });
+    r.field = A ? A.racers.map(function (c) { return { cp: c.cpIndex, aboard: c.occupied === 'ai' }; }) : [];
+    if (M.active) M.failActive('test');
+    GAME.test.fastForward(0.5);
+    if (GAME.share && GAME.share.hide) GAME.share.hide();
+    if (P.inCar) { var last = P.car; GAME.exitCar(); GAME.test.fastForward(0.3); V.removeCar(last); }
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('sea: the regatta is winnable by racing it well', regatta.on && regatta.won, JSON.stringify(regatta));
+  check('sea: and it is a race: every rival still aboard and close behind at the flag',
+    regatta.field.length === 3 && regatta.field.every(function (f) { return f.aboard && f.cp >= 7; }), JSON.stringify(regatta.field));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a
@@ -5990,7 +6196,9 @@ function withTimeout(p, ms) {
     GAME.test.fastForward(5);                // the fuse runs out
     out.blown = burning.every(function (c) { return c.dead; });
     out.fled = fled.length;
-    out.fledAlive = fled.filter(function (p) { return !p.dead; }).length;
+    // caught by the blast, as opposed to anything else that can happen to
+    // somebody running down a live street (traffic does not stop for them)
+    out.blastCaught = fled.filter(function (p) { return p.dead && p.deathCause === 'explosion'; }).length;
 
     // a blast with somebody still aboard, car and bike alike
     clearAround();
@@ -6066,8 +6274,8 @@ function withTimeout(p, ms) {
   check('aboard: nobody sits in a burning car, bike or cruiser',
     aboard.fire.every(function (f) { return !f.aboard && !f.stillOn && f.out === 1; }), JSON.stringify(aboard.fire));
   check('aboard: and all three were clear when it went up',
-    aboard.blown && aboard.fled === 3 && aboard.fledAlive === 3,
-    'blown=' + aboard.blown + ' out=' + aboard.fled + ' alive=' + aboard.fledAlive);
+    aboard.blown && aboard.fled === 3 && aboard.blastCaught === 0,
+    'blown=' + aboard.blown + ' out=' + aboard.fled + ' caught in a blast=' + aboard.blastCaught);
   check('aboard: a blast kills whoever is still aboard, car and bike alike',
     !aboard.blast.stillOn && aboard.blast.carBodies === 1 && aboard.blast.bikeBodies === 1, JSON.stringify(aboard.blast));
   check('aboard: a rider passing a blast is caught in it like anyone on foot',

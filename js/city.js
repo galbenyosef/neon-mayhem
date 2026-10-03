@@ -85,6 +85,7 @@ GAME.city = (function () {
   // spans of road carried over water, registered the same way. A crossing is
   // dry land for the water tests and drivable ground for the height lookup.
   city.crossings = [];
+  city.bridgePiers = [];   // where the bridges stand in the water (isla.js), for whoever needs them
   city.addCrossing = function (c) { city.crossings.push(c); return c; };
   // `atY`, when given, is the height of whatever is asking. A deck only counts
   // as ground once you are up at its level: without that, its height applies to

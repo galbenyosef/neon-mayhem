@@ -220,6 +220,18 @@ function buildBikeRider(look) {
   return r;
 }
 
+// whoever has the helm of a boat somebody else is driving: stood at the
+// wheel the way the player stands there (player.js updateHelm)
+function buildHelmsman(look) {
+  var r = GAME.peds.buildPedMesh(look ? { look: look } : {});
+  var j = r.userData.joints;
+  j.legL.rotation.z = 0.08; j.legR.rotation.z = -0.08;
+  j.armL.rotation.x = -0.95; j.armR.rotation.x = -0.95;
+  j.torso.rotation.x = 0.06;
+  r.position.set(0, 0.55, -0.15);
+  return r;
+}
+
 function buildHeliMesh(colorHex, gunship) {
   var g = new THREE.Group();
   var body = new THREE.Mesh(cachedGeo('heli|' + colorHex + '|' + (gunship ? 1 : 0), function (b) {
@@ -1004,8 +1016,8 @@ GAME.vehicles = (function () {
   // Somebody at the wheel, and drawn there if the seat is out in the open.
   function seatOccupant(car, look) {
     car.occupied = 'ai';
-    if (car.spec.bike && !car.riderMesh) {
-      car.riderMesh = buildBikeRider(look);
+    if ((car.spec.bike || car.spec.boat) && !car.riderMesh) {
+      car.riderMesh = car.spec.boat ? buildHelmsman(look) : buildBikeRider(look);
       car.mesh.add(car.riderMesh);
     }
   }
@@ -1180,9 +1192,11 @@ GAME.vehicles = (function () {
         var rel = (avx - bvx) * nx + (avz - bvz) * nz;
         // a rider takes the hit in person, whichever side of it they were on
         // — before the damage below, which can blow the bike up under them
+        // (on a bike: a boat's helmsman is braced at the wheel, and two
+        // boats rubbing at a race mark is racing, not a man overboard)
         if (rel > RIDER_KNOCK) {
-          if (exposedRider(a)) knockOffRider(a, b, rel);
-          if (exposedRider(b)) knockOffRider(b, a, rel);
+          if (exposedRider(a) && a.spec.bike) knockOffRider(a, b, rel);
+          if (exposedRider(b) && b.spec.bike) knockOffRider(b, a, rel);
         }
         // ...and so does the player, past the same knock that throws them off
         // against a wall. Only the AI were ever rammed off: broadsided at
@@ -1495,8 +1509,13 @@ GAME.vehicles = (function () {
   function stepBoat(car, dt) {
     var s = car.spec, c = car.controls, C = GAME.city, P = GAME.player;
     var driven = car === P.car && P.inCar;
-    var th = driven ? c.throttle : 0, st = driven ? c.steer : 0, slide = driven && c.handbrake;
-    if (th > 0) car.speed += th * s.accel * dt * (1 - Math.max(0, car.speed) / s.maxSpeed);
+    // a rival in a boat race steers by the controls the race hands it
+    var raced = !driven && car.occupied === 'ai' && car.ai && car.ai.mode === 'race';
+    var helm = driven || raced;
+    var th = helm ? c.throttle : 0, st = helm ? c.steer : 0, slide = helm && c.handbrake;
+    // (and rides the race's rubber band, as a rival car does)
+    var edge = raced ? (car.raceEdge || 1) : 1, topSp = s.maxSpeed * edge;
+    if (th > 0) car.speed += th * s.accel * edge * dt * (1 - Math.max(0, car.speed) / topSp);
     else if (th < 0) car.speed += th * s.accel * (car.speed > 1 ? 1.1 : 0.4) * dt;
     car.speed = Math.max(car.speed, -s.maxSpeed * 0.25);
     // the water holds it back hard off the throttle, lightly on it
@@ -1974,14 +1993,29 @@ GAME.vehicles = (function () {
           // the surface, not the street: an abandoned or parked aircraft over
           // a rooftop settles on the roof instead of falling through it
           var hgy = GAME.city.surfaceY(car.pos.x, car.pos.z, car.pos.y);
-          if (car.pos.y > hgy + restY + 0.05) {
+          var aloft = car.pos.y > hgy + restY + 0.05;
+          if (car.spec.plane && aloft && Math.abs(car.speed || 0) > 4) {
+            // With nobody at the controls a plane does not drop like a stone
+            // where you left it: the nose falls, a wing goes down, and it
+            // dives on along its heading, gathering speed, until the ground
+            // or a wall stops it. (It fell straight down from where you bailed.)
+            car.pitch = U.damp(car.pitch || 0, -0.55, 0.9, dt);
+            car.roll = U.damp(car.roll || 0, 0.5, 0.6, dt);
+            car.speed = Math.min(car.spec.maxSpeed, car.speed + (-Math.sin(car.pitch) * 9.8 - car.speed * 0.04) * dt);
+            car.vy = U.damp(car.vy || 0, car.speed * Math.sin(car.pitch), 2.5, dt);
+            car.pos.y += car.vy * dt;
+          } else if (aloft) {
             car.vy = (car.vy || 0) - 12 * dt;
             car.pos.y += car.vy * dt;
-            if (car.pos.y <= hgy + restY) {
-              car.pos.y = hgy + restY;
-              if (car.vy < -6) { explodeCar(car, 'fire'); continue; }
-              car.vy = 0;
-            }
+          }
+          if (aloft && car.pos.y <= hgy + restY) {
+            car.pos.y = hgy + restY;
+            if (car.vy < -6) { explodeCar(car, GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y) ? 'water' : 'fire'); continue; }
+            car.vy = 0;
+          }
+          if (car.spec.plane) {
+            if (!aloft) { car.pitch = U.damp(car.pitch || 0, 0, 4, dt); car.roll = U.damp(car.roll || 0, 0, 4, dt); }
+            car.mesh.rotation.set(-(car.pitch || 0), car.heading, car.roll || 0);
           }
           // No floats: an empty airframe down on the sea goes under rather
           // than sitting on the swell. Asked of wherever it came to rest, not
@@ -1996,16 +2030,19 @@ GAME.vehicles = (function () {
             // moving it. It carries on along its heading, coasting down the
             // way a car does, until it slows to a stop or meets something
             // standing in its way (a bump at a crawl, a crash at speed).
-            var cnx = car.pos.x + Math.sin(car.heading) * car.speed * dt;
-            var cnz = car.pos.z + Math.cos(car.heading) * car.speed * dt;
+            var chz = car.speed * Math.cos(car.pitch || 0);   // (the dive's share goes down, above)
+            var cnx = car.pos.x + Math.sin(car.heading) * chz * dt;
+            var cnz = car.pos.z + Math.cos(car.heading) * chz * dt;
             if (car.pos.y < GAME.city.surfaceY(cnx, cnz) - 0.8) {
               damageCar(car, Math.abs(car.speed) * (Math.abs(car.speed) > 18 ? 6 : 0.6), 'wall');
               car.speed = 0;
             } else {
               car.pos.x = cnx; car.pos.z = cnz;
-              var rolling = car.pos.y <= hgy + restY + 0.05;
-              var sp = Math.abs(car.speed) * Math.exp(-(rolling ? 0.25 : 0.05) * dt) - (rolling ? 1.2 : 0) * dt;
-              car.speed = sp > 0.2 ? Math.sign(car.speed) * sp : 0;
+              if (!aloft) {
+                // rolling: it coasts down the way a car does
+                var sp = Math.abs(car.speed) * Math.exp(-0.25 * dt) - 1.2 * dt;
+                car.speed = sp > 0.2 ? Math.sign(car.speed) * sp : 0;
+              }
             }
           } else car.speed = (car.speed || 0) * Math.exp(-1.5 * dt);
         }

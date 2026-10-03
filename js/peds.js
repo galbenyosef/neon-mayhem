@@ -194,7 +194,7 @@ GAME.peds = (function () {
       // as `x || 0`, false or null where it is only tested, NaN for a number
       // the code asks whether it has been set yet, and undefined for anything
       // else it asks that of.
-      dead: false, gone: false, killedBy: null,
+      dead: false, gone: false, killedBy: null, deathCause: null,
       foe: null, aimPose: false, punchArm: false, poseT: 0, bangT: 0, bumpCd: 0,
       fleeX: 0, fleeZ: 0,
       diveX: 0, diveY: 0, diveZ: 0, diveDur: 0,
@@ -209,6 +209,27 @@ GAME.peds = (function () {
     };
     world.peds.push(ped);
     return ped;
+  }
+
+  // Which way somebody running from trouble goes: away from it — and away
+  // from every fire close by, not only the one they fled. Three vehicles
+  // burning side by side, and whoever bailed out of the one on the end ran
+  // clear of it straight at the next, and was there when it went up.
+  var FIRE_R = 16;
+  function awayFromFire(ped) {
+    var ax = ped.pos.x - ped.fleeX, az = ped.pos.z - ped.fleeZ;
+    var al = Math.sqrt(ax * ax + az * az) || 1;
+    ax /= al; az /= al;
+    var cars = world.cars;
+    for (var c = 0; c < cars.length; c++) {
+      var car = cars[c];
+      if (car.dead || car.stage < 2) continue;
+      var dx = ped.pos.x - car.pos.x, dz = ped.pos.z - car.pos.z, d2 = dx * dx + dz * dz;
+      if (d2 > FIRE_R * FIRE_R || d2 < 0.01) continue;
+      var d = Math.sqrt(d2), w = 2.5 * (FIRE_R - d) / FIRE_R;
+      ax += dx / d * w; az += dz / d * w;
+    }
+    return Math.atan2(ax, az);
   }
 
   // Send somebody in through a door: they walk to it and go inside. Up to
@@ -233,6 +254,7 @@ GAME.peds = (function () {
   function kill(ped, cause, byPlayer, attacker) {
     if (ped.dead) return;
     ped.killedBy = attacker || null;
+    ped.deathCause = cause || null;
     ped.dead = true;
     ped.state = 'dead';
     ped.deadT = 0;
@@ -469,7 +491,7 @@ GAME.peds = (function () {
         ped.speed = U.damp(ped.speed, 3.57, 3, dt);   // 0.85x the player's 4.2 walk
       } else if (ped.state === 'flee') {
         ped.fleeT -= dt;
-        var fh = Math.atan2(ped.pos.x - ped.fleeX, ped.pos.z - ped.fleeZ);
+        var fh = awayFromFire(ped);
         ped.heading = U.angleLerp(ped.heading, fh + Math.sin(GAME.time * 3 + i) * 0.5, Math.min(1, dt * 5));
         ped.speed = U.damp(ped.speed, 6.8, 4, dt);    // 0.85x the player's 8 sprint
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
