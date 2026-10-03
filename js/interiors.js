@@ -244,6 +244,60 @@ GAME.interiors = (function () {
     var mesh = new THREE.Mesh(b.build(), sharedVertexBasic());
     mesh.matrixAutoUpdate = false;
     GAME.scene.add(mesh);
+    buildLift();
+  }
+
+  // ---------- the tower lift ----------
+  // The downtown helipad was out of the sky or nothing: a helicopter on a roof
+  // seventy metres up with no way to it on foot. A ring at the lobby doors and
+  // one by the lift house on the roof now; step on either and you ride to the
+  // other (city.js builds the doors). It runs whatever is going on — a lift
+  // to a helicopter is a fine way to leave a chase.
+  var lift = null, LIFT_ON = 1.0, LIFT_REARM = 1.7, LIFT_HINT = 8;
+  function buildLift() {
+    var L = GAME.city.towerLift;
+    if (!L) return;
+    lift = [];
+    [['street', 'roof', 'ELEVATOR — step on to ride up to the helipad'],
+      ['roof', 'street', 'ELEVATOR — step on to go down to the street']].forEach(function (s) {
+      var at = L[s[0]];
+      var m = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.0, 32), new THREE.MeshBasicMaterial({
+        color: 0x8fb4ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(at.x, at.y + 0.09, at.z);
+      GAME.scene.add(m);
+      lift.push({ id: s[0], at: at, to: L[s[1]], toId: s[1], mesh: m, label: s[2], armed: true });
+    });
+  }
+  function stepLift() {
+    var P = GAME.player;
+    if (!lift) return;
+    for (var i = 0; i < lift.length; i++) lift[i].mesh.material.opacity = 0.5 + 0.25 * Math.sin(GAME.time * 3 + i);
+    if (P.state !== 'alive' || P.inCar || P.swimming || P.parachuting || P.mantle) return;
+    var hint = '';
+    for (var k = 0; k < lift.length; k++) {
+      var s = lift[k];
+      var d2 = Math.abs(P.pos.y - s.at.y) < 2.5 ? U.dist2(P.pos.x, P.pos.z, s.at.x, s.at.z) : 1e9;
+      if (d2 > LIFT_REARM * LIFT_REARM) s.armed = true;
+      if (d2 < LIFT_HINT * LIFT_HINT) hint = s.label;
+      if (s.armed && d2 < LIFT_ON * LIFT_ON && !P.airborne && !GAME.shopOpen) { ride(s); return; }
+    }
+    if (hint) GAME.hud.setPoiHint(hint);
+  }
+  function ride(s) {
+    var P = GAME.player, to = s.to, up = s.toId === 'roof';
+    s.armed = false;
+    GAME.audio.pagerBeep();
+    fadeThen(function () {
+      if (P.state !== 'alive' || P.inCar) return;
+      var y = up ? to.y : GAME.city.groundY(to.out.x, to.out.z);
+      P.pos.set(to.out.x, y, to.out.z);
+      P.heading = to.heading; P.velY = 0; P.airborne = false; P.moveSpeed = 0; P.mantle = null; P.roofCar = null;
+      GAME.cam.yaw = P.heading; GAME.cam.x = 0;
+      for (var i = 0; i < lift.length; i++) lift[i].armed = false;
+      GAME.hud.message(up ? 'HELIPAD — seventy metres up. Mind the edge.' : 'Street level.', 2.5);
+      GAME.track('lift-' + s.toId);
+    });
   }
 
   // ---------- going in and out ----------
@@ -329,7 +383,7 @@ GAME.interiors = (function () {
       }
       return;
     }
-    if (!cur) return;
+    if (!cur) { stepLift(); return; }
     if (P.state !== 'alive') return;
     var room = cur.room, hint = '', hd = 1e9;
     for (var i = 0; i < room.rings.length; i++) {
@@ -364,6 +418,8 @@ GAME.interiors = (function () {
     get door() { return cur ? cur.door : null; },
     get busy() { return !!pending; },
     leave: exitRoom,
+    // headless: the two lift stops
+    lift: function () { return lift; },
     rooms: function () { return ROOMS; },
     bar: BAR
   };

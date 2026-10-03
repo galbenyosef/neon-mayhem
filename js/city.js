@@ -1283,6 +1283,29 @@ GAME.city = (function () {
     addSign(batches.signs, 21, HT.x, HT.h - 5.5, HT.z - 15.1, Math.PI, 22, 3.2);
     addSign(batches.signs, 21, HT.x, HT.h - 5.5, HT.z + 15.1, 0, 22, 3.2);
     city.roofHelipad = { x: padX, z: padZ, y: roofY };
+    // and a lift, for anybody who arrives on foot. The way up used to be out
+    // of the sky and nothing else, and a helicopter sitting on a roof with no
+    // door to it read as a find you were not allowed. A lit lobby on the north
+    // face, a lift house on the roof by the pad, and a ring at each
+    // (interiors.js rides you between them). Plain-lit, not the window-
+    // textured batches: a hut with office windows read as a tiny tower.
+    var LZ = HT.z + 15;          // the north face
+    batches.marks.addBox(HT.x, 1.6, LZ + 0.06, 5.4, 3.2, 0.14, 0, 0xffe2a8, 0);        // the lit doors
+    batches.wood.addBox(HT.x, 1.6, LZ + 0.1, 0.18, 3.2, 0.12, 0, 0x2a2e3a, 0);      // the split between them
+    batches.wood.addBox(HT.x, 3.5, LZ + 1.6, 7.4, 0.3, 3.2, 0, 0x2a2e3a, 0);        // canopy
+    batches.marks.addBox(HT.x, 3.32, LZ + 3.1, 7.2, 0.1, 0.12, 0, 0x8fb4ff, 0);        // its lit lip
+    [[-3.5], [3.5]].forEach(function (cp) {
+      batches.wood.addBox(HT.x + cp[0], 1.7, LZ + 3.0, 0.24, 3.4, 0.24, 0, 0x8a94b8, 0);
+    });
+    var LH = { x: HT.x + 10.6, z: HT.z + 11, w: 3.6, d: 4, h: 3.2 };
+    batches.wood.addBox(LH.x, HT.h + LH.h / 2, LH.z, LH.w, LH.h, LH.d, 0, 0x8a94b8, 0);
+    batches.marks.addBox(LH.x - LH.w / 2 - 0.05, HT.h + 1.2, LH.z, 0.12, 2.3, 1.6, 0, 0xffe2a8, 0);   // its door, toward the pad
+    batches.marks.addBox(LH.x, HT.h + LH.h + 0.04, LH.z, LH.w + 0.1, 0.08, LH.d + 0.1, 0, 0x8fb4ff, 0);
+    addSolid(LH.x, LH.z, LH.w, LH.d, HT.h + LH.h);
+    city.towerLift = {
+      street: { x: HT.x, z: LZ + 2.8, y: 0, heading: 0, out: { x: HT.x, z: LZ + 4.4 } },
+      roof: { x: LH.x - LH.w / 2 - 1.3, z: LH.z, y: roofY, heading: -Math.PI / 2, out: { x: LH.x - LH.w / 2 - 2.9, z: LH.z } }
+    };
     // the find has to be findable: the tower shows from half the map, so the
     // helicopter on it exists at long range instead of popping in at 210 m —
     // an empty pad seen from the strip read as "there is no helicopter"

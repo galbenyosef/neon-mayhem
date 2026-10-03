@@ -24,6 +24,10 @@ GAME.police = (function () {
   // undoing the ladder faster than the gaps built it.
   var ESCALATION = 0.10;
   var CAR_CAP = [0, 1, 2, 3, 4, 6];
+  // how long one star lasts after the offence (see the cooling in update):
+  // ONE_STAR_HOLD whatever happens, ONE_STAR_CHASE while a unit has had you
+  // in sight in the last ONE_STAR_SEEN seconds
+  var ONE_STAR_HOLD = 20, ONE_STAR_CHASE = 45, ONE_STAR_SEEN = 2;
 
   function stars() {
     var s = 0;
@@ -1054,9 +1058,15 @@ GAME.police = (function () {
     else lastSeen += dt;
 
     // interest fades if you stop offending — otherwise a tail that keeps you in
-    // sight means the heat never cools and a 1-star pursuit runs forever
-    if (GAME.time - lastCrime > 8) {
-      var before2 = stars();
+    // sight means the heat never cools and a 1-star pursuit runs forever.
+    // One star used to go eight seconds after the offence whatever happened —
+    // before the cruiser sent after you had turned the corner, so a lone star
+    // never became a chase. It holds twenty seconds now, time for them to get
+    // there, and while they keep you in sight up to forty-five; then it cools
+    // as before, in sight or not. Two stars and up keep the eight.
+    var before2 = stars();
+    var hold = before2 === 1 ? (lastSeen < ONE_STAR_SEEN ? ONE_STAR_CHASE : ONE_STAR_HOLD) : 8;
+    if (GAME.time - lastCrime > hold) {
       // and out of sight it cools faster — less so the hotter it is: lying low
       // takes about half a minute at three stars, a minute at four and a
       // minute and a half at five, with the search closing in on the spot

@@ -37,7 +37,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 
 - A 0–5 star wanted system that escalates from pursuing cruisers to foot pursuits, roadblocks, spike strips and visible air units — searchlight, strobes, tracer and all.
 - **Each star costs more than the one below it** — two offences for the first, then three, four, five, six. A single body you never meant to hit is heat rather than a star, and a five-star manhunt is twenty offences of work. Killing an officer is instantly serious at two stars, and climbing past that takes more of them than it used to.
-- **Out of sight is out of mind — eventually.** The police chase what they can see. Break the line of sight — round a corner, under a bridge, behind the towers where the helicopter can't look down on you — and every unit heads for where you were last seen and searches outward from there. Stay hidden and the heat cools: about half a minute at three stars, a minute at four, a minute and a half at five. Hide round the corner from where they lost you and the search will likely find you again.
+- **Out of sight is out of mind — eventually.** The police chase what they can see. Break the line of sight — round a corner, under a bridge, behind the towers where the helicopter can't look down on you — and every unit heads for where you were last seen and searches outward from there. Stay hidden and the heat cools: about half a minute at three stars, a minute at four, a minute and a half at five. A single star lasts long enough to become a chase — twenty seconds after the offence, and while they keep you in sight up to forty-five. Hide round the corner from where they lost you and the search will likely find you again.
 - **A roof is not a hiding place.** Officers on the street look up: stand at the edge and they will shoot up at you, though the middle of a roof is cover. And since nobody can climb up after you, two stars on a rooftop brings the helicopter early.
 - The law shoots like people, not turrets. A round goes where it was actually aimed rather than where a separate dice roll put it, so the tracer you watch fly wide *is* the one that missed — and range, your speed, the first shot of a burst and which officer happens to be holding the gun all decide whether it lands. Standing still at close quarters is fatal; thirty metres at a sprint is a different proposition entirely.
 - Steal a **cruiser** and it's yours to run: `G` for the lights and siren, and `J` for **vigilante** work — suspects called in on your radar, who run once they see you. Wreck them or make them give up the car; every one taken off the street pays more than the last and takes a star off your own record.
@@ -92,7 +92,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 | , / . | — | Radio station (and off) |
 | Shift | Sprint | — |
 
-`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `Esc` pause · `⛶` fullscreen
+`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `X` twice to abandon a mission or clock off a shift (also **ABANDON** on the pause screen, for pads and touch) · `Esc` pause · `⛶` fullscreen
 
 **Your keys, your way.** Every action above can be moved to another key from **CONTROLS** on the pause screen (click the action, press the new key; a key already in use swaps over). The same screen sets mouse sensitivity, inverted look and field of view, and all of it is remembered. `Esc` always pauses.
 

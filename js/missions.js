@@ -163,9 +163,9 @@ GAME.missions = (function () {
     //   car    what they drive        armor  hit points, as a multiple
     //   flee   their speed once made  shoots whether they fire back
     //   early  running from the off (they know you are coming)
-    { id: 'hit0', type: 'takedown', name: 'THE COLLECTOR', reward: 1200, time: 150, car: 'limo', armor: 3, flee: 19, shoots: true, early: false, start: { x: 250, z: 350 } },
-    { id: 'hit1', type: 'takedown', name: 'LOOSE ENDS', reward: 1000, time: 110, car: 'sports', armor: 1.6, flee: 24, shoots: false, early: true, start: { x: -50, z: -150 } },
-    { id: 'hit2', type: 'takedown', name: 'HIGH TIDE', reward: 2000, time: 160, car: 'pickup', armor: 4, flee: 21, shoots: true, early: false, isla: 'marina', start: null }
+    { id: 'hit0', type: 'takedown', name: 'THE COLLECTOR', reward: 1200, time: 150, car: 'limo', armor: 2.15, flee: 19, shoots: true, early: false, start: { x: 250, z: 350 } },
+    { id: 'hit1', type: 'takedown', name: 'LOOSE ENDS', reward: 1000, time: 110, car: 'sports', armor: 1.15, flee: 24, shoots: false, early: true, start: { x: -50, z: -150 } },
+    { id: 'hit2', type: 'takedown', name: 'HIGH TIDE', reward: 2000, time: 160, car: 'pickup', armor: 2.85, flee: 21, shoots: true, early: false, isla: 'marina', start: null }
   ];
 
   // Lola Reyes runs the strip, and she is who the rings on your map are
@@ -1489,8 +1489,8 @@ GAME.missions = (function () {
       });
     } else {
       GAME.audio.sting('wasted');
-      var tail = '';
-      if (d.type === 'race') {
+      var tail = '', quit = reason === ABANDONED;
+      if (d.type === 'race' && !quit) {
         var f2 = 1 + active.racers.length;
         // abandoning the car is a DNF — don't credit a position you walked away from
         tail = (GAME.player.inCar && GAME.player.car && !GAME.player.car.dead)
@@ -1500,7 +1500,7 @@ GAME.missions = (function () {
       // a death or an arrest offers it once you are back on your feet
       var down = GAME.player.state !== 'alive';
       if (!d.job) retry = { def: d, carType: active.carType, until: GAME.time + RETRY_WINDOW, waitRespawn: down };
-      GAME.hud.message('MISSION FAILED — ' + reason + tail + (retry && !down ? '  ·  ' + RETRY_HINT : ''), 4);
+      GAME.hud.message((quit ? 'MISSION ABANDONED' : 'MISSION FAILED — ' + reason) + tail + (retry && !down ? '  ·  ' + RETRY_HINT : ''), 4);
     }
     cleanup();
   }
@@ -1589,6 +1589,7 @@ GAME.missions = (function () {
     // whichever marker that was waits until you have left it (see START_SPEED)
     if (active && active.def) leaveFirst = active.def;
     active = null;
+    abandonAsk = 0;
     cpMarker.visible = false;
     setMarkersVisible(true);
     GAME.hud.fadeSet(0);   // a start that dies mid-blackout takes the black with it
@@ -1598,6 +1599,18 @@ GAME.missions = (function () {
 
   function failActive(reason) {
     if (active) finish(false, reason);
+  }
+  // walking away: a shift clocks off (pay for what you did), a mission fails
+  // as abandoned — and offers the retry like any other, which makes it the
+  // restart button too
+  var ABANDON_CONFIRM = 3, ABANDONED = 'abandoned', abandonAsk = 0;
+  function abandon() {
+    abandonAsk = 0;
+    if (!active) return false;
+    GAME.track('mission-abandoned');
+    if (active.def.job) endJob('clocked off');
+    else finish(false, ABANDONED);
+    return true;
   }
 
   function notifyChaos(pts) {
@@ -1839,6 +1852,16 @@ GAME.missions = (function () {
       endJob('clocked off');
       return;
     }
+    // X walks away from it. There was no way out of a run you had gone off
+    // short of dying or getting arrested — a race that started by accident
+    // had to be lost the long way. Once asks, again inside three seconds
+    // means it (ABANDON on the pause screen asks the same way).
+    if (GAME.keyPressed('KeyX')) {
+      if (GAME.time < abandonAsk) { abandon(); return; }
+      abandonAsk = GAME.time + ABANDON_CONFIRM;
+      var xk = GAME.controls ? GAME.controls.label('KeyX') : 'X';
+      GAME.hud.message(xk + ' again to ' + (active.def.job ? 'clock off' : 'abandon ' + active.def.name), ABANDON_CONFIRM);
+    }
 
     // active mission
     var d2 = active.def;
@@ -1864,6 +1887,13 @@ GAME.missions = (function () {
           GAME.audio.pickup();
           GAME.haptics.checkpoint();
           if (active.goSetup) { active.goSetup(); active.goSetup = null; }
+          // the way out of a run, said the first time one starts
+          if (GAME.prefs && !GAME.prefs.abandonTold) {
+            GAME.prefs.abandonTold = true;
+            GAME.save();
+            GAME.hud.message(GAME.isTouch ? 'Changed your mind? Pause → ABANDON MISSION walks away from a run.'
+              : 'Changed your mind? ' + (GAME.controls ? GAME.controls.label('KeyX') : 'X') + ' twice walks away from a run.', 4);
+          }
         } else {
           var num = Math.max(1, Math.ceil(active.countdown));
           if (num !== active.lastNum) { active.lastNum = num; GAME.audio.cashTick(); }
@@ -2140,6 +2170,7 @@ GAME.missions = (function () {
     init: init,
     update: update,
     failActive: failActive,
+    abandon: abandon,
     notifyChaos: notifyChaos,
     objectiveText: objectiveText,
     getRoutePoints: function () {

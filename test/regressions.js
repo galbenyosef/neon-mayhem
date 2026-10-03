@@ -53,6 +53,11 @@
 //       prompt saying what you can get into; a block between you and the
 //       camera pulls it in even when it looks down from above the roofline;
 //       the camera stays above the drawn sand; a nudge does not dent a car.
+//   5f. YOUR ANSWERS — cars take about 40% more before they burn (takedown
+//       targets as tuned); one star holds twenty seconds, forty-five in
+//       sight, then goes; X twice (or ABANDON on the pause screen) walks
+//       away from a mission or clocks off a shift; a lift runs from the
+//       helipad tower's lobby to its roof and back.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -3138,6 +3143,191 @@ function withTimeout(p, ms) {
   check('playtest: a low block between you and a camera above its roof pulls the camera in front of it',
     pt.lowFound && pt.camOutside, JSON.stringify({ found: pt.lowFound, outside: pt.camOutside, camY: pt.camY, blockH: pt.blockH }));
   check('playtest: the camera stays above the drawn sand', pt.camAboveSand);
+
+  // ---------- 5f: your answers ----------
+  // Cars smoked after a few knocks and burned after a few more, before the
+  // first proper chase: they take about 40% more now, and a takedown target
+  // is no tougher than it was tuned to be. One star went eight seconds after
+  // the offence — gone before the cruiser sent for you turned up — and holds
+  // twenty now, forty-five while they keep you in sight. X twice walks away
+  // from a mission (once only asks), and so does ABANDON on the pause
+  // screen. And the helipad tower has a lift from the lobby to the roof.
+  var ans = await page.evaluate(function () {
+    var P = GAME.player, V = GAME.vehicles, M = GAME.missions, I = GAME.interiors, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    if (M.active) M.failActive('test');
+    GAME.test.fastForward(0.3);
+    // --- hard knocks a sedan takes before it is on fire
+    GAME.test.teleport(100, -96);
+    GAME.test.fastForward(0.3);
+    var sd = V.spawnCar('sedan', 100, -110, 0, {});
+    var knocks = 0;
+    while (sd.stage < 2 && knocks < 40) { V.damageCar(sd, 20, 'wall'); knocks++; }
+    r.knocks = knocks;
+    V.removeCar(sd);
+    r.targets = M.DEFS.filter(function (d) { return d.type === 'takedown'; }).map(function (d) {
+      return Math.round(V.TYPES[d.car].hp * d.armor);
+    });
+
+    // --- one star, out of everybody's sight (indoors) and then in it
+    GAME.godMode = true;
+    GAME.test.teleport(-60, 40);
+    GAME.test.fastForward(0.5);
+    GAME.test.setWanted(1);
+    var hid = { id: 'test-hideout' }, t, un = {};
+    for (t = 0; t < 40; t += 0.25) {
+      P.interior = hid;
+      GAME.test.fastForward(0.25);
+      if (Math.abs(t - 15) < 0.01) un.at15 = GAME.police.wanted;
+      if (GAME.police.wanted === 0 && un.gone === undefined) un.gone = t;
+    }
+    P.interior = null;
+    r.unseen = un;
+    GAME.police.clearWanted();
+    GAME.test.teleport(-60, 40);
+    GAME.test.fastForward(0.5);
+    GAME.test.setWanted(1);
+    // an officer down the street with eyes on you, held where he stands, and
+    // nobody else (a unit turning up and cuffing you would end it early)
+    var cop = GAME.peds.spawnPed(P.pos.x + 25, P.pos.z, { cop: true }), sn = {}, seenN = 0, n = 0;
+    for (t = 0; t < 60; t += 1 / 60) {
+      cop.pos.set(P.pos.x + 25, 0, P.pos.z); cop.state = 'idle';
+      GAME.world.cars.slice().forEach(function (c) { if (c.isPolice && c !== P.car) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (p.isCop && p !== cop) GAME.peds.removePed(p); });
+      GAME.test.fastForward(1 / 60);
+      n++; if (GAME.police.spotted) seenN++;
+      if (Math.abs(t - 30) < 0.009) sn.at30 = GAME.police.wanted;
+      if (GAME.police.wanted === 0 && sn.gone === undefined) sn.gone = +t.toFixed(1);
+      if (P.state !== 'alive') { sn.state = P.state; break; }
+    }
+    sn.seen = +(seenN / Math.max(1, n)).toFixed(2);
+    r.seen = sn;
+    GAME.peds.removePed(cop);
+    GAME.godMode = false;
+    GAME.police.clearWanted();
+    GAME.test.fastForward(0.5);
+
+    // --- X walks away from a race
+    function tapX() { GAME.test.pressKey('KeyX', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyX', false); GAME.test.fastForward(1 / 60); }
+    r.bindable = GAME.controls.ACTIONS.some(function (a) { return a[0] === 'KeyX'; });
+    var race = M.DEFS.filter(function (d) { return d.type === 'race' && d.start && !d.isla; })[0];
+    GAME.test.teleport(race.start.x - 40, race.start.z);
+    GAME.test.fastForward(0.3);
+    var car = V.spawnCar('sports', race.start.x - 36, race.start.z, Math.PI / 2, {});
+    GAME.test.enterNearestCar(car); GAME.test.fastForward(1.2);
+    car.pos.set(race.start.x, car.pos.y, race.start.z); car.speed = 0;
+    GAME.test.fastForward(0.5);
+    r.raceOn = !!(M.active && M.active.def === race);
+    window.__msgs = [];
+    tapX();
+    r.asked = !!(M.active && M.active.def === race) && window.__msgs.some(function (m) { return /again to abandon/.test(m); });
+    GAME.test.fastForward(3.5);
+    tapX();
+    r.strayKept = !!(M.active && M.active.def === race);     // the ask lapsed: that was a fresh ask
+    tapX();
+    GAME.test.fastForward(0.2);
+    r.walked = !M.active && window.__msgs.some(function (m) { return /MISSION ABANDONED/.test(m); });
+    r.retryOffered = GAME.retryAvailable === true;
+    GAME.exitCar();
+    GAME.test.fastForward(0.3);
+    V.removeCar(car);
+    GAME.test.fastForward(12.5);   // let the retry offer lapse
+
+    // --- ABANDON on the pause screen clocks off a taxi shift
+    GAME.test.teleport(120, -96);
+    GAME.test.fastForward(0.3);
+    var cab = V.spawnCar('taxi', 120, -100, 0, {});
+    GAME.test.enterNearestCar(cab); GAME.test.fastForward(1.2);
+    GAME.test.pressKey('KeyJ', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyJ', false);
+    GAME.test.fastForward(0.5);
+    r.shiftOn = !!(M.active && M.active.def.job);
+    var btn = document.getElementById('pause-abandon');
+    r.btnHidden = btn.style.display === 'none';   // (paused below, so it has been painted)
+    GAME.togglePause();
+    r.btnShown = btn.style.display !== 'none' && /CLOCK OFF/.test(btn.textContent);
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    r.btnAsks = GAME.paused && !!M.active && /SURE/.test(btn.textContent);
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    GAME.test.fastForward(0.2);
+    r.btnDone = !GAME.paused && !M.active;
+    GAME.togglePause(); r.btnGone = btn.style.display === 'none'; GAME.togglePause();
+    GAME.exitCar();
+    GAME.test.fastForward(0.3);
+    V.removeCar(cab);
+
+    // --- the lift: lobby to helipad and back, on foot only
+    function walkTo(x, z, maxT) {
+      for (var w = 0; w < (maxT || 8); w += 1 / 60) {
+        var dx = x - P.pos.x, dz = z - P.pos.z;
+        if (dx * dx + dz * dz < 0.2 || I.busy) break;
+        P.heading = Math.atan2(dx, dz); GAME.cam.yaw = P.heading;
+        GAME.test.pressKey('KeyW', true);
+        GAME.test.fastForward(1 / 60);
+      }
+      GAME.test.pressKey('KeyW', false);
+      GAME.test.fastForward(0.7);
+    }
+    var L = I.lift && I.lift();
+    r.lift = !!L && L.length === 2;
+    if (r.lift) {
+      var st = L[0].at, rf = L[1].at;
+      GAME.test.teleport(st.x, st.z + 9);
+      GAME.test.fastForward(0.4);
+      walkTo(st.x, st.z + 6, 3);
+      r.liftHint = /ELEVATOR/.test(document.getElementById('poi-hint').textContent) && document.getElementById('poi-hint').style.opacity === '1';
+      walkTo(st.x, st.z);
+      GAME.test.fastForward(2);
+      r.up = { y: +P.pos.y.toFixed(1), d: +Math.hypot(P.pos.x - rf.x, P.pos.z - rf.z).toFixed(1), alive: P.state === 'alive' };
+      var pad = GAME.city.roofHelipad;
+      r.padNear = Math.hypot(P.pos.x - pad.x, P.pos.z - pad.z) < 16;
+      walkTo(rf.x - 4, rf.z, 4);
+      walkTo(rf.x, rf.z, 4);
+      GAME.test.fastForward(1);
+      r.down = { y: +P.pos.y.toFixed(1), d: +Math.hypot(P.pos.x - st.x, P.pos.z - st.z).toFixed(1), alive: P.state === 'alive' };
+      // a car parked on the ring goes nowhere
+      var lc = V.spawnCar('sedan', st.x + 4, st.z + 6, 0, {});
+      GAME.test.enterNearestCar(lc); GAME.test.fastForward(1.2);
+      lc.pos.set(st.x, lc.pos.y, st.z); lc.speed = 0;
+      GAME.test.fastForward(1.5);
+      r.carStays = P.inCar && lc.pos.y < 3 && !I.busy;
+      GAME.exitCar();
+      GAME.test.fastForward(0.3);
+      V.removeCar(lc);
+    }
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('answers: a sedan takes ten hard knocks or more before it is on fire', ans.knocks >= 10, ans.knocks + ' knocks of 20');
+  check('answers: takedown targets are as tough as they were tuned',
+    ans.targets.length === 3 && [630, 240, 960].every(function (v, i) { return Math.abs(ans.targets[i] - v) / v < 0.03; }), JSON.stringify(ans.targets));
+  check('answers: out of sight, one star still holds fifteen seconds on',
+    ans.unseen.at15 === 1, JSON.stringify(ans.unseen));
+  check('answers: and goes inside half a minute', ans.unseen.gone !== undefined && ans.unseen.gone <= 30, JSON.stringify(ans.unseen));
+  check('answers: an officer with eyes on you the whole time (anchor sanity)', ans.seen.seen > 0.9 && !ans.seen.state, JSON.stringify(ans.seen));
+  check('answers: in their sight, one star holds past thirty seconds — a chase, not a blip',
+    ans.seen.at30 === 1, JSON.stringify(ans.seen));
+  check('answers: but not forever: it goes inside a minute even in sight',
+    ans.seen.gone !== undefined && ans.seen.gone <= 50, JSON.stringify(ans.seen));
+  check('answers: abandon is an action you can rebind', ans.bindable);
+  check('answers: the race starts (anchor sanity)', ans.raceOn);
+  check('answers: X once only asks', ans.asked);
+  check('answers: an ask left three seconds lapses — the next X asks again', ans.strayKept);
+  check('answers: X twice walks away, MISSION ABANDONED, with the retry offered', ans.walked && ans.retryOffered,
+    JSON.stringify({ walked: ans.walked, retry: ans.retryOffered }));
+  check('answers: the shift is on (anchor sanity)', ans.shiftOn);
+  check('answers: the pause screen offers CLOCK OFF with a shift on, and asks first',
+    ans.btnShown && ans.btnAsks, JSON.stringify({ shown: ans.btnShown, asks: ans.btnAsks }));
+  check('answers: and the second press clocks off and resumes; with nothing on there is no button',
+    ans.btnDone && ans.btnGone, JSON.stringify({ done: ans.btnDone, gone: ans.btnGone }));
+  check('answers: the helipad tower has a lift', ans.lift);
+  check('answers: walking up to it says ELEVATOR', ans.liftHint);
+  check('answers: the lobby ring takes you up to the roof, by the pad, in one piece',
+    ans.up && ans.up.y > 70 && ans.up.d < 4 && ans.up.alive && ans.padNear, JSON.stringify(ans.up));
+  check('answers: and the roof ring brings you back down to the street',
+    ans.down && ans.down.y < 1 && ans.down.d < 4 && ans.down.alive, JSON.stringify(ans.down));
+  check('answers: a car parked on the lift ring goes nowhere', ans.carStays);
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

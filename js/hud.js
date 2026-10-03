@@ -84,6 +84,25 @@ GAME.hud = (function () {
     }
     pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
+    // walking away from a run, for the pad and the touchscreen as much as
+    // anybody (X on a keyboard): shown only with one going, and asks once
+    var abandonSure = false;
+    function paintAbandon() {
+      var b = $('pause-abandon'), a = GAME.missions && GAME.missions.active;
+      b.style.display = a ? '' : 'none';
+      if (!a) return;
+      var what = a.def.job ? 'CLOCK OFF' : 'ABANDON MISSION';
+      b.textContent = abandonSure ? '✖ ' + what + ' — SURE?' : '✖ ' + what;
+      b.classList.toggle('danger', abandonSure);
+    }
+    api.paintAbandon = function (reset) { if (reset) abandonSure = false; paintAbandon(); };
+    pauseBtn('pause-abandon', function () {
+      if (!GAME.missions || !GAME.missions.active) return;
+      if (!abandonSure) { abandonSure = true; paintAbandon(); return; }
+      abandonSure = false;
+      if (GAME.paused) GAME.togglePause();
+      GAME.missions.abandon();
+    });
     // Mute is one switch however you reach it — the button here or M — and it
     // is remembered like the others. M used to flip the sound behind this
     // label's back (it still said SOUND) and nothing kept it past a reload.
@@ -650,7 +669,7 @@ GAME.hud = (function () {
   function paintKeyHelp() {
     var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
       '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
-      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
+      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
     var card = document.getElementById('controls-card');
     if (card) card.innerHTML = h;
     if (el['pause-controls']) el['pause-controls'].innerHTML = h;
@@ -1404,6 +1423,7 @@ GAME.hud = (function () {
     },
     setPaused: function (p) {
       el['pause-screen'].style.display = p ? 'flex' : 'none';
+      if (api.paintAbandon) api.paintAbandon(true);
       if (p) { pauseSel = 0; paintPauseSel(); }
       var sj = $('pause-stunts');
       if (sj && GAME.stunts) {
