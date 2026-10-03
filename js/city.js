@@ -2461,6 +2461,10 @@ GAME.city = (function () {
     var SH = [{ w: 13, len: 22, h: 4.4 }, { w: 16, len: 26, h: 5.4 }, { w: 11, len: 18, h: 3.6 }, { w: 20, len: 30, h: 6.4 }];
     var pois = GAME.isla.pois(), poiList = [];
     for (var pk in pois) if (pois[pk] && pois[pk].x !== undefined) poiList.push(pois[pk]);
+    // the Marina Villa's lot, south of the jetties: shops.js builds the house
+    // there later, so this is where it learns the spot (villaYard), and the
+    // jumps learn to keep clear of it (below)
+    city.villaYard = pois.marina ? { x: pois.marina.x - 7, z: pois.marina.z + 40, r: 60 } : null;
     function land(x, z) { return I.contains(x, z) && !city.isInWater(x, z); }
     function solidNear(x, z, r, topAbove) {
       var bx = city.hash.query(x, z, r);
@@ -2543,6 +2547,24 @@ GAME.city = (function () {
         for (var ri = 0; ri < 4 && !spot; ri++) spot = fits(cands[ci][0], cands[ci][1], ROTS[(r0 + ri) % 4], sh, boost);
       }
       if (spot) out.push(spot);
+    }
+    // A jump rolled into the villa's front yard stood between the road and
+    // the house and hid it outright. It is swapped, in its own slot, for the
+    // next spot that fits clear of the yard — not rerolled with the rest:
+    // every other jump keeps its place and its number, and the number is
+    // what a saved game knows a found jump by.
+    var Y = city.villaYard;
+    for (var oi = 0; Y && oi < out.length; oi++) {
+      if (U.dist2(out[oi].x, out[oi].z, Y.x, Y.z) >= Y.r * Y.r) continue;
+      var was = out.splice(oi, 1)[0], swap = null;
+      var w0 = SH.map(function (q) { return q.len; }).indexOf(was.len);
+      for (var cj = 0; cj < cands.length && !swap; cj++) {
+        if (U.dist2(cands[cj][0], cands[cj][1], Y.x, Y.z) < Y.r * Y.r) continue;
+        for (var sj = 0; sj < SH.length && !swap; sj++) {
+          for (var rj = 0; rj < 4 && !swap; rj++) swap = fits(cands[cj][0], cands[cj][1], ROTS[rj], SH[(Math.max(0, w0) + sj) % SH.length], false);
+        }
+      }
+      out.splice(oi, 0, swap || was);
     }
     return out;
   }

@@ -92,7 +92,7 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 | , / . | — | Radio station (and off) |
 | Shift | Sprint | — |
 
-`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `X` twice to abandon a mission or clock off a shift (also **ABANDON** on the pause screen, for pads and touch) · `Esc` pause · `⛶` fullscreen
+`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `X` twice to abandon a mission or clock off a shift (also **ABANDON** on the pause screen, for pads and touch; on a touchscreen the JOB button turns into **END** during a shift) · `Esc` pause · `⛶` fullscreen
 
 **Your keys, your way.** Every action above can be moved to another key from **CONTROLS** on the pause screen (click the action, press the new key; a key already in use swaps over). The same screen sets mouse sensitivity, inverted look and field of view, and all of it is remembered. `Esc` always pauses.
 

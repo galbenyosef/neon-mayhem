@@ -419,7 +419,12 @@ GAME.touch = (function () {
       show(btns.horn, !air);
       var hasSMG = !air && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       show(btns.driveby, hasSMG);
-      show(btns.job, !air && !!GAME.jobAvailable);
+      // JOB starts a shift and, during one, ends it (J does both on a
+      // keyboard) — it used to vanish the moment the shift began, so a
+      // touchscreen had no way to clock off but stepping out
+      var onShift = !!(GAME.missions && GAME.missions.active && GAME.missions.active.def.job);
+      show(btns.job, !air && (onShift || !!GAME.jobAvailable));
+      setText(btns.job, onShift ? 'END' : 'JOB');
       // the gunship gets its own trigger pair — before this, the TALON had
       // no way to fire on touch at all (FIRE/AIM live in the foot cluster)
       show(btns.gsGun, gunship);

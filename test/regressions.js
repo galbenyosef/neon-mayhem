@@ -56,8 +56,10 @@
 //   5f. YOUR ANSWERS — cars take about 40% more before they burn (takedown
 //       targets as tuned); one star holds twenty seconds, forty-five in
 //       sight, then goes; X twice (or ABANDON on the pause screen) walks
-//       away from a mission or clocks off a shift; a lift runs from the
-//       helipad tower's lobby to its roof and back.
+//       away from a mission or clocks off a shift (on touch, JOB stays up
+//       as END); a lift runs from the helipad tower's lobby to its roof and
+//       back; starting or waking at home, the camera clears the house front;
+//       no island jump stands in the Marina Villa's front yard.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -3328,6 +3330,89 @@ function withTimeout(p, ms) {
   check('answers: and the roof ring brings you back down to the street',
     ans.down && ans.down.y < 1 && ans.down.d < 4 && ans.down.alive, JSON.stringify(ans.down));
   check('answers: a car parked on the lift ring goes nowhere', ans.carStays);
+
+  // A session that starts at your door, and a respawn there, used to face
+  // you into town whatever way the house stood — at the Dockside Flat that
+  // was along the house front, and the camera behind you hung beside the
+  // facade at the awning's height: a mint slab filled the screen. Now you
+  // face within 60° of the door, and the camera stands out over the pavement.
+  function homeCam() {
+    var P = GAME.player, C = GAME.city, sh = GAME.shops;
+    var c = GAME.cameraObj.position, best = null, bd = 1e9;
+    C.hash.query(P.pos.x, P.pos.z, 9).forEach(function (b) {
+      if (b.tag !== 'building' || b.h === undefined || b.h < 6) return;
+      var dx = Math.max(b.minX - P.pos.x, 0, P.pos.x - b.maxX), dz = Math.max(b.minZ - P.pos.z, 0, P.pos.z - b.maxZ);
+      var d = Math.hypot(dx, dz);
+      if (d < bd) { bd = d; best = b; }
+    });
+    if (!best) return { house: false };
+    var cx = Math.max(best.minX - c.x, 0, c.x - best.maxX), cz = Math.max(best.minZ - c.z, 0, c.z - best.maxZ);
+    return { house: true, gap: +Math.hypot(cx, cz).toFixed(2), camY: +c.y.toFixed(2) };
+  }
+  var homes = await page.evaluate(function (homeCamSrc) {
+    var homeCam = new Function('return ' + homeCamSrc)();
+    var P = GAME.player, r = {};
+    var owned0 = (GAME.prefs.safehouses || []).slice(), last0 = GAME.prefs.lastHome;
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    ['dock', 'condo'].forEach(function (id) {
+      GAME.prefs.safehouses = [id]; GAME.prefs.lastHome = id;
+      var h = GAME.shops.startSpawn();
+      GAME.test.teleport(h.x, h.z);
+      // as startGame does it
+      P.heading = h.heading; GAME.cam.yaw = P.heading; GAME.cam.pitch = 0.32;
+      GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
+      GAME.test.fastForward(1);
+      r[id] = homeCam();
+    });
+    // and a respawn there: down nearby, facing along the house front the
+    // way the old start did
+    GAME.prefs.safehouses = ['dock']; GAME.prefs.lastHome = 'dock';
+    var d = GAME.shops.startSpawn();
+    GAME.test.teleport(d.x + 30, d.z - 20);
+    GAME.test.fastForward(0.3);
+    P.heading = Math.PI / 2; GAME.cam.yaw = P.heading;
+    window.__homeOwned = [owned0, last0];
+    GAME.playerWasted('test');
+    GAME.test.fastForward(0.5);
+    return r;
+  }, homeCam.toString());
+  var homeUp = true;
+  try {
+    await page.evaluate(function () { GAME.input.keys['KeyR'] = true; GAME.test.fastForward(1.2); GAME.input.keys['KeyR'] = false; });
+    await page.waitForFunction(function () { return GAME.player.state === 'alive'; }, null, { timeout: 10000 });
+  } catch (e) { homeUp = false; }
+  var woke = await page.evaluate(function (homeCamSrc) {
+    var homeCam = new Function('return ' + homeCamSrc)();
+    var P = GAME.player, d = GAME.shops.startSpawn();
+    GAME.test.fastForward(1);
+    var r = homeCam();
+    r.atDoor = Math.hypot(P.pos.x - d.x, P.pos.z - d.z) < 1.5;
+    GAME.prefs.safehouses = window.__homeOwned[0]; GAME.prefs.lastHome = window.__homeOwned[1];
+    P.health = 100;
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  }, homeCam.toString());
+  check('answers: starting at the Dockside Flat, the camera stands clear of the house front',
+    homes.dock.house && homes.dock.gap >= 1.5, JSON.stringify(homes.dock));
+  check('answers: and at the Strip Condo', homes.condo.house && homes.condo.gap >= 1.5, JSON.stringify(homes.condo));
+  // the Marina Villa's front yard is the villa's: a 30 m ramp rolled 19 m
+  // from its door stood between the road and the house and hid it
+  var yard = await page.evaluate(function () {
+    var v = GAME.shops.locations().filter(function (l) { return l.sh && l.sh.id === 'villa'; })[0];
+    var isla = GAME.city.ramps.filter(function (r) { return r.isla; });
+    var near = 1e9;
+    isla.forEach(function (r) { near = Math.min(near, Math.hypot(r.x - v.at.x, r.z - v.at.z)); });
+    var nums = isla.map(function (r) { return r.islaN; }).sort(function (a, b) { return a - b; }).join(',');
+    return { near: Math.round(near), count: isla.length, nums: nums };
+  });
+  check('answers: no island jump stands in the Marina Villa\'s front yard',
+    yard.near >= 45, 'nearest jump ' + yard.near + ' m from the door');
+  check('answers: and the island still has its ten, numbered as before',
+    yard.count === 10 && yard.nums === '0,1,2,3,4,5,6,7,8,9', JSON.stringify(yard));
+  check('answers: waking up at home after a wasted, too',
+    homeUp && woke.atDoor && woke.house && woke.gap >= 1.5, JSON.stringify({ up: homeUp, woke: woke }));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a
@@ -7239,6 +7324,47 @@ function withTimeout(p, ms) {
     latch.dead.flag === false && latch.dead.lit === false,
     'RUN on going in=' + latch.armed + ', after dying: ' + JSON.stringify(latch.dead));
   check('touch: and the player is back on their feet afterwards (anchor sanity)', revivedRun);
+
+  // JOB starts a shift and ends it, as J does — it used to vanish the moment
+  // the shift began, so a touchscreen could only clock off by stepping out.
+  var endBtn = await tpage.evaluate(function () {
+    var P = GAME.player, M = GAME.missions, r = {};
+    function press(el) {
+      var t = new Touch({ identifier: 31, target: el, clientX: 10, clientY: 10 });
+      el.dispatchEvent(new TouchEvent('touchstart', { touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true }));
+      el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t], targetTouches: [], bubbles: true, cancelable: true }));
+    }
+    function jobBtn() {
+      var all = document.querySelectorAll('.tbtn');
+      for (var i = 0; i < all.length; i++) if (/^(JOB|END)$/.test(all[i].textContent)) return all[i];
+      return null;
+    }
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(120, -96);
+    GAME.test.fastForward(0.3);
+    var amb = GAME.vehicles.spawnCar('ambulance', 120, -100, 0, {});
+    GAME.test.enterNearestCar(amb); GAME.test.fastForward(1.2);
+    var b = jobBtn();
+    r.offered = !!b && b.style.display !== 'none' && b.textContent === 'JOB';
+    if (b) press(b);
+    GAME.test.fastForward(0.5);
+    r.onShift = !!(M.active && M.active.def.id === 'ambulance');
+    b = jobBtn();
+    r.endShown = !!b && b.style.display !== 'none' && b.textContent === 'END';
+    if (b) press(b);
+    GAME.test.fastForward(0.5);
+    r.ended = !M.active && P.inCar;
+    b = jobBtn();
+    r.backToJob = !!b && b.textContent === 'JOB';
+    GAME.exitCar(); GAME.test.fastForward(0.3);
+    GAME.vehicles.removeCar(amb);
+    return r;
+  });
+  check('touch: an ambulance offers JOB, and pressing it starts the shift (anchor sanity)',
+    endBtn.offered && endBtn.onShift, JSON.stringify(endBtn));
+  check('touch: during the shift the button stays, as END', endBtn.endShown, JSON.stringify(endBtn));
+  check('touch: and END clocks off without leaving the ambulance', endBtn.ended && endBtn.backToJob, JSON.stringify(endBtn));
 
   // Press it, rather than just look at it: the markup ships with the label
   // already reading RUMBLE: ON, so a check that only reads the text passes

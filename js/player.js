@@ -285,6 +285,11 @@ function respawnAfterScreen() {
       var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
       if (home) {
         P.pos.set(home.x, GAME.city.groundY(home.x, home.z), home.z);
+        // out of your own door the way a session starts there, not still
+        // facing however you fell — which could put the camera in the awning
+        P.heading = home.heading;
+        GAME.cam.yaw = P.heading; GAME.cam.pitch = 0.32;
+        GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
       } else {
         // the hospital on the island you went down on — an ambulance does
         // not carry you across the channel. Off-island beds only come into

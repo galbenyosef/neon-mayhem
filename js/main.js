@@ -272,8 +272,7 @@
     var home = GAME.shops && GAME.shops.startSpawn();
     if (home) {
       P.pos.set(home.x, GAME.city.groundY(home.x, home.z), home.z);
-      var hc = GAME.city.islandAt(home.x, home.z), hcc = (hc && hc.centre) || { x: -70, z: 0 };
-      P.heading = Math.atan2(hcc.x - home.x, hcc.z - home.z);   // facing into town
+      P.heading = home.heading;   // toward town, camera out over the pavement (shops.js)
     }
     P.mesh.visible = true;
     GAME.cam.yaw = P.heading; GAME.cam.pitch = 0.32;

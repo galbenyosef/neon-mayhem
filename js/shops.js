@@ -136,9 +136,24 @@ GAME.shops = (function () {
       if (s.isla && !unlocked) continue;
       if (!!s.isla !== onIsla) continue;
       var d = U.dist2(x, z, s.at.x, s.at.z);
-      if (d < bd) { bd = d; best = { x: s.at.x, z: s.at.z, name: s.name }; }
+      if (d < bd) { bd = d; best = { x: s.at.x, z: s.at.z, name: s.name, heading: homeHeading(s) }; }
     }
     return best;
+  }
+
+  // Which way to stand at your door: toward town, but turned no more than
+  // 60° from facing the door. Facing straight into town put your back along
+  // the house front, and the camera behind you hung beside the facade at the
+  // awning's own height — a mint slab filled the screen. Within 60° of the
+  // door the camera sits out over the pavement, looking past the house.
+  var HOME_TURN = Math.PI / 3;
+  function homeHeading(s) {
+    var hc = GAME.city.islandAt(s.at.x, s.at.z), c = (hc && hc.centre) || { x: -70, z: 0 };
+    var toTown = Math.atan2(c.x - s.at.x, c.z - s.at.z);
+    if (!s.face) return toTown;
+    var door = Math.atan2(s.face.x, s.face.z);
+    var dd = Math.atan2(Math.sin(toTown - door), Math.cos(toTown - door));
+    return door + Math.max(-HOME_TURN, Math.min(HOME_TURN, dd));
   }
 
   // Where a new session starts: the bed you last slept in (or bought), else
@@ -152,7 +167,7 @@ GAME.shops = (function () {
       if (!owns(s.id) || !s.at || (s.isla && !unlocked)) continue;
       if (!pick || s.id === last) pick = s;
     }
-    return pick ? { x: pick.at.x, z: pick.at.z, name: pick.name } : null;
+    return pick ? { x: pick.at.x, z: pick.at.z, name: pick.name, heading: homeHeading(pick) } : null;
   }
 
   // ---------- placement ----------
@@ -582,8 +597,9 @@ GAME.shops = (function () {
     // parked fleet threaded a metre-wide gap between boat and water's edge.
     SAFEHOUSES.forEach(function (s) {
       if (!s.at && s.isla && GAME.isla) {
-        var M = GAME.isla.pois().marina;
-        s.at = clearSpot(M.x - 7, M.z + 40);
+        // (city.js keeps the island's stunt jumps out of this yard)
+        var Y = GAME.city.villaYard, M = GAME.isla.pois().marina;
+        s.at = Y ? clearSpot(Y.x, Y.z) : clearSpot(M.x - 7, M.z + 40);
       } else if (s.at) {
         s.at = clearSpot(s.at.x, s.at.z);
       }
@@ -740,6 +756,7 @@ GAME.shops = (function () {
       var dir = placed.dir;
       loc.at = { x: placed.mx, z: placed.mz };
       if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
+      if (loc.sh) loc.sh.face = { x: dir.x, z: dir.z };   // which way is in (homeHeading)
       var gy = GAME.city.groundY(placed.cx, placed.cz);
       // the door face and its outward normal (-dir); everything on the
       // facade hangs off these
