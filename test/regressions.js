@@ -4301,7 +4301,11 @@ function withTimeout(p, ms) {
     if (!P.inCar) return { noBoard: true };
     var played = 0, horn0 = GAME.audio.horn, chime0 = GAME.audio.chime;
     GAME.audio.chime = function () { played++; return chime0.apply(GAME.audio, arguments); };
-    GAME.audio.horn = function () { r.plainHorn = true; return horn0.apply(GAME.audio, arguments); };
+    // (a horn from the truck itself, not traffic honking somewhere nearby)
+    GAME.audio.horn = function (x, z) {
+      if (P.car && Math.hypot(x - P.car.pos.x, z - P.car.pos.z) < 1) r.plainHorn = true;
+      return horn0.apply(GAME.audio, arguments);
+    };
     try {
       // off the clock, the horn is still the chimes
       GAME.test.pressKey('KeyG'); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyG', false);
@@ -4320,7 +4324,14 @@ function withTimeout(p, ms) {
       played = 0;
       for (var t = 0; t < 8 * 60; t++) { P.car.speed = 0; GAME.test.fastForward(1 / 60); }
       r.silent = { walkUps: a.targets.filter(function (x) { return x.walkUp; }).length, played: played };
-      // one blast of the chimes and they come
+      // one blast of the chimes and they come. (People on the pavement right
+      // now: the ones put down before the silence have had eight seconds to
+      // wander off, and on a runner with a thinned crowd that was everybody.)
+      r.listeners = 0;
+      for (var sp2 = 0; sp2 < 3; sp2++) {
+        var near = GAME.test.spawnPed([8, -7, 5][sp2], [3, 6, -8][sp2]);
+        if (near) { near.jobPed = false; near.iceServed = false; near.state = 'walk'; r.listeners++; }
+      }
       GAME.test.pressKey('KeyG'); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyG', false);
       for (t = 0; t < 4 * 60; t++) { P.car.speed = 0; GAME.test.fastForward(1 / 60); }
       r.heard = { walkUps: a.targets.filter(function (x) { return x.walkUp; }).length + a.sales, played: played };
@@ -4338,7 +4349,7 @@ function withTimeout(p, ms) {
   check('ice cream: the truck\'s horn is its chimes', !chimes.noTruck && !chimes.noBoard && chimes.offClock, JSON.stringify(chimes));
   check('ice cream: on a round the chimes no longer play themselves, and nobody comes without them',
     chimes.onRound && chimes.silent && chimes.silent.played === 0 && chimes.silent.walkUps === 0, JSON.stringify(chimes));
-  check('ice cream: sound them and people come to the hatch', chimes.heard && chimes.heard.played === 1 && chimes.heard.walkUps > 0, JSON.stringify(chimes));
+  check('ice cream: sound them and people come to the hatch', chimes.listeners > 0 && chimes.heard && chimes.heard.played === 1 && chimes.heard.walkUps > 0, JSON.stringify(chimes));
   check('ice cream: the round says which button plays them', chimes.hint, JSON.stringify(chimes));
 
   // ---------- 5l: shot-at drivers, the glass lift, the roof, and Lola on call ----------
