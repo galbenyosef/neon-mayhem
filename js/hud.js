@@ -415,6 +415,20 @@ GAME.hud = (function () {
     refreshLegend();
     if (GAME.mapOpen) drawBigMap();
   }
+  // The arrows (a pad's D-pad) step the solo through the families, then
+  // back to all of them: the legend answered only a click or a tap.
+  function stepSolo(dir) {
+    var fams = LEGEND.filter(function (e) { return !NAV_ALWAYS[e[2]]; }).map(function (e) { return e[2]; });
+    var i = (mapSolo ? fams.indexOf(mapSolo) : -1) + dir;
+    if (i < -1) i = fams.length - 1;
+    if (i >= fams.length) i = -1;
+    mapSolo = i < 0 ? null : fams[i];
+    GAME.prefs = GAME.prefs || {};
+    GAME.prefs.mapSolo = mapSolo;
+    GAME.save();
+    refreshLegend();
+    if (GAME.mapOpen) drawBigMap();
+  }
   function refreshLegend() {
     var box = $('map-legend');
     box.innerHTML = LEGEND.map(function (e) {
@@ -740,7 +754,7 @@ GAME.hud = (function () {
     if (!h) return;
     if (h.getAttribute('data-keys') === null) h.setAttribute('data-keys', h.innerHTML);
     h.innerHTML = GAME.controls && GAME.controls.usingPad()
-      ? '<b>Left stick</b> move the cursor &nbsp;·&nbsp; <b>A</b> set a destination there &nbsp;·&nbsp; <b>X</b> clear &nbsp;·&nbsp; <b>LB / RB</b> zoom &nbsp;·&nbsp; <b>BACK</b> or <b>B</b> close'
+      ? '<b>Left stick</b> move the cursor &nbsp;·&nbsp; <b>A</b> set a destination there &nbsp;·&nbsp; <b>X</b> clear &nbsp;·&nbsp; <b>LB / RB</b> zoom &nbsp;·&nbsp; <b>D-pad ← →</b> show one kind &nbsp;·&nbsp; <b>BACK</b> or <b>B</b> close'
       : h.getAttribute('data-keys');
   }
   function pickMapAt(wx, wz) {
@@ -1417,6 +1431,8 @@ GAME.hud = (function () {
     },
     mapPad: mapPad,
     mapPick: mapPick,
+    mapSoloStep: stepSolo,
+    get mapSolo() { return mapSolo; },
     get mapCursor() { return mapCur ? { x: mapCur.x, z: mapCur.z } : null; },
     get mapZoomLevel() { return mapZoom; },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },

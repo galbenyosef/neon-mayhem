@@ -723,7 +723,7 @@ GAME.interiors = (function () {
     R.t += dt;
     // any key that means "go", a tap, or the button that means "out"
     var T = GAME.input.touch;
-    if (R.t > 0.5 && (skipRide || GAME.keyPressed('Space') || GAME.keyPressed('KeyF') || GAME.keyPressed('Enter') || T.jump || T.exit)) R.t = LIFT_RIDE;
+    if (R.t > 0.5 && (skipRide || GAME.keyPressed('Space') || GAME.keyPressed('KeyF') || GAME.keyPressed('Enter') || T.jump || T.enter)) R.t = LIFT_RIDE;
     if (P.state !== 'alive') { endRide(false); return; }
     // doors, then a smooth climb (eased in and out), then doors
     var m = U.clamp((R.t - LIFT_DOORS) / (LIFT_RIDE - 2 * LIFT_DOORS), 0, 1), e = m * m * (3 - 2 * m);

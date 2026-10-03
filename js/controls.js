@@ -120,9 +120,9 @@ GAME.controls = (function () {
   // what the buttons mean on a menu (pause screen arrows and Enter)
   var MENU = { 0: 'Enter', 1: 'Escape', 9: 'Escape', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight' };
   // and on the full map, where the left stick moves a cursor (hud.mapPad):
-  // A sets the route there, X clears it, the bumpers zoom, BACK — which
-  // opened it — or B shuts it
-  var MAP = { 0: 'Enter', 1: 'Escape', 9: 'Escape', 8: 'KeyP', 2: 'KeyC', 4: 'Minus', 5: 'Equal' };
+  // A sets the route there, X clears it, the bumpers zoom, the D-pad steps
+  // the legend's solo, BACK — which opened it — or B shuts it
+  var MAP = { 0: 'Enter', 1: 'Escape', 9: 'Escape', 8: 'KeyP', 2: 'KeyC', 4: 'Minus', 5: 'Equal', 14: 'ArrowLeft', 15: 'ArrowRight' };
   // held: which buttons are down; sent: the key each one pressed, so its
   // release lets go of THAT key. Looked up afresh on release, a button held
   // across a change of screen let go of some other key: A held as the

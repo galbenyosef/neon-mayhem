@@ -81,10 +81,12 @@
 //       fight, shoot back); the tower lift is a glass ride up the outside;
 //       the helipad's parapet holds and a long fall kills; L calls Lola.
 //   5m. A CONTROLLER REACHES EVERYTHING — a pad browses and buys in a shop,
-//       moves a cursor on the map and routes to it, works the CONTROLS
+//       moves a cursor on the map, routes to it and filters its legend,
+//       works the CONTROLS
 //       screen, answers a dialog, carries on from WASTED, fires the TALON;
 //       D-pad down changes weapon without calling Lola, a held button lets go
-//       of the key it pressed, and the prompts name the pad's buttons.
+//       of the key it pressed, and the prompts name the pad's buttons; and a
+//       touchscreen can barrel-roll the plane like the other two.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -6983,6 +6985,12 @@ function withTimeout(p, ms) {
       r.zoomed = GAME.hud.mapZoomLevel > 1;
       tap(2);
       r.cleared = !GAME.nav.dest;
+      // the D-pad steps the legend's solo through the families and back
+      var solo0 = GAME.hud.mapSolo;
+      tap(15);
+      r.soloStepped = GAME.hud.mapSolo !== solo0 && !!GAME.hud.mapSolo;
+      tap(14);
+      r.soloBack = GAME.hud.mapSolo === solo0;
       for (var zi = 0; zi < 8 && GAME.hud.mapZoomLevel > 1; zi++) tap(4);
       r.zoomedOut = GAME.hud.mapZoomLevel === 1;
       tap(8);
@@ -7042,6 +7050,26 @@ function withTimeout(p, ms) {
       GAME.police.clearWanted();
       GAME.test.fastForward(0.3);
 
+      // a touchscreen's barrel roll (⟲ / ⟳), which Q/E and the bumpers had
+      // and it did not: the same flags the touch buttons set
+      var Tt = GAME.input.touch, act0 = Tt.active;
+      var pl = GAME.test.spawnCar('airplane', 6, 0);
+      GAME.seatInCar(pl);
+      function rolled(flag) {
+        pl.pos.y = 120; pl.speed = 50; pl.vy = 0; pl.pitch = 0; pl.roll = 0;
+        Tt.active = true; Tt[flag] = true;
+        GAME.test.fastForward(0.25);
+        Tt[flag] = false; Tt.active = act0;
+        return pl.roll;
+      }
+      r.rollLeft = rolled('rollL');
+      r.rollRight = rolled('rollR');
+      // set down before stepping out: at 120 m that is a bail-out
+      pl.pos.y = GAME.city.groundY(pl.pos.x, pl.pos.z); pl.speed = 0; pl.vy = 0; pl.roll = 0;
+      GAME.exitCar();
+      GAME.vehicles.removeCar(pl);
+      GAME.test.fastForward(0.2);
+
       // WASTED: A carries on, as R does, well before the six seconds run out
       GAME.godMode = false;
       GAME.playerWasted('test');
@@ -7085,7 +7113,10 @@ function withTimeout(p, ms) {
   check('pad: the stick moves the cursor', pad.cursorMoved);
   check('pad: A sets the route at the cursor', pad.routed);
   check('pad: RB zooms the map in, LB out, and X clears the route', pad.zoomed && pad.zoomedOut && pad.cleared);
+  check('pad: the D-pad shows one kind of marker on the map, and all again', pad.soloStepped && pad.soloBack);
   check('pad: BACK closes the map it opened', pad.mapClosed);
+  check('touch: ⟲ and ⟳ barrel-roll the plane, opposite ways', pad.rollLeft > 0.3 && pad.rollRight < -0.3,
+    'left ' + (pad.rollLeft && pad.rollLeft.toFixed(2)) + ', right ' + (pad.rollRight && pad.rollRight.toFixed(2)));
   check('pad: the CONTROLS screen changes a setting from the pad', pad.paused && pad.invertToggled);
   check('pad: and closes on its CLOSE button or B, leaving the game paused', pad.ctlClosedByButton && pad.ctlClosedByB);
   check('pad: A answers a dialog in the world', pad.dialogAnswered);
@@ -8723,6 +8754,45 @@ function withTimeout(p, ms) {
     endBtn.offered && endBtn.onShift, JSON.stringify(endBtn));
   check('touch: during the shift the button stays, as END', endBtn.endShown, JSON.stringify(endBtn));
   check('touch: and END clocks off without leaving the ambulance', endBtn.ended && endBtn.backToJob, JSON.stringify(endBtn));
+
+  // The plane's barrel roll, on a touchscreen as on the other two: ⟲ and ⟳,
+  // in the plane and nowhere else.
+  var rollBtn = await tpage.evaluate(function () {
+    var P = GAME.player, r = {};
+    function btn(t) {
+      var all = document.querySelectorAll('.tbtn');
+      for (var i = 0; i < all.length; i++) if (all[i].textContent === t) return all[i];
+      return null;
+    }
+    function shown(el) { return !!el && el.style.display !== 'none'; }
+    function touch(el, type) {
+      var t = new Touch({ identifier: 41, target: el, clientX: 10, clientY: 10 });
+      var on = type === 'touchstart';
+      el.dispatchEvent(new TouchEvent(type, { touches: on ? [t] : [], changedTouches: [t], targetTouches: on ? [t] : [], bubbles: true, cancelable: true }));
+    }
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(120, -96);
+    GAME.test.fastForward(0.3);
+    var car = GAME.vehicles.spawnCar('sedan', 120, -100, 0, {});
+    GAME.test.enterNearestCar(car); GAME.test.fastForward(1.2);
+    r.hiddenInCar = P.inCar && !shown(btn('⟲')) && !shown(btn('⟳'));
+    GAME.exitCar(); GAME.test.fastForward(0.3);
+    GAME.vehicles.removeCar(car);
+    var pl = GAME.vehicles.spawnCar('airplane', 120, -100, 0, {});
+    GAME.seatInCar(pl); GAME.test.fastForward(0.1);
+    r.shownInPlane = shown(btn('⟲')) && shown(btn('⟳'));
+    pl.pos.y = 120; pl.speed = 50; pl.vy = 0; pl.pitch = 0; pl.roll = 0;
+    var L = btn('⟲');
+    if (L) { touch(L, 'touchstart'); GAME.test.fastForward(0.25); touch(L, 'touchend'); }
+    r.rolled = +(pl.roll || 0).toFixed(2);
+    pl.pos.y = GAME.city.groundY(pl.pos.x, pl.pos.z); pl.speed = 0; pl.vy = 0; pl.roll = 0;
+    GAME.exitCar(); GAME.test.fastForward(0.3);
+    GAME.vehicles.removeCar(pl);
+    return r;
+  });
+  check('touch: no roll buttons in a car (anchor sanity)', rollBtn.hiddenInCar, JSON.stringify(rollBtn));
+  check('touch: in a plane ⟲ and ⟳ are there, and ⟲ rolls it', rollBtn.shownInPlane && rollBtn.rolled > 0.3, JSON.stringify(rollBtn));
 
   // the camera is one tap away on a touchscreen too
   var camBtn = await tpage.evaluate(function () {

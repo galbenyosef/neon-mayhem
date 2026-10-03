@@ -89,6 +89,8 @@
       if (GAME.shopOpen && GAME.shops.key(code)) return;
       // the full map: A (or Enter) sets the route at a pad's cursor
       if (GAME.mapOpen && code === 'Enter' && GAME.hud.mapPick()) return;
+      // and the arrows step its legend's solo (one kind of marker at a time)
+      if (GAME.mapOpen && (code === 'ArrowLeft' || code === 'ArrowRight')) { GAME.hud.mapSoloStep(code === 'ArrowRight' ? 1 : -1); return; }
       // the result card closes on any of the keys a hand is likely to be on —
       // it never needed the mouse
       if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {

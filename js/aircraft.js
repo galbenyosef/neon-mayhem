@@ -306,7 +306,7 @@ GAME.aircraft = (function () {
     if (GAME.key('KeyE')) rollIn -= 1;
     // touch: THR+/THR- buttons drive throttle; the stick is a yoke — pull it
     // back (down) to bring the nose up and climb, push forward (up) to dive.
-    if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; }
+    if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; rollIn += (T.rollL ? 1 : 0) - (T.rollR ? 1 : 0); }
     if (GAME.pad.on) { thr += GAME.pad.rt - GAME.pad.lt; pitchIn += GAME.pad.ly; yawIn += -GAME.pad.lx; }
 
     var gy = GAME.city.surfaceY(car.pos.x, car.pos.z);

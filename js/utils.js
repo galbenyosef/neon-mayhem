@@ -588,7 +588,7 @@ GAME.input = {
   lmbPressed: false,
   wheel: 0,
   pointerLocked: false,
-  touch: { active: false, stickX: 0, stickY: 0, fire: false, aim: false, brake: false, handbrake: false, enter: false, weaponCycle: false, radio: false, driveByL: false, driveByR: false, photo: false }
+  touch: { active: false, stickX: 0, stickY: 0, fire: false, aim: false, brake: false, handbrake: false, enter: false, weaponCycle: false, radio: false, driveByL: false, driveByR: false, photo: false, rollL: false, rollR: false }
 };
 
 GAME.initInput = function (canvas) {

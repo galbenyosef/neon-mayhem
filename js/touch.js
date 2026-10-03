@@ -192,7 +192,13 @@ GAME.touch = (function () {
     // (they drive the same fire/aim flags the gunship reads in aircraft.js)
     btns.gsGun = mkBtn('GUN', 232, 30, 68, { flag: 'fire' });
     btns.gsRkt = mkBtn('RKT', 232, 112, 62, { flag: 'aim' });
-    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt, btns.horn);
+    // the plane's barrel roll, which Q/E and a pad's bumpers had and a
+    // touchscreen did not; they take the slots the horn and handbrake leave
+    // empty in the air
+    btns.rollL = mkBtn('⟲', 232, 112, 62, { flag: 'rollL' });
+    btns.rollR = mkBtn('⟳', 34, 132, 62, { flag: 'rollR' });
+    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt, btns.horn,
+      btns.rollL, btns.rollR);
     // a failed run's retry offer, on foot or at the wheel (missions.js)
     btns.retry = mkBtn('RETRY', 24, 236, 62, { press: function () { T.retry = true; } });
 
@@ -352,7 +358,7 @@ GAME.touch = (function () {
   // any interruption — applied to the buttons beside it.
   function releaseButtons() {
     var T = GAME.input.touch;
-    T.gas = T.brake = T.handbrake = T.driveByAuto = false;
+    T.gas = T.brake = T.handbrake = T.driveByAuto = T.rollL = T.rollR = false;
     T.fire = T.jump = T.aim = T.run = T.enter = false;
     T.firePressed = T.weaponCycle = T.job = T.retry = T.photo = false;
     for (var k in btns) {
@@ -436,6 +442,8 @@ GAME.touch = (function () {
       // no way to fire on touch at all (FIRE/AIM live in the foot cluster)
       show(btns.gsGun, gunship);
       show(btns.gsRkt, gunship);
+      show(btns.rollL, !!plane);
+      show(btns.rollR, !!plane);
       for (var f = 0; f < footBtns.length; f++) setDisplay(footBtns[f], 'none');
     }
 

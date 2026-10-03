@@ -74,39 +74,94 @@ A free, fan-made, browser-playable open-world tribute inspired by Grand Theft Au
 - The title screen is a live broadcast: the city simulates behind the menu with spectator camera cuts until you press start.
 - A heading-up radar minimap; a full map (`P`) with legend, POI badges, pickups and street-following mission routes — click anywhere to set a destination, scroll or `+`/`−` to zoom, drag to move. Districts and missions are named on it, and a mission you've beaten is ticked off.
 - Messages stack rather than replacing each other; a hit shows which way it came from; low health pulses the edges of the screen. If you own a place, a new session starts there.
-- CRT filter, separate music/SFX switches, a camera-shake switch, a **GFX: HIGH / MEDIUM / LOW** setting (resolution, draw distance and crowd), and a day/night pin if you want the city permanently at golden hour or midnight (a night's sleep politely overrules it). The pause screen works from the keyboard too: arrows and `Enter`.
+- CRT filter, separate music/SFX switches, a camera-shake switch, a **GFX: HIGH / MEDIUM / LOW** setting (resolution, draw distance and crowd), and a day/night pin if you want the city permanently at golden hour or midnight (a night's sleep politely overrules it). The pause screen works from the keyboard too (arrows and `Enter`) and from a controller (D-pad and A).
 
 ## Lola, and the camera
 
 - **Lola talks you through it.** The first time you pick up a lost tape, clear a stunt ramp, catch a star (or three), wake up in hospital or a cell, take a boat, a helicopter or a plane, end up swimming, use a respray, find a shift on offer, walk up to a shop, buy a place or walk into the casino, she pages you what it is and why it matters — once each, for the life of the save. **LOLA'S TIPS** on the pause screen turns her off for anybody who knows the town.
-- **Call Lola** (`L`, D-pad down, or **📟 ASK LOLA** on the pause screen — the way a phone reaches her) and she asks what she can do for you: what to do next (the nearest job you haven't done, and how far and which way), how to lose the law at the stars you have, where the money is, the way to a gun shop, THREADS, the barber, the showroom, your place, the casino, a hospital or the desk sergeant, what any of the city's things are, how far through Costa Rosa you are, and the controls. Where the answer is a place, she marks it on your map. The city holds still while you talk.
+- **Call Lola** (`L`, or **📟 ASK LOLA** on the pause screen — the way a controller or a phone reaches her) and she asks what she can do for you: what to do next (the nearest job you haven't done, and how far and which way), how to lose the law at the stars you have, where the money is, the way to a gun shop, THREADS, the barber, the showroom, your place, the casino, a hospital or the desk sergeant, what any of the city's things are, how far through Costa Rosa you are, and the controls. Where the answer is a place, she marks it on your map. The city holds still while you talk.
 - **The helipad tower's lift is glass, up the outside of the building.** Step on the ring at its door and ride it up through your own eyes — letterboxed, the street dropping away, the city opening out to the sea — and step out on the roof by the pad (any key or a tap skips it). The roof's parapet holds you now; jump it and seventy metres is what it ought to be. Falls hurt in proportion and from about nineteen metres they kill, vest or no vest.
 - **You carry a camera** — an old film SLR. `C` (📷 on a touchscreen, the left stick click on a pad) takes a shot of the city as you see it, without the HUD, developed like a 1986 print: warm film, grain, darkened corners and the orange date in the corner. Shots go to **PHOTOS** on the pause screen, kept between visits (the last thirty-six), where you can save any of them — or switch on **AUTO-DOWNLOAD** and every shot is saved the moment you take it.
 
 ## Controls
 
-| Input | On foot | In car |
-|---|---|---|
-| W A S D | Move | Throttle / steer / brake |
-| Mouse | Camera | Camera |
-| RMB / Tab | Aim (lock-on) | — |
-| LMB | Fire | Fire (drive-by w/ SMG) |
-| Q / E | Cycle lock target | Drive-by left/right (barrel roll in a plane) |
-| Space | Jump (and climb, facing a ledge) | Handbrake |
-| F | Enter / jack car (climb into a boat from the water) | Exit car (step off a boat onto a pier, or over the side) |
-| J | — | Start the shift a working vehicle offers (vigilante in a cruiser) |
-| G | — | Horn (lights and siren in a cruiser) |
-| 1–5 | Weapon select | — |
-| , / . | — | Radio station (and off) |
-| Shift | Sprint | — |
+Every action, on all three: keyboard and mouse, a controller (standard layout — Xbox names; on a PlayStation pad A is ✕, B is ○, X is □, Y is △), and a touchscreen. Touch buttons appear only when they apply.
 
-`P` map & routing · `M` mute · `T` CRT filter · `H` hide hints · `R` respawn/skip · `Y` retry a failed run · `C` takes a photo · `L` calls Lola · `X` twice to abandon a mission or clock off a shift (also **ABANDON** on the pause screen, for pads and touch; on a touchscreen the JOB button turns into **END** during a shift) · `Esc` pause · `⛶` fullscreen
+**On foot**
 
-**Your keys, your way.** Every action above can be moved to another key from **CONTROLS** on the pause screen (click the action, press the new key; a key already in use swaps over). The same screen sets mouse sensitivity, inverted look and field of view, and all of it is remembered. `Esc` always pauses.
+| Action | Keyboard & mouse | Controller | Touch |
+|---|---|---|---|
+| Move | `W A S D` | left stick | stick (under the left thumb) |
+| Look | mouse | right stick | drag the right of the screen |
+| Sprint | `Shift` (hold) | B (hold) | RUN (toggle) |
+| Jump · climb a ledge | `Space` | A | JUMP |
+| Aim (lock-on) | RMB (hold) · `Tab` (toggle) | LT | AIM (toggle, with a gun drawn) |
+| Fire · punch | LMB | RT | FIRE |
+| Switch lock target | `Q` / `E` · wheel · a flick of the camera | LB / RB · a flick of the camera | a flick of the camera |
+| Weapon | `1`–`5` | D-pad ↓ (next) | WPN (next, once you own two) |
+| Get in · jack a car · climb into a boat | `F` | Y | ENTER (in reach) |
 
-🎮 **Controllers** work as soon as one is plugged in and a button is pressed: left stick moves or steers, right stick looks, RT/LT fire and aim on foot and are throttle and brake at the wheel. A jumps (handbrake), B sprints, X starts a shift, Y gets in and out, the left stick click takes a photo, the bumpers cycle targets, the d-pad tunes the radio, retries and swaps weapons, Start pauses — and on the pause screen the d-pad and A/B find their way round the menus.
+**Cars, bikes and boats**
 
-**In the air:** helicopter — climb with `Space`, descend with `Shift`, tilt with `W/S`, yaw with `A/D`. Plane — `W` to roll down the runway, `Space` to rotate once you're fast, `Q/E` to barrel-roll, and pull hard enough on the elevator for a full loop. `F` bails out with a parachute.
+| Action | Keyboard & mouse | Controller | Touch |
+|---|---|---|---|
+| Throttle / brake & reverse | `W` / `S` | RT / LT | GAS / BRAKE |
+| Steer | `A` / `D` | left stick | stick |
+| Handbrake · slide a boat · the monster truck's hop | `Space` | A | ⇋ |
+| Drive-by (with an SMG) | `Q` / `E` (left / right) · LMB (the side you look) | LB / RB | FIRE (the nearer side) |
+| Horn · a cruiser's siren · the ice cream chimes | `G` | R3 | 📢 |
+| Radio station (and off) | `,` / `.` | D-pad ← / → | ♪ (next) |
+| Start · end a shift | `J` | X | JOB / END |
+| Get out · step off a boat | `F` | Y | EXIT |
+
+**In the air**
+
+| Action | Keyboard & mouse | Controller | Touch |
+|---|---|---|---|
+| Helicopter: climb / descend | `Space` / `Shift` (or `Ctrl`) | RT / LT (or A / B) | ▲ UP / ▼ DN |
+| Helicopter: fly · yaw | `W` `S` · `A` `D` | left stick | stick |
+| TALON: chin gun / rockets | LMB / RMB | RB / LB | GUN / RKT |
+| Plane: throttle | `W` / `S` | RT / LT | THR+ / THR− |
+| Plane: climb / dive | `Space` / `Shift` | stick back / forward (or A / B) | stick back / forward |
+| Plane: turn | `A` / `D` | left stick | stick |
+| Plane: barrel roll | `Q` / `E` | LB / RB | ⟲ / ⟳ |
+| Get out · bail out (a chute, up high) | `F` | Y | EXIT |
+| Steer the parachute | `W A S D` | left stick | stick |
+
+A plane rolls down the runway on throttle and climbs once it's fast; airborne, the elevator is unrestricted — pull hard enough and it loops.
+
+**In the water:** swim with `W A S D` / the left stick / the stick; the faster stroke is `Shift` / B / RUN; `F` / Y / ENTER climbs into a boat alongside. You climb out yourself at a beach, a pier or any low edge.
+
+**Everywhere**
+
+| Action | Keyboard & mouse | Controller | Touch |
+|---|---|---|---|
+| Pause | `Esc` | START | ❚❚ |
+| Map | `P` | BACK | tap the radar |
+| Photo | `C` | L3 | 📷 |
+| Call Lola | `L` | START → 📟 ASK LOLA | ❚❚ → 📟 ASK LOLA |
+| Retry a failed run | `Y` | D-pad ↑ | RETRY |
+| Abandon a mission · clock off | `X` twice · pause → ABANDON | START → ABANDON | ❚❚ → ABANDON (JOB → END for a shift) |
+| Carry on after WASTED / BUSTED | `R` or `Enter` | A | tap |
+| Skip the glass lift's ride | `Space`, `F` or `Enter` | A or Y | tap |
+| Mute · CRT · day/night | `M` · `T` · `N` | pause → SOUND · CRT · TIME | pause → SOUND · CRT · TIME |
+| Hide the hint bar | `H` | pause → HINT BAR | (no bar on touch) |
+| Fullscreen | ⛶ | — (browsers go fullscreen only on a click, key or tap) | ⛶ |
+
+**Menus**
+
+| Screen | Keyboard & mouse | Controller | Touch |
+|---|---|---|---|
+| Title | `Enter` | A | tap |
+| Pause, Lola, shops, photos | arrows (`W`/`S` in lists) · `Enter` · `Esc` back — `1`–`9` pick Lola's options | D-pad · A · B back | tap |
+| Map | click to route · wheel or `+`/`−` zoom · drag · `C` clear · `←` `→` (or a legend tap) show one kind · `P`/`Esc` close | stick moves a cursor · A routes there · LB / RB zoom · X clear · D-pad ← → one kind · BACK or B close | tap to route · pinch · drag · legend tap · CLEAR ROUTE · CLOSE |
+| A question (buy? sure?) | `Enter` or `E` · `Esc` | A · B | tap |
+| The result card | `Esc`, `Enter` or `Space` | A or B | tap |
+| CONTROLS | click a key to rebind · arrows and `Enter` for the settings | D-pad · A · B | tap |
+
+**Your keys, your way.** Every keyboard action can be moved to another key from **CONTROLS** on the pause screen (click the action, press the new key; a key already in use swaps over). The same screen sets look sensitivity (mouse and right stick), inverted look and field of view, and all of it is remembered. `Esc` always pauses. A controller's layout is fixed, and listed on that screen.
+
+🎮 **Controllers** work as soon as one is plugged in and a button is pressed. Whichever you last touched — the pad or the keyboard and mouse — is what the prompts, the hint bar and the help name.
 
 📱 **On phones and tablets** touch controls appear automatically: a floating stick under the left thumb, a context-sensitive action cluster under the right — buttons appear only when they apply — with the radar, PAUSE, the camera and ⛶ (while windowed) along the top. Starting the game enters fullscreen and asks for landscape (on an iPhone, where Safari has no fullscreen for pages, add it to the home screen instead — it runs full screen from there); if the browser ever refuses, ⛶ says so. **IMPORT SAVE** on a phone opens a page of its own with no city loaded, so the file picker can't get the game's tab reclaimed by the phone mid-import. **Left-handed?** One tap on the pause screen mirrors the whole cluster — stick to the right thumb, buttons to the left, and the camera drag swaps sides to match — and it is remembered.
 
