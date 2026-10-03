@@ -1066,7 +1066,11 @@ GAME.police = (function () {
     // as before, in sight or not. Two stars and up keep the eight.
     var before2 = stars();
     var hold = before2 === 1 ? (lastSeen < ONE_STAR_SEEN ? ONE_STAR_CHASE : ONE_STAR_HOLD) : 8;
-    if (GAME.time - lastCrime > hold) {
+    // A shop is not a hideout: they saw you walk in, and they are waiting
+    // round the door. The heat holds while you shop (a home, where nobody can
+    // see in, is still somewhere to lie low).
+    var shopping = !!(P.interior && P.interior.kind === 'shop');
+    if (!shopping && GAME.time - lastCrime > hold) {
       // and out of sight it cools faster — less so the hotter it is: lying low
       // takes about half a minute at three stars, a minute at four and a
       // minute and a half at five, with the search closing in on the spot

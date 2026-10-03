@@ -223,14 +223,37 @@ GAME.shops = (function () {
       { id: 'medkit', name: 'FIRST-AID KIT', ds: 'Patches you back to full.', price: 150, off: P.health >= 100 }
     ];
   }
+  // What you own, as opposed to what you have on: two outfits from the
+  // start — the club whites and teals you arrive in, and a day at the beach —
+  // and every piece bought at THREADS after that. Hangs in the wardrobe at
+  // any place you own; at THREADS it is yours to put back on for nothing.
+  function closet() {
+    var p = GAME.prefs = GAME.prefs || {};
+    var c = p.closet || (p.closet = { shirts: ['white', 'banana'], pants: ['teal', 'sand'] });
+    var o = outfit();
+    if (c.shirts.indexOf(o.shirt) < 0) c.shirts.push(o.shirt);   // whatever an older save had on
+    if (c.pants.indexOf(o.pants) < 0) c.pants.push(o.pants);
+    return c;
+  }
+  function clothesRow(kind, s, o, c, forSale) {
+    var shirt = kind === 'shirt', worn = shirt ? o.shirt === s.id : o.pants === s.id;
+    var have = (shirt ? c.shirts : c.pants).indexOf(s.id) >= 0;
+    var row = { id: kind + '_' + s.id, name: (shirt ? 'SHIRT · ' : 'PANTS · ') + s.name, price: forSale && !have ? 150 : 0, sw: s.hex, owned: worn,
+      ds: worn ? (shirt ? 'Wearing it now.' : 'Wearing them now.') : have ? 'In your wardrobe — free to put on.' : '' };
+    if (worn) row.ownedLabel = 'WEARING';
+    else if (have) { row.noPrice = true; row.chip = 'WEAR'; row.idle = forSale ? 'OWNED' : ''; }
+    return row;
+  }
   function dressItems() {
-    var o = outfit(), rows = [];
-    SHIRTS.forEach(function (s) {
-      rows.push({ id: 'shirt_' + s.id, name: 'SHIRT · ' + s.name, price: 150, sw: s.hex, owned: o.shirt === s.id, ds: o.shirt === s.id ? 'Wearing it now.' : '' });
-    });
-    PANTS.forEach(function (s) {
-      rows.push({ id: 'pants_' + s.id, name: 'PANTS · ' + s.name, price: 150, sw: s.hex, owned: o.pants === s.id, ds: o.pants === s.id ? 'Wearing them now.' : '' });
-    });
+    var o = outfit(), c = closet(), rows = [];
+    SHIRTS.forEach(function (s) { rows.push(clothesRow('shirt', s, o, c, true)); });
+    PANTS.forEach(function (s) { rows.push(clothesRow('pants', s, o, c, true)); });
+    return rows;
+  }
+  function wardrobeItems() {
+    var o = outfit(), c = closet(), rows = [];
+    SHIRTS.forEach(function (s) { if (c.shirts.indexOf(s.id) >= 0) rows.push(clothesRow('shirt', s, o, c, false)); });
+    PANTS.forEach(function (s) { if (c.pants.indexOf(s.id) >= 0) rows.push(clothesRow('pants', s, o, c, false)); });
     return rows;
   }
   function barberItems() {
@@ -294,9 +317,9 @@ GAME.shops = (function () {
   }
   function casinoItems() {
     return [
-      { id: 'bet100', name: 'SPIN THE WHEEL · $100', ds: 'Mostly it eats your money. Mostly.', price: 100 },
-      { id: 'bet500', name: 'SPIN THE WHEEL · $500', ds: 'Now it’s interesting.', price: 500 },
-      { id: 'bet2000', name: 'SPIN THE WHEEL · $2,000', ds: 'The gull always wins. Probably.', price: 2000 }
+      { id: 'bet100', name: 'SPIN THE WHEEL · $100', ds: 'Mostly it eats your money. Mostly.', price: 100, verb: 'SPIN' },
+      { id: 'bet500', name: 'SPIN THE WHEEL · $500', ds: 'Now it’s interesting.', price: 500, verb: 'SPIN' },
+      { id: 'bet2000', name: 'SPIN THE WHEEL · $2,000', ds: 'The gull always wins. Probably.', price: 2000, verb: 'SPIN' }
     ];
   }
 
@@ -331,12 +354,13 @@ GAME.shops = (function () {
     }
     GAME.combat.refreshWeaponHud();
   }
-  function buyDress(id) {
-    var o = outfit();
-    if (id.indexOf('shirt_') === 0) o.shirt = id.slice(6);
-    else o.pants = id.slice(6);
+  function buyDress(id, fromWardrobe) {
+    var o = outfit(), c = closet(), shirt = id.indexOf('shirt_') === 0, piece = id.slice(6);
+    var had = (shirt ? c.shirts : c.pants).indexOf(piece) >= 0;
+    if (shirt) o.shirt = piece; else o.pants = piece;
+    if (!had) (shirt ? c.shirts : c.pants).push(piece);   // it hangs in your wardrobe from now on
     applyOutfit(); GAME.save();
-    note('Looking sharp.');
+    note(fromWardrobe || had ? 'Changed.' : 'Looking sharp — it\'s in your wardrobe now.');
   }
   function buyBarber(id) {
     var o = outfit();
@@ -1136,6 +1160,8 @@ GAME.shops = (function () {
       case 'bribe': return bribeItems();
       case 'casino': return casinoItems();
       case 'bar': return barItems();
+      case 'wardrobe': return wardrobeItems();
+      case 'derby': return GAME.derby.items();
     }
     return [];
   }
@@ -1150,7 +1176,11 @@ GAME.shops = (function () {
     el.tag.textContent = openShop.tag || '';
     var hint = $('shop-hint');
     if (hint) hint.textContent =
-      openShop.kind === 'dress' || openShop.kind === 'barber'
+      openShop.kind === 'wardrobe'
+        ? 'Click or W/S to see it on you  ·  WEAR (or Enter) puts it on  ·  Esc leave'
+      : openShop.kind === 'derby'
+        ? GAME.derby.hint() + '  ·  Set your stake, pick a horse — BET asks before it takes it  ·  Esc leave'
+      : openShop.kind === 'dress' || openShop.kind === 'barber'
         ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY asks before it charges  ·  Esc leave'
         : openShop.kind === 'showroom'
           ? 'Click or W/S to put it on the turntable  ·  BUY asks before it charges  ·  Esc leave'
@@ -1173,9 +1203,9 @@ GAME.shops = (function () {
       var armed = i === sel && buyable;
       // noPrice rows are actions, not goods (sleeping in your own bed):
       // never print FREE or a BUY chip on them — that read as a purchase
-      var priceCell = it.owned ? 'YOURS'
-        : it.noPrice ? (armed ? (it.chip || 'GO') : '')
-          : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
+      var priceCell = it.owned ? (it.ownedLabel || 'YOURS')
+        : it.noPrice ? (armed ? (it.chip || 'GO') : (it.idle || ''))
+          : armed ? (it.verb || 'BUY') + ' · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
             : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
@@ -1339,7 +1369,8 @@ GAME.shops = (function () {
   }
   function setPreview(it) {
     var kind = openShop && openShop.kind;
-    var wants = it && kind && kind !== 'bar';   // (nothing to turn on a stand at the bar)
+    // (nothing to turn on a stand at the bar, and the horses are on the screens)
+    var wants = it && kind && kind !== 'bar' && kind !== 'derby';
     var side = $('shop-side');
     pv.on = !!wants;
     if (side) side.style.display = wants ? 'block' : 'none';
@@ -1411,7 +1442,7 @@ GAME.shops = (function () {
     if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); GAME.haptics.deny(); return; }
     pendingBuy = it.id;
     $('shop-confirm-name').textContent = it.name;
-    $('shop-confirm-price').textContent = it.price > 0 ? 'Price: $' + it.price.toLocaleString() : 'Free';
+    $('shop-confirm-price').textContent = it.price > 0 ? (it.verb ? 'Stake: $' : 'Price: $') + it.price.toLocaleString() : 'Free';
     $('shop-confirm').style.display = 'flex';
   }
   function cancelConfirm() {
@@ -1443,6 +1474,11 @@ GAME.shops = (function () {
       case 'bribe': buyBribe(id); break;
       case 'casino': spinWheel(it.price); break;
       case 'bar': buyBar(id); break;
+      case 'wardrobe': buyDress(id, true); break;
+      case 'derby':
+        // a horse: the stake is down, so off you go to watch it run
+        if (GAME.derby.choose(id) === 'bet') { close(); GAME.hud.message('Your money\'s down. Watch the screens!', 3); }
+        break;
     }
     if (openShop) render();   // a purchase can close the shop (share card) — guard
     GAME.audio.pickup();
@@ -1457,10 +1493,11 @@ GAME.shops = (function () {
     // the cursor starts on the row you're already wearing, so the first
     // thing the glass shows is the player, exactly — clothes, cut, color,
     // skin — not row one's shirt pulled over your head.
-    if (loc.kind === 'dress' || loc.kind === 'barber') {
+    if (loc.kind === 'dress' || loc.kind === 'barber' || loc.kind === 'wardrobe') {
       var list0 = items(loc);
       for (var oi = 0; oi < list0.length; oi++) if (list0[oi].owned) { sel = oi; break; }
     }
+    if (loc.kind === 'derby') sel = 1;   // the first horse, under the stake
     cancelConfirm();
     note('');
     el.screen.style.display = 'flex';
@@ -1469,6 +1506,7 @@ GAME.shops = (function () {
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
     render();
     GAME.track('shop-open-' + loc.kind);
+    if ((loc.kind === 'derby' || loc.kind === 'wardrobe') && GAME.lola) GAME.lola.first(loc.kind);
     return true;
   }
   function close() {
@@ -1637,6 +1675,7 @@ GAME.shops = (function () {
     get current() { return openShop; },
     get selected() { return openShop ? items(openShop)[sel] : null; },
     locations: function () { return locations; },
-    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS, SKINTONES: SKINTONES }
+    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS, SKINTONES: SKINTONES },
+    closet: closet
   };
 })();

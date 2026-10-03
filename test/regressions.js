@@ -70,6 +70,10 @@
 //       time you meet it, once, and the pause screen switches her off; C
 //       takes a photo of the frame, developed like a 1986 print, into an
 //       album you save from (or straight to your downloads), kept between visits.
+//   5j. WALK-IN BUSINESSES — the gun shop, THREADS, the barber, the showroom
+//       and the sergeant's desk are rooms you walk into, the menu at the
+//       counter; a wardrobe at home holds two outfits from the start and all
+//       you buy; the casino's terminals run horse races at posted odds.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -3906,6 +3910,253 @@ function withTimeout(p, ms) {
     kept = await page.evaluate(function () { return GAME.photo.count; });
   } catch (e) { kept = 'none: ' + String(e).slice(0, 80); }
   check('camera: the album is still there on the next visit', typeof kept === 'number' && kept >= 2, String(kept));
+
+  // ---------- 5j: walk-in businesses, a wardrobe, and Gull Downs ----------
+  // The bar raised the bar: every business is a room now — the gun shop,
+  // THREADS, the barber, the showroom and the sergeant's desk — with
+  // somebody behind the counter and the menu at the counter. Whatever you
+  // own hangs in a wardrobe at home (two outfits from the start, and
+  // everything bought since), and the slot machines at the Lucky Gull are
+  // race terminals: pick a horse at the posted odds and watch it run.
+  var biz = await page.evaluate(function () {
+    var P = GAME.player, I = GAME.interiors, S = GAME.shops, out = [];
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    function walkTo(x, z, maxT) {
+      for (var w = 0; w < (maxT || 8); w += 1 / 60) {
+        var dx = x - P.pos.x, dz = z - P.pos.z;
+        if (dx * dx + dz * dz < 0.2 || I.busy || GAME.shopOpen) break;
+        P.heading = Math.atan2(dx, dz); GAME.cam.yaw = P.heading;
+        GAME.test.pressKey('KeyW', true);
+        GAME.test.fastForward(1 / 60);
+      }
+      GAME.test.pressKey('KeyW', false);
+      GAME.test.fastForward(0.7);
+    }
+    ['hardware0', 'dress0', 'barber0', 'showroom0', 'bribe0'].forEach(function (id) {
+      var r = { id: id };
+      if (S.isOpen) S.close();
+      var loc = S.locations().filter(function (l) { return l.id === id; })[0];
+      if (!loc) { out.push(r); return; }
+      // the sergeant's desk is for the wanted; the rest are open to anybody
+      if (id === 'bribe0') GAME.test.setWanted(1);
+      GAME.test.teleport(loc.at.x + 8, loc.at.z);
+      GAME.test.fastForward(0.4);
+      walkTo(loc.at.x, loc.at.z);
+      var room = I.current;
+      r.inside = !!room && room.id === id && room.kind === 'shop' && room.shop === loc.kind && P.interior === room;
+      r.menuAtDoor = GAME.shopOpen;
+      if (room) {
+        var c = room.rings.filter(function (x) { return !/EXIT/.test(x.label); })[0];
+        r.counter = c && c.label;
+        if (c) walkTo(c.x, c.z);
+        r.opens = GAME.shopOpen && S.current === loc;
+        if (S.isOpen) S.close();
+        GAME.test.fastForward(0.3);
+        I.leave(); GAME.test.fastForward(1.2);
+        r.out = !I.current && !P.interior;
+      }
+      GAME.police.clearWanted();
+      out.push(r);
+    });
+    // a shop is no place to wait out the law: the heat holds in there
+    var hl = S.locations().filter(function (l) { return l.id === 'dress0'; })[0];
+    GAME.test.teleport(hl.at.x + 8, hl.at.z);
+    GAME.test.fastForward(0.4);
+    GAME.test.setWanted(2);
+    walkTo(hl.at.x, hl.at.z);
+    var heat = { inside: !!I.current };
+    GAME.test.fastForward(45);
+    heat.stars = GAME.police.wanted;
+    if (S.isOpen) S.close();
+    I.leave(); GAME.test.fastForward(1.2);
+    GAME.police.clearWanted();
+    return { rooms: out, heat: heat };
+  });
+  biz.rooms.forEach(function (r) {
+    check('business: ' + r.id + ' is a room you walk into, and its counter opens the shop',
+      r.inside && !r.menuAtDoor && r.opens && r.out, JSON.stringify(r));
+  });
+  check('business: a shop does not hide you — the stars are still there when you come out', biz.heat.inside && biz.heat.stars === 2, JSON.stringify(biz.heat));
+
+  var wr = await page.evaluate(function () {
+    var P = GAME.player, I = GAME.interiors, S = GAME.shops, r = {};
+    var owned0 = (GAME.prefs.safehouses || []).slice(), outfit0 = JSON.parse(JSON.stringify(GAME.prefs.outfit || {})), closet0 = GAME.prefs.closet;
+    function walkTo(x, z, maxT) {
+      for (var w = 0; w < (maxT || 8); w += 1 / 60) {
+        var dx = x - P.pos.x, dz = z - P.pos.z;
+        if (dx * dx + dz * dz < 0.2 || I.busy || GAME.shopOpen) break;
+        P.heading = Math.atan2(dx, dz); GAME.cam.yaw = P.heading;
+        GAME.test.pressKey('KeyW', true);
+        GAME.test.fastForward(1 / 60);
+      }
+      GAME.test.pressKey('KeyW', false);
+      GAME.test.fastForward(0.7);
+    }
+    try {
+      // a fresh save owns two outfits before it has bought a thing
+      delete GAME.prefs.closet;
+      GAME.prefs.outfit = { shirt: 'white', pants: 'teal', hairStyle: outfit0.hairStyle || 'crew', hairColor: outfit0.hairColor || 'black' };
+      var c = S.closet();
+      r.start = c.shirts.slice().sort().join(',') + '/' + c.pants.slice().sort().join(',');
+      // the wardrobe at home
+      GAME.prefs.safehouses = ['condo'];
+      var mats = S.blips().filter(function (b) { return b.label === '⌂'; });
+      var condo = mats.filter(function (b) { return Math.abs(b.x - 337) < 30 && Math.abs(b.z - 208) < 30; })[0];
+      GAME.test.teleport(condo.x + 8, condo.z);
+      GAME.test.fastForward(0.4);
+      walkTo(condo.x, condo.z);
+      var room = I.current;
+      r.home = !!room && room.kind === 'home';
+      var ring = room && room.rings.filter(function (x) { return /WARDROBE/.test(x.label); })[0];
+      r.ring = !!ring;
+      // not on the way in from the door
+      r.clear = !!ring && Math.hypot(ring.x - room.entry.x, ring.z - room.entry.z) > 2.5;
+      if (ring) walkTo(ring.x, ring.z);
+      r.opens = GAME.shopOpen && S.current && S.current.kind === 'wardrobe';
+      var rows = r.opens ? document.getElementById('shop-items').innerText : '';
+      r.lists = /Club White/.test(rows) && /Banana Cream/.test(rows) && /Teal Classics/.test(rows) && /Sand Chinos/.test(rows) && !/Hot Pink|Midnight/.test(rows);
+      var cash = P.cash;
+      S.buy('shirt_banana');
+      r.changed = GAME.prefs.outfit.shirt === 'banana' && P.cash === cash;
+      if (S.isOpen) S.close();
+      I.leave(); GAME.test.fastForward(1.2);
+      // THREADS: a new shirt costs, and goes in the wardrobe; one you own is free
+      var th = S.locations().filter(function (l) { return l.kind === 'dress'; })[0];
+      var fresh = S.wardrobe.SHIRTS.filter(function (s) { return c.shirts.indexOf(s.id) < 0; })[0];
+      P.cash = Math.max(P.cash, 1000);
+      GAME.test.teleport(th.at.x + 8, th.at.z);
+      GAME.test.fastForward(0.4);
+      walkTo(th.at.x, th.at.z);
+      var counter = I.current && I.current.rings.filter(function (x) { return /MIRROR/.test(x.label); })[0];
+      if (counter) walkTo(counter.x, counter.z);
+      r.threads = GAME.shopOpen && S.current === th;
+      cash = P.cash;
+      S.buy('shirt_' + fresh.id);
+      r.bought = cash - P.cash === 150 && S.closet().shirts.indexOf(fresh.id) >= 0 && GAME.prefs.outfit.shirt === fresh.id;
+      cash = P.cash;
+      S.buy('shirt_white');
+      r.ownFree = cash === P.cash && GAME.prefs.outfit.shirt === 'white';
+      if (S.isOpen) S.close();
+      I.leave(); GAME.test.fastForward(1.2);
+      // and it is in the wardrobe the next time you're home
+      GAME.test.teleport(condo.x + 8, condo.z);
+      GAME.test.fastForward(0.4);
+      walkTo(condo.x, condo.z);
+      ring = I.current && I.current.rings.filter(function (x) { return /WARDROBE/.test(x.label); })[0];
+      if (ring) walkTo(ring.x, ring.z);
+      r.hangs = GAME.shopOpen && document.getElementById('shop-items').innerText.indexOf(fresh.name) >= 0;
+      r.fresh = fresh.name;
+      if (S.isOpen) S.close();
+      I.leave(); GAME.test.fastForward(1.2);
+    } finally {
+      GAME.prefs.safehouses = owned0;
+      GAME.prefs.outfit = outfit0;
+      if (closet0) GAME.prefs.closet = closet0; else delete GAME.prefs.closet;
+      if (S.applyOutfit) S.applyOutfit();
+    }
+    return r;
+  });
+  check('wardrobe: you own two outfits before you buy anything', wr.start === 'banana,white/sand,teal', wr.start);
+  check('wardrobe: there is one at home, clear of the door, and it lists what you own', wr.home && wr.ring && wr.clear && wr.opens && wr.lists, JSON.stringify(wr));
+  check('wardrobe: changing in it is free', wr.changed, JSON.stringify(wr));
+  check('wardrobe: THREADS charges for new clothes and hangs them in your wardrobe; what you own is free there',
+    wr.threads && wr.bought && wr.ownFree && wr.hangs, JSON.stringify(wr));
+
+  var gd = await page.evaluate(function () {
+    var P = GAME.player, I = GAME.interiors, S = GAME.shops, D = GAME.derby, r = {};
+    if (!D) return { missing: true };
+    function walkTo(x, z, maxT) {
+      for (var w = 0; w < (maxT || 8); w += 1 / 60) {
+        var dx = x - P.pos.x, dz = z - P.pos.z;
+        if (dx * dx + dz * dz < 0.2 || I.busy || GAME.shopOpen) break;
+        P.heading = Math.atan2(dx, dz); GAME.cam.yaw = P.heading;
+        GAME.test.pressKey('KeyW', true);
+        GAME.test.fastForward(1 / 60);
+      }
+      GAME.test.pressKey('KeyW', false);
+      GAME.test.fastForward(0.3);
+    }
+    GAME.police.clearWanted();
+    var cas = S.locations().filter(function (l) { return l.kind === 'casino'; })[0];
+    GAME.test.teleport(cas.at.x + 8, cas.at.z);
+    GAME.test.fastForward(0.4);
+    walkTo(cas.at.x, cas.at.z); GAME.test.fastForward(0.5);
+    var room = I.current;
+    r.inside = !!room && room.kind === 'casino';
+    if (!room) return r;
+    // the screens show the races: one big one and one in every terminal
+    var tex = D.texture(), screens = 0;
+    GAME.scene.traverse(function (o) { if (o.material && o.material.map === tex) screens++; });
+    r.screens = screens;
+    // the regulars face their terminals, and cheer when the horses run
+    var fans = room.anim.filter(function (a) { return a.fan; });
+    r.fansFace = fans.length >= 3 && fans.every(function (a) { return Math.abs(a.fig.rotation.y - Math.PI / 2) < 0.01 && a.fig.position.x < room.ox + room.w / 2 - 0.9; });
+    // the races go on by themselves while you're in the room
+    var race0 = D.race, st0 = D.state;
+    for (var k = 0; k < 40 && D.state === 'board'; k++) GAME.test.fastForward(1);
+    r.ambient = st0 === 'board' && D.state === 'running';
+    var arms = fans[0].fig.userData.joints.armL.rotation.x;
+    GAME.test.fastForward(0.5);
+    r.cheer = D.cheering && fans[0].fig.userData.joints.armL.rotation.x < -1.8;
+    for (k = 0; k < 40 && D.race === race0; k++) GAME.test.fastForward(1);
+    r.next = D.race === race0 + 1 && D.state === 'board';
+    // the odds on the board are a book with the house's cut in it
+    var f = D.field(), sum = 0;
+    f.runners.forEach(function (h) { sum += h.p; });
+    r.book = Math.abs(sum - 1) < 1e-6 && f.runners.every(function (h) { return h.p * (h.odds + 1) < 1 && h.p > 0; });
+    // the free terminal: a horse menu with the stakes underneath
+    var ring = room.rings.filter(function (x) { return /GULL DOWNS/.test(x.label); })[0];
+    r.ring = !!ring;
+    if (ring) walkTo(ring.x, ring.z);
+    r.opens = GAME.shopOpen && S.current && S.current.kind === 'derby';
+    var rows = r.opens ? document.getElementById('shop-items').innerText : '';
+    r.rows = f.runners.every(function (h) { return rows.indexOf(h.name) >= 0; }) && /^YOUR STAKE · \$100/.test(rows) && /\$2,000/.test(rows);
+    r.chip = /BET · \$100/.test(rows);
+    // a $500 stake on number 2, rigged to win: the stake goes, then odds+1 times it comes back
+    P.cash = 5000;
+    S.buy('stake');
+    r.stake = D.stake === 500 && P.cash === 5000 && /YOUR STAKE · \$500/.test(document.getElementById('shop-items').innerText);
+    var odds = f.runners[1].odds;
+    D.rig(2);
+    S.buy('horse2');
+    r.betDown = P.cash === 4500 && !GAME.shopOpen && D.bet && D.bet.n === 2;
+    GAME.test.fastForward(4);
+    r.tv = document.getElementById('derby-tv').style.display === 'block' && D.state === 'running';
+    for (k = 0; k < 30 && D.state === 'running'; k++) GAME.test.fastForward(1);
+    r.won = D.order()[0] === 2 && P.cash === 4500 + 500 * (odds + 1);
+    r.paid = P.cash;
+    r.want = 4500 + 500 * (odds + 1);
+    // one bet a race
+    for (k = 0; k < 10 && D.state !== 'board'; k++) GAME.test.fastForward(1);
+    walkTo(ring.x - 2.5, ring.z); walkTo(ring.x, ring.z);
+    r.reopen = GAME.shopOpen;
+    for (k = 0; k < 3 && D.stake !== 100; k++) S.buy('stake');
+    D.rig(5);
+    S.buy('horse1');
+    var c1 = P.cash;
+    S.open(D.loc);
+    var again = S.buy('horse3');
+    r.oneBet = again === false && P.cash === c1 && /One bet a race/.test(document.getElementById('shop-items').innerText);
+    if (S.isOpen) S.close();
+    for (k = 0; k < 40 && D.bet; k++) GAME.test.fastForward(1);
+    r.lost = !D.bet && D.order()[0] === 5 && P.cash === c1;
+    // out of the room, with nothing riding on it, the course is quiet
+    I.leave(); GAME.test.fastForward(1.2);
+    var st1 = D.state, c1b = D.race;
+    GAME.test.fastForward(30);
+    r.quiet = D.state === st1 && D.race === c1b && document.getElementById('derby-tv').style.display === 'none';
+    return r;
+  });
+  check('Gull Downs: the races are on a big screen and on every terminal', !gd.missing && gd.inside && gd.screens >= 7, JSON.stringify(gd));
+  check('Gull Downs: the regulars face their terminals and cheer the horses home', gd.fansFace && gd.cheer, JSON.stringify(gd));
+  check('Gull Downs: a race runs every half-minute or so while you are in the room', gd.ambient && gd.next, JSON.stringify(gd));
+  check('Gull Downs: the odds are a fair book with the house\'s cut', gd.book, JSON.stringify(gd));
+  check('Gull Downs: the free terminal lists the runners, under your stake', gd.ring && gd.opens && gd.rows && gd.chip, JSON.stringify(gd));
+  check('Gull Downs: a bet takes the stake and shows your race on a set of your own', gd.stake && gd.betDown && gd.tv, JSON.stringify(gd));
+  check('Gull Downs: a winner pays the odds and your stake back', gd.won, JSON.stringify({ paid: gd.paid, want: gd.want }));
+  check('Gull Downs: one bet a race, and a loser pays nothing', gd.reopen && gd.oneBet && gd.lost, JSON.stringify(gd));
+  check('Gull Downs: away from the casino with nothing on, nothing runs', gd.quiet, JSON.stringify(gd));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a

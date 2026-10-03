@@ -257,6 +257,11 @@
   #shutter { position:fixed; inset:0; z-index:60; background:#000; opacity:0; pointer-events:none; }
   #shutter.blink { animation:shutterBlink .16s ease-out; }
   @keyframes shutterBlink { 0% { opacity:0; } 25% { opacity:1; } 100% { opacity:0; } }
+  /* your race at Gull Downs (derby.js), on a set of your own while it runs */
+  #derby-tv { position:fixed; left:50%; top:calc(64px + env(safe-area-inset-top,0px)); transform:translateX(-50%); z-index:16; display:none;
+    width:min(50vw, 420px, 100vh); border:3px solid #ffd24a; border-radius:8px; background:#0b1f16; overflow:hidden;
+    box-shadow:0 6px 28px rgba(0,0,0,.55); pointer-events:none; }
+  #derby-tv canvas { display:block; width:100%; height:auto; }
   #photo-toast { position:fixed; right:calc(18px + env(safe-area-inset-right,0px)); top:150px; z-index:33; width:172px; padding:7px 7px 6px;
     background:#f4efe4; border-radius:3px; box-shadow:0 6px 22px rgba(0,0,0,.55); transform:translateX(130%) rotate(4deg);
     transition:transform .35s cubic-bezier(.2,.9,.3,1.2); pointer-events:none; }
@@ -456,6 +461,7 @@
 </div>
 
 <div id="shutter"></div>
+<div id="derby-tv"></div>
 <div id="photo-toast"><img id="photo-toast-img" alt=""><div id="photo-toast-text"></div></div>
 <div id="photo-album">
   <h2>📷 PHOTOS</h2>
@@ -596,6 +602,7 @@ window.addEventListener('load', function () {
 <script src="js/hud.js"></script>
 <script src="js/share.js"></script>
 <script src="js/shops.js"></script>
+<script src="js/derby.js"></script>
 <script src="js/interiors.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/controls.js"></script>

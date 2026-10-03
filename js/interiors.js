@@ -27,6 +27,22 @@ GAME.interiors = (function () {
     { id: 'casino0', name: 'THE LUCKY GULL', kind: 'casino', w: 24, d: 18, h: 5.5,
       floor: 0x6a1428, wall: 0x2a1236, trim: 0xffd24a, accent: 0xff4fa3, music: true }
   ];
+  // Every business has a room too: walk in through the door, do your
+  // business at the counter, walk out. One template per trade; each shop in
+  // the world gets its own room from it at build time (shops.js has the
+  // list), so both hardware stores and every station's desk have one.
+  var SHOP_ROOMS = {
+    hardware: { w: 12, d: 10, h: 3.4, floor: 0x45464c, wall: 0x7a7a62, trim: 0x2a2a22, accent: 0xffd24a,
+      hello: ' — guns on the wall, the counter at the back.' },
+    dress: { w: 12, d: 10, h: 3.4, floor: 0xe6dce6, wall: 0xf6e6ee, trim: 0xd86aa8, accent: 0xff8fd0,
+      hello: ' — the racks are on the walls, the mirror at the back.' },
+    barber: { w: 10, d: 9, h: 3.2, floor: 0xeeeeee, wall: 0xdcecf4, trim: 0x3a6a8a, accent: 0x8fd0ff,
+      hello: ' — take the empty chair.' },
+    showroom: { w: 22, d: 16, h: 5.5, floor: 0xd4d8e4, wall: 0x2e3346, trim: 0x8dffd8, accent: 0x8dffd8,
+      hello: ' — the sales desk is at the back. What you buy waits for you outside.' },
+    bribe: { w: 12, d: 10, h: 3.6, floor: 0x5c6272, wall: 0xb4bccc, trim: 0x22305a, accent: 0x4da3ff,
+      hello: ' — the sergeant is at the desk.' }
+  };
   var byId = {};
   var cur = null;            // { room, loc, door: {x,y,z}, heading }
   var pending = null;        // a fade in progress: { t, fn, half }
@@ -95,7 +111,9 @@ GAME.interiors = (function () {
     box(b, ox, 1.15, oz - d / 2 + 0.04, 1.4, 2.3, 0.08, room.kind === 'casino' ? 0x3a2410 : room.trim);
     box(b, ox + 0.5, 1.1, oz - d / 2 + 0.1, 0.08, 0.08, 0.08, 0xffd24a);
     ring(room, ox, oz - d / 2 + 1.0, 0x8de8b0, 'EXIT — step on to go back out', exitRoom);
-    if (room.kind === 'home') furnishHome(b, room); else furnishCasino(b, room);
+    if (room.kind === 'home') furnishHome(b, room);
+    else if (room.kind === 'shop') furnishShop(b, room);
+    else furnishCasino(b, room);
   }
 
   function furnishHome(b, room) {
@@ -143,9 +161,21 @@ GAME.interiors = (function () {
     box(b, ox + w / 2 - 0.6, 0.25, oz - d / 2 + 0.9, 0.5, 0.5, 0.5, 0xb06a3a);
     box(b, ox + w / 2 - 0.6, 0.8, oz - d / 2 + 0.9, 0.7, 0.7, 0.7, 0x3a8a4a);
     box(b, ox + w / 2 - 0.6, 1.25, oz - d / 2 + 0.9, 0.45, 0.45, 0.45, 0x4aa05a);
-    // pictures
-    box(b, ox - w / 2 + 0.03, 1.7, oz - 0.5, 0.04, 0.8, 1.2, room.accent);
-    box(b, ox - w / 2 + 0.05, 1.7, oz - 0.5, 0.04, 0.6, 1.0, 0xf4e0c0);
+    // the wardrobe, halfway down the left wall: everything you own, on
+    // hangers (shops.js, kind 'wardrobe') — clear of the path in from the door
+    var wx2 = ox - w / 2 + 0.35, wz2 = oz - 0.5;
+    box(b, wx2, 1.05, wz2, 0.6, 2.1, 1.3, room.trim);
+    box(b, wx2 + 0.31, 1.05, wz2 - 0.32, 0.02, 1.9, 0.6, (room.trim & 0xfefefe) >> 1);
+    box(b, wx2 + 0.31, 1.05, wz2 + 0.32, 0.02, 1.9, 0.6, (room.trim & 0xfefefe) >> 1);
+    box(b, wx2 + 0.33, 1.1, wz2 - 0.06, 0.04, 0.16, 0.04, 0xffd24a);
+    box(b, wx2 + 0.33, 1.1, wz2 + 0.06, 0.04, 0.16, 0.04, 0xffd24a);
+    solid(wx2, wz2, 0.6, 1.3, 2.1);
+    ring(room, wx2 + 1.25, wz2, room.accent, 'YOUR WARDROBE — step on to change', function () {
+      if (GAME.shops) GAME.shops.open(WARDROBE);
+    });
+    // a picture, on the wall by the door
+    box(b, ox + w / 4, 1.7, oz - d / 2 + 0.03, 1.2, 0.8, 0.04, room.accent);
+    box(b, ox + w / 4, 1.7, oz - d / 2 + 0.05, 1.0, 0.6, 0.04, 0xf4e0c0);
     if (room.kitchen) {
       // a counter down the right-hand wall
       var kx = ox + w / 2 - 0.45, kz = oz - 0.6;
@@ -206,16 +236,38 @@ GAME.interiors = (function () {
     ring(room, bx + 2.2, bz, 0xff8fc8, 'THE BAR — step on for a drink', function () {
       if (GAME.shops) GAME.shops.open(BAR);
     });
-    // slot machines down the right wall, blinking
+    // Gull Downs (derby.js): race terminals down the right wall, every one
+    // of them showing the race, a big screen above them all, and the
+    // regulars at their terminals, cheering their horses home
+    var raceTex = GAME.derby ? GAME.derby.texture() : null;
+    var screenMat = raceTex ? new THREE.MeshBasicMaterial({ map: raceTex }) : sharedBasic(0x101018);
+    function screen(x, y, z, sw, sh) {
+      var m = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), screenMat);
+      m.position.set(x, y, z);
+      m.rotation.y = -Math.PI / 2;     // facing into the room
+      GAME.scene.add(m);
+      return m;
+    }
     for (var sm = 0; sm < 6; sm++) {
       var sx = ox + w / 2 - 0.6, sz = oz - d / 2 + 3 + sm * 2.0;
       box(b, sx, 0.8, sz, 0.8, 1.6, 1.0, 0x30205a);
-      box(b, sx - 0.42, 1.55, sz, 0.06, 0.5, 0.8, 0x101018);
+      box(b, sx - 0.42, 1.55, sz, 0.06, 0.52, 0.9, 0x101018);
+      screen(sx - 0.46, 1.55, sz, 0.84, 0.42);
+      box(b, sx - 0.5, 1.0, sz, 0.3, 0.06, 0.8, 0xffd24a);          // the betting slip shelf
       solid(sx, sz, 0.8, 1.0, 1.6);
       var lamp = glow(sx - 0.1, 1.75 + 0.2, sz, 0.3, 0.12, 0.8, sm % 2 ? 0x2de8ff : 0xff2d95);
       room.anim.push({ blink: lamp, phase: sm * 0.7 });
-      if (sm % 2 === 0) room.anim.push({ fig: figure(sx - 1.2, sz, -Math.PI / 2), sway: 0.3 + sm * 0.1 });
+      if (sm % 2 === 0) room.anim.push({ fig: figure(sx - 1.2, sz, Math.PI / 2), sway: 0.3 + sm * 0.1, fan: true });
     }
+    var bigZ = oz - d / 2 + 8;
+    box(b, ox + w / 2 - 0.08, 3.75, bigZ, 0.12, 3.5, 6.8, 0x101018);
+    screen(ox + w / 2 - 0.16, 3.75, bigZ, 6.4, 3.2);
+    glow(ox + w / 2 - 0.12, 2.0, bigZ, 0.06, 0.08, 6.8, 0x6fe08a);
+    // the free terminal in the middle is yours
+    ring(room, ox + w / 2 - 1.8, oz - d / 2 + 9, 0x6fe08a, 'GULL DOWNS — step up to bet on the horses', function () {
+      if (!GAME.shops || !GAME.derby) return;
+      GAME.shops.open(GAME.derby.loc);
+    });
     // two card tables with players round them
     [[-2.5, -1.5], [3.5, -2.5]].forEach(function (t, k) {
       var tx = ox + t[0], tz = oz + t[1];
@@ -230,13 +282,170 @@ GAME.interiors = (function () {
     for (var cl = 0; cl < 3; cl++) glow(ox - 6 + cl * 6, h - 0.35, oz - 1, 1.2, 0.3, 1.2, 0xffe2a8);
   }
 
+  // ---------- the businesses ----------
+  function counterRing(room, x, z, label) {
+    ring(room, x, z, room.accent, label, function () {
+      if (GAME.shops && cur && cur.loc) GAME.shops.open(cur.loc);
+    });
+  }
+  function furnishShop(b, room) {
+    var ox = room.ox, oz = room.oz, w = room.w, d = room.d, h = room.h, back = oz + d / 2;
+    var fn = { hardware: furnishHardware, dress: furnishThreads, barber: furnishBarber, showroom: furnishShowroom, bribe: furnishDesk }[room.shop];
+    if (fn) fn(b, room, ox, oz, w, d, h, back);
+    // a strip light or two across the ceiling, whatever the trade
+    glow(ox, h - 0.08, oz, Math.min(6, w * 0.4), 0.06, 0.4, 0xfff2dc);
+  }
+  // a counter across the back with somebody behind it, and its ring
+  function counter(b, room, ox, back, len, top, col, clerkLook, label) {
+    var cz = back - 2.2;
+    box(b, ox, 0.55, cz, len, 1.1, 0.9, col);
+    box(b, ox, 1.13, cz, len + 0.1, 0.06, 1.0, top);
+    solid(ox, cz, len, 0.9, 1.15);
+    room.anim.push({ fig: figure(ox, back - 1.2, Math.PI, clerkLook), sway: 0.4 });
+    counterRing(room, ox, cz - 1.5, label);
+  }
+  function furnishHardware(b, room, ox, oz, w, d, h, back) {
+    counter(b, room, ox, back, 5, 0x1a1a14, 0x5a4a32, { look: { shirt: 0x6a7a4a, pants: 0x2a2a22, skin: 0xb08060, hair: 'crew', hairCol: 0x2a2018 } },
+      'THE COUNTER — step up to buy');
+    // the gun wall: pegboard, and what hangs on it
+    box(b, ox, 1.9, back - 0.06, w - 2, 1.8, 0.06, 0x6a5a3a);
+    for (var g = 0; g < 7; g++) {
+      var gx = ox - (w - 3) / 2 + g * (w - 3) / 6;
+      box(b, gx, 2.45, back - 0.12, 1.3, 0.12, 0.06, 0x16161a);        // a long gun
+      box(b, gx - 0.5, 2.38, back - 0.12, 0.3, 0.2, 0.06, 0x3a2a1a);   // its stock
+      box(b, gx, 1.6, back - 0.12, 0.42, 0.12, 0.06, 0x1e1e24);        // a pistol
+      box(b, gx + 0.14, 1.5, back - 0.12, 0.1, 0.2, 0.06, 0x1e1e24);
+    }
+    // shelves of rounds down both sides
+    [-1, 1].forEach(function (sd) {
+      var sx = ox + sd * (w / 2 - 0.4);
+      for (var sh = 0; sh < 3; sh++) {
+        box(b, sx, 0.5 + sh * 0.7, oz + 0.5, 0.6, 0.05, 5.5, 0x4a3a28);
+        for (var k = 0; k < 6; k++) box(b, sx, 0.62 + sh * 0.7, oz - 1.8 + k * 0.9, 0.36, 0.2, 0.5, [0xd8b030, 0x3a7a3a, 0xc04030][(k + sh) % 3]);
+      }
+      solid(sx, oz + 0.5, 0.6, 5.5, 2.2);
+    });
+    // and a target on the side wall, for the look of the place
+    box(b, ox - w / 2 + 0.05, 1.7, back - 3.2, 0.04, 1.0, 1.0, 0xf4f0e8);
+    box(b, ox - w / 2 + 0.07, 1.7, back - 3.2, 0.04, 0.6, 0.6, 0xc02020);
+    box(b, ox - w / 2 + 0.09, 1.7, back - 3.2, 0.04, 0.25, 0.25, 0xf4f0e8);
+  }
+  function furnishThreads(b, room, ox, oz, w, d, h, back) {
+    var W = GAME.shops && GAME.shops.wardrobe, shirts = W ? W.SHIRTS : [], pants = W ? W.PANTS : [];
+    // racks down both walls: a rail, and what hangs on it in this season's colours
+    [-1, 1].forEach(function (sd) {
+      var rx = ox + sd * (w / 2 - 0.8);
+      box(b, rx, 1.75, oz, 0.06, 0.06, 6.0, 0xc0c0c8);
+      box(b, rx, 0.9, oz - 3, 0.06, 1.8, 0.06, 0xc0c0c8);
+      box(b, rx, 0.9, oz + 3, 0.06, 1.8, 0.06, 0xc0c0c8);
+      var list = sd < 0 ? shirts : pants;
+      for (var k = 0; k < 10; k++) {
+        var c = list.length ? list[k % list.length].hex : 0xff8fd0;
+        box(b, rx, sd < 0 ? 1.35 : 1.15, oz - 2.6 + k * 0.58, 0.5, sd < 0 ? 0.7 : 1.1, 0.07, c);
+      }
+      solid(rx, oz, 0.7, 6.2, 1.9);
+    });
+    // mannequins in the window, dressed
+    room.anim.push({ fig: figure(ox - 2.2, oz - d / 2 + 2.0, 0, { look: { shirt: 0xf78ab8, pants: 0xd8c8a8, skin: 0xe8e0d8, hair: 'none', hairCol: 0 } }), sway: 0 });
+    room.anim.push({ fig: figure(ox + 2.2, oz - d / 2 + 2.0, 0, { look: { shirt: 0x8fd0f0, pants: 0x2a2a34, skin: 0xe8e0d8, hair: 'none', hairCol: 0 } }), sway: 0 });
+    // the mirror and the changing booth at the back
+    glow(ox, 1.4, back - 0.08, 1.4, 2.2, 0.04, 0xcfe6f6);
+    box(b, ox, 1.4, back - 0.04, 1.6, 2.4, 0.04, room.trim);
+    box(b, ox + 3, 1.3, back - 0.9, 0.06, 2.6, 1.6, 0xff8fd0);
+    box(b, ox - 3, 1.3, back - 0.9, 0.06, 2.6, 1.6, 0xff8fd0);
+    room.anim.push({ fig: figure(ox + 4.4, back - 1.2, Math.PI, { look: { shirt: 0x23242e, pants: 0x23242e, skin: 0xd8a888, hair: 'ponytail', hairCol: 0x6a2a4a } }), sway: 0.7 });
+    counterRing(room, ox, back - 1.6, 'THE MIRROR — step on to try things on');
+  }
+  function furnishBarber(b, room, ox, oz, w, d, h, back) {
+    // the checkerboard
+    for (var tx = 0; tx < w; tx++) for (var tz = 0; tz < d; tz++) {
+      if ((tx + tz) % 2) box(b, ox - w / 2 + tx + 0.5, 0.006, oz - d / 2 + tz + 0.5, 1, 0.012, 1, 0x1a1a22);
+    }
+    // two chairs before two mirrors; somebody is in one of them
+    [-2, 2].forEach(function (cx, k) {
+      var x = ox + cx;
+      glow(x, 1.6, back - 0.06, 1.3, 1.1, 0.04, 0xdcecf8);
+      for (var bl = 0; bl < 5; bl++) glow(x - 0.6 + bl * 0.3, 2.25, back - 0.06, 0.1, 0.1, 0.06, 0xffe9a0);
+      box(b, x, 0.9, back - 0.25, 1.6, 0.06, 0.4, 0xe8e8f0);
+      box(b, x, 0.2, back - 1.6, 0.3, 0.4, 0.3, 0xc0c0c8);
+      box(b, x, 0.52, back - 1.6, 0.75, 0.16, 0.7, 0xc02838);
+      box(b, x, 0.95, back - 1.25, 0.75, 0.8, 0.14, 0xc02838);
+      solid(x, back - 1.6, 0.8, 0.8, 1.0);
+      if (k === 0) room.anim.push({ fig: figure(x + 1.0, back - 1.9, Math.PI * 0.75, { look: { shirt: 0xf4f4f8, pants: 0x2a2a34, skin: 0xa87050, hair: 'slick', hairCol: 0x1a1210 } }), sway: 0.6 });
+    });
+    // the pole by the door, turning
+    var pole = new THREE.Group();
+    for (var ps = 0; ps < 6; ps++) {
+      var band = new THREE.Mesh(sharedBoxGeo(0.22, 0.16, 0.22), sharedBasic(ps % 2 ? 0xf4f4f8 : 0xd02030));
+      band.position.y = ps * 0.16;
+      band.rotation.y = ps * 0.4;
+      pole.add(band);
+    }
+    pole.position.set(ox + w / 2 - 0.6, 1.1, oz - d / 2 + 1.0);
+    GAME.scene.add(pole);
+    room.anim.push({ pole: pole });
+    // the waiting bench
+    box(b, ox - w / 2 + 0.6, 0.4, oz - 0.5, 0.7, 0.12, 3.0, 0x5a3a28);
+    solid(ox - w / 2 + 0.6, oz - 0.5, 0.7, 3.0, 0.5);
+    counterRing(room, ox + 2, back - 2.7, 'THE CHAIR — sit down for a cut');
+  }
+  function furnishShowroom(b, room, ox, oz, w, d, h, back) {
+    // two of the stock under the lights, on turntables
+    [['sports', -4.5], ['superbike', 4.5]].forEach(function (c, k) {
+      var x = ox + c[1], z = oz - 0.5;
+      box(b, x, 0.04, z, 5.6, 0.08, 5.6, 0x3a3e4e);
+      var m = GAME.vehicles.buildMesh(c[0]);
+      if (m) {
+        m.traverse(function (o) {
+          if (o.isMesh && o.material) o.material = new THREE.MeshBasicMaterial({ color: o.material.color ? o.material.color.clone() : 0xffffff, vertexColors: !!o.material.vertexColors });
+        });
+        m.position.set(x, 0.08, z);
+        GAME.scene.add(m);
+        room.anim.push({ turntable: m, rate: k ? -0.25 : 0.25 });
+      }
+      solid(x, z, 4.6, 4.6, 1.4);
+      glow(x, h - 0.1, z, 1.4, 0.08, 1.4, 0xf4f8ff);
+    });
+    counter(b, room, ox, back, 4, 0x8dffd8, 0x2a2e3a, { look: { shirt: 0xf4f4f8, pants: 0x2a2a34, skin: 0xc89870, hair: 'slick', hairCol: 0x2a1a10 } },
+      'THE SALES DESK — step up to browse');
+    // the name in lights across the back
+    glow(ox, h - 1.0, back - 0.06, 8, 0.5, 0.04, 0x8dffd8);
+  }
+  function furnishDesk(b, room, ox, oz, w, d, h, back) {
+    counter(b, room, ox, back, 5, 0x22305a, 0x3a4a6a, { cop: true }, 'THE DESK — a word with the sergeant');
+    // the badge on the wall behind him, and a WANTED board
+    glow(ox, 2.5, back - 0.06, 1.0, 1.0, 0.04, 0xffd24a);
+    glow(ox, 2.5, back - 0.08, 0.6, 0.6, 0.04, 0x22305a);
+    box(b, ox - w / 2 + 0.05, 1.7, oz, 0.04, 1.2, 2.4, 0x5a4a32);
+    for (var wp = 0; wp < 4; wp++) box(b, ox - w / 2 + 0.08, 1.75 + (wp % 2 ? -0.3 : 0.25), oz - 0.8 + (wp >> 1) * 1.0 + (wp % 2) * 0.5, 0.03, 0.45, 0.35, 0xf0ece0);
+    // benches for the waiting, a flag in the corner
+    [-1, 1].forEach(function (sd) {
+      box(b, ox + sd * (w / 2 - 0.6), 0.4, oz - 1.0, 0.6, 0.12, 3.2, 0x3a3a42);
+      solid(ox + sd * (w / 2 - 0.6), oz - 1.0, 0.6, 3.2, 0.5);
+    });
+    box(b, ox + w / 2 - 0.8, 1.3, back - 0.8, 0.06, 2.6, 0.06, 0xc0c0c8);
+    box(b, ox + w / 2 - 0.8, 2.25, back - 1.25, 0.04, 0.6, 0.9, 0x4da3ff);
+  }
+
   // the counter at the bar is a shop like any other (shops.js, kind 'bar')
   var BAR = { id: 'bar0', kind: 'bar', name: 'THE GULL BAR', tag: 'Drinks that put you back together', color: 0xff8fc8, at: { x: 0, z: 0 } };
+  // and so is the wardrobe at home (kind 'wardrobe')
+  var WARDROBE = { id: 'wardrobe0', kind: 'wardrobe', name: 'YOUR WARDROBE', tag: 'Everything you own, on hangers', color: 0xff8fd0, at: { x: 0, z: 0 } };
 
   function build() {
     if (built) return;
     built = true;
     var b = new GeoBatch();
+    // a room for every business in the world, from its trade's template
+    var shops = GAME.shops && GAME.shops.locations ? GAME.shops.locations() : [];
+    shops.forEach(function (loc) {
+      var tpl = SHOP_ROOMS[loc.kind];
+      if (!tpl || byId[loc.id]) return;
+      var room = { id: loc.id, name: loc.name, kind: 'shop', shop: loc.kind };
+      for (var k in tpl) room[k] = tpl[k];
+      ROOMS.push(room);
+      byId[loc.id] = room;
+    });
     for (var i = 0; i < ROOMS.length; i++) {
       byId[ROOMS[i].id] = ROOMS[i];
       buildRoom(b, ROOMS[i], i);
@@ -303,14 +512,15 @@ GAME.interiors = (function () {
   // ---------- going in and out ----------
   function enterable(loc) {
     if (!loc || !byId[loc.id]) return false;
-    if (loc.kind === 'casino') return true;
+    if (loc.kind === 'casino' || byId[loc.id].kind === 'shop') return true;
     return loc.kind === 'safehouse' && !!(GAME.shops && GAME.shops.owns(loc.sh.id));
   }
   // true when the mat has been dealt with here — gone in, or turned away
   function enter(loc) {
     var room = byId[loc.id], P = GAME.player;
     if (!room || cur || pending) return false;
-    if (GAME.missions && GAME.missions.active) {
+    // (a shop can be popped into mid-job, the way its doormat always could)
+    if (GAME.missions && GAME.missions.active && room.kind !== 'shop') {
       GAME.hud.message('Not now — you are on a job.', 2.2);
       return true;
     }
@@ -328,8 +538,9 @@ GAME.interiors = (function () {
       GAME.cam.yaw = 0; GAME.cam.pitch = 0.2; GAME.cam.x = 0;
       for (var i = 0; i < room.rings.length; i++) room.rings[i].armed = false;
       GAME.hud.message(room.name + (room.kind === 'home'
-        ? (GAME.police.wanted > 0 ? ' — nobody can see you in here. The bed is at the back.' : ' — the bed is at the back. The mat by the door takes you out.')
-        : ' — the wheel is at the back, the bar on the left. The mat by the door takes you out.'), 4);
+        ? (GAME.police.wanted > 0 ? ' — nobody can see you in here. The bed is at the back.' : ' — the bed is at the back, your wardrobe on the left. The mat by the door takes you out.')
+        : room.kind === 'shop' ? room.hello + (GAME.police.wanted > 0 && room.shop !== 'bribe' ? ' The law is waiting outside.' : '')
+          : ' — the wheel is at the back, the bar on the left. The mat by the door takes you out.'), 4);
       if (room.music && GAME.audio.radio && !GAME.audio.muted) GAME.audio.radio.setVolume(0.45);
       GAME.applyTimeOfDay(GAME.timeOfDay);   // the room's own light (main.js)
       GAME.track('interior-' + room.id);
@@ -400,10 +611,20 @@ GAME.interiors = (function () {
     for (var a = 0; a < room.anim.length; a++) {
       var an = room.anim[a];
       if (an.wheel) an.wheel.rotation.z += dt * 0.35;
+      else if (an.pole) an.pole.rotation.y += dt * 1.6;
+      else if (an.turntable) an.turntable.rotation.y += dt * an.rate;
       else if (an.tv) an.tv.material.color.setHSL((t * 0.05) % 1, 0.45, 0.45 + 0.08 * Math.sin(t * 9) * Math.sin(t * 2.3));
       else if (an.blink) an.blink.visible = Math.sin(t * 4 + an.phase) > -0.3;
       else if (an.fig) {
         var j = an.fig.userData.joints, s = Math.sin(t * 1.6 + an.sway * 7);
+        if (an.fan && GAME.derby && GAME.derby.cheering) {
+          // come on, number four!
+          var c = Math.sin(t * 9 + an.sway * 5);
+          j.armL.rotation.x = -2.5 + c * 0.35; j.armR.rotation.x = -2.6 - c * 0.35;
+          an.fig.position.y = Math.max(0, c) * 0.06;
+          continue;
+        }
+        an.fig.position.y = 0;
         j.armL.rotation.x = s * 0.12; j.armR.rotation.x = -s * 0.1 - 0.2;
         j.torso.rotation.y = s * 0.05;
       }

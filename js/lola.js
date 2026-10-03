@@ -28,7 +28,9 @@ GAME.lola = (function () {
     job: function () { return 'That ride has work in it. ' + (touch() ? 'Press JOB' : 'Press ' + K('KeyJ')) + ' to start a shift — every run pays, and each level asks a bit more of you.'; },
     shop: 'Shops are walk-ins: stand on the glowing mat at the door. Guns, clothes, cars, a place to live — if you\'ve got the money.',
     home: 'Your own place. Sleep it off to skip eight hours and shed some heat, and if you go down nearby you wake up here instead of the hospital.',
-    casino: 'The Lucky Gull. The wheel\'s honest, mostly, and the bar patches you up. Spend what you can afford to lose.',
+    casino: 'The Lucky Gull. The wheel\'s honest, mostly, the horses run on the screens down the right, and the bar patches you up. Spend what you can afford to lose.',
+    derby: 'Gull Downs! Pick a horse and a stake. The odds are on the board: a 4/1 shot pays four times your stake plus your money back, and the long shots pay big because they mostly lose. Then watch it run.',
+    wardrobe: 'Everything you own hangs in here, and changing is free. Buy something at THREADS and it turns up in every place you own.',
     photo: function () { return 'Nice shot. Your photos are kept in the album — ' + (touch() ? 'PAUSE' : 'Esc') + ', then PHOTOS — and you can download the ones you like.'; }
   };
 
