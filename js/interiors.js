@@ -18,12 +18,15 @@
 GAME.interiors = (function () {
   var ROOM_X = -3400, ROOM_GAP = 80, FADE = 0.45;
   var ROOMS = [
-    { id: 'home_dock', name: 'DOCKSIDE FLAT', kind: 'home', w: 9, d: 8, h: 3.0,
-      floor: 0x7a6248, wall: 0xa59a86, trim: 0x5a4a3a, accent: 0x38b8c8, sofa: 0x6a7a8a },
-    { id: 'home_condo', name: 'STRIP CONDO', kind: 'home', w: 12, d: 10, h: 3.2,
-      floor: 0x2e2440, wall: 0xe8dff0, trim: 0x8a6ab0, accent: 0xff4fa3, sofa: 0xf0f0f4, kitchen: true },
-    { id: 'home_villa', name: 'MARINA VILLA', kind: 'home', w: 15, d: 12, h: 3.6,
-      floor: 0xd8c8a8, wall: 0xf6f1e6, trim: 0xb8a888, accent: 0x38b8c8, sofa: 0x3a8a9a, kitchen: true },
+    { id: 'home_dock', name: 'DOCKSIDE FLAT', kind: 'home', layout: 'flat', w: 9, d: 8, h: 3.0,
+      floor: 0x7a6248, wall: 0xa59a86, trim: 0x5a4a3a, accent: 0x38b8c8, sofa: 0x6a7a8a,
+      where: 'the bed is at the back, your wardrobe on the left' },
+    { id: 'home_condo', name: 'STRIP CONDO', kind: 'home', layout: 'condo', w: 14, d: 11, h: 3.2,
+      floor: 0x2e2440, wall: 0xe8dff0, trim: 0x8a6ab0, accent: 0xff4fa3, sofa: 0xf0f0f4,
+      where: 'the bedroom is through the door at the back, your wardrobe in it' },
+    { id: 'home_villa', name: 'MARINA VILLA', kind: 'home', layout: 'villa', w: 18, d: 14, h: 7.2, upper: 3.6,
+      floor: 0xd8c8a8, wall: 0xf6f1e6, trim: 0xb8a888, accent: 0x38b8c8, sofa: 0x3a8a9a,
+      where: 'the bedroom is up the stairs, your wardrobe with it' },
     { id: 'casino0', name: 'THE LUCKY GULL', kind: 'casino', w: 24, d: 18, h: 5.5,
       floor: 0x6a1428, wall: 0x2a1236, trim: 0xffd24a, accent: 0xff4fa3, music: true }
   ];
@@ -63,14 +66,18 @@ GAME.interiors = (function () {
     b.addBox(x, y, z, w, h, d, 0, color, 0);
     shade(b, n0);
   }
-  function solid(x, z, w, d, h) { GAME.city.addSolid(x, z, w, d, h, 'prop'); }
-  function ring(room, x, z, color, label, act) {
+  // (minY: a solid on an upper floor, which the floor below walks under)
+  function solid(x, z, w, d, h, minY) { GAME.city.addSolid(x, z, w, d, h, 'prop', false, minY); }
+  // A mat on the floor at height y (0: downstairs), and `via`, the way to it
+  // from the front door where a straight line would meet a wall: a doorway,
+  // the foot and the head of the stairs.
+  function ring(room, x, z, color, label, act, y, via) {
     var m = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.0, 32), new THREE.MeshBasicMaterial({
       color: color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
     m.rotation.x = -Math.PI / 2;
-    m.position.set(x, 0.04, z);
+    m.position.set(x, (y || 0) + 0.04, z);
     GAME.scene.add(m);
-    room.rings.push({ x: x, z: z, mesh: m, label: label, act: act, armed: false });
+    room.rings.push({ x: x, z: z, y: y || 0, via: via || null, mesh: m, label: label, act: act, armed: false });
   }
   function glow(x, y, z, w, h, d, color) {
     var m = new THREE.Mesh(sharedBoxGeo(w, h, d), sharedBasic(color));
@@ -116,74 +123,269 @@ GAME.interiors = (function () {
     else furnishCasino(b, room);
   }
 
-  function furnishHome(b, room) {
-    var ox = room.ox, oz = room.oz, w = room.w, d = room.d, h = room.h;
-    // a rug in the middle
-    box(b, ox, 0.012, oz + 0.3, w * 0.42, 0.024, d * 0.38, (room.accent & 0xfefefe) >> 1);
-    // the bed, back right, and the mat beside it
-    var bx = ox + w / 2 - 1.3, bz = oz + d / 2 - 1.6;
-    box(b, bx, 0.22, bz, 2.0, 0.44, 2.6, room.trim);
-    box(b, bx, 0.56, bz, 1.86, 0.24, 2.46, 0xf4f0ea);
-    box(b, bx, 0.74, bz + 0.92, 1.4, 0.14, 0.42, 0xffffff);
-    box(b, bx, 0.71, bz - 0.38, 1.9, 0.1, 1.66, room.accent);
-    box(b, bx, 0.85, bz + 1.32, 2.0, 1.2, 0.12, room.trim);
-    solid(bx, bz, 2.0, 2.6, 0.7);
-    ring(room, bx - 1.75, bz - 0.5, room.accent, 'YOUR BED — step on to sleep it off', function () {
-      if (GAME.shops && cur && cur.loc) GAME.shops.open(cur.loc);
-    });
-    // the couch and the TV, back left
-    var cx = ox - w / 2 + 2.2, cz = oz + d / 2 - 3.4;
-    box(b, cx, 0.24, cz, 2.6, 0.48, 0.95, room.sofa);
-    box(b, cx, 0.62, cz - 0.4, 2.6, 0.8, 0.2, room.sofa);
-    box(b, cx - 1.38, 0.4, cz, 0.18, 0.8, 0.95, room.sofa);
-    box(b, cx + 1.38, 0.4, cz, 0.18, 0.8, 0.95, room.sofa);
-    solid(cx, cz - 0.1, 3.0, 1.1, 0.8);
-    var tz = oz + d / 2 - 0.5;
-    box(b, cx, 0.3, tz, 1.8, 0.6, 0.5, room.trim);
-    box(b, cx, 1.1, tz, 1.5, 0.9, 0.1, 0x101016);
-    solid(cx, tz, 1.8, 0.6, 1.5);
-    var screen = glow(cx, 1.1, tz - 0.06, 1.34, 0.76, 0.02, 0x5a8ad8);
+  // ---------- homes ----------
+  // Each place is laid out the way its outside promises. The Dockside Flat
+  // is a harbor box, and inside it is one room: you walk in on the bed. The
+  // Strip Condo is a slim tower flat — a living room with the kitchen and the
+  // neon out the window, and the bedroom through a door at the back. The
+  // Marina Villa is the two-tier spread it looks like from the road: a hall,
+  // a lounge under a double-height ceiling, a kitchen and a dining table
+  // under the gallery, and stairs up to the bedroom.
+  function openHome() { if (GAME.shops && cur && cur.loc) GAME.shops.open(cur.loc); }
+  // what stands at y0 (0 downstairs) is solid on its own floor only
+  function solidAt(x, z, w, d, h, y0) { if (y0) solid(x, z, w, d, y0 + h, y0); else solid(x, z, w, d, h); }
+  function bed(b, room, bx, bz, y0, side, via) {
+    box(b, bx, y0 + 0.22, bz, 2.0, 0.44, 2.6, room.trim);
+    box(b, bx, y0 + 0.56, bz, 1.86, 0.24, 2.46, 0xf4f0ea);
+    box(b, bx, y0 + 0.74, bz + 0.92, 1.4, 0.14, 0.42, 0xffffff);
+    box(b, bx, y0 + 0.71, bz - 0.38, 1.9, 0.1, 1.66, room.accent);
+    box(b, bx, y0 + 0.85, bz + 1.32, 2.0, 1.2, 0.12, room.trim);
+    solidAt(bx, bz, 2.0, 2.6, 0.7, y0);
+    // a nightstand and its lamp, on the side away from the mat (if the wall
+    // is not right there)
+    var nx = bx - side * 1.35;
+    if (Math.abs(nx - room.ox) < room.w / 2 - 0.3) {
+      box(b, nx, y0 + 0.3, bz + 0.9, 0.5, 0.6, 0.5, room.trim);
+      glow(nx, y0 + 0.78, bz + 0.9, 0.26, 0.3, 0.26, 0xffe2a8);
+      solidAt(nx, bz + 0.9, 0.5, 0.5, 0.6, y0);
+    }
+    ring(room, bx + side * 1.75, bz - 0.5, room.accent, 'YOUR BED — step on to sleep it off', openHome, y0, via);
+  }
+  // a wardrobe against a side wall; face is the way its doors open (+1: +x)
+  function wardrobe(b, room, wx, wz, y0, face, via) {
+    var door = (room.trim & 0xfefefe) >> 1;
+    box(b, wx, y0 + 1.05, wz, 0.6, 2.1, 1.3, room.trim);
+    box(b, wx + face * 0.31, y0 + 1.05, wz - 0.32, 0.02, 1.9, 0.6, door);
+    box(b, wx + face * 0.31, y0 + 1.05, wz + 0.32, 0.02, 1.9, 0.6, door);
+    box(b, wx + face * 0.33, y0 + 1.1, wz - 0.06, 0.04, 0.16, 0.04, 0xffd24a);
+    box(b, wx + face * 0.33, y0 + 1.1, wz + 0.06, 0.04, 0.16, 0.04, 0xffd24a);
+    solidAt(wx, wz, 0.6, 1.3, 2.1, y0);
+    ring(room, wx + face * 1.25, wz, room.accent, 'YOUR WARDROBE — step on to change', function () {
+      if (GAME.shops) GAME.shops.open(WARDROBE);
+    }, y0, via);
+  }
+  // a couch facing (fx, fz) — one of them 0 — and a TV facing back at it
+  function couch(b, room, cx, cz, fx, fz, y0) {
+    var alongX = fz !== 0;
+    function part(lx, lz, w, h, d, y) {
+      var x = alongX ? cx + lx : cx + lz * fx, z = alongX ? cz + lz * fz : cz + lx;
+      box(b, x, y0 + y, z, alongX ? w : d, h, alongX ? d : w, room.sofa);
+    }
+    part(0, 0, 2.6, 0.48, 0.95, 0.24);
+    part(0, -0.4, 2.6, 0.8, 0.2, 0.62);
+    part(-1.38, 0, 0.18, 0.8, 0.95, 0.4);
+    part(1.38, 0, 0.18, 0.8, 0.95, 0.4);
+    solidAt(alongX ? cx : cx - fx * 0.1, alongX ? cz - fz * 0.1 : cz, alongX ? 3.0 : 1.1, alongX ? 1.1 : 3.0, 0.8, y0);
+  }
+  function tv(b, room, x, z, fx, fz, y0) {
+    var alongX = fz !== 0;
+    box(b, x, y0 + 0.3, z, alongX ? 1.8 : 0.5, 0.6, alongX ? 0.5 : 1.8, room.trim);
+    box(b, x, y0 + 1.1, z, alongX ? 1.5 : 0.1, 0.9, alongX ? 0.1 : 1.5, 0x101016);
+    solidAt(x, z, alongX ? 1.8 : 0.6, alongX ? 0.6 : 1.8, 1.5, y0);
+    var screen = glow(x + fx * 0.06, y0 + 1.1, z + fz * 0.06, alongX ? 1.34 : 0.02, 0.76, alongX ? 0.02 : 1.34, 0x5a8ad8);
     screen.material = new THREE.MeshBasicMaterial({ color: 0x5a8ad8 });
     room.anim.push({ tv: screen });
-    // a window on the city at night, on the back wall between them
-    var wx = ox - 0.2, wz = oz + d / 2 - 0.02;
-    box(b, wx, 1.6, wz, 2.8, 1.4, 0.04, 0x0c1430);
-    for (var k = 0; k < 9; k++) {
-      var bh = 0.3 + ((k * 37) % 7) * 0.12;
-      box(b, wx - 1.2 + k * 0.3, 0.9 + bh / 2 + 0.05, wz - 0.03, 0.22, bh, 0.02, 0x1c2850);
-      box(b, wx - 1.2 + k * 0.3, 0.95 + bh * 0.6, wz - 0.04, 0.05, 0.05, 0.02, 0xffe9a0);
+  }
+  // A window on the night, on a wall running along x (alongX) or z; nrm is
+  // the side the room is on (+1/-1 along the wall's normal). 'city' is a
+  // skyline with lit windows, 'sea' the marina: water, the far shore, masts.
+  function nightWindow(b, x, z, alongX, nrm, w, y0, hgt, view) {
+    var cy = y0 + 0.9 + hgt / 2;
+    function bx(a, off, ww, hh, dd, y, col) {
+      box(b, alongX ? x + a : x + nrm * off, y, alongX ? z + nrm * off : z + a, alongX ? ww : dd, hh, alongX ? dd : ww, col);
     }
-    box(b, wx, 2.24, wz - 0.03, 2.6, 0.04, 0.02, 0xff4fa3);
-    box(b, wx, 1.6, wz - 0.05, 2.9, 0.06, 0.06, room.trim);
-    // a lamp and a plant by the door
-    box(b, ox - w / 2 + 0.6, 0.8, oz - d / 2 + 0.9, 0.08, 1.6, 0.08, 0x30303a);
-    glow(ox - w / 2 + 0.6, 1.7, oz - d / 2 + 0.9, 0.5, 0.36, 0.5, 0xffe2a8);
-    box(b, ox + w / 2 - 0.6, 0.25, oz - d / 2 + 0.9, 0.5, 0.5, 0.5, 0xb06a3a);
-    box(b, ox + w / 2 - 0.6, 0.8, oz - d / 2 + 0.9, 0.7, 0.7, 0.7, 0x3a8a4a);
-    box(b, ox + w / 2 - 0.6, 1.25, oz - d / 2 + 0.9, 0.45, 0.45, 0.45, 0x4aa05a);
-    // the wardrobe, halfway down the left wall: everything you own, on
-    // hangers (shops.js, kind 'wardrobe') — clear of the path in from the door
-    var wx2 = ox - w / 2 + 0.35, wz2 = oz - 0.5;
-    box(b, wx2, 1.05, wz2, 0.6, 2.1, 1.3, room.trim);
-    box(b, wx2 + 0.31, 1.05, wz2 - 0.32, 0.02, 1.9, 0.6, (room.trim & 0xfefefe) >> 1);
-    box(b, wx2 + 0.31, 1.05, wz2 + 0.32, 0.02, 1.9, 0.6, (room.trim & 0xfefefe) >> 1);
-    box(b, wx2 + 0.33, 1.1, wz2 - 0.06, 0.04, 0.16, 0.04, 0xffd24a);
-    box(b, wx2 + 0.33, 1.1, wz2 + 0.06, 0.04, 0.16, 0.04, 0xffd24a);
-    solid(wx2, wz2, 0.6, 1.3, 2.1);
-    ring(room, wx2 + 1.25, wz2, room.accent, 'YOUR WARDROBE — step on to change', function () {
-      if (GAME.shops) GAME.shops.open(WARDROBE);
+    bx(0, 0, w, hgt, 0.04, cy, 0x0c1430);
+    var n = Math.max(3, Math.round((w - 0.3) / 0.3) + 1), lo = cy - hgt / 2;
+    for (var k = 0; k < n; k++) {
+      var a = -w / 2 + 0.15 + k * (w - 0.3) / (n - 1), q = (k * 37) % 7;
+      if (view === 'sea') {
+        if (k % 3 === 1) {
+          bx(a, 0.03, 0.04, hgt * 0.45, 0.02, lo + 0.2 + hgt * 0.225, 0xc8d0e0);           // a mast
+          bx(a, 0.04, 0.06, 0.06, 0.02, lo + 0.2 + hgt * 0.45, 0xffe9a0);                  // its light
+        }
+      } else {
+        var bh = Math.min(hgt * 0.8, 0.3 + q * 0.12);
+        bx(a, 0.03, 0.22, bh, 0.02, lo + bh / 2 + 0.05, 0x1c2850);
+        bx(a, 0.04, 0.05, 0.05, 0.02, lo + 0.05 + bh * 0.6, 0xffe9a0);
+      }
+    }
+    if (view === 'sea') {
+      bx(0, 0.02, w, 0.2, 0.02, lo + 0.1, 0x123a5a);                // the water
+      bx(0, 0.025, w, 0.03, 0.02, lo + 0.22, 0x2a7a9a);             // a line of moonlight on it
+      bx(0, 0.02, w, 0.12, 0.02, lo + hgt * 0.62, 0x1a2440);        // the far shore
+    }
+    bx(0, 0.03, w - 0.2, 0.04, 0.02, lo + hgt - 0.06, 0xff4fa3);   // the neon line up top
+    bx(0, 0.05, w + 0.1, 0.06, 0.06, cy, 0x8a8a90);                 // the transom
+  }
+  function plant(b, x, z, y0) {
+    box(b, x, y0 + 0.25, z, 0.5, 0.5, 0.5, 0xb06a3a);
+    box(b, x, y0 + 0.8, z, 0.7, 0.7, 0.7, 0x3a8a4a);
+    box(b, x, y0 + 1.25, z, 0.45, 0.45, 0.45, 0x4aa05a);
+    solidAt(x, z, 0.6, 0.6, 1.0, y0);
+  }
+  function floorLamp(b, x, z, y0) {
+    box(b, x, y0 + 0.8, z, 0.08, 1.6, 0.08, 0x30303a);
+    glow(x, y0 + 1.7, z, 0.5, 0.36, 0.5, 0xffe2a8);
+  }
+  function rug(b, x, z, w, d, y0, col) { box(b, x, y0 + 0.012, z, w, 0.024, d, col); }
+  // a kitchen run along a wall: base units, the worktop, the cupboards
+  function kitchen(b, x, z, alongX, len, nrm, y0) {
+    var off = 0.45 * nrm;
+    var bx2 = alongX ? x : x + off, bz2 = alongX ? z + off : z;
+    box(b, bx2, y0 + 0.45, bz2, alongX ? len : 0.8, 0.9, alongX ? 0.8 : len, 0xd8d8e0);
+    box(b, bx2, y0 + 0.92, bz2, alongX ? len + 0.06 : 0.86, 0.06, alongX ? 0.86 : len + 0.06, 0x30303a);
+    var ux = alongX ? x : x + 0.2 * nrm, uz = alongX ? z + 0.2 * nrm : z;
+    box(b, ux, y0 + 1.75, uz, alongX ? len - 0.4 : 0.4, 0.7, alongX ? 0.4 : len - 0.4, 0xe8e8f0);
+    solidAt(bx2, bz2, alongX ? len : 0.8, alongX ? 0.8 : len, 1.0, y0);
+  }
+  function table(b, x, z, w, d, y0, col, chairs) {
+    box(b, x, y0 + 0.74, z, w, 0.06, d, col);
+    box(b, x, y0 + 0.37, z, 0.14, 0.74, 0.14, 0x30303a);
+    solidAt(x, z, w, d, 0.8, y0);
+    for (var c = 0; c < (chairs || 0); c++) {
+      var side = c % 2 ? 1 : -1, along = Math.floor(c / 2), na = Math.ceil(chairs / 2);
+      var cx = x + (na > 1 ? -w / 2 + w * (along + 0.5) / na : 0), cz = z + side * (d / 2 + 0.35);
+      box(b, cx, y0 + 0.45, cz, 0.42, 0.06, 0.42, 0x6a4a32);
+      box(b, cx, y0 + 0.75, cz + side * 0.19, 0.42, 0.55, 0.05, 0x6a4a32);
+    }
+  }
+  // an inside wall along x at z, from x0 to x1, with a doorway (y0: its floor)
+  function partition(b, room, z, x0, x1, doorX, doorW, y0, top) {
+    var hh = top - y0, d0 = doorX - doorW / 2, d1 = doorX + doorW / 2;
+    [[x0, d0], [d1, x1]].forEach(function (seg) {
+      var len = seg[1] - seg[0];
+      if (len <= 0.05) return;
+      box(b, (seg[0] + seg[1]) / 2, y0 + hh / 2, z, len, hh, 0.2, room.wall);
+      solidAt((seg[0] + seg[1]) / 2, z, len, 0.24, hh, y0);
     });
-    // a picture, on the wall by the door
+    box(b, doorX, top - (hh - 2.3) / 2, z, doorW, hh - 2.3, 0.2, room.wall);    // over the door
+    box(b, doorX, y0 + 2.32, z, doorW + 0.16, 0.06, 0.26, room.trim);           // the frame
+    box(b, d0 - 0.04, y0 + 1.15, z, 0.08, 2.3, 0.26, room.trim);
+    box(b, d1 + 0.04, y0 + 1.15, z, 0.08, 2.3, 0.26, room.trim);
+  }
+
+  function furnishHome(b, room) {
+    if (room.layout === 'villa') furnishVilla(b, room);
+    else if (room.layout === 'condo') furnishCondo(b, room);
+    else furnishFlat(b, room);
+  }
+  // one room: the bed at the back, a couch and a TV, a window on the night
+  function furnishFlat(b, room) {
+    var ox = room.ox, oz = room.oz, w = room.w, d = room.d;
+    rug(b, ox, oz + 0.3, w * 0.42, d * 0.38, 0, (room.accent & 0xfefefe) >> 1);
+    bed(b, room, ox + w / 2 - 1.3, oz + d / 2 - 1.6, 0, -1);
+    couch(b, room, ox - w / 2 + 2.2, oz + d / 2 - 3.4, 0, 1, 0);
+    tv(b, room, ox - w / 2 + 2.2, oz + d / 2 - 0.5, 0, -1, 0);
+    nightWindow(b, ox - 0.2, oz + d / 2 - 0.02, true, -1, 2.8, 0, 1.4, 'city');
+    floorLamp(b, ox - w / 2 + 0.6, oz - d / 2 + 0.9, 0);
+    plant(b, ox + w / 2 - 0.6, oz - d / 2 + 0.9, 0);
+    wardrobe(b, room, ox - w / 2 + 0.35, oz - 0.5, 0, 1);
     box(b, ox + w / 4, 1.7, oz - d / 2 + 0.03, 1.2, 0.8, 0.04, room.accent);
     box(b, ox + w / 4, 1.7, oz - d / 2 + 0.05, 1.0, 0.6, 0.04, 0xf4e0c0);
-    if (room.kitchen) {
-      // a counter down the right-hand wall
-      var kx = ox + w / 2 - 0.45, kz = oz - 0.6;
-      box(b, kx, 0.45, kz, 0.8, 0.9, 3.4, 0xd8d8e0);
-      box(b, kx, 0.92, kz, 0.86, 0.06, 3.46, 0x30303a);
-      box(b, kx + 0.2, 1.7, kz, 0.4, 0.7, 3.0, 0xe8e8f0);
-      solid(kx, kz, 0.8, 3.4, 1.0);
+  }
+  // a living room with the kitchen, and the bedroom through a door at the back
+  function furnishCondo(b, room) {
+    var ox = room.ox, oz = room.oz, w = room.w, d = room.d, h = room.h;
+    var pz = oz + 1.0, doorX = ox + 3.6;
+    var via = [{ x: doorX, z: pz - 1.2 }, { x: doorX, z: pz + 1.2 }];
+    room.via = via;
+    // the bedroom
+    bed(b, room, ox - 3.4, oz + d / 2 - 1.6, 0, 1, via);
+    wardrobe(b, room, ox + w / 2 - 0.35, oz + d / 2 - 1.7, 0, -1, via);
+    rug(b, ox - 1.2, oz + 3.2, 4.2, 2.6, 0, (room.accent & 0xfefefe) >> 1);
+    nightWindow(b, ox + 1.6, oz + d / 2 - 0.02, true, -1, 3.0, 0, 1.4, 'city');
+    partition(b, room, pz, ox - w / 2, ox + w / 2, doorX, 1.6, 0, h);
+    // the living room: the TV against the bedroom wall, the couch facing it
+    tv(b, room, ox - 3.2, pz - 0.45, 0, -1, 0);
+    couch(b, room, ox - 3.2, oz - 2.1, 0, 1, 0);
+    rug(b, ox - 3.2, oz - 0.9, 3.8, 2.6, 0, 0x3a2a5a);
+    kitchen(b, ox - w / 2, oz - 3.0, false, 3.4, 1, 0);
+    table(b, ox + 2.6, oz - 3.1, 1.4, 0.9, 0, 0x8a6ab0, 2);
+    // neon out every window: the long one down the right-hand wall
+    nightWindow(b, ox + w / 2 - 0.02, oz - 2.3, false, -1, 3.8, 0, 1.6, 'city');
+    floorLamp(b, ox - w / 2 + 0.6, oz - d / 2 + 0.6, 0);
+    plant(b, ox + w / 2 - 0.6, oz - d / 2 + 0.7, 0);
+    box(b, ox + w / 4, 1.7, oz - d / 2 + 0.03, 1.2, 0.8, 0.04, room.accent);
+    box(b, ox + w / 4, 1.7, oz - d / 2 + 0.05, 1.0, 0.6, 0.04, 0xf4e0c0);
+    glow(ox - 2, h - 0.06, oz - 2, 2.4, 0.05, 0.3, 0xfff2dc);
+    glow(ox - 1, h - 0.06, oz + 3.2, 2.0, 0.05, 0.3, 0xfff2dc);
+  }
+  // two storeys: the hall and the lounge, the kitchen and the dining table
+  // under the gallery, and the stairs up to the bedroom
+  function furnishVilla(b, room) {
+    var ox = room.ox, oz = room.oz, w = room.w, d = room.d, h = room.h;
+    var Y = room.upper, under = Y - 0.25;
+    var sx = ox - w / 2 + 0.8, sw = 1.5, s0 = oz - 6.0, s1 = oz;      // the stairs
+    var up = [{ x: sx, z: s0 - 0.5 }, { x: sx, z: s1 + 0.9 }];
+    room.via = up;
+    room.slab = { y: Y, under: under, minX: ox - w / 2, maxX: ox + w / 2, minZ: s1, maxZ: oz + d / 2 };
+    // ---- upstairs: the floor, and the bedroom on it
+    GAME.city.addDeck({ x: ox, z: (s1 + oz + d / 2) / 2, w: w, len: oz + d / 2 - s1, rot: 0, y0: Y, y1: Y, floor: true });
+    box(b, ox, Y - 0.125, (s1 + oz + d / 2) / 2, w, 0.25, oz + d / 2 - s1, room.floor);
+    bed(b, room, ox + 2.0, oz + d / 2 - 1.6, Y, -1, up);
+    wardrobe(b, room, ox - w / 2 + 0.35, oz + 4.5, Y, 1, up);
+    rug(b, ox + 2.0, oz + 4.6, 4.4, 3.4, Y, (room.accent & 0xfefefe) >> 1);
+    nightWindow(b, ox - 2.6, oz + d / 2 - 0.02, true, -1, 3.2, Y, 1.9, 'sea');
+    nightWindow(b, ox + w / 2 - 0.02, oz + 3.6, false, -1, 3.0, Y, 1.5, 'sea');
+    table(b, ox + w / 2 - 1.0, oz + 1.6, 0.9, 1.6, Y, room.trim, 0);   // a desk
+    floorLamp(b, ox + w / 2 - 0.5, oz + 0.6, Y);
+    plant(b, ox - 3.6, oz + d / 2 - 0.6, Y);
+    glow(ox + 2, h - 0.06, oz + 4.2, 3.0, 0.05, 0.4, 0xfff2dc);
+    // the gallery rail along the edge of the upstairs, open where the stairs arrive
+    var r0 = sx + sw / 2, r1 = ox + w / 2;
+    box(b, (r0 + r1) / 2, Y + 1.0, s1 + 0.05, r1 - r0, 0.08, 0.12, room.trim);
+    for (var bl = r0 + 0.25; bl < r1; bl += 0.5) box(b, bl, Y + 0.5, s1 + 0.05, 0.05, 1.0, 0.05, room.trim);
+    solid((r0 + r1) / 2, s1 + 0.05, r1 - r0, 0.24, Y + 1.0, Y);
+    // ---- the stairs: eighteen steps up the left-hand wall
+    GAME.city.addDeck({ x: sx, z: (s0 + s1) / 2, w: sw, len: s1 - s0, rot: 0, y0: 0, y1: Y, floor: true });
+    var steps = 18, tread = (s1 - s0) / steps;
+    for (var st = 0; st < steps; st++) {
+      var top = Y * (st + 1) / steps;
+      box(b, sx, top / 2, s0 + tread * (st + 0.5), sw, top, tread, st % 2 ? room.trim : (room.trim & 0xfefefe) >> 1);
     }
+    // Nobody walks in under them, past the part low enough to step onto
+    // from the side. Kept low, so it is always under the toes of somebody
+    // climbing: their feet are a few centimetres lower than the stair at the
+    // front of them, and a taller block stopped them at the third step.
+    var hi = s0 + (s1 - s0) * 0.6 / Y;
+    solid(sx, (hi + s1) / 2, sw, s1 - hi, 0.45);
+    // the handrail up the open side
+    var rise = Math.atan2(Y, s1 - s0), rl = Math.hypot(Y, s1 - s0);
+    var rail = new THREE.Mesh(sharedBoxGeo(0.07, 0.07, rl), sharedBasic(room.trim));
+    rail.position.set(sx + sw / 2, Y / 2 + 0.95, (s0 + s1) / 2);
+    rail.rotation.x = -rise;
+    GAME.scene.add(rail);
+    for (var bp = 1; bp < 6; bp++) {
+      var pzz = s0 + (s1 - s0) * bp / 6, py = Y * bp / 6;
+      box(b, sx + sw / 2, py + 0.48, pzz, 0.05, 0.95, 0.05, room.trim);
+    }
+    // ---- downstairs: the hall, under a double-height ceiling and a chandelier
+    plant(b, ox - 1.4, oz - d / 2 + 0.7, 0);
+    plant(b, ox + 1.4, oz - d / 2 + 0.7, 0);
+    rug(b, ox, oz - 4.2, 3.0, 3.6, 0, (room.accent & 0xfefefe) >> 1);
+    for (var ch = 0; ch < 5; ch++) glow(ox + Math.sin(ch * 1.26) * 0.5, h - 1.4 - (ch % 2) * 0.25, oz - 3.6 + Math.cos(ch * 1.26) * 0.5, 0.18, 0.3, 0.18, 0xfff0c8);
+    glow(ox, h - 0.6, oz - 3.6, 0.06, 1.2, 0.06, 0xb8a888);
+    // the lounge, to the right: a couch facing the TV on the wall, and the
+    // marina out of a window two storeys high
+    tv(b, room, ox + w / 2 - 0.35, oz - 3.4, -1, 0, 0);
+    couch(b, room, ox + 4.4, oz - 3.4, 1, 0, 0);
+    table(b, ox + 6.0, oz - 3.4, 0.8, 1.4, 0, 0x3a2a20, 0);
+    rug(b, ox + 5.6, oz - 3.4, 3.6, 4.0, 0, 0x2a6a7a);
+    nightWindow(b, ox + 5.0, oz - d / 2 + 0.02, true, 1, 4.4, 0, 4.6, 'sea');
+    // a piano by the stairs, because it is a villa
+    box(b, ox - 4.6, 0.5, oz - 3.2, 1.5, 1.0, 1.8, 0x101014);
+    box(b, ox - 4.6, 1.02, oz - 3.95, 1.4, 0.06, 0.3, 0xf4f4f4);
+    solid(ox - 4.6, oz - 3.2, 1.5, 1.8, 1.0);
+    // under the gallery: the kitchen along the back wall, an island, and the
+    // dining table
+    kitchen(b, ox + 3.0, oz + d / 2, true, 7.0, -1, 0);
+    box(b, ox + 3.0, 0.48, oz + 4.2, 3.0, 0.96, 1.0, 0xd8d8e0);
+    box(b, ox + 3.0, 0.98, oz + 4.2, 3.1, 0.05, 1.1, 0x30303a);
+    solid(ox + 3.0, oz + 4.2, 3.0, 1.0, 1.0);
+    table(b, ox - 3.4, oz + 3.4, 2.4, 1.1, 0, 0x6a4a32, 6);
+    for (var cl = 0; cl < 3; cl++) glow(ox - 4 + cl * 4, under - 0.04, oz + 3.6, 1.6, 0.05, 0.3, 0xfff2dc);
+    box(b, ox - w / 4, 1.7, oz - d / 2 + 0.03, 1.4, 1.0, 0.04, room.accent);
+    box(b, ox - w / 4, 1.7, oz - d / 2 + 0.05, 1.2, 0.8, 0.04, 0xf4e0c0);
   }
 
   function furnishCasino(b, room) {
@@ -515,8 +717,9 @@ GAME.interiors = (function () {
     if (loc.kind === 'casino' || byId[loc.id].kind === 'shop') return true;
     return loc.kind === 'safehouse' && !!(GAME.shops && GAME.shops.owns(loc.sh.id));
   }
-  // true when the mat has been dealt with here — gone in, or turned away
-  function enter(loc) {
+  // true when the mat has been dealt with here — gone in, or turned away.
+  // `then` runs once you are through the door.
+  function enter(loc, then) {
     var room = byId[loc.id], P = GAME.player;
     if (!room || cur || pending) return false;
     // (a shop can be popped into mid-job, the way its doormat always could)
@@ -538,13 +741,15 @@ GAME.interiors = (function () {
       GAME.cam.yaw = 0; GAME.cam.pitch = 0.2; GAME.cam.x = 0;
       for (var i = 0; i < room.rings.length; i++) room.rings[i].armed = false;
       GAME.hud.message(room.name + (room.kind === 'home'
-        ? (GAME.police.wanted > 0 ? ' — nobody can see you in here. The bed is at the back.' : ' — the bed is at the back, your wardrobe on the left. The mat by the door takes you out.')
+        ? (GAME.police.wanted > 0 ? ' — nobody can see you in here. ' + room.where.charAt(0).toUpperCase() + room.where.slice(1) + '.'
+          : ' — ' + room.where + '. The mat by the door takes you out.')
         : room.kind === 'shop' ? room.hello + (GAME.police.wanted > 0 && room.shop !== 'bribe' ? ' The law is waiting outside.' : '')
           : ' — the wheel is at the back, the bar on the left. The mat by the door takes you out.'), 4);
       if (room.music && GAME.audio.radio && !GAME.audio.muted) GAME.audio.radio.setVolume(0.45);
       GAME.applyTimeOfDay(GAME.timeOfDay);   // the room's own light (main.js)
       GAME.track('interior-' + room.id);
       if (room.kind === 'casino' && GAME.lola) GAME.lola.first('casino');
+      if (then) then();
     });
     return true;
   }
@@ -602,6 +807,7 @@ GAME.interiors = (function () {
       var r = room.rings[i];
       r.mesh.material.opacity = 0.5 + 0.25 * Math.sin(GAME.time * 3 + i);
       var d2 = U.dist2(P.pos.x, P.pos.z, r.x, r.z);
+      if (Math.abs(P.pos.y - r.y) > 1.2) d2 = 1e9;     // a mat on the other floor
       if (d2 > 1.7 * 1.7) r.armed = true;
       if (d2 < 16 && d2 < hd) { hd = d2; hint = r.label; }
       if (r.armed && d2 < 1.0 && !GAME.shopOpen) { r.armed = false; r.act(); return; }
@@ -631,11 +837,27 @@ GAME.interiors = (function () {
     }
   }
 
-  // what the camera may not rise past, in here
-  function ceiling() { return cur ? cur.room.h - 0.3 : null; }
+  // What the camera at (x, z) may not rise past, in here: the room's
+  // ceiling — or, downstairs in a house with an upstairs, the underside of
+  // that floor whenever you or the camera are under it (above it, the camera
+  // would be looking at the top of the floor and not at you). Out in the
+  // double-height hall it has the whole height. And upstairs it stays above
+  // the floor you stand on.
+  function onUpper(room) { return room.slab && GAME.player.pos.y >= room.slab.y - 1.0; }
+  function ceiling(x, z) {
+    if (!cur) return null;
+    var room = cur.room, sl = room.slab;
+    if (sl && !onUpper(room) && (GAME.player.pos.z > sl.minZ - 0.6 || z === undefined || z > sl.minZ - 0.6)) return sl.under - 0.3;
+    return room.h - 0.3;
+  }
+  function camFloor(x, z) {
+    if (!cur || !onUpper(cur.room)) return null;
+    var sl = cur.room.slab;
+    return x > sl.minX && x < sl.maxX && z > sl.minZ - 0.3 && z < sl.maxZ ? sl.y + 0.45 : null;
+  }
 
   return {
-    build: build, update: update, enter: enter, enterable: enterable, reset: reset, ceiling: ceiling,
+    build: build, update: update, enter: enter, enterable: enterable, reset: reset, ceiling: ceiling, camFloor: camFloor,
     get current() { return cur ? cur.room : null; },
     get door() { return cur ? cur.door : null; },
     get busy() { return !!pending; },

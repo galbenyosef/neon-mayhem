@@ -416,8 +416,17 @@ GAME.shops = (function () {
     refreshGarageSpots();   // this lot joins the fleet's rounds
     GAME.track('safehouse-bought');
     if (GAME.lola) GAME.lola.first('home');
-    note('The keys are yours.');
     GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all, with your garage parked outside.', 5);
+    // The keys are yours, so in you go. The menu used to stay up and turn
+    // straight into SLEEP IT OFF — the first thing a new owner saw of the
+    // place was the offer of a nap on the pavement. The card comes once you
+    // are through the door (or at once, if the door is not open to you now:
+    // on a job, say).
+    close();
+    var card = function () { showDeedCard(loc); };
+    if (!(GAME.interiors && GAME.interiors.enter(loc, card) && GAME.interiors.busy)) card();
+  }
+  function showDeedCard(loc) {
     GAME.share.show({
       slug: 'safehouse-' + loc.sh.id,
       eyebrow: 'COSTA ROSA · 1986',

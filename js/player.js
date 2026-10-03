@@ -1176,7 +1176,9 @@ function updateOnFoot(dt) {
 
 // G (or the horn button): a stolen cruiser's lights and siren go on and off;
 // anything else has a horn. Neither existed — a cruiser was a white car with
-// a dead lightbar, and nobody could honk at anybody.
+// a dead lightbar, and nobody could honk at anybody. The ice cream truck's
+// horn is its chimes, as the van's was in Vice City: on a round, the jingle
+// is what brings people to the hatch (missions.js).
 function hornAndSiren(car, dt, T) {
   var press = GAME.keyPressed('KeyG') || T.horn;
   T.horn = false;
@@ -1184,6 +1186,13 @@ function hornAndSiren(car, dt, T) {
     if (press) {
       car.sirenOn = !car.sirenOn;
       GAME.hud.message(car.sirenOn ? 'Lights and siren on — traffic will pull over.' : 'Lights and siren off.', 1.8);
+    }
+  } else if (car.type === 'icecream') {
+    // one jingle at a time: it runs a little over a second
+    if (press && (car.honkCd || 0) <= 0) {
+      car.honkCd = 1.25;
+      GAME.audio.chime();
+      if (GAME.missions.chimed) GAME.missions.chimed(car);
     }
   } else if (press && (car.honkCd || 0) <= 0) {
     car.honkCd = 0.35;
@@ -1450,8 +1459,11 @@ function updateCamera(dt) {
   cam.y = U.damp(cam.y || cy, cy, 20, dt);
   cam.z = U.damp(cam.z || cz, cz, 20, dt);
   // indoors, under the ceiling rather than up through it
-  var ceil = GAME.interiors && GAME.interiors.ceiling();
+  var ceil = GAME.interiors && GAME.interiors.ceiling(cam.x, cam.z);
   if (ceil !== null && ceil !== undefined && cam.y > ceil) cam.y = ceil;
+  // ...and upstairs, above the floor you are standing on, not under it
+  var cfl = GAME.interiors && GAME.interiors.camFloor && GAME.interiors.camFloor(cam.x, cam.z);
+  if (cfl !== null && cfl !== undefined && cam.y < cfl) cam.y = cfl;
   // (never below the drawn ground either: the beach slopes down to the
   // waterline underneath, but its sand is drawn level, and a camera held off
   // the slope sat under it — swimming off the beach you could not see yourself)

@@ -104,7 +104,13 @@ GAME.city = (function () {
   // Walkable surfaces that are not terrain: a flight of steps, a terrace.
   // A deck is a rectangle that may slope along its local +z, so one entry
   // describes a staircase and another the landing at the top of it.
+  //
+  // A deck marked `floor` is one storey of a building with more than one (an
+  // upstairs, and the stairs up to it): it is underfoot only for somebody up
+  // at its level, so the ground floor under it stays the ground floor. Asked
+  // with no height, only the part of it at street level counts.
   city.decks = [];
+  var FLOOR_STEP = 0.6;
   city.addDeck = function (d) {
     d.cos = Math.cos(d.rot || 0); d.sin = Math.sin(d.rot || 0);
     var r = Math.max(d.w, d.len) / 2 + 1;
@@ -112,7 +118,7 @@ GAME.city = (function () {
     city.decks.push(d);
     return d;
   };
-  city.deckAt = function (x, z) {
+  city.deckAt = function (x, z, atY) {
     var best = null;
     for (var i = 0; i < city.decks.length; i++) {
       var d = city.decks[i];
@@ -122,6 +128,7 @@ GAME.city = (function () {
       if (Math.abs(lx) > d.w / 2 || Math.abs(lz) > d.len / 2) continue;
       var t = (lz + d.len / 2) / d.len;
       var y = d.y0 + (d.y1 - d.y0) * t;
+      if (d.floor && (atY === undefined ? y > 0.5 : atY < y - FLOOR_STEP)) continue;
       if (best === null || y > best) best = y;
     }
     return best;
@@ -259,7 +266,7 @@ GAME.city = (function () {
       if (cy !== null) return cy;
     }
     if (city.decks.length) {
-      var dy = city.deckAt(x, z);
+      var dy = city.deckAt(x, z, atY);
       if (dy !== null) return dy;
     }
     // a landmass may carry its own relief; Costa Rosa is flat, others need not be

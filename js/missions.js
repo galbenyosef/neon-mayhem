@@ -594,12 +594,13 @@ GAME.missions = (function () {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
-      targets: [], timeLeft: 60, chimeT: 0, routeCp: null
+      targets: [], timeLeft: 60, callT: 0, routeCp: null
     };
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
-    GAME.hud.message('Round 1 — sell 4 before the clock runs out. The chimes do the work: pull up where there are people on the pavement and they will come to the hatch. Leave the truck to clock off.', 6);
+    GAME.hud.message('Round 1 — sell 4 before the clock runs out. Pull up where there are people on the pavement and sound the horn (' + hornKey() +
+      '): the chimes bring them to the hatch. Leave the truck to clock off.', 6);
     GAME.audio.pickup();
   }
 
@@ -784,33 +785,43 @@ GAME.missions = (function () {
     updateCp();
   }
 
+  // the horn on the ice cream truck is its chimes (player.js): on a round,
+  // they carry for a while, and that is when people come
+  var CHIME_CARRY = 9, CHIME_R = 30;
+  function hornKey() { return GAME.isTouch ? '📢' : GAME.controls ? GAME.controls.label('KeyG') : 'G'; }
+  function chimed() {
+    if (!active || active.def.type !== 'icecream') return;
+    active.callT = CHIME_CARRY;
+    active.walkUpT = Math.min(active.walkUpT || 0, 0.4);
+  }
   function updateIceCream(dt, P) {
     if (!P.inCar || !P.car || P.car.type !== 'icecream') { endJob('clocked off'); return; }
     if (P.car.dead) { endJob('truck totalled'); return; }
     active.timeLeft -= dt;
     if (active.timeLeft <= 0) { endJob('out of time'); return; }
     var f = GAME.focus();
-    // the chimes, on a loop, because that is the whole job. No marker, no
-    // route, no "crowd" pin — you roam, they hear you. The map pointing at a
-    // spot made it a delivery run, which it isn't.
-    active.chimeT -= dt;
-    if (active.chimeT <= 0) { active.chimeT = 3.4; GAME.audio.chime(); }
-    // Anyone on the pavement hears the chimes: stop the truck and whoever is
-    // close enough wanders over to the hatch. That is the entire job — nobody
-    // is spawned waiting for you and nobody is flagging you down. One cone
-    // per person: the served walk away and stay away.
+    // No marker, no route, no "crowd" pin — you roam, and you play the
+    // chimes where there are people. The map pointing at a spot made it a
+    // delivery run, which it isn't. The chimes used to play by themselves on
+    // a loop; now they are the horn, as they were in Vice City, and nobody
+    // comes who has not heard them.
+    active.callT = Math.max(0, (active.callT || 0) - dt);
+    // Anyone on the pavement in earshot of the chimes: stop the truck and
+    // whoever is close enough wanders over to the hatch. That is the entire
+    // job — nobody is spawned waiting for you and nobody is flagging you
+    // down. One cone per person: the served walk away and stay away.
     replaceLostTargets();
     active.walkUpT = (active.walkUpT || 0) - dt;
-    if (Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
+    if (active.callT > 0 && Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
       var peds = GAME.world.peds;
       for (var w = 0; w < peds.length; w++) {
         var pd = peds[w];
         if (pd.dead || pd.isCop || pd.jobPed || pd.iceServed) continue;
-        if (U.dist2(f.x, f.z, pd.pos.x, pd.pos.z) > 24 * 24) continue;
+        if (U.dist2(f.x, f.z, pd.pos.x, pd.pos.z) > CHIME_R * CHIME_R) continue;
         pd.jobPed = true;
         pd.state = 'wait';
         active.targets.push({ x: pd.pos.x, z: pd.pos.z, ped: pd, boarding: true, walkUp: true });
-        active.walkUpT = 2.2;
+        active.walkUpT = 1.2;
         break;
       }
     }
@@ -1477,7 +1488,7 @@ GAME.missions = (function () {
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
     if (d.type === 'icecream') {
       return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
-        '  ·  $' + active.earned + ' taken';
+        '  ·  $' + active.earned + ' taken' + (active.callT > 0 ? '' : '  ·  ' + hornKey() + ' plays the chimes');
     }
     if (d.type === 'vigilante') {
       var pp = active.perp, ff = GAME.focus();
@@ -2305,6 +2316,7 @@ GAME.missions = (function () {
     failActive: failActive,
     abandon: abandon,
     notifyChaos: notifyChaos,
+    chimed: chimed,
     objectiveText: objectiveText,
     getRoutePoints: function () {
       if (!active || active.state === 'fade' || active.state === 'countdown') return null;

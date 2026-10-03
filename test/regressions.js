@@ -74,6 +74,9 @@
 //       and the sergeant's desk are rooms you walk into, the menu at the
 //       counter; a wardrobe at home holds two outfits from the start and all
 //       you buy; the casino's terminals run horse races at posted odds.
+//   5k. HOMES LIKE THEIR OUTSIDES — buying a place takes you in; the flat is
+//       one room, the condo's bedroom is through a door, the villa has stairs
+//       up to its bedroom; the ice cream truck's horn is its chimes.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -2997,13 +3000,16 @@ function withTimeout(p, ms) {
         GAME.applyTimeOfDay(0);
         r.lit = GAME.lights.hemi.intensity >= 0.9;
         GAME.applyTimeOfDay(tod0);
-        // the bed is where you sleep it off
+        // the bed is where you sleep it off (in the condo, through the
+        // bedroom door: the ring carries the way there)
         var bed = room.rings[1];
+        (bed.via || []).forEach(function (p) { walkTo(p.x, p.z, 8); });
         walkTo(bed.x, bed.z, 8);
         r.bed = GAME.shopOpen && /SLEEP IT OFF/.test(document.getElementById('shop-items').textContent);
         if (GAME.shopOpen) GAME.shops.close();
         // and the mat by the door takes you back out, and stays shut
         var ex = room.rings[0];
+        (bed.via || []).slice().reverse().forEach(function (p) { walkTo(p.x, p.z, 8); });
         walkTo(ex.x, ex.z, 10);
         GAME.test.fastForward(1.5);
         r.out = !P.interior && !I.current && Math.hypot(P.pos.x - condo.x, P.pos.z - condo.z) < 3 && !GAME.shopOpen;
@@ -4012,7 +4018,7 @@ function withTimeout(p, ms) {
       r.ring = !!ring;
       // not on the way in from the door
       r.clear = !!ring && Math.hypot(ring.x - room.entry.x, ring.z - room.entry.z) > 2.5;
-      if (ring) walkTo(ring.x, ring.z);
+      if (ring) { (ring.via || []).forEach(function (p) { walkTo(p.x, p.z); }); walkTo(ring.x, ring.z); }
       r.opens = GAME.shopOpen && S.current && S.current.kind === 'wardrobe';
       var rows = r.opens ? document.getElementById('shop-items').innerText : '';
       r.lists = /Club White/.test(rows) && /Banana Cream/.test(rows) && /Teal Classics/.test(rows) && /Sand Chinos/.test(rows) && !/Hot Pink|Midnight/.test(rows);
@@ -4044,7 +4050,7 @@ function withTimeout(p, ms) {
       GAME.test.fastForward(0.4);
       walkTo(condo.x, condo.z);
       ring = I.current && I.current.rings.filter(function (x) { return /WARDROBE/.test(x.label); })[0];
-      if (ring) walkTo(ring.x, ring.z);
+      if (ring) { (ring.via || []).forEach(function (p) { walkTo(p.x, p.z); }); walkTo(ring.x, ring.z); }
       r.hangs = GAME.shopOpen && document.getElementById('shop-items').innerText.indexOf(fresh.name) >= 0;
       r.fresh = fresh.name;
       if (S.isOpen) S.close();
@@ -4157,6 +4163,170 @@ function withTimeout(p, ms) {
   check('Gull Downs: a winner pays the odds and your stake back', gd.won, JSON.stringify({ paid: gd.paid, want: gd.want }));
   check('Gull Downs: one bet a race, and a loser pays nothing', gd.reopen && gd.oneBet && gd.lost, JSON.stringify(gd));
   check('Gull Downs: away from the casino with nothing on, nothing runs', gd.quiet, JSON.stringify(gd));
+
+  // ---------- 5k: homes like their outsides, and the chimes on the horn ----------
+  // A place you bought put SLEEP IT OFF in front of you on the pavement;
+  // now the door opens and in you go. Every home was one room with the bed
+  // in view of the door: the flat still is, but the condo's bedroom is
+  // through a door at the back, and the villa is two storeys — a hall under
+  // a double-height ceiling, the kitchen under the gallery, and stairs up to
+  // the bedroom. And the ice cream truck's horn is its chimes, as in Vice
+  // City: nobody comes to the hatch who has not heard them.
+  var homes5k = await page.evaluate(function () {
+    var P = GAME.player, I = GAME.interiors, S = GAME.shops, r = {};
+    var owned0 = (GAME.prefs.safehouses || []).slice(), last0 = GAME.prefs.lastHome, cash0 = P.cash;
+    function walkTo(x, z, maxT) {
+      for (var w = 0; w < (maxT || 10); w += 1 / 60) {
+        var dx = x - P.pos.x, dz = z - P.pos.z;
+        if (dx * dx + dz * dz < 0.2 || I.busy || GAME.shopOpen) break;
+        P.heading = Math.atan2(dx, dz); GAME.cam.yaw = P.heading;
+        GAME.test.pressKey('KeyW', true);
+        GAME.test.fastForward(1 / 60);
+      }
+      GAME.test.pressKey('KeyW', false);
+      GAME.test.fastForward(0.5);
+    }
+    function homeLoc(id) { return S.locations().filter(function (l) { return l.sh && l.sh.id === id; })[0]; }
+    function goIn(id) {
+      if (I.current) I.reset();
+      var loc = homeLoc(id);
+      GAME.test.teleport(loc.at.x + 8, loc.at.z); GAME.test.fastForward(0.3);
+      I.enter(loc); GAME.test.fastForward(1.2);
+      return I.current;
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      if (GAME.missions.active) GAME.missions.failActive('test');
+      // buying the condo: the menu goes, the door opens, the deed card waits inside
+      GAME.prefs.safehouses = [];
+      P.cash = 50000;
+      var condo = homeLoc('condo');
+      GAME.test.teleport(condo.at.x + 8, condo.at.z); GAME.test.fastForward(0.3);
+      walkTo(condo.at.x, condo.at.z);
+      r.forSale = GAME.shopOpen && /BUY STRIP CONDO/.test(document.getElementById('shop-items').textContent);
+      S.buy('buy');
+      r.menuGone = !GAME.shopOpen;
+      GAME.test.fastForward(1.2);
+      r.inside = !!I.current && I.current.id === 'home_condo';
+      r.card = !!GAME.share.isOpen;
+      if (GAME.share.isOpen) GAME.share.hide();
+      GAME.prefs.safehouses = ['dock', 'condo', 'villa'];
+      // the flat: one room, the bed straight ahead of the door
+      var flat = goIn('dock'), fb = flat.rings[1];
+      r.flatOneRoom = !fb.via;
+      walkTo(fb.x, fb.z);
+      r.flatBed = GAME.shopOpen && /SLEEP IT OFF/.test(document.getElementById('shop-items').textContent);
+      if (GAME.shopOpen) S.close();
+      // the condo: straight at the bed from the door, you meet the bedroom wall
+      var cr = goIn('condo'), cb = cr.rings[1];
+      walkTo(cb.x, cb.z, 6);
+      r.condoWall = !GAME.shopOpen && Math.hypot(P.pos.x - cb.x, P.pos.z - cb.z) > 2;
+      if (GAME.shopOpen) S.close();
+      I.reset(); cr = goIn('condo');
+      cb.via.forEach(function (p) { walkTo(p.x, p.z); });
+      walkTo(cb.x, cb.z);
+      r.condoBed = GAME.shopOpen && /SLEEP IT OFF/.test(document.getElementById('shop-items').textContent);
+      if (GAME.shopOpen) S.close();
+      // the villa: up the stairs to the bed
+      var v = goIn('villa'), vb = v.rings[1];
+      r.villaBedUp = vb.y > 3;
+      walkTo(vb.via[0].x, vb.via[0].z);
+      var climb = [];
+      walkTo(vb.via[1].x, vb.via[1].z);
+      r.upstairs = +P.pos.y.toFixed(2);
+      GAME.test.fastForward(0.6);
+      r.camAbove = GAME.cameraObj.position.y > v.slab.y + 0.3;
+      walkTo(vb.x, vb.z);
+      r.villaBed = GAME.shopOpen && /SLEEP IT OFF/.test(document.getElementById('shop-items').textContent);
+      if (GAME.shopOpen) S.close();
+      var vw = v.rings.filter(function (x) { return /WARDROBE/.test(x.label); })[0];
+      r.wardrobeUp = vw.y > 3;
+      // down again, to the kitchen under the gallery
+      walkTo(vb.via[1].x, vb.via[1].z); walkTo(vb.via[0].x, vb.via[0].z);
+      r.downAgain = P.pos.y < 0.1;
+      walkTo(v.ox + 1, v.oz + 3);
+      P.heading = 0; GAME.cam.yaw = 0; GAME.cam.pitch = 0.7; GAME.test.fastForward(0.8);
+      r.kitchen = { y: +P.pos.y.toFixed(2), camY: +GAME.cameraObj.position.y.toFixed(2), under: v.slab.under };
+      // and the bed's mat, from under it, does nothing
+      walkTo(vb.x, vb.z, 6);
+      r.notFromBelow = !GAME.shopOpen && P.pos.y < 0.1;
+      if (GAME.shopOpen) S.close();
+      I.reset();
+    } finally {
+      if (GAME.share.isOpen) GAME.share.hide();
+      if (GAME.shopOpen) S.close();
+      I.reset();
+      GAME.prefs.safehouses = owned0; GAME.prefs.lastHome = last0; P.cash = cash0;
+    }
+    GAME.test.teleport(400, 0); GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('homes: buying a place takes you in through the door — not SLEEP IT OFF on the pavement',
+    homes5k.forSale && homes5k.menuGone && homes5k.inside, JSON.stringify(homes5k));
+  check('homes: and the deed card is waiting once you are inside', homes5k.card, JSON.stringify(homes5k));
+  check('homes: the Dockside Flat is one room, the bed straight ahead', homes5k.flatOneRoom && homes5k.flatBed, JSON.stringify(homes5k));
+  check('homes: the Strip Condo keeps its bedroom behind a wall, through a door', homes5k.condoWall && homes5k.condoBed, JSON.stringify(homes5k));
+  check('homes: the Marina Villa\'s bedroom is upstairs, and the stairs take you there',
+    homes5k.villaBedUp && homes5k.wardrobeUp && homes5k.upstairs > 3.4 && homes5k.villaBed, JSON.stringify(homes5k));
+  check('homes: upstairs the camera stays above the floor you are on', homes5k.camAbove, JSON.stringify(homes5k));
+  check('homes: downstairs, under the gallery, you are on the ground floor and so is the camera',
+    homes5k.downAgain && homes5k.kitchen.y < 0.1 && homes5k.kitchen.camY <= homes5k.kitchen.under, JSON.stringify(homes5k.kitchen));
+  check('homes: a mat upstairs does nothing for somebody standing under it', homes5k.notFromBelow, JSON.stringify(homes5k));
+
+  var chimes = await page.evaluate(function () {
+    var P = GAME.player, r = {};
+    GAME.police.clearWanted();
+    GAME.test.teleport(-150, 40);
+    GAME.test.fastForward(0.8);
+    if (P.inCar) GAME.exitCar();
+    var truck = GAME.test.spawnCar('icecream', 3, 0);
+    if (!truck) return { noTruck: true };
+    GAME.test.fastForward(0.4);
+    GAME.test.enterNearestCar(truck);
+    GAME.test.fastForward(1.5);
+    if (!P.inCar) return { noBoard: true };
+    var played = 0, horn0 = GAME.audio.horn, chime0 = GAME.audio.chime;
+    GAME.audio.chime = function () { played++; return chime0.apply(GAME.audio, arguments); };
+    GAME.audio.horn = function () { r.plainHorn = true; return horn0.apply(GAME.audio, arguments); };
+    try {
+      // off the clock, the horn is still the chimes
+      GAME.test.pressKey('KeyG'); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyG', false);
+      r.offClock = played === 1 && !r.plainHorn;
+      GAME.test.fastForward(1.5);
+      GAME.test.pressKey('KeyJ'); GAME.test.fastForward(0.6); GAME.test.pressKey('KeyJ', false);
+      var a = GAME.missions.active;
+      r.onRound = !!a && a.def.id === 'icecream';
+      if (!r.onRound) return r;
+      r.hint = /plays the chimes/.test(GAME.missions.objectiveText());
+      for (var sp = 0; sp < 3; sp++) {
+        var extra = GAME.test.spawnPed([11, -9, 7][sp], [0, 7, -10][sp]);
+        if (extra) { extra.jobPed = false; extra.iceServed = false; }
+      }
+      // parked by people for eight seconds, silent: nobody comes, and nothing plays by itself
+      played = 0;
+      for (var t = 0; t < 8 * 60; t++) { P.car.speed = 0; GAME.test.fastForward(1 / 60); }
+      r.silent = { walkUps: a.targets.filter(function (x) { return x.walkUp; }).length, played: played };
+      // one blast of the chimes and they come
+      GAME.test.pressKey('KeyG'); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyG', false);
+      for (t = 0; t < 4 * 60; t++) { P.car.speed = 0; GAME.test.fastForward(1 / 60); }
+      r.heard = { walkUps: a.targets.filter(function (x) { return x.walkUp; }).length + a.sales, played: played };
+    } finally {
+      GAME.audio.chime = chime0; GAME.audio.horn = horn0;
+      if (P.car) { P.car.speed = 0; P.car.lat = 0; }
+      if (P.inCar) GAME.exitCar();
+      GAME.test.fastForward(1.5);
+      if (GAME.share.isOpen) GAME.share.hide();
+      if (truck && !truck.dead) GAME.vehicles.removeCar(truck);
+      GAME.test.fastForward(0.3);
+    }
+    return r;
+  });
+  check('ice cream: the truck\'s horn is its chimes', !chimes.noTruck && !chimes.noBoard && chimes.offClock, JSON.stringify(chimes));
+  check('ice cream: on a round the chimes no longer play themselves, and nobody comes without them',
+    chimes.onRound && chimes.silent && chimes.silent.played === 0 && chimes.silent.walkUps === 0, JSON.stringify(chimes));
+  check('ice cream: sound them and people come to the hatch', chimes.heard && chimes.heard.played === 1 && chimes.heard.walkUps > 0, JSON.stringify(chimes));
+  check('ice cream: the round says which button plays them', chimes.hint, JSON.stringify(chimes));
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a
@@ -5327,7 +5497,10 @@ function withTimeout(p, ms) {
     var prevX, prevZ, ratio = 0, scared = false, fledFrames = 0, hurtAt = -1, hurt = 0, fledHurt = 0, watchedFor = 0;
     for (var t = 0; t < 60 * 60; t++) {
       GAME.player.car.speed = 0;                // parked, so the chimes work
+      // and the chimes are the horn now: sound them every few seconds
+      if (t % 300 === 0) GAME.test.pressKey('KeyG');
       GAME.test.fastForward(1 / 60);
+      if (t % 300 === 0) GAME.test.pressKey('KeyG', false);
       var a = GAME.missions.active;
       if (!a || !a.targets) break;
       if (!watching) {
