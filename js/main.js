@@ -3,6 +3,8 @@
   GAME.frame = 0;
 
   function boot() {
+    // a save being brought in on a phone: its own light page, no city (below)
+    if (/^#import/.test(location.hash)) { importScreen(); return; }
     var canvas = document.getElementById('game-canvas');
     GAME.touch.init();
 
@@ -39,14 +41,19 @@
     GAME.lights = { hemi: hemi, dir: moon, ambient: warm, head: head };
 
     GAME.city.build(scene);
+    GAME.weather.build(scene);
     GAME.fx.init(scene);
     GAME.initPlayer();
     GAME.combat.initPickups();
     GAME.missions.init();
+    GAME.tapes.init(scene);
     GAME.stunts.load();
     GAME.hud.init();
+    GAME.controls.init();
+    GAME.photo.init();
     GAME.share.init();
     GAME.shops.init(scene);
+    GAME.interiors.build();
     GAME.initInput(canvas);
     GAME.combat.refreshWeaponHud();
     GAME.hud.wantedChanged(0);
@@ -60,6 +67,8 @@
     scene.traverse(function (o) { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
     renderer.render(scene, camera);
     for (var ci = 0; ci < culled.length; ci++) culled[ci].frustumCulled = true;
+    // only now can a press do anything: the title stops saying LOADING
+    GAME.hud.titleReady();
 
     window.addEventListener('resize', function () {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -72,22 +81,37 @@
       if (!GAME.started) return;
       // an open dialog owns the keys — Esc must cancel it, not unpause
       if (GAME.hud.dialogOpen()) { GAME.hud.dialogKey(code); return; }
+      // and so does Lola, while you are talking to her
+      if (GAME.lolaOpen) { GAME.lola.key(code); return; }
+      // and so does the photo album, over the pause screen
+      if (GAME.photo.key(code)) return;
+      // and an open shop its list and its confirmation card (Esc below)
+      if (GAME.shopOpen && GAME.shops.key(code)) return;
+      // the full map: A (or Enter) sets the route at a pad's cursor
+      if (GAME.mapOpen && code === 'Enter' && GAME.hud.mapPick()) return;
+      // and the arrows step its legend's solo (one kind of marker at a time)
+      if (GAME.mapOpen && (code === 'ArrowLeft' || code === 'ArrowRight')) { GAME.hud.mapSoloStep(code === 'ArrowRight' ? 1 : -1); return; }
       // the result card closes on any of the keys a hand is likely to be on —
       // it never needed the mouse
       if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {
         GAME.share.hide();
         return;
       }
+      // the pause screen's buttons answer the arrows, Enter and Space
+      if (GAME.paused && !GAME.mapOpen && !GAME.shopOpen && GAME.hud.pauseKey(code)) return;
       if (code === 'Escape') {
         if (GAME.shopOpen) GAME.shops.close();
         else if (GAME.mapOpen) GAME.hud.toggleMap(false);
         else GAME.togglePause();
       }
       if (code === 'KeyP') GAME.hud.toggleMap();
+      if (code === 'KeyL' && !GAME.paused && !GAME.mapOpen && !GAME.shopOpen && !GAME.shareOpen) GAME.lola.open();
       if (code === 'KeyC' && GAME.mapOpen) GAME.hud.mapClear();
+      if ((code === 'Equal' || code === 'NumpadAdd') && GAME.mapOpen) GAME.hud.mapZoom(1.5);
+      if ((code === 'Minus' || code === 'NumpadSubtract') && GAME.mapOpen) GAME.hud.mapZoom(1 / 1.5);
       if (code === 'KeyH') GAME.hud.toggleControlsBar();
       if (code === 'KeyM') {
-        var m = GAME.audio.toggleMute();
+        var m = GAME.hud.toggleMute();
         GAME.hud.message(m ? 'Muted' : 'Sound on', 1.2);
       }
       if (code === 'KeyT') GAME.hud.toggleCRT();
@@ -112,10 +136,33 @@
     requestAnimationFrame(loop);
   }
 
-  GAME.enterFullscreen = function () {
+  // iPhone Safari has no fullscreen for pages at all (iPad only the webkit
+  // one), so the corner button did nothing there. It says what does work —
+  // Add to Home Screen, which index.html declares a full-screen app — and
+  // goes away once the game is running that way.
+  var docEl = document.documentElement;
+  var reqFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+  GAME.canFullscreen = !!reqFs;
+  GAME.isStandalone = function () {
+    return !!(navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+  };
+  GAME.fullscreenEl = function () { return document.fullscreenElement || document.webkitFullscreenElement || null; };
+  // `asked` is the corner button, where a refusal should say so: the start
+  // tap and the resume tap try quietly, but a button that does nothing at all
+  // reads as a broken game, when it is the browser saying no.
+  GAME.enterFullscreen = function (asked) {
+    function refused(why) {
+      if (asked && GAME.hud) GAME.hud.message('The browser would not go full screen' + (why ? ' (' + why + ')' : '') +
+        '. Close this tab and open the game in a fresh one — that clears it.', 7);
+    }
     try {
-      if (document.fullscreenElement || !document.documentElement.requestFullscreen) return;
-      document.documentElement.requestFullscreen()
+      var std = docEl.requestFullscreen, req = std || docEl.webkitRequestFullscreen;
+      if (GAME.fullscreenEl() || !req) return;
+      if (document.fullscreenEnabled === false && document.webkitFullscreenEnabled !== true) { refused('not allowed on this page'); return; }
+      // navigationUI 'hide' asks Android to fold the system bars away too
+      // (the old webkit call takes a flags number, not options)
+      var pr = std ? std.call(docEl, { navigationUI: 'hide' }) : req.call(docEl);
+      if (pr && pr.then) pr
         .then(function () {
           try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(function () { }); } catch (e) { }
           // hold the keyboard lock on Esc while fullscreen: the press is then
@@ -123,8 +170,8 @@
           // down. Holding Esc still force-exits — the browser's escape hatch.
           try { navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape']).catch(function () { }); } catch (e) { }
         })
-        .catch(function () { });
-    } catch (e) { }
+        .catch(function (e) { refused(e && e.name); });
+    } catch (e) { refused(e && e.name); }
   };
   // Esc on the pause screen also throws the browser out of fullscreen — its
   // rule, not ours, and the Esc keydown carries no user activation so we
@@ -132,23 +179,78 @@
   // and re-enter on the next real gesture (a click back into the game).
   var fsRestore = false, fsManual = false;
   GAME.toggleFullscreen = function () {
-    if (document.fullscreenElement) { fsManual = true; document.exitFullscreen().catch(function () { }); }
-    else { fsRestore = false; GAME.enterFullscreen(); }
+    if (!GAME.canFullscreen) {
+      GAME.hud.message('This browser has no full screen for web pages — Share ▸ Add to Home Screen plays it full screen.', 6);
+      return;
+    }
+    if (GAME.fullscreenEl()) {
+      fsManual = true;
+      var ex = document.exitFullscreen || document.webkitExitFullscreen;
+      var pr = ex && ex.call(document);
+      if (pr && pr.catch) pr.catch(function () { });
+    } else { fsRestore = false; GAME.enterFullscreen(true); }
   };
-  document.addEventListener('fullscreenchange', function () {
-    if (document.fullscreenElement) { fsRestore = false; return; }
+  function onFsChange() {
+    if (GAME.fullscreenEl()) { fsRestore = false; return; }
     try { navigator.keyboard && navigator.keyboard.unlock && navigator.keyboard.unlock(); } catch (e) { }
     if (fsManual) { fsManual = false; return; }
     if (GAME.started) fsRestore = true;
-  });
+  }
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
   GAME.maybeRestoreFullscreen = function () {
-    if (fsRestore && !document.fullscreenElement) GAME.enterFullscreen();
+    if (fsRestore && !GAME.fullscreenEl()) GAME.enterFullscreen();
   };
+  // Full screen at the next click, key or tap, for a request made where the
+  // browser would refuse it: a controller's press, which not every browser
+  // counts as a gesture (hud.js, the pause screen's FULL SCREEN)
+  GAME.fullscreenOnNextGesture = function (on) { fsRestore = on !== false; };
+
+  // ---------- bringing a save in, on a page of its own ----------
+  // A phone's file picker sends the browser to the background, and a tab
+  // holding the whole city on the GPU is the first thing Android reclaims
+  // when it is short of memory: importing from inside the game could come
+  // back to a crashed tab (and Chrome, after a crash mid-fullscreen, can
+  // refuse full screen to that tab until it is closed). So on a touch
+  // device IMPORT SAVE reloads as index.html#import, which builds nothing
+  // but this card; the game loads fresh behind it once the save is in.
+  function importScreen() {
+    var title = document.getElementById('title-screen');
+    if (title) title.style.display = 'none';
+    var wrap = document.createElement('div');
+    wrap.id = 'import-screen';
+    wrap.innerHTML = '<div id="import-card"><div id="import-title">IMPORT SAVE</div>' +
+      '<div id="import-body">Pick the save you exported (neon-mayhem-save.json). It replaces the progress on this device.</div>' +
+      '<button id="import-pick" class="ibtn danger">CHOOSE SAVE FILE</button>' +
+      '<div id="import-msg"></div>' +
+      '<button id="import-back" class="ibtn">BACK TO THE GAME</button></div>';
+    document.body.appendChild(wrap);
+    var input = document.getElementById('save-file'), msg = document.getElementById('import-msg');
+    function toGame() { location.replace(location.pathname + location.search); }
+    document.getElementById('import-pick').addEventListener('click', function () { msg.textContent = ''; input.click(); });
+    document.getElementById('import-back').addEventListener('click', toGame);
+    input.addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        var r = GAME.importSave(String(rd.result));
+        if (!r.ok) { msg.textContent = r.why; msg.className = 'bad'; return; }
+        GAME.track('save-imported');
+        msg.textContent = 'Imported. Loading your game…'; msg.className = 'good';
+        setTimeout(toGame, 600);
+      };
+      rd.onerror = function () { msg.textContent = 'Could not read that file.'; msg.className = 'bad'; };
+      rd.readAsText(f);
+    });
+  }
 
   // night (df 0) and day (df 1) endpoint palettes; intermediate df gives dusk
   var TOD_NIGHT = { fog: 0x2a1440, near: 110, hemi: 0x4a3a7a, ground: 0x1a1024, hemiI: 0.85, dir: 0x8a94ff, dirI: 0.55, amb: 0x40203a, ambI: 0.7, clear: 0x0a0714 };
   var TOD_DAY = { fog: 0xbcd0e8, near: 150, hemi: 0xcfe0ff, ground: 0x9a8a70, hemiI: 1.05, dir: 0xfff2d0, dirI: 1.0, amb: 0x6a6674, ambI: 0.5, clear: 0x9fbce0 };
-  var _cN = new THREE.Color(), _cD = new THREE.Color(), _cT = new THREE.Color();
+  var _cN = new THREE.Color(), _cD = new THREE.Color(), _cT = new THREE.Color(), _cR = new THREE.Color();
+  var RAIN_NIGHT = 0x231c2e, RAIN_DAY = 0x7c8394;   // what the fog turns to under rain
   function lerpHex(a, b, t, target) { _cN.setHex(a); _cD.setHex(b); target.copy(_cN).lerp(_cD, t); return target; }
 
   GAME.timeOfDay = 0.4;
@@ -156,9 +258,12 @@
     GAME.timeOfDay = df;
     GAME.city.applyTimeOfDay(df);
     var scene = GAME.scene, L = GAME.lights, farBase = GAME.isTouch ? 320 : 430;
+    // rain greys and closes in the fog and dims the light; lightning lifts it
+    var wet = GAME.weather ? GAME.weather.rain : 0, bolt = GAME.weather ? GAME.weather.flash : 0;
     lerpHex(TOD_NIGHT.fog, TOD_DAY.fog, df, scene.fog.color);
-    scene.fog.near = U.lerp(TOD_NIGHT.near, TOD_DAY.near, df);
-    scene.fog.far = farBase + df * 90;
+    if (wet > 0) scene.fog.color.lerp(lerpHex(RAIN_NIGHT, RAIN_DAY, df, _cR), wet * 0.7);
+    scene.fog.near = U.lerp(TOD_NIGHT.near, TOD_DAY.near, df) * (1 - 0.55 * wet);
+    scene.fog.far = (farBase + df * 90) * QUALITY[GAME.quality].fog * (1 - 0.4 * wet);   // GFX draws it in
     lerpHex(TOD_NIGHT.hemi, TOD_DAY.hemi, df, L.hemi.color);
     lerpHex(TOD_NIGHT.ground, TOD_DAY.ground, df, L.hemi.groundColor);
     L.hemi.intensity = U.lerp(TOD_NIGHT.hemiI, TOD_DAY.hemiI, df);
@@ -166,14 +271,31 @@
     L.dir.intensity = U.lerp(TOD_NIGHT.dirI, TOD_DAY.dirI, df);
     lerpHex(TOD_NIGHT.amb, TOD_DAY.amb, df, L.ambient.color);
     L.ambient.intensity = U.lerp(TOD_NIGHT.ambI, TOD_DAY.ambI, df);
-    renderer.setClearColor(lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT), 1);
+    if (wet > 0 || bolt > 0) {
+      L.hemi.intensity = L.hemi.intensity * (1 - 0.3 * wet) + bolt * 1.4;
+      L.dir.intensity *= 1 - 0.55 * wet;
+    }
+    // indoors (interiors.js): the room's own light whatever the hour, and no
+    // fog across a room — the people in it were lit by the night outside
+    if (GAME.player && GAME.player.interior) {
+      L.hemi.color.setHex(0xfff0e0); L.hemi.groundColor.setHex(0x40303a);
+      L.hemi.intensity = 0.95; L.dir.intensity = 0.3; L.ambient.intensity = 0.6;
+      scene.fog.near = 400; scene.fog.far = 900;
+    }
+    lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT);
+    if (wet > 0) _cT.lerp(scene.fog.color, wet * 0.8);
+    if (bolt > 0) _cT.lerp(_cR.setHex(0xdfe6ff), bolt * 0.5);
+    renderer.setClearColor(_cT, 1);
   };
 
   // auto day/night cycle. Start on a bright, low-sun late afternoon that visibly
   // slides into sunset, then night, then the sun rises again and it loops.
   // df = 0.5 - 0.5*cos(2*pi*phase).
   // phase 0.63 -> df~0.85 sunny afternoon; 0.75 -> sunset; 1.0 -> night.
-  var CYCLE = 150, START_PHASE = 0.63;
+  // Twelve real minutes a day. It was two and a half, so night lasted under a
+  // minute and the clock was something that happened to the sky rather than
+  // to the evening you were having.
+  var CYCLE = 720, START_PHASE = 0.63;
   // one full in-game day in real seconds — pickups' respawn clock keys off it
   GAME.DAY_SECONDS = CYCLE;
   GAME.dayPhase = START_PHASE;
@@ -215,8 +337,14 @@
     var P = GAME.player;
     P.pos.set(356, 0.18, 40);
     P.heading = Math.PI;
+    // a save with a bed in it starts at that bed, not on the strip
+    var home = GAME.shops && GAME.shops.startSpawn();
+    if (home) {
+      P.pos.set(home.x, GAME.city.groundY(home.x, home.z), home.z);
+      P.heading = home.heading;   // toward town, camera out over the pavement (shops.js)
+    }
     P.mesh.visible = true;
-    GAME.cam.yaw = Math.PI; GAME.cam.pitch = 0.32;
+    GAME.cam.yaw = P.heading; GAME.cam.pitch = 0.32;
     GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
     GAME.enterFullscreen(); // same user gesture — desktop and touch alike
     // the gesture that started the game is not gameplay input — and neither
@@ -231,7 +359,11 @@
     // clock saying 15:00 over a midnight-frozen sky
     if (GAME.timeMode === 'auto') GAME.dayPhase = 0.63;
     GAME.hud.hideTitle();
-    GAME.hud.message('Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
+    // the click (or Enter) that started the game is a gesture the lock can
+    // ride on: without this the mouse did nothing until an unexplained second
+    // click into the canvas
+    GAME.regainPointer();
+    GAME.hud.message(home ? 'Back at ' + home.name + '.' : 'Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
   };
 
   // attract mode: the live city plays behind the title with spectator cuts
@@ -276,7 +408,7 @@
     // overlay opening) is not the user's Esc — grants and exits resolve
     // asynchronously, so our own release can arrive a tick displaced
     if (GAME.releasePointerT && performance.now() - GAME.releasePointerT < 1500) return;
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen &&
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && !GAME.lolaOpen &&
       GAME.player.state === 'alive') GAME.togglePause();
   });
 
@@ -295,9 +427,11 @@
   // by hand — and only to a living driver, or closing the map over your own
   // corpse would undo the silence death just asked for.
   GAME.syncOverlayMusic = function () {
+    var over = !GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen || !!GAME.lolaOpen;
+    if (over) GAME.hud.lockHint(false);   // an overlay is a mouse screen: no "click to look" under it
     if (!GAME.audio.ctx) return;
+    if (over) GAME.audio.rain(0);   // the tick that keeps it level stops behind an overlay
     var P = GAME.player;
-    var over = !GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen;
     GAME.audio.titleMusic(over);
     if (over) {
       GAME.audio.engineState(false, 0);
@@ -306,6 +440,8 @@
       GAME.audio.radio.setVolume(0);
     } else if (P && P.inCar && P.car && P.state === 'alive') {
       GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.7);
+    } else if (P && P.interior && P.interior.music && P.state === 'alive') {
+      GAME.audio.radio.setVolume(GAME.audio.muted ? 0 : 0.45);   // the casino's music
     }
   };
 
@@ -338,7 +474,7 @@
   // audio. Pausing no longer suspends the context (the pads play on), so a
   // hidden tab always suspends explicitly here.
   function onHide() {
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && GAME.player.state === 'alive') GAME.togglePause();
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && !GAME.lolaOpen && GAME.player.state === 'alive') GAME.togglePause();
     GAME.audio.suspend();
   }
   function onShow() {
@@ -377,6 +513,7 @@
     var ears = GAME.focus();
     GAME.audio.setListener(ears.x, ears.z, GAME.cam.yaw);
     GAME.advanceDayCycle(dt);
+    GAME.weather.update(dt);
     GAME.city.update(dt, GAME.time);
     GAME.vehicles.update(dt);
     GAME.peds.update(dt);
@@ -386,18 +523,17 @@
     GAME.combat.updatePickups(dt);
     GAME.police.update(dt);
     GAME.missions.update(dt);
+    GAME.tapes.update(dt);
     if (GAME.isla) GAME.isla.tick(dt);
     GAME.shops.update(dt);
+    GAME.interiors.update(dt);
+    GAME.derby.update(dt);
+    GAME.photo.update(dt);
     // slow autosave heartbeat: health and ammo drift without touching cash,
     // and the save should never be more than ten seconds behind the life
     if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
-    // the endgame watch: notices the last mission or jump landing, and keeps
-    // a completed player's pockets bottomless
+    // the endgame watch: notices the last mission or jump landing
     if (GAME.frame % 300 === 150) GAME.missions.checkCompletion();
-    if (GAME.completeUnlimited && GAME.player.cash < 9999999) {
-      GAME.player.cash = 9999999;
-      GAME.hud.cashChanged();
-    }
     GAME.fx.update(dt);
     updateHeadlight();
     GAME.touch.update();
@@ -406,6 +542,37 @@
     // wanted it; anything unclaimed was for a mode that is not running and
     // must not survive into one that is
     GAME.clearPressed();
+  };
+
+  // ---------- graphics quality ----------
+  // There was no setting at all: a slow laptop got the full-resolution city
+  // and its full crowd, and could only hope the auto-thinning below noticed.
+  // Three steps, each a share of the authored numbers rather than numbers of
+  // its own, so it sits on top of the phone budget (touch.js) as well.
+  var QUALITY = {
+    high: { res: 1, fog: 1, crowd: 1 },
+    medium: { res: 0.8, fog: 0.85, crowd: 0.75 },
+    low: { res: 0.6, fog: 0.7, crowd: 0.5 }
+  };
+  GAME.quality = 'high';
+  GAME.qualityCrowd = function () { return QUALITY[GAME.quality].crowd; };
+  // the authored values are re-read every time, so switching touch on or off
+  // underneath a lowered setting cannot compound it; the draw distance rides
+  // on the day cycle's (applyTimeOfDay), which is re-run to pick it up
+  GAME.applyQuality = function () {
+    var q = QUALITY[GAME.quality], S = GAME.settings;
+    if (GAME.renderer) GAME.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, S.pixelRatioCap) * q.res);
+    if (GAME.scene && GAME.scene.fog && GAME.lights) GAME.applyTimeOfDay(GAME.timeOfDay);
+  };
+  GAME.setQuality = function (name, quiet) {
+    if (!QUALITY[name]) return;
+    GAME.quality = name;
+    GAME.applyQuality();
+    if (!quiet) {
+      GAME.prefs = GAME.prefs || {};
+      GAME.prefs.quality = name;
+      GAME.save();
+    }
   };
 
   // ---------- what the frame can afford ----------
@@ -436,11 +603,18 @@
                           // evidence about the crowd
     var ema = TARGET, scale = 1, since = 0, warm = 0;
 
+    var longRun = 0;
     function sample(ms) {
+      if (!(ms > 0)) return;
       // a stalled frame — tab switch, GC, a breakpoint — says nothing about
       // what the crowd costs, and folding it in would drag the average for
-      // seconds afterwards
-      if (!(ms > 0) || ms > 80) return;
+      // seconds afterwards. But a RUN of them is the machine: dropping every
+      // frame over 80 ms meant a device under 12 fps fed this nothing at all,
+      // and the thinning never reached the one place that needed it most.
+      if (ms > 80) {
+        if (++longRun < 4) return;
+        ms = 80;
+      } else longRun = 0;
       ema += (ms - ema) * 0.06;
     }
     function update(dt) {
@@ -459,7 +633,7 @@
       update: update,
       // how many of a thing the budget currently allows. Never zero: a street
       // with nobody on it reads as broken, not as thrifty.
-      budget: function (n) { return Math.max(1, Math.round(n * scale)); },
+      budget: function (n) { return Math.max(1, Math.round(n * scale * GAME.qualityCrowd())); },
       // headless hooks: pretend the frames have been this long, and start over
       testFrames: function (ms) { ema = ms; warm = WARMUP; since = EVERY; },
       testReset: function () { ema = TARGET; scale = 1; since = 0; warm = 0; }
@@ -478,6 +652,8 @@
     var rawMs = now - lastT;
     var real = Math.min(0.1, rawMs / 1000);
     lastT = now;
+    // a controller is read every frame, overlays included (Start unpauses)
+    GAME.controls.poll(real);
     if (!GAME.started) {
       accumulator += real;
       var g0 = 0;
@@ -487,7 +663,7 @@
         g0++;
       }
       if (g0 === MAX_TICKS) accumulator = 0;
-    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
+    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && !GAME.lolaOpen) {
       // only while the sim is actually running: a paused or overlaid frame
       // draws a still city and says nothing about what the crowd costs
       GAME.perf.sample(rawMs);
@@ -521,6 +697,8 @@
     var wantNear = relH > (cam.near > 0.2 ? 34 : 46) ? 2.0 : 0.1;
     if (wantNear !== cam.near) { cam.near = wantNear; cam.updateProjectionMatrix(); }
     renderer.render(GAME.scene, GAME.cameraObj);
+    // a photo is taken from the frame just drawn (photo.js)
+    GAME.photo.capture(renderer.domElement);
     // the shop's turntable preview spins even while the sim is frozen
     if (GAME.shops && GAME.shops.renderPreview) GAME.shops.renderPreview();
   }
@@ -540,6 +718,8 @@
         // deaf to the pedals, because nothing else clears it but a landing
         P.car.airVX = P.car.airVZ = undefined;
       } else {
+        if (GAME.stopSwim) GAME.stopSwim();   // (into water, you start again there)
+        if (GAME.interiors) GAME.interiors.reset();
         P.pos.set(x, GAME.city.groundY(x, z), z);
         P.velY = 0; P.airborne = false;
       }

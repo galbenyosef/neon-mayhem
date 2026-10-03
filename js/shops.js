@@ -136,9 +136,38 @@ GAME.shops = (function () {
       if (s.isla && !unlocked) continue;
       if (!!s.isla !== onIsla) continue;
       var d = U.dist2(x, z, s.at.x, s.at.z);
-      if (d < bd) { bd = d; best = { x: s.at.x, z: s.at.z, name: s.name }; }
+      if (d < bd) { bd = d; best = { x: s.at.x, z: s.at.z, name: s.name, heading: homeHeading(s) }; }
     }
     return best;
+  }
+
+  // Which way to stand at your door: toward town, but turned no more than
+  // 60° from facing the door. Facing straight into town put your back along
+  // the house front, and the camera behind you hung beside the facade at the
+  // awning's own height — a mint slab filled the screen. Within 60° of the
+  // door the camera sits out over the pavement, looking past the house.
+  var HOME_TURN = Math.PI / 3;
+  function homeHeading(s) {
+    var hc = GAME.city.islandAt(s.at.x, s.at.z), c = (hc && hc.centre) || { x: -70, z: 0 };
+    var toTown = Math.atan2(c.x - s.at.x, c.z - s.at.z);
+    if (!s.face) return toTown;
+    var door = Math.atan2(s.face.x, s.face.z);
+    var dd = Math.atan2(Math.sin(toTown - door), Math.cos(toTown - door));
+    return door + Math.max(-HOME_TURN, Math.min(HOME_TURN, dd));
+  }
+
+  // Where a new session starts: the bed you last slept in (or bought), else
+  // any you own. It was always the strip, so owning a place changed nothing
+  // about coming back to the game.
+  function startSpawn() {
+    var unlocked = !GAME.isla || GAME.isla.isOpen();
+    var last = GAME.prefs && GAME.prefs.lastHome, pick = null;
+    for (var i = 0; i < SAFEHOUSES.length; i++) {
+      var s = SAFEHOUSES[i];
+      if (!owns(s.id) || !s.at || (s.isla && !unlocked)) continue;
+      if (!pick || s.id === last) pick = s;
+    }
+    return pick ? { x: pick.at.x, z: pick.at.z, name: pick.name, heading: homeHeading(pick) } : null;
   }
 
   // ---------- placement ----------
@@ -194,14 +223,37 @@ GAME.shops = (function () {
       { id: 'medkit', name: 'FIRST-AID KIT', ds: 'Patches you back to full.', price: 150, off: P.health >= 100 }
     ];
   }
+  // What you own, as opposed to what you have on: two outfits from the
+  // start — the club whites and teals you arrive in, and a day at the beach —
+  // and every piece bought at THREADS after that. Hangs in the wardrobe at
+  // any place you own; at THREADS it is yours to put back on for nothing.
+  function closet() {
+    var p = GAME.prefs = GAME.prefs || {};
+    var c = p.closet || (p.closet = { shirts: ['white', 'banana'], pants: ['teal', 'sand'] });
+    var o = outfit();
+    if (c.shirts.indexOf(o.shirt) < 0) c.shirts.push(o.shirt);   // whatever an older save had on
+    if (c.pants.indexOf(o.pants) < 0) c.pants.push(o.pants);
+    return c;
+  }
+  function clothesRow(kind, s, o, c, forSale) {
+    var shirt = kind === 'shirt', worn = shirt ? o.shirt === s.id : o.pants === s.id;
+    var have = (shirt ? c.shirts : c.pants).indexOf(s.id) >= 0;
+    var row = { id: kind + '_' + s.id, name: (shirt ? 'SHIRT · ' : 'PANTS · ') + s.name, price: forSale && !have ? 150 : 0, sw: s.hex, owned: worn,
+      ds: worn ? (shirt ? 'Wearing it now.' : 'Wearing them now.') : have ? 'In your wardrobe — free to put on.' : '' };
+    if (worn) row.ownedLabel = 'WEARING';
+    else if (have) { row.noPrice = true; row.chip = 'WEAR'; row.idle = forSale ? 'OWNED' : ''; }
+    return row;
+  }
   function dressItems() {
-    var o = outfit(), rows = [];
-    SHIRTS.forEach(function (s) {
-      rows.push({ id: 'shirt_' + s.id, name: 'SHIRT · ' + s.name, price: 150, sw: s.hex, owned: o.shirt === s.id, ds: o.shirt === s.id ? 'Wearing it now.' : '' });
-    });
-    PANTS.forEach(function (s) {
-      rows.push({ id: 'pants_' + s.id, name: 'PANTS · ' + s.name, price: 150, sw: s.hex, owned: o.pants === s.id, ds: o.pants === s.id ? 'Wearing them now.' : '' });
-    });
+    var o = outfit(), c = closet(), rows = [];
+    SHIRTS.forEach(function (s) { rows.push(clothesRow('shirt', s, o, c, true)); });
+    PANTS.forEach(function (s) { rows.push(clothesRow('pants', s, o, c, true)); });
+    return rows;
+  }
+  function wardrobeItems() {
+    var o = outfit(), c = closet(), rows = [];
+    SHIRTS.forEach(function (s) { if (c.shirts.indexOf(s.id) >= 0) rows.push(clothesRow('shirt', s, o, c, false)); });
+    PANTS.forEach(function (s) { if (c.pants.indexOf(s.id) >= 0) rows.push(clothesRow('pants', s, o, c, false)); });
     return rows;
   }
   function barberItems() {
@@ -225,7 +277,7 @@ GAME.shops = (function () {
     if (owns(s.id)) {
       // your own bed is not merchandise: no price tag, no FREE, no BUY chip —
       // "the condo, FREE" read as a purchase you were about to make
-      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Eight hours pass. Health back, heat forgotten.', price: 0, noPrice: true, chip: 'REST' }];
+      return [{ id: 'rest', name: 'SLEEP IT OFF', ds: 'Eight hours pass. Health back, and the heat cools — all of it from three stars down; a four- or five-star manhunt only drops two.', price: 0, noPrice: true, chip: 'REST' }];
     }
     return [{ id: 'buy', name: 'BUY ' + s.name, ds: s.tag + '  You’ll wake up here, gear intact.', price: s.price }];
   }
@@ -265,10 +317,29 @@ GAME.shops = (function () {
   }
   function casinoItems() {
     return [
-      { id: 'bet100', name: 'SPIN THE WHEEL · $100', ds: 'Mostly it eats your money. Mostly.', price: 100 },
-      { id: 'bet500', name: 'SPIN THE WHEEL · $500', ds: 'Now it’s interesting.', price: 500 },
-      { id: 'bet2000', name: 'SPIN THE WHEEL · $2,000', ds: 'The gull always wins. Probably.', price: 2000 }
+      { id: 'bet100', name: 'SPIN THE WHEEL · $100', ds: 'Mostly it eats your money. Mostly.', price: 100, verb: 'SPIN' },
+      { id: 'bet500', name: 'SPIN THE WHEEL · $500', ds: 'Now it’s interesting.', price: 500, verb: 'SPIN' },
+      { id: 'bet2000', name: 'SPIN THE WHEEL · $2,000', ds: 'The gull always wins. Probably.', price: 2000, verb: 'SPIN' }
     ];
+  }
+
+  // The Lucky Gull's bar: a drink puts you back together, a dear one with
+  // your vest done up as well.
+  function barItems() {
+    var P = GAME.player;
+    return [
+      { id: 'cuba', name: 'CUBA LIBRE', price: 40, ds: P.health >= 100 ? 'You’re fine — but it’s a nice drink.' : 'A good long swallow: +35 health.' },
+      { id: 'punch', name: 'NEON PUNCH', price: 120, ds: 'Back on your feet: health full.' },
+      { id: 'special', name: 'THE GULL SPECIAL', price: 400, ds: 'Health full and armor strapped on. Don’t ask what’s in it.' }
+    ];
+  }
+  function buyBar(id) {
+    var P = GAME.player;
+    if (id === 'cuba') P.health = Math.min(100, P.health + 35);
+    else P.health = 100;
+    if (id === 'special') P.armor = 100;
+    note(id === 'special' ? 'The bartender winks.' : 'Cheers.');
+    GAME.track('bar-drink');
   }
 
   // ---------- buying ----------
@@ -283,12 +354,13 @@ GAME.shops = (function () {
     }
     GAME.combat.refreshWeaponHud();
   }
-  function buyDress(id) {
-    var o = outfit();
-    if (id.indexOf('shirt_') === 0) o.shirt = id.slice(6);
-    else o.pants = id.slice(6);
+  function buyDress(id, fromWardrobe) {
+    var o = outfit(), c = closet(), shirt = id.indexOf('shirt_') === 0, piece = id.slice(6);
+    var had = (shirt ? c.shirts : c.pants).indexOf(piece) >= 0;
+    if (shirt) o.shirt = piece; else o.pants = piece;
+    if (!had) (shirt ? c.shirts : c.pants).push(piece);   // it hangs in your wardrobe from now on
     applyOutfit(); GAME.save();
-    note('Looking sharp.');
+    note(fromWardrobe || had ? 'Changed.' : 'Looking sharp — it\'s in your wardrobe now.');
   }
   function buyBarber(id) {
     var o = outfit();
@@ -305,6 +377,7 @@ GAME.shops = (function () {
       // no sleeping on the clock: a fare in the back seat or a race half
       // run does not pause for a nap
       if (GAME.missions && GAME.missions.active) { note('No sleeping on the clock.'); return; }
+      GAME.prefs.lastHome = loc.sh.id;   // and the next load starts here (startSpawn)
       close();
       GAME.hud.fade(function () {
         // eight hours pass behind the blackout: a third of the day wheel,
@@ -314,26 +387,46 @@ GAME.shops = (function () {
         // which read as the feature being broken. Sleeping is the loudest
         // possible statement that time should move, so it unpins the sun.
         GAME.player.health = 100;
+        // Eight hours is long enough for the law to forget a three-star
+        // night, not a manhunt: five stars wake up as three, four as two.
+        // (The units that were out there have gone home either way; whoever
+        // is still looking starts again from scratch.)
+        var woke = GAME.police.wanted, still = woke >= 5 ? 3 : woke === 4 ? 2 : 0;
         GAME.police.clearWanted();
+        if (still) GAME.police.setWanted(still);
         var unpinned = GAME.timeMode !== 'auto';
         if (unpinned) GAME.setTimeMode('auto');   // persists the preference too
         GAME.dayPhase = (GAME.dayPhase + 8 / 24) % 1;
+        if (GAME.weather && GAME.weather.pass) GAME.weather.pass(GAME.DAY_SECONDS / 3);   // and the sky's eight hours
         GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
         GAME.world.pickups.forEach(function (p) {
           if (p.taken && isFinite(p.respawnT)) p.respawnT -= GAME.DAY_SECONDS / 3;
         });
-        GAME.hud.message('Eight hours later. Rested, forgotten by the law, good as new.'
+        GAME.hud.message((still
+          ? 'Eight hours later. Rested and good as new — but they have not stopped looking for you.'
+          : 'Eight hours later. Rested, forgotten by the law, good as new.')
           + (unpinned ? ' The sky is back on the clock.' : ''), 5);
         GAME.track('safehouse-rest');
       });
       return;
     }
     ownedList().push(loc.sh.id);
+    GAME.prefs.lastHome = loc.sh.id;
     GAME.save();
     refreshGarageSpots();   // this lot joins the fleet's rounds
     GAME.track('safehouse-bought');
-    note('The keys are yours.');
+    if (GAME.lola) GAME.lola.first('home');
     GAME.hud.message(loc.sh.name + ' is yours — you’ll wake up here from now on, weapons and all, with your garage parked outside.', 5);
+    // The keys are yours, so in you go. The menu used to stay up and turn
+    // straight into SLEEP IT OFF — the first thing a new owner saw of the
+    // place was the offer of a nap on the pavement. The card comes once you
+    // are through the door (or at once, if the door is not open to you now:
+    // on a job, say).
+    close();
+    var card = function () { showDeedCard(loc); };
+    if (!(GAME.interiors && GAME.interiors.enter(loc, card) && GAME.interiors.busy)) card();
+  }
+  function showDeedCard(loc) {
     GAME.share.show({
       slug: 'safehouse-' + loc.sh.id,
       eyebrow: 'COSTA ROSA · 1986',
@@ -539,8 +632,9 @@ GAME.shops = (function () {
     // parked fleet threaded a metre-wide gap between boat and water's edge.
     SAFEHOUSES.forEach(function (s) {
       if (!s.at && s.isla && GAME.isla) {
-        var M = GAME.isla.pois().marina;
-        s.at = clearSpot(M.x - 7, M.z + 40);
+        // (city.js keeps the island's stunt jumps out of this yard)
+        var Y = GAME.city.villaYard, M = GAME.isla.pois().marina;
+        s.at = Y ? clearSpot(Y.x, Y.z) : clearSpot(M.x - 7, M.z + 40);
       } else if (s.at) {
         s.at = clearSpot(s.at.x, s.at.z);
       }
@@ -606,7 +700,9 @@ GAME.shops = (function () {
         var r = ramps[i];
         var ux = Math.sin(r.rot), uz = Math.cos(r.rot);
         var lx = r.x + ux * r.len / 2, lz = r.z + uz * r.len / 2;
-        var L = r.boost ? 260 : 90;
+        // (a metered ramp keeps the corridor it had when it was dressed as
+        // a booster, so taking the dress off moved no shop)
+        var L = r.boost || r.cap ? 260 : 90;
         var t = ((cx - lx) * ux + (cz - lz) * uz) / L;
         if (t < -0.15 || t > 1) continue;
         var px = lx + ux * t * L, pz = lz + uz * t * L;
@@ -695,6 +791,7 @@ GAME.shops = (function () {
       var dir = placed.dir;
       loc.at = { x: placed.mx, z: placed.mz };
       if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
+      if (loc.sh) loc.sh.face = { x: dir.x, z: dir.z };   // which way is in (homeHeading)
       var gy = GAME.city.groundY(placed.cx, placed.cz);
       // the door face and its outward normal (-dir); everything on the
       // facade hangs off these
@@ -1034,6 +1131,9 @@ GAME.shops = (function () {
     }));
     poolsMesh.matrixAutoUpdate = false;
     scene.add(poolsMesh);
+    // these come after the city packed and released its static meshes, so
+    // they go through the same here (see packStatic, releaseStatic)
+    [wallMesh, trimMesh, signMesh, poolsMesh].forEach(function (m) { packStatic(m); releaseStatic(m); });
   }
 
   // one instanced-ish batch of glowing doormats, pulsing in update()
@@ -1071,6 +1171,9 @@ GAME.shops = (function () {
       case 'showroom': return showroomItems();
       case 'bribe': return bribeItems();
       case 'casino': return casinoItems();
+      case 'bar': return barItems();
+      case 'wardrobe': return wardrobeItems();
+      case 'derby': return GAME.derby.items();
     }
     return [];
   }
@@ -1085,7 +1188,11 @@ GAME.shops = (function () {
     el.tag.textContent = openShop.tag || '';
     var hint = $('shop-hint');
     if (hint) hint.textContent =
-      openShop.kind === 'dress' || openShop.kind === 'barber'
+      openShop.kind === 'wardrobe'
+        ? 'Click or W/S to see it on you  ·  WEAR (or Enter) puts it on  ·  Esc leave'
+      : openShop.kind === 'derby'
+        ? GAME.derby.hint() + '  ·  Set your stake, pick a horse — BET asks before it takes it  ·  Esc leave'
+      : openShop.kind === 'dress' || openShop.kind === 'barber'
         ? 'Click or W/S to try it on — the mirror is you, free of charge  ·  BUY asks before it charges  ·  Esc leave'
         : openShop.kind === 'showroom'
           ? 'Click or W/S to put it on the turntable  ·  BUY asks before it charges  ·  Esc leave'
@@ -1108,9 +1215,9 @@ GAME.shops = (function () {
       var armed = i === sel && buyable;
       // noPrice rows are actions, not goods (sleeping in your own bed):
       // never print FREE or a BUY chip on them — that read as a purchase
-      var priceCell = it.owned ? 'YOURS'
-        : it.noPrice ? (armed ? (it.chip || 'GO') : '')
-          : armed ? 'BUY · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
+      var priceCell = it.owned ? (it.ownedLabel || 'YOURS')
+        : it.noPrice ? (armed ? (it.chip || 'GO') : (it.idle || ''))
+          : armed ? (it.verb || 'BUY') + ' · ' + (it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE')
             : it.price > 0 ? '$' + it.price.toLocaleString() : 'FREE';
       row.innerHTML = '<div><div class="nm">' + sw + it.name + '</div>' + (it.ds ? '<div class="ds">' + it.ds + '</div>' : '') + '</div>' +
         '<div class="pr' + (armed ? ' buychip' : '') + '">' + priceCell + '</div>';
@@ -1274,7 +1381,8 @@ GAME.shops = (function () {
   }
   function setPreview(it) {
     var kind = openShop && openShop.kind;
-    var wants = it && kind;
+    // (nothing to turn on a stand at the bar, and the horses are on the screens)
+    var wants = it && kind && kind !== 'bar' && kind !== 'derby';
     var side = $('shop-side');
     pv.on = !!wants;
     if (side) side.style.display = wants ? 'block' : 'none';
@@ -1346,7 +1454,7 @@ GAME.shops = (function () {
     if (P.cash < it.price) { note('You’re $' + (it.price - P.cash).toLocaleString() + ' short.'); GAME.audio.crash(0.12); GAME.haptics.deny(); return; }
     pendingBuy = it.id;
     $('shop-confirm-name').textContent = it.name;
-    $('shop-confirm-price').textContent = it.price > 0 ? 'Price: $' + it.price.toLocaleString() : 'Free';
+    $('shop-confirm-price').textContent = it.price > 0 ? (it.verb ? 'Stake: $' : 'Price: $') + it.price.toLocaleString() : 'Free';
     $('shop-confirm').style.display = 'flex';
   }
   function cancelConfirm() {
@@ -1377,6 +1485,12 @@ GAME.shops = (function () {
       case 'showroom': buyShowroom(openShop, id); break;
       case 'bribe': buyBribe(id); break;
       case 'casino': spinWheel(it.price); break;
+      case 'bar': buyBar(id); break;
+      case 'wardrobe': buyDress(id, true); break;
+      case 'derby':
+        // a horse: the stake is down, so off you go to watch it run
+        if (GAME.derby.choose(id) === 'bet') { close(); GAME.hud.message('Your money\'s down. Watch the screens!', 3); }
+        break;
     }
     if (openShop) render();   // a purchase can close the shop (share card) — guard
     GAME.audio.pickup();
@@ -1391,10 +1505,11 @@ GAME.shops = (function () {
     // the cursor starts on the row you're already wearing, so the first
     // thing the glass shows is the player, exactly — clothes, cut, color,
     // skin — not row one's shirt pulled over your head.
-    if (loc.kind === 'dress' || loc.kind === 'barber') {
+    if (loc.kind === 'dress' || loc.kind === 'barber' || loc.kind === 'wardrobe') {
       var list0 = items(loc);
       for (var oi = 0; oi < list0.length; oi++) if (list0[oi].owned) { sel = oi; break; }
     }
+    if (loc.kind === 'derby') sel = 1;   // the first horse, under the stake
     cancelConfirm();
     note('');
     el.screen.style.display = 'flex';
@@ -1403,6 +1518,7 @@ GAME.shops = (function () {
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
     render();
     GAME.track('shop-open-' + loc.kind);
+    if ((loc.kind === 'derby' || loc.kind === 'wardrobe') && GAME.lola) GAME.lola.first(loc.kind);
     return true;
   }
   function close() {
@@ -1419,17 +1535,24 @@ GAME.shops = (function () {
     GAME.regainPointer();
   }
 
-  function onKey(e) {
-    if (!GAME.shopOpen || !openShop) return;
+  // A key for the open shop, as the game hears it (main.js hands it over),
+  // so a pad's D-pad and A — which arrive that way and no other — browse
+  // and buy. It used to listen to the browser's own key events, which a
+  // controller never makes: on a pad a shop opened and could only be shut.
+  // Esc is left to main.js, which closes the card and then the shop.
+  function key(code) {
+    if (!GAME.shopOpen || !openShop) return false;
     if (pendingBuy !== null) {
       // the confirmation card owns the keys while it's up
-      if (e.code === 'Enter' || e.code === 'KeyE') confirmYes();
-      return;
+      if (code === 'Enter' || code === 'KeyE') { confirmYes(); return true; }
+      return code !== 'Escape';
     }
     var list = items(openShop);
-    if (e.code === 'KeyS' || e.code === 'ArrowDown') { sel = (sel + 1) % list.length; render(); }
-    else if (e.code === 'KeyW' || e.code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; render(); }
-    else if (e.code === 'Enter' || e.code === 'KeyE') { if (list[sel]) openConfirm(list[sel]); }
+    if (code === 'KeyS' || code === 'ArrowDown') { sel = (sel + 1) % list.length; render(); }
+    else if (code === 'KeyW' || code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; render(); }
+    else if (code === 'Enter' || code === 'KeyE') { if (list[sel]) openConfirm(list[sel]); }
+    else return false;
+    return true;
   }
 
   function init(scene) {
@@ -1440,7 +1563,6 @@ GAME.shops = (function () {
       $('shop-confirm-yes').addEventListener(ev, function (e) { e.preventDefault(); confirmYes(); });
       $('shop-confirm-no').addEventListener(ev, function (e) { e.preventDefault(); cancelConfirm(); });
     });
-    window.addEventListener('keydown', onKey);
     buildLocations();
     buildShopfronts(scene);   // may slide a doormat to fit its building
     buildMarkers(scene);
@@ -1479,6 +1601,13 @@ GAME.shops = (function () {
       if (P.inCar || d2 > 2.6 * 2.6) continue;
       if (leftSince[loc.id] === false) continue;   // still standing where it closed
       if (leftSince[loc.id] === undefined || jumped) { leftSince[loc.id] = false; continue; }
+      // a home you own and the casino are rooms now: the mat takes you in
+      // (or the doorman turns you away), and either way it waits until you
+      // have stepped off it again
+      if (GAME.interiors && GAME.interiors.enterable(loc) && GAME.interiors.enter(loc)) {
+        leftSince[loc.id] = false;
+        return;
+      }
       open(loc);
       return;
     }
@@ -1535,11 +1664,20 @@ GAME.shops = (function () {
   }
 
   return {
-    init: init, update: update, open: open, close: close, buy: buy,
+    init: init, update: update, open: open, close: close, buy: buy, key: key,
     nearHint: nearHint, blips: blips, applyOutfit: applyOutfit,
-    homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns,
+    homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns, startSpawn: startSpawn,
     renderPreview: renderPreview,
     garage: function () { return garage().slice(); },
+    // a prize, not a purchase: straight into the garage, parked at every base
+    grantVehicle: function (type) {
+      var g = garage();
+      if (g.indexOf(type) >= 0) return false;
+      g.push(type);
+      GAME.save();
+      refreshGarageSpots();
+      return true;
+    },
     garageSpot: function (type) {
       // the fleet parks at every base now — answer with the nearest copy
       var P = GAME.player, best = null, bd = 1e18;
@@ -1555,6 +1693,7 @@ GAME.shops = (function () {
     get current() { return openShop; },
     get selected() { return openShop ? items(openShop)[sel] : null; },
     locations: function () { return locations; },
-    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS, SKINTONES: SKINTONES }
+    wardrobe: { SHIRTS: SHIRTS, PANTS: PANTS, HAIRSTYLES: HAIRSTYLES, HAIRCOLORS: HAIRCOLORS, SKINTONES: SKINTONES },
+    closet: closet
   };
 })();

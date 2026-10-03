@@ -7,8 +7,13 @@ GAME.aircraft = (function () {
   var CLOSED_X = 560, warnT = 0, warnCount = 0;
   // two fixed answers, handed out rather than built on every ask — everything
   // that moves asks every tick, and nobody writes to them
-  var LIMIT_OPEN = { maxX: 1560, minZ: -600, maxZ: 600 };
-  var LIMIT_CLOSED = { maxX: CLOSED_X, minZ: -524, maxZ: 524 };
+  // The edges stand a good way out to sea: two hundred metres and more past
+  // the last land on every side. They sat 25-35 m off the coast, so a boat or
+  // a plane leaving the shore was turned back almost as soon as it had left
+  // — the world ended at the beach. (The closed channel is its own line.)
+  var WEST_X = -710;
+  var LIMIT_OPEN = { maxX: 1720, minZ: -720, maxZ: 720 };
+  var LIMIT_CLOSED = { maxX: CLOSED_X, minZ: -720, maxZ: 720 };
   function airLimit() {
     return GAME.isla && GAME.isla.isOpen() ? LIMIT_OPEN : LIMIT_CLOSED;
   }
@@ -37,6 +42,59 @@ GAME.aircraft = (function () {
     warnAirspace(pos.x, lim);
   }
 
+  // The sea has edges too. A swimmer or a boat is held to the same box as the
+  // air, and while the bridges are shut the channel is closed on the water as
+  // well — but with no strikes and no air units for it: there is no barrier
+  // out there to have ignored, just a line you cannot cross and a word on why.
+  var seaToldT = -99;
+  function enforceSea(pos) {
+    var lim = airLimit(), held = false, channel = false;
+    if (pos.x > lim.maxX) { pos.x = lim.maxX; held = true; channel = lim.maxX <= CLOSED_X; }
+    if (pos.x < WEST_X) { pos.x = WEST_X; held = true; }
+    if (pos.z < lim.minZ) { pos.z = lim.minZ; held = true; }
+    if (pos.z > lim.maxZ) { pos.z = lim.maxZ; held = true; }
+    if (held && GAME.time - seaToldT > 6) {
+      seaToldT = GAME.time;
+      GAME.hud.message(channel ? 'The channel is closed until the bridges open — turn back.'
+        : 'Nothing out there but open sea — turn back.', 2.5);
+    }
+    return held;
+  }
+
+  // The other three edges (and the far one, once the bridges are open) had no
+  // warning at all: the clamp just stopped the aircraft dead in mid-air,
+  // engine running, nose still pointed at a map edge it could not cross. Now
+  // anything flying at an edge is brought round toward the middle of the map,
+  // harder the closer it gets, and told why. And there is a ceiling: above a
+  // few hundred metres the ground fades out into the fog and there is nothing
+  // left to fly over, so the air is too thin to climb past it.
+  var EDGE_WARN = 90, CEIL_HELI = 200, CEIL_PLANE = 240, edgeToldT = -99, ceilToldT = -99;
+  function edgeTurn(car, lim, dt) {
+    var west = car.pos.x - WEST_X, east = lim.maxX - car.pos.x;
+    var north = car.pos.z - lim.minZ, south = lim.maxZ - car.pos.z;
+    // the closed channel has its own rule (warnAirspace) and keeps it
+    if (lim.maxX <= CLOSED_X) east = 1e9;
+    var d = Math.min(west, east, north, south);
+    if (d >= EDGE_WARN) return false;
+    var cx = (WEST_X + lim.maxX) / 2, cz = (lim.minZ + lim.maxZ) / 2;
+    var home = Math.atan2(cx - car.pos.x, cz - car.pos.z);
+    // only while it is pointed outward: flying back in is left alone
+    if (Math.cos(U.wrapPI(home - car.heading)) > 0.3) return false;
+    var pull = (1 - d / EDGE_WARN) * 2.6 + 0.4;
+    car.heading = U.angleLerp(car.heading, home, Math.min(1, pull * dt));
+    if (GAME.time - edgeToldT > 8) {
+      edgeToldT = GAME.time;
+      GAME.hud.message('Edge of the map — bringing you round.', 2.5);
+    }
+    return true;
+  }
+  function ceilingTold() {
+    if (GAME.time - ceilToldT > 10) {
+      ceilToldT = GAME.time;
+      GAME.hud.message('The air is too thin up here — she won’t climb any higher.', 3);
+    }
+  }
+
   // The airframe wears its damage out loud. Hard landings and wall grazes
   // chip aircraft hp silently, and the first anyone knew was the explosion
   // on the next takeoff — "I was at 100% health" (the PLAYER was; the
@@ -57,6 +115,7 @@ GAME.aircraft = (function () {
 
   // arcade helicopter: collective (up/down), cyclic (nose tilt = forward),
   // pedal (yaw). Called from player.js while the player flies a heli.
+  var HELI_CLIMB = 9, HELI_SINK = 9;   // m/s at full collective, each way
   function updateHeli(dt) {
     var P = GAME.player, car = P.car, inp = GAME.input, T = inp.touch;
     var up = 0, fwd = 0, yaw = 0;
@@ -70,12 +129,24 @@ GAME.aircraft = (function () {
       fwd += -T.stickY; yaw += -T.stickX;
       up += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); // GAS climbs, BRAKE descends
     }
+    // a controller: the stick flies it, RT climbs and LT comes down
+    if (GAME.pad.on) { fwd += -GAME.pad.ly; yaw += -GAME.pad.lx; up += GAME.pad.rt - GAME.pad.lt; }
 
     car.heading += yaw * 1.7 * dt;
 
-    // vertical: lift vs gravity, hover a touch above neutral so it drifts down slowly
-    car.vy = (car.vy || 0) + (up * 16 - 9.2) * dt;
-    car.vy = U.clamp(car.vy * Math.exp(-0.8 * dt), -14, 15);
+    // Vertical: the collective sets a climb rate and the airframe eases to it.
+    // Hands off, it HOLDS its height. It used to be lift against gravity with
+    // gravity winning whenever Space was up — no input meant falling, at
+    // eleven metres a second within three, and a hands-off descent from
+    // thirty metres was a crash landing. Space climbs, Shift comes down.
+    var climb = up > 0 ? HELI_CLIMB * up : up < 0 ? HELI_SINK * up : 0;
+    // the last twenty metres under the ceiling take the climb away
+    if (climb > 0 && car.pos.y > CEIL_HELI - 20) {
+      climb *= U.clamp((CEIL_HELI - car.pos.y) / 20, 0, 1);
+      if (car.pos.y > CEIL_HELI - 3) ceilingTold();
+    }
+    car.vy = U.damp(car.vy || 0, climb, 2.4, dt);
+    if (car.pos.y > CEIL_HELI && car.vy > 0) car.vy = 0;
     car.pos.y += car.vy * dt;
 
     // horizontal: tilt the nose to slide in the facing direction
@@ -89,9 +160,10 @@ GAME.aircraft = (function () {
       car.heliSpeed *= 0.25;
     }
     var lim = airLimit();
-    car.pos.x = U.clamp(nx, -524, lim.maxX);
+    car.pos.x = U.clamp(nx, WEST_X, lim.maxX);
     car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
     warnAirspace(car.pos.x, lim);
+    edgeTurn(car, lim, dt);
 
     // Land on whatever surface is below (terrain or a rooftop). The floor is
     // skid height, not cabin height — at +1.4 a "landed" helicopter hung in
@@ -234,7 +306,8 @@ GAME.aircraft = (function () {
     if (GAME.key('KeyE')) rollIn -= 1;
     // touch: THR+/THR- buttons drive throttle; the stick is a yoke — pull it
     // back (down) to bring the nose up and climb, push forward (up) to dive.
-    if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; }
+    if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; rollIn += (T.rollL ? 1 : 0) - (T.rollR ? 1 : 0); }
+    if (GAME.pad.on) { thr += GAME.pad.rt - GAME.pad.lt; pitchIn += GAME.pad.ly; yawIn += -GAME.pad.lx; }
 
     var gy = GAME.city.surfaceY(car.pos.x, car.pos.z);
     var onGround = car.pos.y <= gy + car.spec.wheelH + 0.35;
@@ -313,6 +386,15 @@ GAME.aircraft = (function () {
       car.pitch = U.damp(car.pitch, -0.85, 3, dt);
       car.speed = Math.min(car.spec.maxSpeed, car.speed + 14 * Math.sin(-Math.min(car.pitch, 0)) * dt);
     }
+    // the ceiling: the climb fades out over the last thirty metres, and the
+    // nose is eased level once it is there
+    if (vy > 0 && car.pos.y > CEIL_PLANE - 30) {
+      vy *= U.clamp((CEIL_PLANE - car.pos.y) / 30, 0, 1);
+      if (car.pos.y > CEIL_PLANE - 8) {
+        ceilingTold();
+        if (car.pitch > 0 && car.pitch < Math.PI / 2) car.pitch = U.damp(car.pitch, 0, 1.5, dt);
+      }
+    }
     car.pos.y += vy * dt;
 
     var horiz = car.speed * Math.cos(car.pitch);
@@ -330,9 +412,10 @@ GAME.aircraft = (function () {
       car.speed *= 0.3; nx = car.pos.x; nz = car.pos.z;
     }
     var lim = airLimit();
-    car.pos.x = U.clamp(nx, -524, lim.maxX);
+    car.pos.x = U.clamp(nx, WEST_X, lim.maxX);
     car.pos.z = U.clamp(nz, lim.minZ, lim.maxZ);
     warnAirspace(car.pos.x, lim);
+    if (!onGround) edgeTurn(car, lim, dt);
 
     var surf = GAME.city.surfaceY(car.pos.x, car.pos.z);
     if (car.pos.y < surf + car.spec.wheelH) {
@@ -404,7 +487,7 @@ GAME.aircraft = (function () {
     if (rig) rig.visible = true;
     GAME.audio.engineState(false, 0);
     GAME.haptics.chuteOpen();
-    GAME.hud.message('Parachute out — WASD to steer, glide to the ground', 3.5);
+    GAME.hud.message('Parachute out — ' + (GAME.controls && GAME.controls.usingPad() ? 'the stick' : 'WASD') + ' to steer, glide to the ground', 3.5);
   }
 
   function updateParachute(dt) {
@@ -415,6 +498,7 @@ GAME.aircraft = (function () {
     if (GAME.key('KeyA')) mx -= 1;
     if (GAME.key('KeyD')) mx += 1;
     if (T.active) { mx += T.stickX; mz += -T.stickY; }
+    if (GAME.pad.on) { mx += GAME.pad.lx; mz += -GAME.pad.ly; }
     var camYaw = GAME.cam.yaw;
     var wx = Math.sin(camYaw) * mz - Math.cos(camYaw) * mx;
     var wz = Math.cos(camYaw) * mz + Math.sin(camYaw) * mx;
@@ -457,7 +541,8 @@ GAME.aircraft = (function () {
     // get there is what decides which of the two it was.
     if (P.pos.y <= gy + 0.05) {
       land();
-      if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.playerDrown(); return; }
+      // down in the sea: out of the harness and swimming
+      if (GAME.city.isInWater(P.pos.x, P.pos.z, P.pos.y)) { GAME.startSwim(); return; }
       P.pos.y = gy; P.velY = 0;
       // touchdown, not the other two ways out of a canopy: land() is also what
       // drowning and dying call, and neither of those is a landing
@@ -484,6 +569,9 @@ GAME.aircraft = (function () {
     updateParachute: updateParachute,
     land: land,
     enforceAirspace: enforceAirspace,
+    enforceSea: enforceSea,
+    // where the world stops, for whoever needs to know (and the checks)
+    edges: function () { return { west: WEST_X, closed: LIMIT_CLOSED, open: LIMIT_OPEN }; },
     get parachuting() { return GAME.player.parachuting; }
   };
 })();

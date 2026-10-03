@@ -85,6 +85,7 @@ GAME.city = (function () {
   // spans of road carried over water, registered the same way. A crossing is
   // dry land for the water tests and drivable ground for the height lookup.
   city.crossings = [];
+  city.bridgePiers = [];   // where the bridges stand in the water (isla.js), for whoever needs them
   city.addCrossing = function (c) { city.crossings.push(c); return c; };
   // `atY`, when given, is the height of whatever is asking. A deck only counts
   // as ground once you are up at its level: without that, its height applies to
@@ -103,7 +104,13 @@ GAME.city = (function () {
   // Walkable surfaces that are not terrain: a flight of steps, a terrace.
   // A deck is a rectangle that may slope along its local +z, so one entry
   // describes a staircase and another the landing at the top of it.
+  //
+  // A deck marked `floor` is one storey of a building with more than one (an
+  // upstairs, and the stairs up to it): it is underfoot only for somebody up
+  // at its level, so the ground floor under it stays the ground floor. Asked
+  // with no height, only the part of it at street level counts.
   city.decks = [];
+  var FLOOR_STEP = 0.6;
   city.addDeck = function (d) {
     d.cos = Math.cos(d.rot || 0); d.sin = Math.sin(d.rot || 0);
     var r = Math.max(d.w, d.len) / 2 + 1;
@@ -111,7 +118,7 @@ GAME.city = (function () {
     city.decks.push(d);
     return d;
   };
-  city.deckAt = function (x, z) {
+  city.deckAt = function (x, z, atY) {
     var best = null;
     for (var i = 0; i < city.decks.length; i++) {
       var d = city.decks[i];
@@ -121,6 +128,7 @@ GAME.city = (function () {
       if (Math.abs(lx) > d.w / 2 || Math.abs(lz) > d.len / 2) continue;
       var t = (lz + d.len / 2) / d.len;
       var y = d.y0 + (d.y1 - d.y0) * t;
+      if (d.floor && (atY === undefined ? y > 0.5 : atY < y - FLOOR_STEP)) continue;
       if (best === null || y > best) best = y;
     }
     return best;
@@ -155,6 +163,45 @@ GAME.city = (function () {
   city.isOpenWater = function (x, z) {
     return !city.isOnPier(x, z) && !city.islandAt(x, z);
   };
+  // The height of the sea's surface at a point, swell and all — what a swimmer
+  // keeps their head above and a hull rides on. The swell is worked out on the
+  // GPU (see the ocean below), one vertex every 50 m; between vertices the
+  // surface is a flat facet, and because the swell is a sum of one wave along
+  // x and one along z, the facet is exactly the two waves each interpolated
+  // along their own axis. So this is the drawn surface, not an approximation
+  // of it that a hull would hover over or sink into.
+  //
+  // It is worked out the way the mesh is drawn: each vertex's own height
+  // (open sea, or a land vertex held just under the coast — see the ocean),
+  // the swell on the sea ones only, and the cell's two triangles, which
+  // PlaneGeometry splits along the diagonal from (x0, z1) to (x1, z0).
+  var SEA_LEVEL = -0.35, OCEAN_SHORE = -1.05, OCEAN_X0 = -1350, OCEAN_Z0 = -1500, OCEAN_CELL = 50;
+  var OCEAN_NX = 73, OCEAN_NZ = 61;
+  city.seaLevel = SEA_LEVEL;
+  function oceanVertY(i, j, w) {
+    i = U.clamp(i, 0, OCEAN_NX - 1); j = U.clamp(j, 0, OCEAN_NZ - 1);
+    var b = city.oceanBase ? city.oceanBase[j * OCEAN_NX + i] : SEA_LEVEL;
+    if (b <= -0.5 || !w) return b;
+    return b + Math.sin((OCEAN_X0 + i * OCEAN_CELL) * 0.045 + w.x) * 0.28 + Math.sin((OCEAN_Z0 + j * OCEAN_CELL) * 0.06 + w.y) * 0.22;
+  }
+  city.seaY = function (x, z) {
+    var w = city.oceanWave;
+    var gx = (x - OCEAN_X0) / OCEAN_CELL, gz = (z - OCEAN_Z0) / OCEAN_CELL;
+    var i = Math.floor(gx), j = Math.floor(gz), u = gx - i, v = gz - j;
+    if (u + v <= 1) {
+      var ha = oceanVertY(i, j, w);
+      return ha + (oceanVertY(i + 1, j, w) - ha) * u + (oceanVertY(i, j + 1, w) - ha) * v;
+    }
+    var hc = oceanVertY(i + 1, j + 1, w);
+    return hc + (oceanVertY(i, j + 1, w) - hc) * (1 - u) + (oceanVertY(i + 1, j, w) - hc) * (1 - v);
+  };
+  // Water a hull can be on: open sea, not under a pier or a jetty's planks
+  // (a bridge overhead is fine — boats go under the bridges)
+  city.isBoatWater = function (x, z) {
+    if (!city.isOpenWater(x, z)) return false;
+    return !city.decks.length || city.deckAt(x, z) === null;
+  };
+  city.moorings = [];   // where the boats are kept (for the map)
   city.isOnSand = function (x, z) {
     if (city.isOnPier(x, z)) return false;
     return x > BOARDWALK_X1 && x <= city.shoreline(z) + 2;
@@ -172,7 +219,10 @@ GAME.city = (function () {
       if (Math.abs(lx) > r.w / 2 || lz < -r.len / 2 || lz > r.len / 2) continue;
       var t = (lz + r.len / 2) / r.len;
       // a ramp can sit on a roof: base lifts the whole wedge
-      return { idx: r.idx, y: (r.base || 0) + r.h * t, slope: r.h / r.len, rot: r.rot, boost: r.boost, cap: r.cap };
+      // (an island ramp may sit on a gentle grade: its foot at `base`, the
+      // ground under its lip at `base1`, and the deck rising on top of that)
+      var b0 = r.base || 0, b1 = r.base1 !== undefined ? r.base1 : b0;
+      return { idx: r.idx, y: b0 + (b1 - b0 + r.h) * t, t: t, slope: (r.h + b1 - b0) / r.len, rot: r.rot, boost: r.boost, cap: r.cap };
     }
     return null;
   };
@@ -194,6 +244,11 @@ GAME.city = (function () {
   // 777 frames of climbing through.
   var STEP_UP = 0.45;
   city.canWalkTo = function (fromX, fromZ, toX, toZ) {
+    // Nobody but you goes into the sea. A stroller, a fleeing driver or an
+    // officer after you stops at the water's edge — they used to walk on in
+    // and vanish, which is also how a cop "followed" a swimmer. (Land first:
+    // it is the cheap test, and almost every step is on it.)
+    if (!city.islandAt(toX, toZ) && city.isInWater(toX, toZ) && !city.isInWater(fromX, fromZ)) return false;
     if (!city.ramps.length) return true;
     var to = city.rampAt(toX, toZ);
     if (!to || to.y <= STEP_UP) return true;
@@ -211,7 +266,7 @@ GAME.city = (function () {
       if (cy !== null) return cy;
     }
     if (city.decks.length) {
-      var dy = city.deckAt(x, z);
+      var dy = city.deckAt(x, z, atY);
       if (dy !== null) return dy;
     }
     // a landmass may carry its own relief; Costa Rosa is flat, others need not be
@@ -248,12 +303,21 @@ GAME.city = (function () {
   };
   // top surface at a point: the tallest solid building roof containing it,
   // else the terrain height. Used so aircraft can set down on rooftops.
+  //
+  // With `atY` — the height of whoever is asking — a roof more than a step
+  // above it is not underfoot: somebody standing in the street who has been
+  // shoved inside a building's footprint is in the street, not on the roof.
+  // Without that, any way of getting your feet inside a wall (a car pinning
+  // you against it, getting out beside one) stood you on top of the building.
+  // Asked with no height (the aircraft do), it is the tallest roof as before.
+  var SURFACE_STEP = 0.6;
   city.surfaceY = function (x, z, atY) {
     var y = city.groundY(x, z, atY);
     var boxes = city.hash.queryInto(x, z, 1, surfBoxes);
     for (var i = 0; i < boxes.length; i++) {
       var b = boxes[i];
       if (b.tag !== 'building') continue; // land on buildings, not props/fences
+      if (atY !== undefined && b.h > atY + SURFACE_STEP) continue;
       if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ && b.h > y) y = b.h;
     }
     return y;
@@ -350,7 +414,8 @@ GAME.city = (function () {
   // `minY`, when given, is the level the solid starts at — anything well below
   // it passes underneath instead of hitting it
   function addSolid(cx, cz, sx, sz, h, tag, noLOS, minY) {
-    var box = { minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS };
+    // `knock` is set on the few props a car can flatten (knockProp)
+    var box = { minX: cx - sx / 2, maxX: cx + sx / 2, minZ: cz - sz / 2, maxZ: cz + sz / 2, h: h, tag: tag || 'building', noLOS: !!noLOS, knock: null };
     if (minY !== undefined) box.minY = minY;
     city.hash.insert(box);
     return box;
@@ -472,11 +537,12 @@ GAME.city = (function () {
     // the wall's brightest channel, 0-1: where a lit window stops and wall begins
     var wv = parseInt(wall.slice(1), 16);
     var wallMax = Math.max((wv >> 16) & 255, (wv >> 8) & 255, wv & 255) / 255;
-    var map = repeatTex(cv);
-    // (a pale wall keeps its canvas: testFacadeContrast reads the wall's
-    // colour off it; its glow and every dark wall let theirs go)
-    if (!opts.glowAll) releaseAfterUpload(map);
-    return { map: map, glow: gv ? releaseAfterUpload(repeatTex(gv)) : map, cells: [cols, rows], wallMax: wallMax };
+    // the wall as painted, read back off the canvas while it still has one
+    // (x=2 is inside the plain left column), for testFacadeContrast
+    var px = g.getImageData(2, 2, 1, 1).data;
+    var wallLum = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+    var map = releaseAfterUpload(repeatTex(cv));
+    return { map: map, glow: gv ? releaseAfterUpload(repeatTex(gv)) : map, cells: [cols, rows], wallMax: wallMax, wallLum: wallLum };
   }
 
   // ---------- window light ----------
@@ -803,9 +869,9 @@ GAME.city = (function () {
     city.facadeWalls = { downtown: blkDowntown, strip: blkStrip,
                          residential: blkGeneric, harbor: blkHarbor };
     // headless hook: can a building's colour be SEEN? Per district, the wall
-    // its tint multiplies — sampled out of the map, where x=2 is inside the
-    // plain left column — times the spread of the colours actually PICKED for
-    // that district's blocks.
+    // its tint multiplies — sampled out of the map as it was painted (see
+    // windowTexture: the canvas itself is gone once it is on the GPU) — times
+    // the spread of the colours actually PICKED for that district's blocks.
     //
     // What this is: a floor against the bug it was written for, where a wall
     // at a ninth of full brightness crushed a whole palette into one block
@@ -821,10 +887,8 @@ GAME.city = (function () {
         if (!picks.length || !(d in city.facadeWalls)) return;
         var t = city.facadeWalls[d], wall = 1;
         if (t) {
-          var img = t.map && t.map.image;
-          if (!img || !img.getContext) return;
-          var px = img.getContext('2d').getImageData(2, 2, 1, 1).data;
-          wall = (px[0] * 0.299 + px[1] * 0.587 + px[2] * 0.114) / 255;
+          if (typeof t.wallLum !== 'number') return;
+          wall = t.wallLum;
         }
         var lo = [255, 255, 255], hi = [0, 0, 0], spread = 0;
         for (var i = 0; i < picks.length; i++) {
@@ -1193,13 +1257,21 @@ GAME.city = (function () {
     batches.downtown.addBox(HT.x, HT.h / 2, HT.z, 30, HT.h, 30, 0, 0xb8c4e8, 28);
     addSolid(HT.x, HT.z, 30, 30, HT.h);
     var roofY = HT.h + 0.06, padX = HT.x, padZ = HT.z;
-    // low parapet, scenery only — a wall solid up here would fight the skids.
+    // The glass lift runs up the outside of the north face, west of the
+    // lobby doors (below), and the parapet stands open where it arrives.
+    var SHX = HT.x - 8, LZ = HT.z + 15, SHZ = LZ + 1.7, SHW = 3.0;
+    // Low parapet. Not a solid box — a wall solid up here would fight the
+    // skids — but a rail that holds anybody walking (roofRails, player.js).
     // Inset from the tower edge (outer faces shared the wall planes) and
     // mitred at the corners (the bars used to overlap there, both faces
     // fighting for the same pixels on approach from the air)
-    [[-14.3, 0, 1.2, 29.8], [14.3, 0, 1.2, 29.8], [0, -14.3, 27.4, 1.2], [0, 14.3, 27.4, 1.2]].forEach(function (pp) {
+    var gap0 = SHX - HT.x - 1.4, gap1 = SHX - HT.x + 1.4;
+    [[-14.3, 0, 1.2, 29.8], [14.3, 0, 1.2, 29.8], [0, -14.3, 27.4, 1.2],
+      [(-13.7 + gap0) / 2, 14.3, gap0 + 13.7, 1.2], [(gap1 + 13.7) / 2, 14.3, 13.7 - gap1, 1.2]].forEach(function (pp) {
       batches.generic.addBox(HT.x + pp[0], HT.h + 0.5, HT.z + pp[1], pp[2], 1.0, pp[3], 0, 0x8a94b8, 0);
     });
+    city.roofRails = city.roofRails || [];
+    city.roofRails.push({ minX: HT.x - 13.25, maxX: HT.x + 13.25, minZ: HT.z - 13.25, maxZ: HT.z + 13.25, y: HT.h + 0.06, h: 1.0 });
     batches.ground.addGroundQuad(padX, roofY + 0.06, padZ, 16, 16, 0, 0x1a1a22);
     batches.marks.addGroundQuad(padX - 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
     batches.marks.addGroundQuad(padX + 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
@@ -1226,6 +1298,61 @@ GAME.city = (function () {
     addSign(batches.signs, 21, HT.x, HT.h - 5.5, HT.z - 15.1, Math.PI, 22, 3.2);
     addSign(batches.signs, 21, HT.x, HT.h - 5.5, HT.z + 15.1, 0, 22, 3.2);
     city.roofHelipad = { x: padX, z: padZ, y: roofY };
+    // and a lift, for anybody who arrives on foot. The way up used to be out
+    // of the sky and nothing else, and a helicopter sitting on a roof with no
+    // door to it read as a find you were not allowed. A lit lobby on the north
+    // face, and beside it a glass lift up the outside of the tower, with a
+    // ring at its door in the street and another on the roof where it
+    // arrives (interiors.js rides you up, looking out through the glass).
+    // Plain-lit, not the window-textured batches.
+    batches.marks.addBox(HT.x, 1.6, LZ + 0.06, 5.4, 3.2, 0.14, 0, 0xffe2a8, 0);        // the lit doors
+    batches.wood.addBox(HT.x, 1.6, LZ + 0.1, 0.18, 3.2, 0.12, 0, 0x2a2e3a, 0);      // the split between them
+    batches.wood.addBox(HT.x, 3.5, LZ + 1.6, 7.4, 0.3, 3.2, 0, 0x2a2e3a, 0);        // canopy
+    batches.marks.addBox(HT.x, 3.32, LZ + 3.1, 7.2, 0.1, 0.12, 0, 0x8fb4ff, 0);        // its lit lip
+    [[-3.5], [3.5]].forEach(function (cp) {
+      batches.wood.addBox(HT.x + cp[0], 1.7, LZ + 3.0, 0.24, 3.4, 0.24, 0, 0x8a94b8, 0);
+    });
+    // ---- the glass lift: a steel frame up the face, glass between, a lit
+    // head at the top, and a glass car that rides it
+    var shTop = roofY + 4.2;
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (c) {
+      batches.wood.addBox(SHX + c[0] * SHW / 2, shTop / 2, SHZ + c[1] * SHW / 2, 0.2, shTop, 0.2, 0, 0x8a94b8, 0);
+    });
+    for (var fy = 6; fy < shTop; fy += 6) {
+      batches.wood.addBox(SHX, fy, SHZ + SHW / 2, SHW, 0.12, 0.12, 0, 0x8a94b8, 0);
+      batches.wood.addBox(SHX - SHW / 2, fy, SHZ, 0.12, 0.12, SHW, 0, 0x8a94b8, 0);
+      batches.wood.addBox(SHX + SHW / 2, fy, SHZ, 0.12, 0.12, SHW, 0, 0x8a94b8, 0);
+    }
+    batches.wood.addBox(SHX, shTop + 0.3, SHZ - 0.4, SHW + 0.6, 0.6, SHW + 1.4, 0, 0x2a2e3a, 0);      // the head
+    batches.marks.addBox(SHX, shTop - 0.02, SHZ, SHW, 0.06, SHW, 0, 0x8fb4ff, 0);                     // lit underneath
+    batches.wood.addBox(SHX, roofY - 0.05, (LZ - 0.6 + SHZ - SHW / 2) / 2, SHW - 0.4, 0.12, SHZ - SHW / 2 - LZ + 0.6, 0, 0x5a6278, 0);  // the sill to the roof
+    var glass = new THREE.Mesh(new THREE.BoxGeometry(SHW - 0.1, shTop, SHW - 0.1),
+      new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.16, depthWrite: false }));
+    glass.position.set(SHX, shTop / 2, SHZ);
+    city.scene.add(glass);
+    addSolid(SHX, SHZ, SHW, SHW, shTop);
+    // the car itself: glass on three sides and the door, a floor, a lit roof
+    var cab = new THREE.Group(), CW = SHW - 0.35;
+    function cabPart(w, h, d, x, y, z, mat) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); cab.add(m); }
+    var steel = new THREE.MeshBasicMaterial({ color: 0x9aa4c4 });
+    var pane = new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+    cabPart(CW, 0.12, CW, 0, 0.06, 0, new THREE.MeshBasicMaterial({ color: 0x6a7288 }));
+    cabPart(CW, 0.1, CW, 0, 2.75, 0, steel);
+    cabPart(CW - 0.6, 0.04, CW - 0.6, 0, 2.69, 0, new THREE.MeshBasicMaterial({ color: 0xfff2dc }));
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (c) { cabPart(0.09, 2.7, 0.09, c[0] * CW / 2, 1.4, c[1] * CW / 2, steel); });
+    cabPart(CW, 2.6, 0.02, 0, 1.4, CW / 2, pane);
+    cabPart(0.02, 2.6, CW, -CW / 2, 1.4, 0, pane);
+    cabPart(0.02, 2.6, CW, CW / 2, 1.4, 0, pane);
+    cabPart(CW, 2.6, 0.02, 0, 1.4, -CW / 2, pane);
+    cabPart(CW - 0.2, 0.06, 0.06, 0, 1.0, CW / 2 - 0.12, steel);        // the rail you hold on the way up
+    cab.position.set(SHX, 0.02, SHZ);
+    city.scene.add(cab);
+    city.towerLift = {
+      street: { x: SHX, z: SHZ + SHW / 2 + 1.2, y: 0, heading: 0, out: { x: SHX, z: SHZ + SHW / 2 + 2.6 } },
+      roof: { x: SHX, z: HT.z + 12.4, y: roofY, heading: Math.PI, out: { x: SHX, z: HT.z + 11.0 } },
+      shaft: { x: SHX, z: SHZ, top: roofY },
+      cab: cab
+    };
     // the find has to be findable: the tower shows from half the map, so the
     // helicopter on it exists at long range instead of popping in at 210 m —
     // an empty pad seen from the strip read as "there is no helicopter"
@@ -1440,19 +1567,26 @@ GAME.city = (function () {
       }
       return segs;
     }
+    // Each strip follows the shoreline from one end to the other, out to just
+    // past the waterline, and drops to the water in a short wet face. They
+    // were rectangles reaching six metres past the coast to cover its curve,
+    // which drew sand over open water — a swimmer there was under the beach,
+    // and a boat run in at it sat up on the "sand".
+    var EDGE = 0.5;
     for (var sz = -500; sz < 500; sz += 20) {
-      var mid = sz + 10;
-      var w = city.shoreline(mid) + 6 - SAND_X0;
       // one shade draw per strip, split or not — the rng stream feeds every
       // placement after this loop, and an extra draw would reshuffle the city
       var shade = U.pick(rng, sandShades);
       var segs = bandSegs(sz - 0.25, sz + 20.25);
+      var sy = 0.06 + (sIdx % 2) * 0.06;
       for (var sg2 = 0; sg2 < segs.length; sg2++) {
         var za = segs[sg2][0], zb = segs[sg2][1];
         if (zb - za < 0.6) continue;
-        sand.addGroundQuad(SAND_X0 + w / 2, 0.06 + (sIdx % 2) * 0.06, (za + zb) / 2, w, zb - za, 0, shade);
-        // darker wet band at the waterline
-        sand.addGroundQuad(SAND_X0 + w - 4, 0.2, (za + zb) / 2, 9, zb - za, 0, 0xb0a078);
+        var ea = city.shoreline(za) + EDGE, eb = city.shoreline(zb) + EDGE;
+        sand.addQuad([SAND_X0, sy, za], [ea, sy, za], [eb, sy, zb], [SAND_X0, sy, zb], shade, [0, 1, 0]);
+        // darker wet band at the waterline, and the face down into the sea
+        sand.addQuad([ea - 6, 0.2, za], [ea, 0.2, za], [eb, 0.2, zb], [eb - 6, 0.2, zb], 0xb0a078, [0, 1, 0]);
+        sand.addQuad([ea, 0.2, za], [eb, 0.2, zb], [eb, -1.2, zb], [ea, -1.2, za], 0x8a7a58, [1, 0, 0]);
       }
       sIdx++;
     }
@@ -1460,16 +1594,31 @@ GAME.city = (function () {
     // strips lives on its own height tier: where the west fringe crosses the
     // north and south runs at the map corners, same-tier overlaps shimmered
     // from the air just like the beach bands did.
+    //
+    // Each fringe runs inland FROM the waterline. They used to be centred six
+    // metres in, which drew seven metres of sand out over the water — and the
+    // ends of the west run, like the west ends of the north and south ones,
+    // ran on past the corners into the sea. It looked like beach and was a
+    // swim: you drowned walking onto it. Clipped to the island, with the same
+    // colour drawn for every strip as before (the rng stream feeds the rest
+    // of the city), including the ones that now have no dry land to cover.
+    function fringe(x0, x1, z0, z1, y, color) {
+      x0 = Math.max(x0, city.westShore((z0 + z1) / 2));
+      z0 = Math.max(z0, city.northShore((x0 + x1) / 2));
+      z1 = Math.min(z1, city.southShore((x0 + x1) / 2));
+      if (x1 - x0 < 0.5 || z1 - z0 < 0.5) return;
+      sand.addGroundQuad((x0 + x1) / 2, y, (z0 + z1) / 2, x1 - x0, z1 - z0, 0, color);
+    }
     for (var fz = -520; fz < 520; fz += 20) {
       var wsh = city.westShore(fz + 10);
-      sand.addGroundQuad(wsh + 6, 0.22 + (sIdx % 2) * 0.06, fz + 10, 26, 20.5, 0, U.pick(rng, sandShades));
+      fringe(wsh, wsh + 26, fz - 0.25, fz + 20.25, 0.22 + (sIdx % 2) * 0.06, U.pick(rng, sandShades));
       sIdx++;
     }
     for (var fx = -520; fx < 380; fx += 20) {
       var nsh = city.northShore(fx + 10);
-      sand.addGroundQuad(fx + 10, 0.46 + (sIdx % 2) * 0.06, nsh + 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      fringe(fx - 0.25, fx + 20.25, nsh, nsh + 26, 0.46 + (sIdx % 2) * 0.06, U.pick(rng, sandShades));
       var ssh = city.southShore(fx + 10);
-      sand.addGroundQuad(fx + 10, 0.46 + ((sIdx + 1) % 2) * 0.06, ssh - 6, 20.5, 26, 0, U.pick(rng, sandShades));
+      fringe(fx - 0.25, fx + 20.25, ssh - 26, ssh, 0.46 + ((sIdx + 1) % 2) * 0.06, U.pick(rng, sandShades));
       sIdx++;
     }
     var sandMesh = new THREE.Mesh(sand.build(), sharedVertexLambert());
@@ -1521,9 +1670,41 @@ GAME.city = (function () {
     // the ocean plane spans the whole map, so its inland vertices sit just under
     // the streets. Sink those and never animate them — otherwise wave crests rise
     // through the asphalt as flickering blue patches.
+    //
+    // Only so far, though. Every vertex on land used to go down four metres,
+    // and with one vertex every 50 m that dragged the water along each coast
+    // down with it: the last fifty metres of sea sloped away toward the
+    // shore, three metres down by the beach. Nobody was ever in it before;
+    // a swimmer or a moored boat sat a metre or more above what was drawn.
+    // Land vertices next to the sea now sit just under the lowest sand and
+    // keep the coastal water nearly level; the rest still go deep. (The
+    // water test is the land itself: under a pier or a bridge is still sea.)
+    var OX = 73, OZ = 61;
+    var base = new Float32Array(OX * OZ), wet = new Uint8Array(OX * OZ);
+    for (var iz = 0; iz < OZ; iz++) {
+      for (var ix = 0; ix < OX; ix++) {
+        wet[iz * OX + ix] = city.islandAt(OCEAN_X0 + ix * OCEAN_CELL, OCEAN_Z0 + iz * OCEAN_CELL) ? 0 : 1;
+      }
+    }
+    for (iz = 0; iz < OZ; iz++) {
+      for (ix = 0; ix < OX; ix++) {
+        var k = iz * OX + ix;
+        if (wet[k]) { base[k] = SEA_LEVEL; continue; }
+        var shore = false;
+        for (var dz2 = -1; dz2 <= 1 && !shore; dz2++) {
+          for (var dx2 = -1; dx2 <= 1; dx2++) {
+            var nx2 = ix + dx2, nz2 = iz + dz2;
+            if (nx2 >= 0 && nx2 < OX && nz2 >= 0 && nz2 < OZ && wet[nz2 * OX + nx2]) { shore = true; break; }
+          }
+        }
+        base[k] = shore ? OCEAN_SHORE : -4;
+      }
+    }
+    city.oceanBase = base;
     var op = og.attributes.position.array;
     for (var vi = 0; vi < op.length; vi += 3) {
-      if (!city.isInWater(op[vi], op[vi + 2])) op[vi + 1] = -4;
+      var gi = Math.round((op[vi] - OCEAN_X0) / OCEAN_CELL), gj = Math.round((op[vi + 2] - OCEAN_Z0) / OCEAN_CELL);
+      op[vi + 1] = base[gj * OX + gi];
     }
     var om = new THREE.MeshPhongMaterial({ color: 0x0d2242, shininess: 120, specular: 0x8899cc, transparent: true, opacity: 0.93 });
     // The swell is worked out on the GPU. It used to be a loop over all 4,453
@@ -1540,7 +1721,7 @@ GAME.city = (function () {
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform vec2 uWave;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n' +
-          'if (position.y > -1.0) transformed.y += sin(position.x * 0.045 + uWave.x) * 0.28 + sin(position.z * 0.06 + uWave.y) * 0.22;');
+          'if (position.y > -0.5) transformed.y += sin(position.x * 0.045 + uWave.x) * 0.28 + sin(position.z * 0.06 + uWave.y) * 0.22;');
     };
     city.oceanWave = wave.value;
     var ocean = new THREE.Mesh(og, om);
@@ -1626,11 +1807,18 @@ GAME.city = (function () {
 
   // df in [0,1]: 0 = deep night, ~0.4 = dusk/sunset, 1 = full day
   city.applyTimeOfDay = function (df) {
-    if (city.sky) city.sky.material.color.setScalar(U.clamp(0.32 + df * 1.1, 0.32, 1));
-    if (city.skyDay) city.skyDay.material.opacity = U.clamp((df - 0.6) / 0.32, 0, 1);
-    if (city.stars) { city.stars.material.opacity = U.clamp(1 - df * 2.2, 0, 1); city.stars.material.transparent = true; city.stars.visible = df < 0.5; }
-    if (city.moon) city.moon.material.opacity = U.clamp(1 - df * 1.6, 0.05, 1), city.moon.material.transparent = true;
-    if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5);
+    // under rain the sky clouds over: the blue day dome fades toward the grey
+    // the fog has turned, and the stars and the moon go in
+    var wet = GAME.weather ? GAME.weather.rain : 0, clear = 1 - wet;
+    if (city.sky) city.sky.material.color.setScalar(U.clamp(0.32 + df * 1.1, 0.32, 1) * (1 - 0.45 * wet));
+    if (city.skyDay) {
+      city.skyDay.material.opacity = U.clamp((df - 0.6) / 0.32, 0, 1);
+      // the blue taken out of it, toward a flat overcast grey
+      city.skyDay.material.color.setRGB(1 - 0.42 * wet, 1 - 0.4 * wet, 1 - 0.5 * wet);
+    }
+    if (city.stars) { city.stars.material.opacity = U.clamp(1 - df * 2.2, 0, 1) * clear; city.stars.material.transparent = true; city.stars.visible = df < 0.5 && wet < 0.9; }
+    if (city.moon) city.moon.material.opacity = U.clamp(1 - df * 1.6, 0.05, 1) * U.clamp(clear, 0.05, 1), city.moon.material.transparent = true;
+    if (city.moonHalo) city.moonHalo.material.opacity = U.clamp(0.5 - df * 0.8, 0, 0.5) * clear;
     // street lamps burn at night, fade out through dusk, and are off in daylight
     var lampOn = U.clamp(1 - (df - 0.45) / 0.35, 0, 1);
     // and so do the windows' own lights, building by building (see lamBlock)
@@ -1710,7 +1898,9 @@ GAME.city = (function () {
       dummy.updateMatrix();
       trunkMesh.setMatrixAt(p, dummy.matrix);
       frondMesh.setMatrixAt(p, dummy.matrix);
-      if (pp.x < 356) addSolid(pp.x, pp.z, 0.8, 0.8, 6, 'prop', true);
+      // every trunk is solid: the beach ones were left out, and a car went
+      // straight through them
+      addSolid(pp.x, pp.z, 0.8, 0.8, 6, 'prop', true);
     }
     scene.add(trunkMesh); scene.add(frondMesh);
 
@@ -1750,7 +1940,8 @@ GAME.city = (function () {
       dummy.updateMatrix();
       poleMesh.setMatrixAt(L, dummy.matrix);
       headMesh.setMatrixAt(L, dummy.matrix);
-      addSolid(ls.x, ls.z, 0.5, 0.5, 6, 'prop', true);
+      addSolid(ls.x, ls.z, 0.5, 0.5, 6, 'prop', true).knock =
+        { kind: 'pole', mesh: poleMesh, extra: headMesh, i: L, x: ls.x, z: ls.z, rot: ls.rot, down: false, t: 0, m0: null };
     }
     scene.add(poleMesh); scene.add(headMesh);
     // warm pools of light on the road
@@ -1780,7 +1971,8 @@ GAME.city = (function () {
       dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1);
       dummy.updateMatrix();
       hydMesh.setMatrixAt(hh, dummy.matrix);
-      addSolid(hyd[hh].x, hyd[hh].z, 0.6, 0.6, 1, 'prop', true);
+      addSolid(hyd[hh].x, hyd[hh].z, 0.6, 0.6, 1, 'prop', true).knock =
+        { kind: 'flat', mesh: hydMesh, extra: null, i: hh, x: 0, z: 0, rot: 0, down: false, t: 0, m0: null };
     }
     scene.add(hydMesh);
 
@@ -1797,6 +1989,9 @@ GAME.city = (function () {
       dummy.position.set(benches[bb].x, 0.3, benches[bb].z);
       dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix();
       benchMesh.setMatrixAt(bb, dummy.matrix);
+      // solid, as a bench is — a car went through these as if they were paint
+      addSolid(benches[bb].x, benches[bb].z, 0.7, 2.2, 0.9, 'prop', true).knock =
+        { kind: 'flat', mesh: benchMesh, extra: null, i: bb, x: 0, z: 0, rot: 0, down: false, t: 0, m0: null };
     }
     scene.add(benchMesh);
 
@@ -2128,10 +2323,13 @@ GAME.city = (function () {
             }
           }
           if (!ok2) continue;
-          // The drop is metered too: ramp2 is a capped strip (22 m/s), so
-          // the landing falls a known ~30 m past the parapet. The corridor
-          // check covers that plus margin; thin posts (lamps) don't count —
-          // only real massing closes a landing zone.
+          // The drop is metered too: ramp2 sets a 22 m/s pace by its lip, so
+          // the landing falls a known ~30 m past the parapet. It is a plain
+          // ramp, not a booster — that pace brings almost everything DOWN,
+          // and a car thrown off it any faster lands against the wall of the
+          // next block. The corridor check covers that plus margin; thin
+          // posts (lamps) don't count — only real massing closes a landing
+          // zone.
           for (var t3 = 4; t3 <= 40 && ok2; t3 += 4) {
             var lx2 = (axisX ? far + sgn * t3 : across), lz2 = (axisX ? across : far + sgn * t3);
             if (lx2 < -466 || lx2 > 392 || Math.abs(lz2) > 472 || city.isInWater(lx2, lz2)) { ok2 = false; break; }
@@ -2147,7 +2345,7 @@ GAME.city = (function () {
           // launcher over the roofline, and the second lip at the far edge
           out.push({ x: lx, z: lz, rot: rot, w: 12, len: 26, h: hL, boost: true, cap: cap2 });
           var c2a = far - sgn * (0.5 + 8);               // ramp2 centre (len 16), lip at the edge
-          out.push({ x: axisX ? c2a : across, z: axisX ? across : c2a, rot: rot, w: 12, len: 16, h: 4.6, base: roofY2, boost: true, cap: 22 });
+          out.push({ x: axisX ? c2a : across, z: axisX ? across : c2a, rot: rot, w: 12, len: 16, h: 4.6, base: roofY2, cap: 22 });
           return true;
         }
         }
@@ -2294,10 +2492,137 @@ GAME.city = (function () {
     return out;
   }
 
+  // Isla Verde's own jumps — ten, on a tally of their own, so the mainland's
+  // twenty-five (and what finding them opens) stay exactly as they were. The
+  // island is hills and curves rather than a grid, so its ramps are found
+  // rather than laid out: flat open ground off the roads, square to the
+  // compass like every other ramp (their flanks are boxes), with a clear
+  // run-up behind, dry land ahead for the landing, and spread over the whole
+  // island. Seeded, so they are in the same places every visit.
+  var ISLA_STUNTS = 10;
+  function rollIslaStuntSpots() {
+    var I = city.isla;
+    if (!I || !GAME.isla) return [];
+    var rng = mulberry32(4271);
+    var B = I.bounds, out = [];
+    var SH = [{ w: 13, len: 22, h: 4.4 }, { w: 16, len: 26, h: 5.4 }, { w: 11, len: 18, h: 3.6 }, { w: 20, len: 30, h: 6.4 }];
+    var pois = GAME.isla.pois(), poiList = [];
+    for (var pk in pois) if (pois[pk] && pois[pk].x !== undefined) poiList.push(pois[pk]);
+    // the Marina Villa's lot, south of the jetties: shops.js builds the house
+    // there later, so this is where it learns the spot (villaYard), and the
+    // jumps learn to keep clear of it (below)
+    city.villaYard = pois.marina ? { x: pois.marina.x - 7, z: pois.marina.z + 40, r: 60 } : null;
+    function land(x, z) { return I.contains(x, z) && !city.isInWater(x, z); }
+    function solidNear(x, z, r, topAbove) {
+      var bx = city.hash.query(x, z, r);
+      for (var i = 0; i < bx.length; i++) {
+        var b = bx[i];
+        if (b.h !== undefined && b.h <= topAbove) continue;
+        if (x + r > b.minX && x - r < b.maxX && z + r > b.minZ && z - r < b.maxZ) return true;
+      }
+      return false;
+    }
+    var why = city.islaStuntWhy = {};
+    function no(k) { why[k] = (why[k] || 0) + 1; return null; }
+    function fits(x, z, rot, sh, boost) {
+      for (var i = 0; i < out.length; i++) if (U.dist2(x, z, out[i].x, out[i].z) < 80 * 80) return no('spacing');
+      for (var j = 0; j < poiList.length; j++) if (U.dist2(x, z, poiList[j].x, poiList[j].z) < 35 * 35) return no('poi');
+      var fx = Math.sin(rot), fz = Math.cos(rot), sx = fz, sz = -fx;
+      var hw = sh.w / 2 + 2, hl = sh.len / 2 + 2;
+      // ground under the foot and under the lip: the ramp may run up or down
+      // a gentle grade, but not across one
+      var base0 = I.groundY(x - fx * sh.len / 2, z - fz * sh.len / 2);
+      var base1 = I.groundY(x + fx * sh.len / 2, z + fz * sh.len / 2);
+      if (Math.abs(base1 - base0) > sh.len * 0.16) return no('grade');
+      // set downhill, the grade eats the ramp: keep two metres of real rise
+      if (sh.h + base1 - base0 < 2.4) return no('grade');
+      var base = base0;
+      // the footprint: on land, off the roads and bridges, true to that
+      // grade, and empty
+      for (var a = -1; a <= 1; a += 0.5) {
+        var along = base0 + (base1 - base0) * (a * hl / sh.len + 0.5);
+        for (var c = -1; c <= 1; c += 0.5) {
+          var px = x + fx * hl * a + sx * hw * c, pz = z + fz * hl * a + sz * hw * c;
+          if (!land(px, pz) || I.inland(px, pz) < 0.02) return no('land');
+          if (I.onRoad(px, pz, 2) || city.nearCrossing(px, pz, 12)) return no('road');
+          if (Math.abs(I.groundY(px, pz) - along) > 0.6) return no('flat');
+        }
+      }
+      if (solidNear(x, z, Math.max(hw, hl), -1e9)) return no('solid');
+      // nor where a car gets parked
+      for (var q = 0; q < city.parkedSpots.length; q++) {
+        if (U.dist2(x, z, city.parkedSpots[q].x, city.parkedSpots[q].z) < Math.pow(Math.max(hw, hl) + 4, 2)) return no('parked');
+      }
+      // a run-up behind the low lip: land, not a cliff, nothing standing
+      for (var r = 4; r <= 28; r += 4) {
+        var rx = x - fx * (sh.len / 2 + r), rz = z - fz * (sh.len / 2 + r);
+        if (!land(rx, rz) || Math.abs(I.groundY(rx, rz) - base0) > 1 + r * 0.15) return no('runup');
+        if (solidNear(rx, rz, 2, I.groundY(rx, rz) + 0.6)) return no('runupSolid');
+      }
+      // and somewhere to come down: dry land the whole way out, not rising
+      // into a hillside, nothing tall to fly into along the line
+      var reach = boost ? 110 : 60;
+      for (var f = 8; f <= reach; f += 4) {
+        var lx = x + fx * (sh.len / 2 + f), lz = z + fz * (sh.len / 2 + f);
+        if (!land(lx, lz)) return no('landing');
+        var gy = I.groundY(lx, lz);
+        if (gy > base1 + 1 + f * 0.04 || gy < base1 - 30) return no('slope');
+        if (solidNear(lx, lz, 2, gy + 1.5)) return no('landingSolid');
+      }
+      return { x: x, z: z, rot: rot, w: sh.w, len: sh.len, h: sh.h, base: base0, base1: base1, boost: boost, isla: true };
+    }
+    var cands = [];
+    var ex = B.rx * 1.2, ez = B.rz * 1.2;
+    for (var cx = B.cx - ex; cx <= B.cx + ex; cx += 9) {
+      for (var cz = B.cz - ez; cz <= B.cz + ez; cz += 9) {
+        if (I.contains(cx, cz) && I.inland(cx, cz) > 0.06) cands.push([cx, cz]);
+      }
+    }
+    for (var k = cands.length - 1; k > 0; k--) {
+      var m = Math.floor(rng() * (k + 1)), tmp = cands[k]; cands[k] = cands[m]; cands[m] = tmp;
+    }
+    var ROTS = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+    // the shape wanted next is tried first, then the smaller ones: the hills
+    // leave room for a kicker in places a long ramp will not go
+    for (var ci = 0; ci < cands.length && out.length < ISLA_STUNTS; ci++) {
+      // (no boosters over here: launched that hard off a hillside, the
+      // landing is somewhere far down the slope, and too hard to live)
+      var want = out.length % SH.length, boost = false;
+      var r0 = Math.floor(rng() * 4), spot = null;
+      for (var si = 0; si < SH.length && !spot; si++) {
+        var sh = SH[(want + si) % SH.length];
+        for (var ri = 0; ri < 4 && !spot; ri++) spot = fits(cands[ci][0], cands[ci][1], ROTS[(r0 + ri) % 4], sh, boost);
+      }
+      if (spot) out.push(spot);
+    }
+    // A jump rolled into the villa's front yard stood between the road and
+    // the house and hid it outright. It is swapped, in its own slot, for the
+    // next spot that fits clear of the yard — not rerolled with the rest:
+    // every other jump keeps its place and its number, and the number is
+    // what a saved game knows a found jump by.
+    var Y = city.villaYard;
+    for (var oi = 0; Y && oi < out.length; oi++) {
+      if (U.dist2(out[oi].x, out[oi].z, Y.x, Y.z) >= Y.r * Y.r) continue;
+      var was = out.splice(oi, 1)[0], swap = null;
+      var w0 = SH.map(function (q) { return q.len; }).indexOf(was.len);
+      for (var cj = 0; cj < cands.length && !swap; cj++) {
+        if (U.dist2(cands[cj][0], cands[cj][1], Y.x, Y.z) < Y.r * Y.r) continue;
+        for (var sj = 0; sj < SH.length && !swap; sj++) {
+          for (var rj = 0; rj < 4 && !swap; rj++) swap = fits(cands[cj][0], cands[cj][1], ROTS[rj], SH[(Math.max(0, w0) + sj) % SH.length], false);
+        }
+      }
+      out.splice(oi, 0, swap || was);
+    }
+    return out;
+  }
+
   function buildRamps(scene) {
     // 25 unique stunt jumps scattered across the city: construction ramps
-    // parked on verges and aprons near landmarks, each one a find.
-    var SPOTS = rollStuntSpots();
+    // parked on verges and aprons near landmarks, each one a find — and
+    // Isla Verde's ten after them (their own tally; see GAME.stunts).
+    // The island's come LAST so the mainland's keep the numbers a saved
+    // game knows them by.
+    var SPOTS = rollStuntSpots().concat(rollIslaStuntSpots());
     var pos = [], col = [], nrm = [];
     function tri(ax, ay, az, bx, by, bz, cx2, cy, cz2, r, g, b) {
       var ux = bx - ax, uy = by - ay, uz = bz - az;
@@ -2308,15 +2633,21 @@ GAME.city = (function () {
       pos.push(ax, ay, az, bx, by, bz, cx2, cy, cz2);
       for (var k = 0; k < 3; k++) { nrm.push(nx, ny, nz); col.push(r, g, b); }
     }
+    var islaN = 0;
     for (var i = 0; i < SPOTS.length; i++) {
       var s = SPOTS[i];
       var c = Math.cos(s.rot), sn = Math.sin(s.rot);
       // world position of a local (across, along, up) point — `base` lifts
       // the whole wedge onto a roof when the spot calls for one
       function P(lx, lz, ly) {
-        return [s.x + lx * c + lz * sn, ly + (s.base || 0), s.z - lx * sn + lz * c];
+        return [s.x + lx * c + lz * sn, ly + baseAt(lz), s.z - lx * sn + lz * c];
       }
       var hw = s.w / 2, hl = s.len / 2;
+      // the ground the wedge stands on, foot to lip (level, but for an island
+      // ramp set on a grade)
+      // (rb0/rb1: sb0/sb1 below are the side walls' corners)
+      var rb0 = s.base || 0, rb1 = s.base1 !== undefined ? s.base1 : rb0;
+      function baseAt(lz) { return rb0 + (rb1 - rb0) * U.clamp((lz + hl) / s.len, 0, 1); }
       var a0 = P(-hw, -hl, 0), b0 = P(hw, -hl, 0);      // bottom lip
       var a1 = P(-hw, hl, s.h), b1 = P(hw, hl, s.h);    // top lip
       var a1g = P(-hw, hl, 0), b1g = P(hw, hl, 0);      // top lip at ground
@@ -2359,7 +2690,8 @@ GAME.city = (function () {
 
       var rad = Math.max(s.w, s.len) / 2 + 2;
       city.ramps.push({
-        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h, base: s.base || 0, boost: !!s.boost, cap: s.cap,
+        idx: i, x: s.x, z: s.z, rot: s.rot, w: s.w, len: s.len, h: s.h, base: s.base || 0, base1: s.base1, boost: !!s.boost, cap: s.cap,
+        isla: !!s.isla, islaN: s.isla ? islaN++ : -1,
         cos: c, sin: sn,
         minX: s.x - rad, maxX: s.x + rad, minZ: s.z - rad, maxZ: s.z + rad
       });
@@ -2368,7 +2700,7 @@ GAME.city = (function () {
       // off the top sails over while one approaching from behind is stopped.
       var bc = P(0, hl + 1.1, 0);
       var across = Math.abs(Math.cos(s.rot)) > 0.5;
-      addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, (s.base || 0) + s.h * 0.62, 'building');
+      addSolid(bc[0], bc[2], across ? s.w : 2.0, across ? 2.0 : s.w, rb1 + s.h * 0.62, 'building');
       // the raked flanks are solid too. Every ramp is axis-aligned, so each
       // side is three stepped boxes rising with the deck — walk or drive into
       // the side and you hit a wall, while anyone ON the deck stands above the
@@ -2387,7 +2719,7 @@ GAME.city = (function () {
           // coming at the flank from the ground, while the deck clears it.
           addSolid(wc[0], wc[2],
             across ? 1.0 : lzLen, across ? lzLen : 1.0,
-            (s.base || 0) + Math.max(0.3, s.h * t0 - 0.35), 'prop', true);
+            baseAt(-hl + s.len * t0) + Math.max(0.3, s.h * t0 - 0.35), 'prop', true);
         }
       }
     }
@@ -2498,6 +2830,12 @@ GAME.city = (function () {
     city.parkedSpots.push({ x: 360, z: -40, heading: 0, vtype: 'motorcycle' });
     city.parkedSpots.push({ x: 342, z: 200, heading: 0, vtype: 'motorcycle' });
     city.parkedSpots.push({ x: -152, z: 150, heading: 0, vtype: 'motorcycle' });
+    // a speedboat moored off each of the east piers, bow out to sea, close
+    // enough alongside to step down into from the planks
+    city.moorings.push({ x: 485, z: 238.5 }, { x: 445, z: -168.5 });
+    city.moorings.forEach(function (mo) {
+      city.parkedSpots.push({ x: mo.x, z: mo.z, y: -0.35, heading: Math.PI / 2, vtype: 'boat' });
+    });
 
     // starter pickups within sight of the spawn point (356, 40)
     city.pickupSpots.push({ x: 358, z: 34, type: 'pistol' });
@@ -2509,7 +2847,53 @@ GAME.city = (function () {
     city.pickupSpots.push({ x: 365, z: 250, type: 'pistol' });
   }
 
+  // ---------- things a car can knock down ----------
+  // Lamp posts, hydrants and boardwalk benches. A half-metre post stopped a
+  // car at 29 m/s as dead as a building would; now something moving takes it
+  // down for a little of its pace and a dent (vehicles.js collideStatic), and
+  // it is put back up once nobody has been near it for a while.
+  var knocked = [], knockCheckT = 0, KNOCK_BACK_AFTER = 45, KNOCK_BACK_R = 120;
+  var kq = new THREE.Quaternion(), kq2 = new THREE.Quaternion(), kAxis = new THREE.Vector3();
+  var kPos = new THREE.Vector3(), kScl = new THREE.Vector3(1, 1, 1), kM = new THREE.Matrix4();
+  function setKnock(k, m) {
+    k.mesh.setMatrixAt(k.i, m); k.mesh.instanceMatrix.needsUpdate = true;
+    if (k.extra) { k.extra.setMatrixAt(k.i, m); k.extra.instanceMatrix.needsUpdate = true; }
+  }
+  city.knockProp = function (box, heading) {
+    var k = box.knock;
+    if (!k || k.down) return false;
+    k.down = true; k.t = 0;
+    city.hash.remove(box);
+    if (!k.m0) { k.m0 = new THREE.Matrix4(); k.mesh.getMatrixAt(k.i, k.m0); }
+    if (k.kind === 'pole') {
+      // laid over in the direction it was hit, hinged at its foot
+      kq.setFromAxisAngle(kAxis.set(Math.cos(heading), 0, -Math.sin(heading)), Math.PI * 0.46);
+      kq2.setFromAxisAngle(kAxis.set(0, 1, 0), k.rot);
+      kq.multiply(kq2);
+      kM.compose(kPos.set(k.x, 0, k.z), kq, kScl.set(1, 1, 1));
+    } else kM.makeScale(0, 0, 0);
+    setKnock(k, kM);
+    knocked.push(box);
+    return true;
+  };
+  function standKnockedBack(dt) {
+    if (!knocked.length || (knockCheckT -= dt) > 0) return;
+    knockCheckT = 2;
+    var f = GAME.focus();
+    for (var i = knocked.length - 1; i >= 0; i--) {
+      var b = knocked[i], k = b.knock;
+      k.t += 2;
+      if (k.t < KNOCK_BACK_AFTER) continue;
+      if (U.dist2(f.x, f.z, (b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2) < KNOCK_BACK_R * KNOCK_BACK_R) continue;
+      k.down = false;
+      city.hash.insert(b);
+      setKnock(k, k.m0);
+      knocked.splice(i, 1);
+    }
+  }
+
   city.update = function (dt, t) {
+    standKnockedBack(dt);
     // the swell's two phases (see the ocean in buildBeach)
     if (city.oceanWave) city.oceanWave.set((t * 1.1) % (Math.PI * 2), (t * 0.7) % (Math.PI * 2));
     if (city.wheelSpin) {

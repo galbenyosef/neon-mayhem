@@ -24,6 +24,10 @@ GAME.police = (function () {
   // undoing the ladder faster than the gaps built it.
   var ESCALATION = 0.10;
   var CAR_CAP = [0, 1, 2, 3, 4, 6];
+  // how long one star lasts after the offence (see the cooling in update):
+  // ONE_STAR_HOLD whatever happens, ONE_STAR_CHASE while a unit has had you
+  // in sight in the last ONE_STAR_SEEN seconds
+  var ONE_STAR_HOLD = 20, ONE_STAR_CHASE = 45, ONE_STAR_SEEN = 2;
 
   function stars() {
     var s = 0;
@@ -40,11 +44,12 @@ GAME.police = (function () {
   // a crime only raises the alarm if a cop (any range, LOS) or a civilian
   // (close, LOS) actually sees it — bumping a fender in an empty street is free
   function witnessed(pos) {
-    var peds = GAME.world.peds;
+    var peds = GAME.world.peds, vis = GAME.weather.visibility();
     for (var i = 0; i < peds.length; i++) {
       var p = peds[i];
       if (p.dead) continue;
-      var range = p.isCop ? 95 : 32;
+      // nobody sees as far at night, or through rain (weather.js)
+      var range = (p.isCop ? 95 : 32) * vis;
       if (U.dist2(p.pos.x, p.pos.z, pos.x, pos.z) < range * range &&
         GAME.city.hash.segmentClear(p.pos.x, p.pos.z, pos.x, pos.z)) return true;
     }
@@ -87,6 +92,7 @@ GAME.police = (function () {
     var capStar = Math.max(type === 'kill_cop' ? 2 : 0, Math.min(5, before + 1));
     if (capStar < 5) heat = Math.min(heat, THRESH[capStar + 1] - 8);
     lastSeen = 0;
+    sighted();   // a witness puts them back on you
     var after = stars();
     if (after > before) { GAME.hud.wantedChanged(after); if (after >= 3) GAME.track('wanted-' + after); }
   }
@@ -108,6 +114,7 @@ GAME.police = (function () {
     heat = Math.max(heat + 55 * (1 + before * ESCALATION), THRESH[1] + 5);
     heat = Math.min(HEAT_CEIL, heat);
     lastSeen = 0;
+    sighted();
     if (stars() > before) GAME.hud.wantedChanged(stars());
   }
 
@@ -115,7 +122,7 @@ GAME.police = (function () {
     n = U.clamp(Math.floor(n), 0, 5);
     heat = n === 0 ? 0 : THRESH[n] + 25;
     // treat it like a fresh offence so the level doesn't bleed away instantly
-    if (n > 0) lastCrime = GAME.time;
+    if (n > 0) { lastCrime = GAME.time; sighted(); lastSeen = 0; }
     GAME.hud.wantedChanged(n);
     if (n === 0) clearCops();
   }
@@ -190,6 +197,128 @@ GAME.police = (function () {
   // two warnings first, and the THIRD violation is the 5-star response,
   // birds up and firing.
   var airUnits = [];
+
+  // ---------- what the police actually know ----------
+  // Every unit used to steer for where you ARE, from anywhere: cruisers drove
+  // straight at your live position across blocks, and the air unit flew at
+  // you and counted as eyes on you within 90 m through any building. Out of
+  // sight was never out of mind, so at four stars and up nothing you did
+  // could cool the heat — measured, nobody got away from three or more.
+  //
+  // Now they hunt. While any unit has you in sight they chase you; once none
+  // has, they all make for where you were last seen and search around it,
+  // further out the longer you stay hidden, until somebody spots you again.
+  var spotted = true;                  // some unit had line of sight last tick
+  var knownX = 0, knownZ = 0;          // where they last saw you
+  var searchX = 0, searchZ = 0, searchT = 0;
+  // seen just now, wherever that is — and the search starts over from there.
+  // Marking you spotted without moving the last sighting left the hunt on
+  // wherever an EARLIER chase had lost you, and every unit drove there.
+  function sighted() {
+    var f = GAME.focus();
+    spotted = true;
+    knownX = searchX = f.x; knownZ = searchZ = f.z; searchT = 0;
+  }
+  function huntX() { return spotted ? GAME.focus().x : searchX; }
+  function huntZ() { return spotted ? GAME.focus().z : searchZ; }
+  function updateHunt(dt, unseenFor) {
+    var f = GAME.focus();
+    if (spotted) { knownX = searchX = f.x; knownZ = searchZ = f.z; searchT = 0; return; }
+    searchT -= dt;
+    if (searchT > 0) return;
+    // somewhere near the last sighting, widening as the trail goes cold
+    var r = Math.min(90, 15 + unseenFor * 4), a = Math.random() * Math.PI * 2;
+    searchX = knownX + Math.cos(a) * r * Math.random();
+    searchZ = knownZ + Math.sin(a) * r * Math.random();
+    searchT = U.randRange(Math.random, 4, 7);
+  }
+  // Line of sight from up in the air: building tops along the way have to
+  // stay under the line from the bird down to you, and a deck overhead — the
+  // bridge you parked under — hides you outright.
+  var airBoxes = [];
+  function airCanSee(h, px, py, pz) {
+    var C = GAME.city;
+    for (var c = 0; c < C.crossings.length; c++) {
+      var dy = C.crossings[c].deckY(px, pz);
+      if (dy !== null && dy > py + 2.5) return false;
+    }
+    var ty = py + 1.2;
+    var dx = px - h.pos.x, dz = pz - h.pos.z;
+    var steps = Math.max(2, Math.ceil(Math.sqrt(dx * dx + dz * dz) / 4));
+    for (var i = 1; i < steps; i++) {
+      var t = i / steps;
+      var x = h.pos.x + dx * t, z = h.pos.z + dz * t, y = h.pos.y + (ty - h.pos.y) * t;
+      var boxes = C.hash.queryInto(x, z, 0.5, airBoxes);
+      for (var b = 0; b < boxes.length; b++) {
+        var q = boxes[b];
+        if (q.noLOS || q.h === undefined || q.h <= y) continue;
+        if (q.minY !== undefined && q.minY > y) continue;
+        if (x > q.minX && x < q.maxX && z > q.minZ && z < q.maxZ) return false;
+      }
+    }
+    return true;
+  }
+
+  // Eyes from the street to someone a storey or more above or below. The
+  // flat sight line cannot answer that — the roof you stand on is in the way
+  // of every one of them — so it was no shot at all, and no sighting either,
+  // and any rooftop was a safe house you could wait out the heat on. This
+  // follows the real line instead, each building it passes over tested as the
+  // block it is: the edge of a roof is exposed, the middle of it is cover. A
+  // bridge deck keeps the old rule (no shooting through a floor), since a
+  // line from under it to on top of it passes through it.
+  var losBoxes = [], slabT = [0, 1];
+  function slab(p, d, lo, hi) {
+    if (Math.abs(d) < 1e-9) return p > lo && p < hi;
+    var a = (lo - p) / d, c = (hi - p) / d;
+    if (a > c) { var tmp = a; a = c; c = tmp; }
+    if (a > slabT[0]) slabT[0] = a;
+    if (c < slabT[1]) slabT[1] = c;
+    return slabT[0] < slabT[1];
+  }
+  function lineClear(ex, ey, ez, px, py, pz) {
+    var C = GAME.city;
+    var dx = px - ex, dy = py - ey, dz = pz - ez;
+    var steps = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dz * dz) / 2));
+    for (var i = 0; i <= steps; i++) {
+      var t = i / steps;
+      var boxes = C.hash.queryInto(ex + dx * t, ez + dz * t, 1.5, losBoxes);
+      for (var b = 0; b < boxes.length; b++) {
+        var q = boxes[b];
+        if (q.noLOS || q.h === undefined) continue;
+        slabT[0] = 0; slabT[1] = 1;
+        if (slab(ex, dx, q.minX, q.maxX) && slab(ez, dz, q.minZ, q.maxZ) &&
+          slab(ey, dy, q.minY !== undefined ? q.minY : -1e6, q.h)) return false;
+      }
+    }
+    return true;
+  }
+  function eyesOn(ox, oy, oz, px, py, pz, shooting) {
+    var C = GAME.city;
+    if (Math.abs(py - oy) < 3) return C.hash.segmentClear(ox, oz, px, pz);
+    if (C.crossingY(ox, oz) !== null || C.crossingY(px, pz) !== null) {
+      return !shooting && C.hash.segmentClear(ox, oz, px, pz);
+    }
+    return lineClear(ox, oy + 1.5, oz, px, py + 1.2, pz);
+  }
+  // On foot somewhere no officer can follow: up on a roof, not on a ramp, a
+  // bridge or a flight of steps (groundY counts those as ground). Nobody
+  // climbs after you, so at two stars and up the helicopter comes early.
+  var PERCH_H = 4;
+  // out on the water — swimming, or in a boat — where no cruiser or officer
+  // on foot can follow either
+  function atSea() {
+    var P = GAME.player;
+    if (P.state !== 'alive') return false;
+    return !!(P.swimming || (P.inCar && P.car && P.car.spec.boat));
+  }
+  function perched() {
+    var P = GAME.player;
+    if (atSea()) return true;
+    if (P.inCar || P.parachuting || P.state !== 'alive') return false;
+    return P.pos.y - GAME.city.groundY(P.pos.x, P.pos.z, P.pos.y) > PERCH_H;
+  }
+  var perchToldAt = -1e9;
   // The searchlight never changes shape or colour, so every bird carries the
   // same cone and material, built the first time one lifts off. Shared, so
   // disposeTree leaves them for the next one.
@@ -239,7 +368,13 @@ GAME.police = (function () {
   }
   function updateAirUnits(dt, s) {
     var P = GAME.player;
-    var want = s >= 5 ? 2 : s >= 4 ? 1 : 0;
+    var up = s >= 2 && s < 4 && perched();
+    var want = s >= 5 ? 2 : s >= 4 ? 1 : up ? 1 : 0;
+    if (up && airUnits.length === 0 && GAME.time - perchToldAt > 60) {
+      perchToldAt = GAME.time;
+      GAME.hud.message(atSea() ? 'Nobody can follow you out on the water — air support is on its way.'
+        : 'Nobody can climb up after you — air support is on its way.', 3);
+    }
     // compacted in place: this runs every tick, birds or no birds
     var keep = 0;
     for (var k = 0; k < airUnits.length; k++) {
@@ -253,7 +388,10 @@ GAME.police = (function () {
     for (var i = airUnits.length - 1; i >= 0; i--) {
       var h = airUnits[i];
       var leaving = i >= want;
-      var dx = f.x - h.pos.x, dz = f.z - h.pos.z;
+      // the airspace escort (zero stars) always knows where you are; a
+      // pursuit bird flies the hunt like everybody else
+      var hx = s > 0 ? huntX() : f.x, hz = s > 0 ? huntZ() : f.z;
+      var dx = hx - h.pos.x, dz = hz - h.pos.z;
       var d = Math.sqrt(dx * dx + dz * dz) || 1;
       // hold station ~20m off the target; a spare or dismissed bird flies out
       var spd = leaving ? 26 : U.clamp((d - 20) * 0.8, 0, 38);
@@ -275,9 +413,10 @@ GAME.police = (function () {
         if (d > 240) { GAME.vehicles.removeCar(h); airUnits.splice(i, 1); }
         continue;
       }
-      if (s >= 4) {
+      if (s >= 4 || up) {
         h.fireT = (h.fireT || 0) - dt;
-        if (d < 85 && h.fireT <= 0) {
+        var tdx = f.x - h.pos.x, tdz = f.z - h.pos.z;
+        if (h.fireT <= 0 && tdx * tdx + tdz * tdz < 85 * 85 && airCanSee(h, f.x, fy, f.z)) {
           h.fireT = 1.35;
           GAME.audio.gunshot('smg', h.pos.x, h.pos.z);
           // a fast target is hard to hit from a hovering doorway — and a
@@ -295,8 +434,8 @@ GAME.police = (function () {
           GAME.fx.tracer(h.pos.x, h.pos.y - 0.8, h.pos.z, ix, fy + 0.5, iz);
           GAME.fx.spawn(ix, fy + 0.4, iz, { count: 6, color: 0xffe0a0, spread: 1.2, life: 0.3 });
           if (hit) {
-            if (P.inCar && P.car) GAME.vehicles.damageCar(P.car, 4, 'shot');
-            else GAME.playerDamage(3, 'shot');
+            if (P.inCar && P.car) { GAME.vehicles.damageCar(P.car, 4, 'shot'); GAME.hud.hitFrom(h.pos.x, h.pos.z); }
+            else GAME.playerDamage(3, 'shot', h.pos.x, h.pos.z);
           }
         }
       }
@@ -304,9 +443,10 @@ GAME.police = (function () {
   }
 
   function spawnCruiser() {
-    var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    // sent to where they think you are: you, while somebody can see you,
+    // otherwise the search — a unit dispatched straight at a suspect nobody
+    // has eyes on is the clairvoyance the hunt is there to remove
+    var px = huntX(), pz = huntZ();
     for (var tries = 0; tries < 6; tries++) {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 130, 190);
@@ -351,7 +491,10 @@ GAME.police = (function () {
     var footCount = 0;
     for (var i = 0; i < GAME.world.peds.length; i++) if (GAME.world.peds[i].isCop && !GAME.world.peds[i].dead) footCount++;
     if (footCount >= Math.min(1 + s, 6)) return;
-    var f = GAME.focus();
+    // officers come in on foot around where they think you are. This ring was
+    // centred on you every couple of seconds whatever anybody knew, so one of
+    // them always turned up within sight of wherever you had hidden.
+    var f = { x: huntX(), z: huntZ() };
     for (var t = 0; t < 8; t++) {
       var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 26, 48);
       var rp = GAME.city.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
@@ -478,7 +621,7 @@ GAME.police = (function () {
         cop.shootT -= dt;
         if (cop.shootT <= 0) {
           cop.shootT = U.randRange(Math.random, 1.0, 1.9);
-          GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.35, 8, cop, sus);
+          GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, 0.35, 8, cop, sus);
         }
         continue;
       }
@@ -561,11 +704,15 @@ GAME.police = (function () {
   }
   function chaseControls(car, dt, s) {
     var P = GAME.player;
-    var pxr = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pzr = P.inCar && P.car ? P.car.pos.z : P.pos.z;
-    // a modest lead on a moving target — enough to cut a corner, not clairvoyant
-    var aimX = pxr + (P.inCar && P.car ? (P.car.vx || 0) * 0.3 : 0);
-    var aimZ = pzr + (P.inCar && P.car ? (P.car.vz || 0) * 0.3 : 0);
+    var pxr = huntX(), pzr = huntZ();
+    // out on the water, the nearest stretch of coast is as close as a
+    // cruiser gets — they used to drive straight in after you and sink
+    if (atSea()) { var shore = GAME.city.washAshore(pxr, pzr); pxr = shore.x; pzr = shore.z; }
+    // a modest lead on a moving target they can see — enough to cut a
+    // corner, not clairvoyant; out of sight they head for the search point
+    var lead = spotted && P.inCar && P.car;
+    var aimX = pxr + (lead ? (P.car.vx || 0) * 0.3 : 0);
+    var aimZ = pzr + (lead ? (P.car.vz || 0) * 0.3 : 0);
     // reaction lag: pursue a smoothed estimate of the target, so cruisers don't
     // mirror sharp turns the instant you make them
     if (isNaN(car.aiTX)) { car.aiTX = aimX; car.aiTZ = aimZ; }
@@ -591,7 +738,13 @@ GAME.police = (function () {
     var steer = car.aiSteer;
 
     // pull up and stop near an on-foot target so officers can get out
-    if (!P.inCar && dist < 22) { setControls(car.controls, car.speed > 2 ? -0.7 : 0, steer, dist < 12); return; }
+    if (spotted && !P.inCar && dist < 22) { setControls(car.controls, car.speed > 2 ? -0.7 : 0, steer, dist < 12); return; }
+    // and never over the edge into the sea, whatever is out there
+    var probe = 4 + Math.max(0, car.speed) * 0.7;
+    if (GAME.city.isInWater(car.pos.x + Math.sin(car.heading) * probe, car.pos.z + Math.cos(car.heading) * probe)) {
+      setControls(car.controls, car.speed > 0.5 ? -1 : 0, steer, false);
+      return;
+    }
 
     // keep a pursuit gap rather than gluing to the bumper
     var gap = s === 1 ? 22 : 9;
@@ -627,10 +780,9 @@ GAME.police = (function () {
         var pz2 = P.inCar && P.car ? P.car.pos.z : P.pos.z;
         var py2 = P.inCar && P.car ? P.car.pos.y : P.pos.y;
         var d2 = U.dist2(car.pos.x, car.pos.z, px2, pz2);
-        // no shooting at someone a storey above or below you
-        if (d2 < 40 * 40 && Math.abs(py2 - car.pos.y) < 3
-            && GAME.city.hash.segmentClear(car.pos.x, car.pos.z, px2, pz2)) {
-          GAME.combat.npcShoot(car.pos.x, 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5, car);
+        // a storey above or below takes a real line up to you (eyesOn)
+        if (d2 < 40 * 40 && eyesOn(car.pos.x, car.pos.y, car.pos.z, px2, py2, pz2, true)) {
+          GAME.combat.npcShoot(car.pos.x, car.pos.y + 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5, car);
         }
         car.shootT = U.randRange(Math.random, 1.1, 2.2) / Math.max(1, s * 0.5);
       }
@@ -658,10 +810,12 @@ GAME.police = (function () {
 
   function updateFootCop(cop, dt, s) {
     var P = GAME.player;
-    // track wherever the player actually is (their car when driving)
+    // track wherever the player actually is (their car when driving) — or,
+    // once nobody can see them, wherever the hunt has got to
     var f = GAME.focus();
     var dx = f.x - cop.pos.x, dz = f.z - cop.pos.z;
     var dist = Math.sqrt(dx * dx + dz * dz);
+    var hx = huntX() - cop.pos.x, hz = huntZ() - cop.pos.z;
     // officers on foot give up on a target that's flown out of reach
     var alt = (P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane))
       ? P.car.pos.y - GAME.city.groundY(P.car.pos.x, P.car.pos.z) : 0;
@@ -669,16 +823,15 @@ GAME.police = (function () {
       GAME.peds.removePed(cop);
       return;
     }
-    var th = Math.atan2(dx, dz);
+    var th = Math.atan2(hx, hz);
     cop.heading = U.angleLerp(cop.heading, th, Math.min(1, dt * 6));
     // fire at the player on foot, or at a slow/stopped car
     var playerSlow = !P.inCar || (P.car && Math.abs(P.car.speed) < 9);
     // line of sight last: it walks the grid, and every officer asked it
     // every tick even when the stars, the range or your speed had already
     // ruled a shot out
-    var wantShoot = s >= 2 && dist < 28 && playerSlow
-      && Math.abs(f.y - cop.pos.y) < 3   // not through a floor
-      && GAME.city.hash.segmentClear(cop.pos.x, cop.pos.z, f.x, f.z);
+    var wantShoot = s >= 2 && dist < 28 && playerSlow && !P.interior
+      && eyesOn(cop.pos.x, cop.pos.y, cop.pos.z, f.x, f.y, f.z, true);   // up at a roof edge too
     var chaseSpeed = 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
     var cx0 = cop.pos.x, cz0 = cop.pos.z;
@@ -702,19 +855,20 @@ GAME.police = (function () {
       j.armR.rotation.x = -Math.PI / 2;
       cop.shootT -= dt;
       if (cop.shootT <= 0) {
-        GAME.combat.npcShoot(cop.pos.x, 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s, cop);
+        GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s, cop);
         cop.shootT = U.randRange(Math.random, 0.9, 1.8);
       }
     } else {
       j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
     }
     // a cop can only cuff you if you're on foot and not sprinting away
-    if (!P.inCar && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
+    if (!P.inCar && !P.swimming && !P.interior && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
   }
 
   function placeRoadblock(s) {
     var P = GAME.player;
     if (!P.inCar || !P.car) return;
+    if (!spotted) return;   // nobody knows which way you are heading
     var vx = P.car.vx || 0, vz = P.car.vz || 0;
     var sp = U.len(vx, vz);
     if (sp < 6) return;
@@ -751,7 +905,9 @@ GAME.police = (function () {
     var cars = GAME.world.cars;
     for (var i = 0; i < cars.length; i++) {
       var c = cars[i];
-      if (c.isPolice && c.mesh.userData.lightbar && !c.dead) {
+      // (one the player is driving, or left with its lights going, is the
+      // player's: player.js runs its bar off the G switch)
+      if (c.isPolice && c.mesh.userData.lightbar && !c.dead && c !== P.car && !c.sirenOn) {
         var active = s > 0 && c.ai && (c.ai.mode === 'chase' || c.ai.mode === 'roadblock');
         c.mesh.userData.lightbar[0].visible = active && flashOn;
         c.mesh.userData.lightbar[1].visible = active && !flashOn;
@@ -765,7 +921,7 @@ GAME.police = (function () {
     updateAirUnits(dt, s);
 
     if (s === 0) {
-      GAME.audio.siren(0);
+      mySirenOr0();
       if (heat > 0) heat = Math.max(0, heat - dt * 16);
       // Pursuit units stand down — but the beat does not. Until now this
       // deleted every officer in the world every sixtieth frame, which is the
@@ -800,6 +956,9 @@ GAME.police = (function () {
     if (P.inCar && P.car && (P.car.spec.heli || P.car.spec.plane)) {
       flownOff = P.car.pos.y > GAME.city.groundY(P.car.pos.x, P.car.pos.z) + 26;
     }
+    // indoors (interiors.js) is out of sight the same way: no more units sent,
+    // no eyes on you — they wait round the door for you to come back out
+    if (P.interior) flownOff = true;
 
     // pursuit cars
     var active = copCars();
@@ -829,7 +988,9 @@ GAME.police = (function () {
       }
     }
     // arrest needs a cop holding you for a moment, not mere contact
-    if (anyGrab) { grabTimer += dt; if (grabTimer > 0.6) GAME.playerBusted(); }
+    // (and the hold starts again from nothing afterwards: left where it was,
+    // the next arrest of your next life took one tick of contact)
+    if (anyGrab) { grabTimer += dt; if (grabTimer > 0.6) { grabTimer = 0; GAME.playerBusted(); } }
     else grabTimer = Math.max(0, grabTimer - dt * 2);
 
     // roadblocks
@@ -861,38 +1022,61 @@ GAME.police = (function () {
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
     if (flownOff) active = []; // nothing on the ground can hold eyes on you up there
+    var py = P.inCar && P.car ? P.car.pos.y : P.pos.y;
+    // the dark and the rain shorten every pair of eyes on the ground (the
+    // helicopter has its searchlight)
+    var seeR = GAME.weather.visibility();
     for (var v = 0; v < active.length; v++) {
-      if (U.dist2(active[v].pos.x, active[v].pos.z, px, pz) < 70 * 70 &&
-        GAME.city.hash.segmentClear(active[v].pos.x, active[v].pos.z, px, pz)) { seen = true; break; }
+      var av0 = active[v];
+      if (U.dist2(av0.pos.x, av0.pos.z, px, pz) < 70 * 70 * seeR * seeR &&
+        eyesOn(av0.pos.x, av0.pos.y, av0.pos.z, px, py, pz)) { seen = true; break; }
     }
     // the air unit's eyes work at altitude — a 4-5 star bird on your tail
-    // means climbing away no longer cools the heat
-    for (var av = 0; av < airUnits.length; av++) {
-      if (U.dist2(airUnits[av].pos.x, airUnits[av].pos.z, px, pz) < 90 * 90) { seen = true; break; }
+    // means climbing away no longer cools the heat. But they are eyes: a
+    // tower between you and it, or a bridge deck over you, and it has lost you
+    for (var av = 0; !seen && av < airUnits.length; av++) {
+      if (U.dist2(airUnits[av].pos.x, airUnits[av].pos.z, px, pz) < 90 * 90 &&
+        airCanSee(airUnits[av], px, py, pz)) { seen = true; break; }
     }
+    // and an officer on foot sees down the street, not through the block
     if (!seen && !flownOff) {
       for (var fc = 0; fc < peds.length; fc++) {
         var pd = peds[fc];
-        if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60) { seen = true; break; }
+        if (pd.isCop && !pd.dead && U.dist2(pd.pos.x, pd.pos.z, px, pz) < 60 * 60 * seeR * seeR &&
+          eyesOn(pd.pos.x, pd.pos.y, pd.pos.z, px, py, pz)) { seen = true; break; }
       }
     }
+    spotted = seen;
+    updateHunt(dt, lastSeen);
+    // How long since anybody had eyes on you: the search widens with it, and
+    // out of sight is when the heat cools fastest (below). There used to be
+    // a second clock here as well, knocking a star off every 16 s and then 8
+    // s unseen and dropping the heat to the floor of the band below each
+    // time — which collapsed the whole ladder within seconds of the first
+    // drop: five stars gone in half a minute behind any corner.
     if (seen) lastSeen = 0;
-    else {
-      lastSeen += dt;
-      if (lastSeen > 16) {
-        var cur = stars();
-        heat = cur > 1 ? THRESH[cur - 1] + 20 : 0;
-        lastSeen = 8; // next star drops sooner once hidden
-        GAME.hud.wantedChanged(stars());
-        if (stars() === 0) clearCops();
-      }
-    }
+    else lastSeen += dt;
 
     // interest fades if you stop offending — otherwise a tail that keeps you in
-    // sight means the heat never cools and a 1-star pursuit runs forever
-    if (GAME.time - lastCrime > 8) {
-      var before2 = stars();
-      heat = Math.max(0, heat - dt * (seen ? 18 : 55));
+    // sight means the heat never cools and a 1-star pursuit runs forever.
+    // One star used to go eight seconds after the offence whatever happened —
+    // before the cruiser sent after you had turned the corner, so a lone star
+    // never became a chase. It holds twenty seconds now, time for them to get
+    // there, and while they keep you in sight up to forty-five; then it cools
+    // as before, in sight or not. Two stars and up keep the eight.
+    var before2 = stars();
+    var hold = before2 === 1 ? (lastSeen < ONE_STAR_SEEN ? ONE_STAR_CHASE : ONE_STAR_HOLD) : 8;
+    // A shop is not a hideout: they saw you walk in, and they are waiting
+    // round the door. The heat holds while you shop (a home, where nobody can
+    // see in, is still somewhere to lie low).
+    var shopping = !!(P.interior && P.interior.kind === 'shop');
+    if (!shopping && GAME.time - lastCrime > hold) {
+      // and out of sight it cools faster — less so the hotter it is: lying low
+      // takes about half a minute at three stars, a minute at four and a
+      // minute and a half at five, with the search closing in on the spot
+      // they lost you. It was 55 a second at every level.
+      var cool = seen ? 18 : 55 / (1 + Math.max(0, before2 - 1) * 0.6);
+      heat = Math.max(0, heat - dt * cool);
       var after2 = stars();
       if (after2 < before2) {
         GAME.hud.wantedChanged(after2);
@@ -908,7 +1092,7 @@ GAME.police = (function () {
       }
       if (pinned) {
         pinTimer += dt;
-        if (pinTimer > 2.6) GAME.playerBusted();
+        if (pinTimer > 2.6) { pinTimer = 0; GAME.playerBusted(); }
       } else pinTimer = Math.max(0, pinTimer - dt);
     } else pinTimer = 0;
 
@@ -920,8 +1104,16 @@ GAME.police = (function () {
     }
     if (nd < 1e9) {
       var dd = Math.sqrt(nd);
-      GAME.audio.siren(U.clamp(1 - dd / 130, 0, 1), 1 + U.clamp((60 - dd) / 400, -0.1, 0.15), nx, nz);
-    } else GAME.audio.siren(0);
+      if (GAME.playerSiren() && dd > 25) mySirenOr0();   // your own is the nearer
+      else GAME.audio.siren(U.clamp(1 - dd / 130, 0, 1), 1 + U.clamp((60 - dd) / 400, -0.1, 0.15), nx, nz);
+    } else mySirenOr0();
+  }
+  // the player's own cruiser, if its siren is going — there is one siren
+  // voice, and it was being set back to silence every tick nobody chased you
+  function mySirenOr0() {
+    var mine = GAME.playerSiren();
+    if (mine) GAME.audio.siren(0.55, 1, mine.pos.x, mine.pos.z);
+    else GAME.audio.siren(0);
   }
 
   return {
@@ -934,6 +1126,9 @@ GAME.police = (function () {
     noteGunfire: noteGunfire,
     airspaceStrike: airspaceStrike,
     get airUnitCount() { return airUnits.length; },
+    // whether any unit has you in sight, and for how long none has
+    get spotted() { return spotted; },
+    get unseenFor() { return lastSeen; },
     setWanted: setWanted,
     clearWanted: clearWanted,
     update: update,

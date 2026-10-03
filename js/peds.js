@@ -155,6 +155,10 @@ function buildPedMesh(opts) {
 
 GAME.peds = (function () {
   var world = GAME.world;
+  // a car that touches someone below RUNOVER_KILL m/s knocks them down for
+  // RUNOVER_HURT hp per m/s; at or above it, or if that is all they have, it
+  // kills them
+  var RUNOVER_KILL = 10, RUNOVER_HURT = 2.5;
   var pushOut = { x: 0, z: 0 };   // resolveCircle's answer for the walkers, reused
 
   function spawnPed(x, z, opts) {
@@ -190,19 +194,51 @@ GAME.peds = (function () {
       // as `x || 0`, false or null where it is only tested, NaN for a number
       // the code asks whether it has been set yet, and undefined for anything
       // else it asks that of.
-      dead: false, gone: false, killedBy: null,
+      dead: false, gone: false, killedBy: null, deathCause: null,
       foe: null, aimPose: false, punchArm: false, poseT: 0, bangT: 0, bumpCd: 0,
       fleeX: 0, fleeZ: 0,
       diveX: 0, diveY: 0, diveZ: 0, diveDur: 0,
       knockX: 0, knockY: NaN, knockZ: 0, knockSpin: 0,
+      knockT: 0, knockedBy: null,   // knocked down by a slow car, and which
       prevX2: NaN, prevZ2: NaN, stuckT: 0,
       stolenCar: null, hadDriver: undefined, yankT: 0, yankWarned: false, leftCar: 0,
       jobPed: false, iceServed: false, carrying: undefined,
       patrol: false, onCase: null, beatX: 0, beatZ: 0, beatT: 0, grabbing: false,
-      aimSkill: NaN, lastShotT: 0
+      aimSkill: NaN, lastShotT: 0,
+      enterX: NaN, enterZ: NaN, enterT: 0   // a door they are making for (walkInto)
     };
     world.peds.push(ped);
     return ped;
+  }
+
+  // Which way somebody running from trouble goes: away from it — and away
+  // from every fire close by, not only the one they fled. Three vehicles
+  // burning side by side, and whoever bailed out of the one on the end ran
+  // clear of it straight at the next, and was there when it went up.
+  var FIRE_R = 16;
+  function awayFromFire(ped) {
+    var ax = ped.pos.x - ped.fleeX, az = ped.pos.z - ped.fleeZ;
+    var al = Math.sqrt(ax * ax + az * az) || 1;
+    ax /= al; az /= al;
+    var cars = world.cars;
+    for (var c = 0; c < cars.length; c++) {
+      var car = cars[c];
+      if (car.dead || car.stage < 2) continue;
+      var dx = ped.pos.x - car.pos.x, dz = ped.pos.z - car.pos.z, d2 = dx * dx + dz * dz;
+      if (d2 > FIRE_R * FIRE_R || d2 < 0.01) continue;
+      var d = Math.sqrt(d2), w = 2.5 * (FIRE_R - d) / FIRE_R;
+      ax += dx / d * w; az += dz / d * w;
+    }
+    return Math.atan2(ax, az);
+  }
+
+  // Send somebody in through a door: they walk to it and go inside. Up to
+  // `patience` seconds to get there; whatever is in the way, they go in then.
+  var INSIDE_T = 0.45;
+  var FX_DOOR = { count: 8, color: 0xe8f6ff, spread: 0.9, vy: 1.2, life: 0.5, grav: -1, keep: true };
+  function walkInto(ped, x, z, patience) {
+    ped.enterX = x; ped.enterZ = z; ped.enterT = patience || 40;
+    ped.state = 'enter';
   }
 
   function removePed(ped) {
@@ -218,6 +254,7 @@ GAME.peds = (function () {
   function kill(ped, cause, byPlayer, attacker) {
     if (ped.dead) return;
     ped.killedBy = attacker || null;
+    ped.deathCause = cause || null;
     ped.dead = true;
     ped.state = 'dead';
     ped.deadT = 0;
@@ -251,7 +288,7 @@ GAME.peds = (function () {
       // overwrites heading and speed regardless of what this sets — so all a
       // scare could do was leave them carrying a 'flee' they could not act
       // on. A state nothing honours is worse than no state.
-      if (p.dead || p.isCop || p.jobPed) continue;
+      if (p.dead || p.isCop || p.jobPed || p.state === 'inside') continue;
       if (p.state === 'attack' && !force) continue;   // mid-brawl, past being scared off
       if (U.dist2(p.pos.x, p.pos.z, x, z) < r2) {
         p.state = 'flee';
@@ -363,7 +400,7 @@ GAME.peds = (function () {
         continue;
       }
       ped.bumpCd = Math.max(0, (ped.bumpCd || 0) - dt);
-      if (!ped.isCop && !ped.jobPed && d2p > 180 * 180) { removePed(ped); continue; }
+      if (!ped.isCop && !ped.jobPed && d2p > PED_DESPAWN * PED_DESPAWN) { removePed(ped); continue; }
       if (ped.isCop) {
         // movement is driven by police.js, but officers are still flesh and blood:
         // a car at speed runs them down like anyone else
@@ -392,7 +429,7 @@ GAME.peds = (function () {
       // dive away from fast cars — but not every time. People need a moment to
       // react, some are slower to notice than others, and once a bonnet is on
       // top of them it's simply too late.
-      if (ped.state !== 'dive') {
+      if (ped.state !== 'dive' && ped.state !== 'inside') {
         var threat = false;
         for (var c = 0; c < world.cars.length; c++) {
           var car = world.cars[c];
@@ -421,7 +458,31 @@ GAME.peds = (function () {
         if (!threat) ped.reactT = 0;
       }
 
-      if (ped.state === 'walk') {
+      // somebody on their way in somewhere picks the walk back up after a
+      // fright, rather than forgetting where they were going
+      if (ped.state === 'walk' && !isNaN(ped.enterX)) ped.state = 'enter';
+      if (ped.state === 'enter') {
+        // a patient delivered to the hospital, making for its doors at an
+        // unhurried walk (walkInto) — then through them, and gone
+        ped.enterT -= dt;
+        var ex = ped.enterX - ped.pos.x, ez = ped.enterZ - ped.pos.z;
+        if (ex * ex + ez * ez < 1.4 * 1.4 || ped.enterT <= 0) {
+          ped.state = 'inside'; ped.enterT = INSIDE_T;
+          GAME.fx.spawn(ped.enterX, ped.pos.y + 1.2, ped.enterZ, FX_DOOR);
+        } else {
+          ped.heading = U.angleLerp(ped.heading, Math.atan2(ex, ez), Math.min(1, dt * 5));
+          ped.speed = U.damp(ped.speed, 2.6, 3, dt);
+        }
+      }
+      if (ped.state === 'inside') {
+        // through the doors: a last step in, shrinking into the light
+        ped.enterT -= dt;
+        ped.speed = 1.4;
+        ped.mesh.scale.setScalar(Math.max(0.05, ped.enterT / INSIDE_T));
+        if (ped.enterT <= 0) { removePed(ped); continue; }
+      } else if (ped.state === 'enter') {
+        // (steered above; moved below with everyone else)
+      } else if (ped.state === 'walk') {
         ped.wpT -= dt;
         var wd2 = U.dist2(ped.pos.x, ped.pos.z, ped.wpX, ped.wpZ);
         if (wd2 < 4 || ped.wpT <= 0) newWaypoint(ped);
@@ -430,7 +491,7 @@ GAME.peds = (function () {
         ped.speed = U.damp(ped.speed, 3.57, 3, dt);   // 0.85x the player's 4.2 walk
       } else if (ped.state === 'flee') {
         ped.fleeT -= dt;
-        var fh = Math.atan2(ped.pos.x - ped.fleeX, ped.pos.z - ped.fleeZ);
+        var fh = awayFromFire(ped);
         ped.heading = U.angleLerp(ped.heading, fh + Math.sin(GAME.time * 3 + i) * 0.5, Math.min(1, dt * 5));
         ped.speed = U.damp(ped.speed, 6.8, 4, dt);    // 0.85x the player's 8 sprint
         if (ped.fleeT <= 0) { ped.state = 'walk'; newWaypoint(ped); }
@@ -450,9 +511,10 @@ GAME.peds = (function () {
         ped.attackT -= dt;
         if (ped.stolenCar && ped.stolenCar.gone) ped.stolenCar = null;   // despawned: nothing to take back
         // (nobody wants a car back once it is on fire — they would only be
-        // turned straight back out of it by vehicles.js)
-        var myCar = ped.stolenCar && !ped.stolenCar.dead && ped.stolenCar.stage < 2 &&
-          ped.stolenCar.occupied !== 'ai' ? ped.stolenCar : null;
+        // turned straight back out of it by vehicles.js — or once it is
+        // going down in the sea)
+        var myCar = ped.stolenCar && !ped.stolenCar.dead && !ped.stolenCar.sinking &&
+          ped.stolenCar.stage < 2 && ped.stolenCar.occupied !== 'ai' ? ped.stolenCar : null;
         var chaseCar = myCar && U.dist2(ped.pos.x, ped.pos.z, myCar.pos.x, myCar.pos.z) < 55 * 55;
         var F = foeState(ped, chaseCar ? myCar : null);
         var tcar = F.car;
@@ -521,7 +583,7 @@ GAME.peds = (function () {
               // officer, which was tolerable while he could only ever hit
               // another NPC and is not now. At 0.15 he lands about a quarter
               // of his rounds at twelve metres where an officer lands a third.
-              GAME.combat.npcShoot(ped.pos.x, 1.35, ped.pos.z, 0.15, 6, ped,
+              GAME.combat.npcShoot(ped.pos.x, ped.pos.y + 1.35, ped.pos.z, 0.15, 6, ped,
                 F.kind === 'ped' ? F.ped : undefined);
               // A gun in the street is a police matter whoever it is aimed at,
               // so this is reported either way — the officer who turns up
@@ -617,7 +679,7 @@ GAME.peds = (function () {
                 // the receiving end gets to decide whether to swing back
                 damage(F.ped, 6, false, ped);
               } else {
-                GAME.playerDamage(6, 'fists');
+                GAME.playerDamage(6, 'fists', ped.pos.x, ped.pos.z);
               }
               GAME.audio.crash(0.18, ped.pos.x, ped.pos.z);
             }
@@ -779,10 +841,12 @@ GAME.peds = (function () {
       if (ped.state !== 'dive') animateWalk(ped, dt);
 
       // run over check
+      if (ped.knockT > 0) ped.knockT -= dt;
       for (var c2 = 0; c2 < world.cars.length; c2++) {
         var car2 = world.cars[c2];
         var sp2 = Math.abs(car2.speed);
         if (sp2 < 4) continue;
+        if (ped.knockT > 0 && ped.knockedBy === car2) continue;   // already on the bonnet
         if (Math.abs(car2.pos.y - ped.pos.y) > 3) continue;   // it's up on a roof
         // The bodywork, not a circle around it. This was `dist2 < 5.2` — a
         // 2.28 m circle measured from the car's CENTRE — while a sedan is
@@ -796,6 +860,28 @@ GAME.peds = (function () {
         if (Math.abs(rdx * fz2 - rdz * fx2) > car2.spec.w / 2 + 0.45) continue;
         {
           var byPlayer = (car2 === P.car && P.inCar);
+          // A bump is not a death. Every touch from 4 m/s up killed outright
+          // — a jog — and two of them were a wanted star. Below RUNOVER_KILL
+          // they go down hurt and get back up: thrown clear of the car's line
+          // (faster than it, or it would only run into them again), then off
+          // and away from it. It is still a crime, a lesser one.
+          var hurt = sp2 * RUNOVER_HURT;
+          if (sp2 < RUNOVER_KILL && ped.hp > hurt) {
+            ped.hp -= hurt;
+            ped.knockT = 1.2; ped.knockedBy = car2;
+            if (!ped.jobPed) {   // a customer or a fare stays steered by the job
+              var lat3 = rdx * fz2 - rdz * fx2 >= 0 ? 1 : -1;
+              ped.state = 'dive';
+              ped.diveT = ped.diveDur = 0.85;
+              ped.diveX = fx2 * (sp2 * 1.2 + 1) + fz2 * lat3 * 3;
+              ped.diveZ = fz2 * (sp2 * 1.2 + 1) - fx2 * lat3 * 3;
+              ped.foe = null; ped.aimPose = false;
+            }
+            if (byPlayer) GAME.police.reportCrime('hit_ped', ped.pos);
+            GAME.audio.crash(0.2, ped.pos.x, ped.pos.z);
+            GAME.audio.yelp(ped.pos.x, ped.pos.z);
+            break;
+          }
           kill(ped, 'car', byPlayer);
           if (byPlayer) GAME.haptics.splat(Math.min(1, sp2 / 26));
           // thrown along the bonnet rather than dropping on the spot
@@ -850,11 +936,19 @@ GAME.peds = (function () {
     }
   }
 
+  // How far from the focus an ordinary ped lasts (update drops them past it).
+  // The spawner below snaps its pick to the nearest road, and out on the
+  // water between the landmasses the nearest road is past this: every ped it
+  // made there was built, mesh and all, and thrown away on the next tick —
+  // fifteen a second for as long as you were out in a boat. Nobody ever saw
+  // one; now they are not made.
+  var PED_DESPAWN = 180;
   function spawnBubble() {
     var fc = GAME.focus();
     var live = 0;
     for (var i = 0; i < world.peds.length; i++) if (!world.peds[i].isCop && !world.peds[i].dead) live++;
-    var maxP = GAME.perf.budget(GAME.settings.maxPeds);
+    // what the frame affords, and then fewer at night and in the rain
+    var maxP = Math.max(1, Math.round(GAME.perf.budget(GAME.settings.maxPeds) * GAME.weather.crowd()));
     for (var tries = 0; tries < 5 && live < maxP; tries++) {
       var a = Math.random() * Math.PI * 2;
       var r = U.randRange(Math.random, 60, GAME.settings.bubbleRadius);
@@ -873,8 +967,10 @@ GAME.peds = (function () {
       else { px = rp.x; pz = rp.z + off; }
       if (!isla && x > 340 && x < 700) { px = x; pz = z; }
       if (rp.axis !== 'net' && (px < -490 || px > 372 || Math.abs(pz) > 490)) continue;
+      if (U.dist2(px, pz, fc.x, fc.z) > PED_DESPAWN * PED_DESPAWN) continue;   // gone next tick
       if (GAME.city.isInWater(px, pz)) continue;
       if (GAME.city.inAirport(px, pz)) continue; // no strollers on the runway
+      if (GAME.inPlainView(px, GAME.city.groundY(px, pz), pz)) continue;   // not out of thin air
       var ped = spawnPed(px, pz);
       newWaypoint(ped);
       live++;
@@ -905,7 +1001,7 @@ GAME.peds = (function () {
   // Commit this one to a fight. Returns false if it did not take — the
   // ceiling is full, or the target is not something to fight.
   function startFight(ped, foe, secs) {
-    if (ped.dead || ped.gone || ped.isCop || ped.jobPed) return false;
+    if (ped.dead || ped.gone || ped.isCop || ped.jobPed || ped.state === 'inside') return false;
     if (foe && foe.kind === 'ped' && (!foe.ped || foe.ped.dead || foe.ped.gone || foe.ped === ped)) return false;
     // An existing brawler is already counted; a fresh one has to fit. But
     // SWINGING BACK is not a new fight, it is the other half of one that is
@@ -915,7 +1011,12 @@ GAME.peds = (function () {
     // man being chased, and never two real ones.
     var answering = foe && foe.kind === 'ped' && foe.ped &&
       foe.ped.state === 'attack' && foe.ped.foe && foe.ped.foe.ped === ped;
-    if (!answering && ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
+    // And swinging back at YOU is not the city's trouble at all: the ceiling
+    // rates strangers fighting each other, and counting the player's fights
+    // against it meant that at CITY: OFF (a ceiling of nothing) a hot-tempered
+    // man you punched simply ran away — which the setting promises not to touch.
+    var vsPlayer = !foe || foe.kind === 'player';
+    if (!answering && !vsPlayer && ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
     ped.state = 'attack';
     ped.attackT = secs || 9;
     ped.foe = foe || null;
@@ -937,6 +1038,7 @@ GAME.peds = (function () {
 
   // Turn and run from wherever the trouble came from.
   function startFlee(ped, fromX, fromZ, secs) {
+    if (ped.state === 'inside') return;   // already through the door
     ped.state = 'flee';
     ped.fleeT = secs || 6;
     ped.fleeX = fromX; ped.fleeZ = fromZ;
@@ -952,6 +1054,12 @@ GAME.peds = (function () {
     GAME.fx.spawn(ped.pos.x, 1.2, ped.pos.z, { count: 3, color: 0xc42848, spread: 1, vy: 1, life: 0.3, grav: -3 });
     if (ped.hp <= 0) { kill(ped, 'shot', byPlayer, attacker); return; }
     if (ped.isCop) return;
+    // Hurt is not scared off, for the same reason panic() leaves them out: a
+    // job ped is steered by their mission every frame, so a stray round on
+    // the way to the hatch left them carrying a 'flee' for six seconds that
+    // only the ped loop acted on — walking them off at once while the round
+    // walked them in.
+    if (ped.jobPed) return;
     // Not everyone runs — and whoever DOES turn to fight, fights. The old
     // hp floor made every brawler quit after two punches, which read as
     // no fight at all. Once committed, they go the distance; only someone
@@ -979,7 +1087,7 @@ GAME.peds = (function () {
     startFlee(ped, fromX, fromZ, 6);
   }
 
-  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair,
+  return { spawnPed: spawnPed, removePed: removePed, walkInto: walkInto, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair,
     // so a crash in vehicles.js can put somebody's back up without knowing
     // anything about how a fight is represented
     startFight: startFight, startFlee: startFlee, fightCount: fightCount };

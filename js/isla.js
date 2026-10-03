@@ -349,28 +349,33 @@ GAME.isla = (function () {
     return [U.lerp(s.pts[lo][0], s.pts[hi][0], f), U.lerp(s.pts[lo][1], s.pts[hi][1], f)];
   }
   // Distance from (x,z) to edge i of s; the global parameter of the foot is
-  // left in ecT. Both answers used to come back as a fresh {d, t} per edge,
-  // and this is asked a great deal: the island's ground height asks it of
-  // every road in its cell, and the bridges ask it for every wheel, car and
-  // pedestrian's height each tick, wherever on the map they are.
-  var ecT = 0, scT = 0;
+  // left in FOOT[0]. Both answers used to come back as a fresh {d, t} per
+  // edge, and this is asked a great deal: the island's ground height asks it
+  // of every road in its cell, and the bridges ask it for every wheel, car
+  // and pedestrian's height each tick, wherever on the map they are.
+  // A typed array, not a plain variable: a fraction written to a variable a
+  // closure shares is boxed afresh by the engine on every write, and that
+  // was most of what the game allocated while it booted (260 MB, all of it
+  // garbage) and a steady trickle on the island ever after. A slot in a
+  // Float64Array holds the same double without boxing it.
+  var FOOT = new Float64Array(2);   // [edgeClosest's foot, segClosest's foot]
   function edgeClosest(s, i, x, z) {
     var a = s.pts[i], b = s.pts[i + 1];
     var vx = b[0] - a[0], vz = b[1] - a[1];
     var l2 = vx * vx + vz * vz;
     var t = l2 > 1e-9 ? U.clamp(((x - a[0]) * vx + (z - a[1]) * vz) / l2, 0, 1) : 0;
     var px = a[0] + vx * t, pz = a[1] + vz * t;
-    ecT = (s.cum[i] + Math.sqrt(l2) * t) / s.len;
+    FOOT[0] = (s.cum[i] + Math.sqrt(l2) * t) / s.len;
     return U.dist(x, z, px, pz);
   }
-  // distance from (x,z) to the whole of s; the foot's parameter is left in scT
+  // distance from (x,z) to the whole of s; the foot's parameter is left in FOOT[1]
   function segClosest(s, x, z) {
     var bd = 1e9, bt = 0;
     for (var i = 0; i < s.pts.length - 1; i++) {
       var d = edgeClosest(s, i, x, z);
-      if (d < bd) { bd = d; bt = ecT; }
+      if (d < bd) { bd = d; bt = FOOT[0]; }
     }
-    scT = bt;
+    FOOT[1] = bt;
     return bd;
   }
 
@@ -559,8 +564,8 @@ GAME.isla = (function () {
       var si = list[i], s = NET[si];
       var cd = edgeClosest(s, list[i + 1], x, z);
       if (sStamp[si] !== stampCtr) {
-        sStamp[si] = stampCtr; sBestD[si] = cd; sBestT[si] = ecT; touched.push(si);
-      } else if (cd < sBestD[si]) { sBestD[si] = cd; sBestT[si] = ecT; }
+        sStamp[si] = stampCtr; sBestD[si] = cd; sBestT[si] = FOOT[0]; touched.push(si);
+      } else if (cd < sBestD[si]) { sBestD[si] = cd; sBestT[si] = FOOT[0]; }
     }
     var wsum = 0, ysum = 0;
     for (var t = 0; t < touched.length; t++) {
@@ -597,13 +602,13 @@ GAME.isla = (function () {
     if (list) {
       for (i = 0; i < list.length; i += 2) {
         var cd = edgeClosest(NET[list[i]], list[i + 1], x, z);
-        if (cd < bestD) { bestD = cd; best = { s: NET[list[i]], t: ecT }; }
+        if (cd < bestD) { bestD = cd; best = { s: NET[list[i]], t: FOOT[0] }; }
       }
     }
     if (!best) {
       for (i = 0; i < NET.length; i++) {
         var cd2 = segClosest(NET[i], x, z);
-        if (cd2 < bestD) { bestD = cd2; best = { s: NET[i], t: scT }; }
+        if (cd2 < bestD) { bestD = cd2; best = { s: NET[i], t: FOOT[1] }; }
       }
     }
     var p = segPointAt(best.s, best.t);
@@ -638,7 +643,7 @@ GAME.isla = (function () {
         sg = NET[i]; c = segClosest(sg, px, pz);
         need = sg.w / 2 + half + gap;
         if (c >= need) continue;
-        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, scT); }
+        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, FOOT[1]); }
       }
       for (i = 0; i < SPANS.length; i++) {
         sg = SPANS[i];
@@ -646,7 +651,7 @@ GAME.isla = (function () {
         c = segClosest(sg, px, pz);
         need = sg.half + half + gap + 6;
         if (c >= need) continue;
-        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, scT); }
+        if (need - c > worstPush) { worstPush = need - c; worst = segPointAt(sg, FOOT[1]); }
       }
       if (!worst) break;
       var dx = px - worst[0], dz = pz - worst[1], l = Math.hypot(dx, dz);
@@ -693,7 +698,7 @@ GAME.isla = (function () {
     s.deckY = function (x, z) {
       if (s.outside(x, z, s.half)) return null;
       if (segClosest(s, x, z) > s.half) return null;
-      var d = scT * s.len;
+      var d = FOOT[1] * s.len;
       if (d <= s.flatIn) return s.startY;
       if (d < s.flatIn + s.rampIn) return U.lerp(s.startY, s.h, ease((d - s.flatIn) / s.rampIn));
       if (d > s.len - s.rampOut) return U.lerp(s.endY, s.h, ease((s.len - d) / s.rampOut));
@@ -1449,26 +1454,37 @@ GAME.isla = (function () {
     // string lights down every jetty, so the water's edge glitters
     city.addSign(sg, 27, POI.marina.x + 6, groundY(POI.marina.x + 6, POI.marina.z - 34) + 7,
       POI.marina.z - 34, 0, 24, 4);
+    // The jetties used to stop at the waterline, with their "moored" hulls
+    // sitting on the sand behind it. They run out over the water now, the
+    // yachts lie on it alongside, and a real speedboat waits at the end of
+    // the second one — the island's way out onto the water.
     y = 0.5;
+    var JX = POI.marina.x - 28, JW = 66;   // jetty middle and length, out to the west
     for (var j = 0; j < 4; j++) {
       var jz = POI.marina.z - 24 + j * 16;
-      b.addBox(POI.marina.x - 16, y, jz, 42, 0.6, 3.2, 0, 0x7a5a40, 0);
+      b.addBox(JX, y, jz, JW, 0.6, 3.2, 0, 0x7a5a40, 0);
       // the planks carry you: without a deck entry the ground under them is
       // the flat shore at 0, so anyone strolling the marina waded shin-deep
       // through every jetty on the way to the villa
-      city.addDeck({ x: POI.marina.x - 16, z: jz, w: 42, len: 3.2, rot: 0, y0: y + 0.3, y1: y + 0.3 });
-      batches.glow.addBox(POI.marina.x - 16, y + 2.0, jz - 1.4, 40, 0.13, 0.13, 0, 0xffd890, 0);
-      b.addBox(POI.marina.x - 35, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
+      city.addDeck({ x: JX, z: jz, w: JW, len: 3.2, rot: 0, y0: y + 0.3, y1: y + 0.3 });
+      batches.glow.addBox(JX, y + 2.0, jz - 1.4, JW - 2, 0.13, 0.13, 0, 0xffd890, 0);
+      b.addBox(JX - JW / 2 + 2, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
       b.addBox(POI.marina.x + 3, y + 1.1, jz - 1.4, 0.22, 2.2, 0.22, 0, 0x8a7a5a, 0);
       for (var m = 0; m < 3; m++) {
-        var hx = POI.marina.x - 32 + m * 13;
-        b.addBox(hx, y + 0.7, jz + 5, 9, 1.6, 3.4, 0, U.pick(Math.random, [0xd8d8e0, 0xc0d8e8, 0xe8e0d0]), 0);
+        // afloat, alongside the outer half of the jetty, and solid: a boat
+        // or a swimmer goes round them, not through
+        var hx = POI.marina.x - 60 + m * 11;
+        b.addBox(hx, 0.2, jz + 5, 9, 1.6, 3.4, 0, U.pick(Math.random, [0xd8d8e0, 0xc0d8e8, 0xe8e0d0]), 0);
+        city.addSolid(hx, jz + 5, 9, 3.4, 1.0, 'prop');
         if ((j + m) % 2 === 0) {
-          b.addBox(hx, y + 5.2, jz + 5, 0.16, 7.4, 0.16, 0, 0xf0f0ea, 0);
-          batches.glow.addBox(hx, y + 9.1, jz + 5, 0.24, 0.24, 0.24, 0, 0xffe9b0, 0);
+          b.addBox(hx, 4.7, jz + 5, 0.16, 7.4, 0.16, 0, 0xf0f0ea, 0);
+          batches.glow.addBox(hx, 8.6, jz + 5, 0.24, 0.24, 0.24, 0, 0xffe9b0, 0);
         }
       }
     }
+    var bm = { x: POI.marina.x - 50, z: POI.marina.z - 12.2, isla: true };
+    city.moorings.push(bm);
+    city.parkedSpots.push({ x: bm.x, z: bm.z, y: -0.35, heading: -Math.PI / 2, vtype: 'boat', isla: true });
 
     // Container port: stacks and two gantry cranes, and every last one of them
     // checked against the road network before it goes down. A yard laid out on
@@ -1869,6 +1885,11 @@ GAME.isla = (function () {
         if (py === null || s.liftAt(pp[0], pp[1]) < 4) continue;
         var base = contains(pp[0], pp[1]) ? groundY(pp[0], pp[1]) : -1.6;
         b.addBox(pp[0], (py + base) / 2, pp[1], 4, py - base, 4, 0, 0x2e2b44, 0);
+        // and solid, from the water (or the ground) to just under the deck —
+        // a boat sailed straight through them. Topped below the roadway, so
+        // the traffic on the bridge never meets them.
+        city.addSolid(pp[0], pp[1], 4, 4, py - 0.6, 'pillar');
+        if (city.bridgePiers) city.bridgePiers.push({ x: pp[0], z: pp[1], top: py - 0.6, wet: !contains(pp[0], pp[1]) });
       }
       // Lamps down the middle of the span, but only over open water. Over land
       // the deck runs low past whatever is beside it, and a lamp post there
@@ -2144,35 +2165,55 @@ GAME.isla = (function () {
 
   // A word at the barrier, so a closed bridge explains itself instead of just
   // being a thing you bounce off.
-  var hintT = 0, arrived = false;
+  //
+  // Once per approach, and only up on the deck. It used to repeat every six
+  // seconds to anyone within 34 m — and the south gate stands over the beach,
+  // so a walk along the sand underneath got the whole 30-word banner thirteen
+  // times in a minute and a quarter.
+  var toldAt = -1, arrived = false;
   function tick(dt) {
     var P = GAME.player;
     if (!P || P.state !== 'alive') return;
     var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
     var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var py = P.inCar && P.car ? P.car.pos.y : P.pos.y;
     if (!arrived && contains(px, pz)) {
       arrived = true;
       GAME.hud.message('ISLA VERDE — hill roads, a working port, and a factory that makes ice cream.', 5);
       GAME.track('isla-first-arrival');
     }
-    hintT -= dt;
-    if (open || hintT > 0 || !gates.length) return;
+    if (open || !gates.length) return;
+    var at = -1;
     for (var i = 0; i < gates.length; i++) {
       var g = gates[i];
       var cx = (g.minX + g.maxX) / 2, cz = (g.minZ + g.maxZ) / 2;
       if (U.dist2(px, pz, cx, cz) > 34 * 34) continue;
-      // belt and braces: if the record already qualifies, the barrier opens on
-      // the spot instead of demanding "0 more jobs" with a straight face
-      if (earned()) { checkUnlock(); return; }
-      var p = unlockProgress();
-      hintT = 6;
-      // name what actually counts: only the marked missions, each once —
-      // "jobs" pointed players at taxi shifts and repeats, which don't add
-      var left = p.need - p.done;
-      GAME.hud.message('BRIDGE CLOSED — finish ' + left + ' more marked mission' + (left === 1 ? '' : 's') +
-        ' in Costa Rosa (races, rampages, deliveries — each counts once; taxi-style shifts don’t), or find every stunt jump.', 4.5);
+      // up on the bridge, approach ramp included — not on the beach or in the
+      // water underneath it
+      if (GAME.city.crossingY(px, pz, py) === null) continue;
+      at = i;
+      break;
+    }
+    if (at < 0) {
+      // away from every gate (with a little slack, so the edge of the circle
+      // does not count as a fresh arrival every time you cross it)
+      if (toldAt >= 0) {
+        var tg = gates[toldAt];
+        if (U.dist2(px, pz, (tg.minX + tg.maxX) / 2, (tg.minZ + tg.maxZ) / 2) > 44 * 44) toldAt = -1;
+      }
       return;
     }
+    // belt and braces: if the record already qualifies, the barrier opens on
+    // the spot instead of demanding "0 more jobs" with a straight face
+    if (earned()) { checkUnlock(); return; }
+    if (toldAt === at) return;
+    toldAt = at;
+    // name what actually counts: only the marked missions, each once —
+    // "jobs" pointed players at taxi shifts and repeats, which don't add
+    var p = unlockProgress();
+    var left = p.need - p.done;
+    GAME.hud.message('BRIDGE CLOSED — finish ' + left + ' more marked mission' + (left === 1 ? '' : 's') +
+      ' in Costa Rosa (races, rampages, deliveries — each counts once; taxi-style shifts don’t), or find every stunt jump.', 4.5);
   }
 
   // the island's own district names, so the HUD reads the same over here

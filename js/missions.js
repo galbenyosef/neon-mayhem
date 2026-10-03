@@ -1,13 +1,32 @@
 // Unique stunt jumps: 25 ramps hidden around the city. Clear one cleanly and
-// it's logged; find them all and the city opens up.
+// it's logged; find them all and the city opens up. Isla Verde has ten of its
+// own on a separate tally (and a prize of its own), so the mainland's count —
+// and the bridges it can open — is exactly what it always was.
 GAME.stunts = (function () {
   var found = {}, total = 25, rewarded = false;
+  var islaFound = {}, islaRewarded = false;
+  var ISLA_PRIZE = 25000;
 
   function count() { var n = 0; for (var k in found) if (found[k]) n++; return n; }
+  function islaCount() { var n = 0; for (var k in islaFound) if (islaFound[k]) n++; return n; }
+  function ramps() { return (GAME.city && GAME.city.ramps) || []; }
+  function mainTotal() {
+    var r = ramps(), n = 0;
+    for (var i = 0; i < r.length; i++) if (!r[i].isla) n++;
+    return n || total;
+  }
+  function islaTotal() {
+    var r = ramps(), n = 0;
+    for (var i = 0; i < r.length; i++) if (r[i].isla) n++;
+    return n;
+  }
 
   function load() {
     var s = (GAME.prefs && GAME.prefs.stunts) || null;
-    if (s) { found = s.found || {}; rewarded = !!s.rewarded; }
+    if (s) {
+      found = s.found || {}; rewarded = !!s.rewarded;
+      islaFound = s.isla || {}; islaRewarded = !!s.islaRewarded;
+    }
     if (rewarded) {
       GAME.unlimitedAmmo = true;
       GAME.combat.giveAllWeapons();
@@ -16,14 +35,16 @@ GAME.stunts = (function () {
   }
   function save() {
     if (!GAME.prefs) GAME.prefs = {};
-    GAME.prefs.stunts = { found: found, rewarded: rewarded };
+    GAME.prefs.stunts = { found: found, rewarded: rewarded, isla: islaFound, islaRewarded: islaRewarded };
     GAME.save();
   }
 
   // called when a jump that started on ramp `idx` lands successfully
   function credit(idx, airT, dist) {
     if (idx === undefined || idx === null) return 0;
-    total = Math.max(total, GAME.city.ramps.length);
+    var ramp = ramps()[idx];
+    if (ramp && ramp.idx === idx && ramp.isla) return creditIsla(ramp.islaN);
+    total = mainTotal();
     if (found[idx]) return 0;
     found[idx] = true;
     var n = count();
@@ -35,7 +56,32 @@ GAME.stunts = (function () {
     GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
       (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
     GAME.track('stunt-jump-found');
+    if (GAME.lola) GAME.lola.first('stunt');
     if (n >= total && !rewarded) grantReward();
+    save();
+    return bonus;
+  }
+  // keyed by the island ramp's own number, not its place in the whole list
+  function creditIsla(k) {
+    if (k === undefined || k < 0 || islaFound[k]) return 0;
+    islaFound[k] = true;
+    var n = islaCount(), all = islaTotal();
+    var bonus = 400 + n * 75;
+    GAME.addCash(bonus);
+    GAME.audio.sting('win');
+    GAME.haptics.win();
+    var left = all - n;
+    GAME.hud.message('ISLA VERDE STUNT JUMP  ' + n + ' / ' + all + '   ·   +$' + bonus +
+      (left > 0 ? '   —   ' + left + ' more on the island' : ''), 4.5);
+    GAME.track('isla-stunt-jump-found');
+    if (GAME.lola) GAME.lola.first('islaJump');
+    if (n >= all && !islaRewarded) {
+      islaRewarded = true;
+      GAME.addCash(ISLA_PRIZE);
+      if (GAME.shops && GAME.shops.grantVehicle) GAME.shops.grantVehicle('buggy');
+      GAME.hud.message('ALL ' + all + ' ISLA VERDE JUMPS!  +$' + ISLA_PRIZE.toLocaleString() + '  ·  a DUNE HOPPER joins your garage', 8);
+      GAME.track('all-isla-stunt-jumps');
+    }
     save();
     return bonus;
   }
@@ -66,10 +112,17 @@ GAME.stunts = (function () {
 
   return {
     get found() { return count(); },
-    get total() { return total; },
+    get total() { return mainTotal(); },
     get complete() { return rewarded; },
+    get islaFound() { return islaCount(); },
+    get islaTotal() { return islaTotal(); },
+    // nothing to find over there is nothing left to find
+    get islaComplete() { return islaRewarded || islaTotal() === 0; },
     load: load, credit: credit,
-    isFound: function (i) { return !!found[i]; }
+    isFound: function (i) {
+      var r = ramps()[i];
+      return r && r.isla ? !!islaFound[r.islaN] : !!found[i];
+    }
   };
 })();
 
@@ -99,14 +152,80 @@ GAME.missions = (function () {
     { id: 'rampage0', type: 'rampage', name: 'STRIP HAVOC', reward: 400, time: 30, target: 3000, weapon: 'smg', ammo: 160, start: { x: 241.6, z: -258.4 } },
     { id: 'rampage1', type: 'rampage', name: 'HARBOR HAVOC', reward: 450, time: 30, target: 3500, weapon: 'shotgun', ammo: 30, start: { x: -341.6, z: 258.4 } },
     { id: 'rampage2', type: 'rampage', name: 'UPTOWN HAVOC', reward: 400, time: 30, target: 2500, weapon: 'smg', ammo: 160, start: { x: 41.6, z: -341.6 } },
+    // On the water, in the bay between the beach and the channel: both start
+    // beside a mooring where a boat waits, and both are run in one.
+    //   BAY REGATTA — out under both bridges (through the gaps between their
+    //   piers, where the deck is high), round a mark past the far one and
+    //   home; every leg is open water, so the field races the line.
+    //   CONTRABAND — packages a fishing crew dumped overboard when the
+    //   coastguard came by, bobbing about the bay: fish them out and bring
+    //   them in to the pier before the clock runs out. Fresh spots each run.
+    {
+      id: 'boat0', type: 'race', boat: true, name: 'BAY REGATTA', reward: 700, start: { x: 515, z: 215 },
+      cps: [[518, 150], [520, 0], [500, -180], [499, -340], [520, -440], [545, -340], [530, -180], [530, 0], [518, 150], [530, 230]]
+    },
+    { id: 'boat1', type: 'courier', boat: true, name: 'CONTRABAND', reward: 520, time: 120, start: { x: 472, z: -150 }, drops: 3, legMin: 200, legMax: 380 },
     // Isla Verde's own work, and it stays over here — every checkpoint, drop
     // and target is on the island, so nothing ever asks you to cross mid-run.
     // Coordinates come from the island itself once it has registered.
     { id: 'race3', type: 'race', name: 'ALTA VERDE CLIMB', reward: 750, isla: 'climb', start: null, cps: null },
     { id: 'race4', type: 'race', name: 'MIRADOR RUN', reward: 800, isla: 'mirador', start: null, cps: null },
     { id: 'courier3', type: 'courier', name: 'COLD CHAIN', reward: 420, time: 180, isla: 'port', start: null, drops: 4, legMin: 330, legMax: 720 },
-    { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 30, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null }
+    { id: 'rampage3', type: 'rampage', name: 'DORADO HAVOC', reward: 550, time: 30, target: 3200, weapon: 'smg', ammo: 160, isla: 'dorado', start: null },
+    // Takedowns: somebody in a car, somewhere out in the traffic, who has to
+    // stop being a problem before the clock runs out. They drive about until
+    // they see you, then run — and some of them shoot back.
+    //   car    what they drive        armor  hit points, as a multiple
+    //   flee   their speed once made  shoots whether they fire back
+    //   early  running from the off (they know you are coming)
+    { id: 'hit0', type: 'takedown', name: 'THE COLLECTOR', reward: 1200, time: 150, car: 'limo', armor: 2.15, flee: 19, shoots: true, early: false, start: { x: 250, z: 350 } },
+    { id: 'hit1', type: 'takedown', name: 'LOOSE ENDS', reward: 1000, time: 110, car: 'sports', armor: 1.15, flee: 24, shoots: false, early: true, start: { x: -50, z: -150 } },
+    { id: 'hit2', type: 'takedown', name: 'HIGH TIDE', reward: 2000, time: 160, car: 'pickup', armor: 2.85, flee: 21, shoots: true, early: false, isla: 'marina', start: null }
   ];
+
+  // Lola Reyes runs the strip, and she is who the rings on your map are
+  // from: a line from her when a job starts, a word when it is done the
+  // first time, and the story of the two islands strung between them —
+  // Rico Salazar's crew pushing in on her harbour, and pushed back out.
+  var LOLA = {
+    boat0: ['The yacht club thinks the bay is theirs. Take one of the boats by the pier and show them whose it is.',
+      'Sailing types don\'t lose gracefully. Enjoy it.'],
+    boat1: ['A crew dumped a cargo of mine over the side when the coastguard came sniffing. Fish it out of the bay before it drifts.',
+      'Every package, dry enough to sell. You\'re handy on the water, kid.'],
+    race0: ['New in town? Then nobody knows your name. The strip racers will — win this and they stop laughing.',
+      'Not bad, kid. People are asking who you are. Let\'s give them more to talk about.'],
+    race1: ['The harbour crews run a loop past the warehouses every night. Beat them on their own turf.',
+      'The harbour\'s buzzing about you. The Salazar boys aren\'t happy. Good.'],
+    race2: ['Downtown money likes a show. Give them one — first past the last gate.',
+      'Now the suits know your face too. That cuts both ways, so be careful.'],
+    courier0: ['A friend needs some plates moved before the cops run them. Every stop, against the clock.',
+      'Plates gone, friend happy, you richer. That\'s how this works.'],
+    courier1: ['Envelopes. Don\'t open them. Don\'t be late.',
+      'Not one envelope opened. I knew I liked you.'],
+    courier2: ['The beach bars need their "supplies" before the lunch crowd. Drive.',
+      'Every bar on the sand pays me now — and so, a little, you.'],
+    rampage0: ['Somebody\'s selling on my strip without asking. Make a mess they\'ll remember.',
+      'Message received, I\'d say. Nobody\'s selling there tonight.'],
+    rampage1: ['Rico Salazar\'s people moved into my warehouses. Show them what that costs.',
+      'The Salazars are packing. The harbour\'s quiet again.'],
+    rampage2: ['Uptown thinks it\'s above all this. Remind them.',
+      'Uptown remembers now.'],
+    hit0: ['Rico\'s collector drives a black limo round MY strip, picking up MY money. Put him out of business — he shoots back.',
+      'No more collections. Rico will be furious, and furious men make mistakes.'],
+    hit1: ['A Salazar bookkeeper is skipping town with my ledger, in something fast. He already knows. Catch him.',
+      'The ledger\'s home. Rico has nothing left on the mainland — he\'s run for Isla Verde.'],
+    race3: ['Isla Verde\'s rich kids race the Alta Verde switchbacks. Beat them to the top and the island hears your name.',
+      'Top of the hill. Rico heard that one.'],
+    race4: ['The Mirador loop: fast, blind, and a long way down. Win it.',
+      'Still in one piece? Then you won. Nicely done.'],
+    courier3: ['The ice cream factory moves more than ice cream. Keep it cold and keep it moving.',
+      'Delivered cold. The factory belongs to us now.'],
+    rampage3: ['Rico\'s holed up in Puerto Dorado. Shake his new home until it falls on him.',
+      'He\'s out of friends over there. Not out of boats.'],
+    hit2: ['Rico himself, in a black pickup, heading for the marina and a boat out at high tide. This ends today.',
+      'It\'s over. Costa Rosa\'s ours, kid — both islands. Enjoy the view.']
+  };
+  function lola(text, dur) { if (text && GAME.hud.pager) GAME.hud.pager('LOLA', text, dur); }
 
   // Island mission anchors, resolved after the island registers. A race's
   // checkpoints are road points around a named loop, so the route follows the
@@ -210,6 +329,11 @@ GAME.missions = (function () {
       } else if (d.isla === 'port') {
         var st = onRoad(tx(860), tz(100));
         d.start = { x: st[0], z: st[1] };
+      } else if (d.isla === 'marina') {
+        // up the hill from the marina, where the target is heading
+        var M = GAME.isla.pois().marina;
+        var sm = onRoad(M.x + 60, M.z + 110);
+        d.start = { x: sm[0], z: sm[1] };
       } else {
         var sd = onRoad(tx(800), tz(130));
         d.start = { x: sd[0], z: sd[1] };
@@ -222,7 +346,7 @@ GAME.missions = (function () {
   var cpMarker = null;
   var resprayCooldown = 0;
 
-  var MARKER_COLORS = { race: 0xff8a3d, courier: 0x38e8ff, rampage: 0xff4fa3 };
+  var MARKER_COLORS = { race: 0xff8a3d, courier: 0x38e8ff, rampage: 0xff4fa3, takedown: 0xff3b3b };
   var MARKER_HEX = {};
   Object.keys(MARKER_COLORS).forEach(function (k) { MARKER_HEX[k] = '#' + MARKER_COLORS[k].toString(16).padStart(6, '0'); });
   // The radar asks for the blips twenty times a second, so the list and its
@@ -230,21 +354,36 @@ GAME.missions = (function () {
   // straight away and never keeps it. (Written by index and cut to length at
   // the end: emptied with `length = 0` it would drop its storage every time.)
   var blipList = [], blipPool = [], blipN = 0;
-  function putBlip(x, z, color, size, kind) {
+  // `name` and `done` are for the big map: a mission marker is labelled, and
+  // one you have beaten is drawn as such rather than like a new one
+  function putBlip(x, z, color, size, kind, name, done) {
     var b = blipPool[blipN] || (blipPool[blipN] = {});
     b.x = x; b.z = z; b.color = color; b.size = size; b.kind = kind;
+    b.name = name || ''; b.done = !!done;
     blipList[blipN++] = b;
   }
-  var TYPE_LABEL = { race: 'STREET RACE', courier: 'COURIER RUN', rampage: 'RAMPAGE' };
+  var TYPE_LABEL = { race: 'STREET RACE', courier: 'COURIER RUN', rampage: 'RAMPAGE', takedown: 'TAKEDOWN' };
+  var BOAT_LABEL = { race: 'BOAT RACE', courier: 'SEA RUN' };
+  function typeLabel(d) { return (d.boat && BOAT_LABEL[d.type]) || TYPE_LABEL[d.type]; }
   // the POI line's words for a marker (kind 1) or a respray door (kind 2),
   // made again only when what is nearest, or its note, changes
   var HINT_NOTES = ['', '   —   lose the heat first', '   —   come back in a vehicle',
-    '   —   not in an aircraft', '   —   starting…'];
+    '   —   not in an aircraft', '   —   starting…', '   —   pull up in the ring to start',
+    '   —   leave the ring to go again', '   —   come back in a boat'];
+  // A car mission starts when you pull up in its ring, not when you drive
+  // through it: race starts sit on the road, so cruising the Strip pulled
+  // people into BEACH RUN at 25 m/s with no way to say no.
+  var START_SPEED = 4;
+  // the most heat a passed rampage leaves you with (see finish)
+  var RAMPAGE_HEAT_LEFT = 2;
+  // and the one that just ended waits until you have left it — failing a race
+  // you sat out on its own start line used to start it again on the next tick
+  var leaveFirst = null, REARM_R2 = 9 * 9;
   var hintK = 0, hintO = null, hintN = -1, hintText = '';
   function poiHintText(k, o, n) {
     if (k !== hintK || o !== hintO || n !== hintN) {
       hintK = k; hintO = o; hintN = n;
-      hintText = k === 1 ? TYPE_LABEL[o.type] + ' · ' + o.name + HINT_NOTES[n]
+      hintText = k === 1 ? typeLabel(o) + ' · ' + o.name + HINT_NOTES[n]
         : 'RESPRAY · $100 — repairs your ride; fresh paint clears up to two stars' + (n ? '' : '   —   drive in');
     }
     return hintText;
@@ -258,13 +397,31 @@ GAME.missions = (function () {
     return m;
   }
 
+  // A job you start in a vehicle starts where a vehicle can get to. Three of
+  // the mainland's sat on the pavement, eight to fourteen metres off the
+  // road behind its palms and lamp posts, while the ring takes a vehicle
+  // within four and a half — BEACH RUN was out on the boardwalk, and from
+  // the lane nobody could reach it. They are brought to the kerbside lane.
+  var KERB_LANE = 3;
+  function reachableStarts() {
+    for (var i = 0; i < DEFS.length; i++) {
+      var d = DEFS[i];
+      if (!d.start || d.type === 'rampage' || d.boat) continue;
+      var rp = GAME.city.nearestRoadPoint(d.start.x, d.start.z);
+      var dx = d.start.x - rp.x, dz = d.start.z - rp.z, dl = Math.sqrt(dx * dx + dz * dz);
+      if (dl <= KERB_LANE + 0.5) continue;
+      d.start = { x: rp.x + dx / dl * KERB_LANE, z: rp.z + dz / dl * KERB_LANE };
+    }
+  }
+
   function init() {
     placeIslaDefs();
+    reachableStarts();
     for (var i = 0; i < DEFS.length; i++) {
       var d = DEFS[i];
       if (d.isla && !d.start) continue;      // island never registered
-      var mesh = makeMarkerMesh(MARKER_COLORS[d.type], 2.2);
-      mesh.position.set(d.start.x, GAME.city.groundY(d.start.x, d.start.z) + 1.7, d.start.z);
+      var mesh = makeMarkerMesh(MARKER_COLORS[d.type], d.boat ? 3.4 : 2.2);
+      mesh.position.set(d.start.x, markerFloor(d, d.start.x, d.start.z) + 1.7, d.start.z);
       GAME.scene.add(mesh);
       markers.push({ def: d, mesh: mesh });
     }
@@ -338,7 +495,68 @@ GAME.missions = (function () {
 
   // lay out a fresh delivery round: each drop is a leg away from the last, kept
   // apart from the others so the run covers ground instead of doubling back
+  // Packages adrift in the bay: open water a boat can reach, clear of the
+  // piers and the bridge legs, spread out, each leg a fresh length — and the
+  // last stop is home, the pier the run started from.
+  var SEA_BOX = { x0: 474, x1: 548, z0: -455, z1: 455 };
+  function seaSpotClear(x, z) {
+    var C = GAME.city;
+    if (!C.isBoatWater(x, z) || !C.isBoatWater(x + 6, z) || !C.isBoatWater(x - 6, z) ||
+      !C.isBoatWater(x, z + 6) || !C.isBoatWater(x, z - 6)) return false;
+    for (var i = 0; i < C.bridgePiers.length; i++) {
+      if (U.dist2(x, z, C.bridgePiers[i].x, C.bridgePiers[i].z) < 16 * 16) return false;
+    }
+    return true;
+  }
+  function rollSeaStops(def) {
+    var stops = [], cx = def.start.x, cz = def.start.z;
+    for (var i = 0; i < (def.drops || 3); i++) {
+      var pt = null;
+      for (var t = 0; t < 60 && !pt; t++) {
+        var x = U.randRange(Math.random, SEA_BOX.x0, SEA_BOX.x1), z = U.randRange(Math.random, SEA_BOX.z0, SEA_BOX.z1);
+        var d = Math.sqrt(U.dist2(cx, cz, x, z));
+        if (d < def.legMin * (t < 40 ? 1 : 0.6) || d > def.legMax * (t < 40 ? 1 : 1.5)) continue;
+        if (!seaSpotClear(x, z)) continue;
+        var near = false;
+        for (var j = 0; j < stops.length; j++) if (U.dist2(x, z, stops[j][0], stops[j][1]) < 90 * 90) near = true;
+        if (!near) pt = [x, z];
+      }
+      if (!pt) pt = [U.clamp(cx, SEA_BOX.x0, SEA_BOX.x1), cz > 0 ? cz - 200 : cz + 200];
+      stops.push(pt);
+      cx = pt[0]; cz = pt[1];
+    }
+    stops.push([def.start.x, def.start.z]);   // and bring them in
+    return stops;
+  }
+
+  // The package on the water at the current pickup: a crate with a float
+  // lashed to it, bobbing on the swell (a ring alone said "go here", not
+  // "pick this up").
+  var crate = null;
+  function placeCrate() {
+    var a = active, show = !!(a && a.def.boat && a.def.type === 'courier' && a.stops && a.cpIndex < a.stops.length - 1);
+    if (!show) { if (crate) crate.visible = false; return; }
+    if (!crate) {
+      var b = new GeoBatch();
+      b.addBox(0, 0.3, 0, 1.0, 0.6, 0.8, 0, 0x7a5a36, 0);
+      b.addBox(0, 0.32, 0, 1.02, 0.12, 0.82, 0, 0x2a2a30, 0);
+      b.addBox(0.62, 0.35, 0, 0.32, 0.32, 0.32, 0, 0xff7a1a, 0);
+      crate = new THREE.Mesh(b.build(), sharedVertexLambert());
+      GAME.scene.add(crate);
+    }
+    var st = a.stops[a.cpIndex];
+    crate.visible = true;
+    crate.position.set(st[0], GAME.city.seaLevel, st[1]);
+  }
+  function bobCrate() {
+    if (!crate || !crate.visible) return;
+    var t = GAME.time;
+    crate.position.y = GAME.city.seaY(crate.position.x, crate.position.z) - 0.18;
+    crate.rotation.set(Math.sin(t * 1.3) * 0.12, t * 0.25, Math.sin(t * 1.7) * 0.1);
+  }
+
   function rollCourierStops(def) {
+    if (def.boat) return rollSeaStops(def);
     var stops = [];
     var cx = def.start.x, cz = def.start.z;
     // Each leg draws its own length inside the run's band rather than every
@@ -376,13 +594,165 @@ GAME.missions = (function () {
       def: { type: 'icecream', name: 'ICE CREAM ROUND', id: 'icecream', job: true },
       state: 'run', t: 0, cpIndex: 0, score: 0, racers: [],
       phase: 'sell', level: 1, sales: 0, quota: 4, jobCount: 0, earned: 0,
-      targets: [], timeLeft: 60, chimeT: 0, routeCp: null
+      targets: [], timeLeft: 60, callT: 0, routeCp: null
     };
     setMarkersVisible(false);
     updateCp();
     GAME.hud.missionStart(active.def.name, objectiveText());
-    GAME.hud.message('Round 1 — sell 4 before the clock runs out. The chimes do the work: pull up where there are people on the pavement and they will come to the hatch. Leave the truck to clock off.', 6);
+    GAME.hud.message('Round 1 — sell 4 before the clock runs out. Pull up where there are people on the pavement and sound the horn (' + hornKey() +
+      '): the chimes bring them to the hatch. Leave the truck to clock off.', 6);
     GAME.audio.pickup();
+  }
+
+  // ---------- vigilante ----------
+  // A stolen cruiser had no job of its own: a white car with a lightbar,
+  // nothing more. J in one now calls in a suspect somewhere out there. Close
+  // on them and they run; wreck their car, or knock it about until they give
+  // up on it and bail. Each one taken off the street pays more than the last
+  // — and takes a star off your own record, which is the only way a car you
+  // stole off the police was ever going to be allowed to do this job.
+  var PERP_SPOT_R = 45, PERP_GIVE_UP = 0.35, PERP_TIME = 80;
+  // ---------- takedown ----------
+  function spawnTarget(def) {
+    var f = GAME.focus(), C = GAME.city;
+    var onIsla = !!def.isla;
+    for (var tries = 0; tries < 40; tries++) {
+      var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 140, 230);
+      var rp = C.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
+      if (C.isInWater(rp.x, rp.z) || C.inAirport(rp.x, rp.z) || rp.kind === 'local') continue;
+      // the target is on the job's own island, never across a bridge
+      if (!!(GAME.isla && GAME.isla.contains(rp.x, rp.z)) !== onIsla) continue;
+      if (U.dist2(rp.x, rp.z, f.x, f.z) < 110 * 110) continue;
+      var heading = rp.axis === 'net' ? rp.heading : rp.axis === 'z' ? 0 : Math.PI / 2;
+      var car = GAME.vehicles.spawnCar(def.car, rp.x, rp.z, heading,
+        { occupied: 'ai', ai: { mode: 'traffic', desired: 11, laneX: 0, laneZ: 0 }, mission: true, color: 0x14141a });
+      if (!car) continue;
+      car.hp = car.spec.hp * def.armor;
+      car.perp = true;
+      active.perp = car; active.fleeing = false; active.shootT = 2;
+      active.maxHp = car.hp;
+      if (def.early) runFor(car, def);
+      return true;
+    }
+    return false;
+  }
+  function runFor(car, def) {
+    active.fleeing = true;
+    if (car.ai) car.ai.desired = def.flee;
+  }
+  var TARGET_SPOT_R = 60, TARGET_SHOOT_R = 38, TARGET_GIVE_UP = 0.2, TARGET_LOST_R = 520;
+  function updateTakedown(dt, P) {
+    var d = active.def, p = active.perp;
+    active.timeLeft -= dt;
+    if (!p || p.gone) { finish(false, 'The target got away.'); return; }
+    // wrecked, or the driver out of it one way or another
+    if (p.dead || p.occupied !== 'ai') { finish(true); return; }
+    if (p.hp < active.maxHp * TARGET_GIVE_UP) {
+      var out = GAME.vehicles.ejectDriver(p);
+      if (out) GAME.peds.startFlee(out, P.pos.x, P.pos.z, 10);
+      finish(true);
+      return;
+    }
+    if (active.timeLeft <= 0) { finish(false, 'Out of time — the target got away.'); return; }
+    var f = GAME.focus();
+    var dist = Math.sqrt(U.dist2(f.x, f.z, p.pos.x, p.pos.z));
+    if (dist > TARGET_LOST_R) { finish(false, 'You lost the target.'); return; }
+    if (!active.fleeing && dist < TARGET_SPOT_R) {
+      runFor(p, d);
+      GAME.hud.message('They have made you — they are running!', 2.5);
+    }
+    // the ones who shoot back do it once they are running and you are close
+    if (d.shoots && active.fleeing && dist < TARGET_SHOOT_R && !GAME.godMode) {
+      active.shootT -= dt;
+      if (active.shootT <= 0) {
+        active.shootT = U.randRange(Math.random, 1.1, 2.0);
+        GAME.combat.npcShoot(p.pos.x, p.pos.y + 1.3, p.pos.z, 0.32, 7, p);
+      }
+    }
+    active.routeT = (active.routeT || 0) - dt;
+    if (active.routeT <= 0) { active.routeT = 1; active.courierRoute = roadRoute(f.x, f.z, p.pos.x, p.pos.z); }
+    updateCp();
+    GAME.hud.missionTimer(active.timeLeft, true);
+    if (GAME.frame % 12 === 0) GAME.hud.missionObjective(objectiveText());
+  }
+
+  function startVigilante() {
+    GAME.track('job-started-vigilante');
+    active = {
+      def: { type: 'vigilante', name: 'VIGILANTE', id: 'vigilante', job: true },
+      state: 'run', t: 0, cpIndex: 0, score: 0, racers: [], level: 1,
+      jobCount: 0, earned: 0, targets: [], timeLeft: PERP_TIME, perp: null, fleeing: false,
+      routeCp: null, routeT: 0, courierRoute: null
+    };
+    setMarkersVisible(false);
+    if (!spawnPerp()) { GAME.hud.message('Dispatch has nothing for you here.', 2.5); cleanup(); return; }
+    GAME.hud.missionStart(active.def.name, objectiveText());
+    GAME.hud.message('Level 1 — a suspect is marked on your radar. Run them down: wreck the car or make them give it up. Leave the cruiser to clock off.', 6);
+    GAME.audio.pickup();
+  }
+  function spawnPerp() {
+    var f = GAME.focus(), C = GAME.city;
+    var lv = active.level;
+    var types = lv >= 4 ? ['sports', 'sports', 'motorcycle'] : lv >= 2 ? ['sedan', 'sports', 'van'] : ['sedan', 'van', 'taxi'];
+    for (var tries = 0; tries < 24; tries++) {
+      var a = Math.random() * Math.PI * 2, r = U.randRange(Math.random, 130, 230);
+      var rp = C.nearestRoadPoint(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r);
+      if (C.isInWater(rp.x, rp.z) || C.inAirport(rp.x, rp.z) || rp.kind === 'local') continue;
+      if (!defAvailable({ isla: GAME.isla && GAME.isla.contains(rp.x, rp.z) })) continue;
+      var heading = rp.axis === 'net' ? rp.heading : rp.axis === 'z' ? 0 : Math.PI / 2;
+      var car = GAME.vehicles.spawnCar(types[Math.floor(Math.random() * types.length)], rp.x, rp.z, heading,
+        { occupied: 'ai', ai: { mode: 'traffic', desired: 10, laneX: 0, laneZ: 0 }, mission: true, color: 0xff3b3b });
+      if (!car) continue;
+      car.perp = true;
+      active.perp = car; active.fleeing = false; active.timeLeft = PERP_TIME;
+      return true;
+    }
+    return false;
+  }
+  function perpTaken() {
+    var lv = active.level;
+    var pay = 150 + lv * 100;
+    GAME.addCash(pay);
+    active.earned += pay; active.jobCount++;
+    var w = GAME.police.wanted;
+    if (w > 0) GAME.police.setWanted(w - 1);
+    GAME.audio.sting('win');
+    GAME.haptics.win();
+    GAME.hud.message('SUSPECT DOWN  +$' + pay + (w > 0 ? '  ·  one star off your own record' : '') + '  ·  next call coming in', 4);
+    var p = active.perp;
+    if (p && !p.gone) { p.perp = false; p.mission = false; }
+    active.level++;
+    active.perp = null;
+    if (!spawnPerp()) endJob('no more calls');
+  }
+  function updateVigilante(dt, P) {
+    if (!P.inCar || !P.car || P.car.type !== 'police') { endJob('clocked off'); return; }
+    if (P.car.dead) { endJob('cruiser totalled'); return; }
+    active.timeLeft -= dt;
+    var p = active.perp;
+    if (!p || p.gone) { endJob('the suspect got away'); return; }
+    if (active.timeLeft <= 0) { endJob('the suspect got away'); return; }
+    var f = GAME.focus();
+    var d = Math.sqrt(U.dist2(f.x, f.z, p.pos.x, p.pos.z));
+    // they run once they have seen you coming
+    if (!active.fleeing && d < PERP_SPOT_R) {
+      active.fleeing = true;
+      if (p.ai) p.ai.desired = 17 + Math.min(active.level, 6) * 1.5;
+      GAME.hud.message('They have made you — they are running!', 2.5);
+    }
+    // taken: wrecked, or knocked about until the driver gives it up and bails
+    if (p.dead || p.occupied !== 'ai') { perpTaken(); return; }
+    if (p.hp < p.spec.hp * PERP_GIVE_UP) {
+      var out = GAME.vehicles.ejectDriver(p);
+      if (out) GAME.peds.startFlee(out, f.x, f.z, 10);
+      perpTaken();
+      return;
+    }
+    active.routeT -= dt;
+    if (active.routeT <= 0) { active.routeT = 1; active.courierRoute = roadRoute(f.x, f.z, p.pos.x, p.pos.z); }
+    updateCp();
+    GAME.hud.missionTimer(active.timeLeft, true);
+    GAME.hud.missionObjective(objectiveText());
   }
 
   function iceCreamSale(tgt) {
@@ -415,33 +785,43 @@ GAME.missions = (function () {
     updateCp();
   }
 
+  // the horn on the ice cream truck is its chimes (player.js): on a round,
+  // they carry for a while, and that is when people come
+  var CHIME_CARRY = 9, CHIME_R = 30;
+  function hornKey() { return GAME.isTouch ? '📢' : GAME.controls ? GAME.controls.label('KeyG') : 'G'; }
+  function chimed() {
+    if (!active || active.def.type !== 'icecream') return;
+    active.callT = CHIME_CARRY;
+    active.walkUpT = Math.min(active.walkUpT || 0, 0.4);
+  }
   function updateIceCream(dt, P) {
     if (!P.inCar || !P.car || P.car.type !== 'icecream') { endJob('clocked off'); return; }
     if (P.car.dead) { endJob('truck totalled'); return; }
     active.timeLeft -= dt;
     if (active.timeLeft <= 0) { endJob('out of time'); return; }
     var f = GAME.focus();
-    // the chimes, on a loop, because that is the whole job. No marker, no
-    // route, no "crowd" pin — you roam, they hear you. The map pointing at a
-    // spot made it a delivery run, which it isn't.
-    active.chimeT -= dt;
-    if (active.chimeT <= 0) { active.chimeT = 3.4; GAME.audio.chime(); }
-    // Anyone on the pavement hears the chimes: stop the truck and whoever is
-    // close enough wanders over to the hatch. That is the entire job — nobody
-    // is spawned waiting for you and nobody is flagging you down. One cone
-    // per person: the served walk away and stay away.
+    // No marker, no route, no "crowd" pin — you roam, and you play the
+    // chimes where there are people. The map pointing at a spot made it a
+    // delivery run, which it isn't. The chimes used to play by themselves on
+    // a loop; now they are the horn, as they were in Vice City, and nobody
+    // comes who has not heard them.
+    active.callT = Math.max(0, (active.callT || 0) - dt);
+    // Anyone on the pavement in earshot of the chimes: stop the truck and
+    // whoever is close enough wanders over to the hatch. That is the entire
+    // job — nobody is spawned waiting for you and nobody is flagging you
+    // down. One cone per person: the served walk away and stay away.
     replaceLostTargets();
     active.walkUpT = (active.walkUpT || 0) - dt;
-    if (Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
+    if (active.callT > 0 && Math.abs(P.car.speed) < 3.5 && active.walkUpT <= 0) {
       var peds = GAME.world.peds;
       for (var w = 0; w < peds.length; w++) {
         var pd = peds[w];
         if (pd.dead || pd.isCop || pd.jobPed || pd.iceServed) continue;
-        if (U.dist2(f.x, f.z, pd.pos.x, pd.pos.z) > 24 * 24) continue;
+        if (U.dist2(f.x, f.z, pd.pos.x, pd.pos.z) > CHIME_R * CHIME_R) continue;
         pd.jobPed = true;
         pd.state = 'wait';
         active.targets.push({ x: pd.pos.x, z: pd.pos.z, ped: pd, boarding: true, walkUp: true });
-        active.walkUpT = 2.2;
+        active.walkUpT = 1.2;
         break;
       }
     }
@@ -457,6 +837,7 @@ GAME.missions = (function () {
     var P = GAME.player;
     if (active || !P.inCar || !P.car) return;
     if (kind === 'icecream') { startIceCream(); return; }
+    if (kind === 'vigilante') { startVigilante(); return; }
     GAME.track('job-started-' + kind);
     active = {
       def: { type: kind, name: kind === 'ambulance' ? 'PARAMEDIC' : 'TAXI DRIVER', id: kind, job: true },
@@ -468,7 +849,7 @@ GAME.missions = (function () {
       // the opening clock covers the first call and a breath, no more — the
       // shift is earned fare by fare (see completeFare)
       timeLeft: kind === 'ambulance' ? 70 : 60,
-      jobCount: 0, earned: 0, routeCp: null
+      jobCount: 0, earned: 0, routeCp: null, hospital: null
     };
     startRound();
     // no auto-orient here: taxi and ambulance shifts start from a moving cab
@@ -776,7 +1157,20 @@ GAME.missions = (function () {
       if (dd < bd) { bd = dd; best = hs[hi]; }
     }
     best = best || hs[0];
+    active.hospital = best;
     return clearOfRoad(best.x + 30, best.spawn.z);
+  }
+  // Where the patients go in: the middle of the hospital's front face. Every
+  // hospital faces +z; its main block is the biggest building box across its
+  // own x (the cross tower beside it is a thin fin).
+  function hospitalDoor(H) {
+    var best = null, area = 0;
+    GAME.city.hash.query(H.x, H.z, 40).forEach(function (b) {
+      if (b.tag !== 'building' || b.h === undefined || b.minX > H.x || b.maxX < H.x) return;
+      var a = (b.maxX - b.minX) * (b.maxZ - b.minZ);
+      if (a > area) { area = a; best = b; }
+    });
+    return best ? { x: H.x, z: best.maxZ + 0.6 } : { x: H.spawn.x, z: H.spawn.z };
   }
 
   // collect whoever is at this stop
@@ -818,9 +1212,15 @@ GAME.missions = (function () {
     GAME.addCash(fare); active.earned += fare;
     GAME.audio.sting('win');
     GAME.haptics.win();
+    // Patients walk in through the hospital doors and are gone; they used to
+    // step out and wander off into town like anybody else, straight past the
+    // place they had been rushed to. A fare still steps off and goes about
+    // their business.
+    var door = kind === 'ambulance' && active.hospital ? hospitalDoor(active.hospital) : null;
     for (var i = 0; i < n; i++) {
       var out = GAME.peds.spawnPed(tgt[0] + (i - n / 2) * 1.4, tgt[1] + 1.5);
-      out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z;
+      if (door) GAME.peds.walkInto(out, door.x + (i - (n - 1) / 2) * 0.9, door.z);
+      else { out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z; }
     }
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';
@@ -877,7 +1277,7 @@ GAME.missions = (function () {
   function endJob(reason) {
     if (active.def.id === 'icecream') clearIceServed();
     var count = active.jobCount, earned = active.earned, lv = active.level;
-    var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : 'fare';
+    var unit = active.def.id === 'ambulance' ? 'patient' : active.def.id === 'icecream' ? 'sale' : active.def.id === 'vigilante' ? 'suspect' : 'fare';
     // send any waiting people home with the shift. Someone who only wandered
     // over for an ice cream was an ordinary passer-by a minute ago, so they get
     // to carry on being one rather than vanishing off the pavement.
@@ -898,7 +1298,8 @@ GAME.missions = (function () {
       var CARD = {
         ambulance: { slug: 'paramedic-shift', eyebrow: 'PARAMEDIC', sub: 'Costa Rosa General — patients delivered', accent: '#ff4d6a', unit: 'Patients' },
         taxifare: { slug: 'taxi-shift', eyebrow: 'TAXI DRIVER', sub: 'Costa Rosa cabs — fares run', accent: '#f0c020', unit: 'Fares' },
-        icecream: { slug: 'icecream-round', eyebrow: 'ICE CREAM ROUND', sub: 'Isla Verde — the chimes did their work', accent: '#ffd7e4', unit: 'Sales' }
+        icecream: { slug: 'icecream-round', eyebrow: 'ICE CREAM ROUND', sub: 'Isla Verde — the chimes did their work', accent: '#ffd7e4', unit: 'Sales' },
+        vigilante: { slug: 'vigilante-shift', eyebrow: 'VIGILANTE', sub: 'Costa Rosa — suspects taken off the street', accent: '#5aa0ff', unit: 'Suspects' }
       }[id] || { slug: id, eyebrow: 'SHIFT', sub: '', accent: '#38e8ff', unit: 'Jobs' };
       GAME.track('job-completed-' + id);
       GAME.share.show({
@@ -911,7 +1312,7 @@ GAME.missions = (function () {
         ]
       });
     } else {
-      GAME.hud.message('Shift over.' + (reason ? ' ' + reason + '.' : ''), 2.5);
+      GAME.hud.message('Shift over.' + (reason ? ' ' + reason.charAt(0).toUpperCase() + reason.slice(1) + '.' : ''), 2.5);
     }
     cleanup();
   }
@@ -956,8 +1357,11 @@ GAME.missions = (function () {
   function start(def) {
     var P = GAME.player;
     GAME.track('mission-started-' + def.type);
+    retry = null;
     active = {
       def: def, t: 0, cpIndex: 0, score: 0,
+      // what you set off in, for a retry to hand back if it did not survive
+      carType: P.inCar && P.car && !P.car.spec.heli && !P.car.spec.plane ? P.car.type : null,
       timeLeft: def.time || 0, racers: [], state: 'fade', countdown: 3,
       // a fresh set of drops every time you take the run
       stops: def.type === 'courier' ? rollCourierStops(def) : null
@@ -998,9 +1402,10 @@ GAME.missions = (function () {
         // is just a drive. Staggered left and right of the racing line so the
         // lane you launch into is open.
         for (var i = 0; i < 3; i++) {
-          var off = (i + 1) * 6;
-          var rx = def.start.x + Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? 3.5 : -3.5);
-          var rz = def.start.z + Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? 3.5 : -3.5);
+          // (boats are longer and need room to the side: a hull's length apart)
+          var off = (i + 1) * (def.boat ? 9 : 6), side = def.boat ? 4.5 : 3.5;
+          var rx = def.start.x + Math.sin(P.car.heading) * off + Math.cos(P.car.heading) * (i % 2 ? side : -side);
+          var rz = def.start.z + Math.cos(P.car.heading) * off - Math.sin(P.car.heading) * (i % 2 ? side : -side);
           var car = GAME.vehicles.spawnCar(rivalType, rx, rz, P.car.heading, { occupied: 'ai', ai: { mode: 'race' }, mission: true, color: [0xffe14f, 0xb040ff, 0x38e8ff][i] });
           car.cpIndex = 0;
           // rivals shrug off scrapes — a race should be decided on the road, not by
@@ -1022,8 +1427,13 @@ GAME.missions = (function () {
           spawnRampageTargets(14, 6);
           GAME.hud.message('Cause $' + def.target + ' of mayhem! Wreck cars and crowds.', 3.5);
         };
+      } else if (def.type === 'takedown') {
+        active.goSetup = function () {
+          if (!spawnTarget(def)) { finish(false, 'The target is nowhere to be found.'); return; }
+          GAME.hud.message(def.early ? 'The target is running — catch and wreck them!' : 'The target is marked. Wreck the car — or make the driver give it up.', 3.5);
+        };
       } else {
-        active.goSetup = function () { GAME.hud.message('First delivery is marked.', 3); };
+        active.goSetup = function () { GAME.hud.message(def.boat ? 'First package is marked — it\'s floating out in the bay.' : 'First delivery is marked.', 3); };
       }
       active.state = 'countdown';
       GAME.hud.missionObjective(objectiveText());
@@ -1033,6 +1443,7 @@ GAME.missions = (function () {
     setMarkersVisible(false);
     GAME.hud.missionStart(def.name, objectiveText());
     GAME.audio.pickup();
+    if (LOLA[def.id]) lola(LOLA[def.id][0]);
     updateCp();
   }
 
@@ -1070,10 +1481,27 @@ GAME.missions = (function () {
       var field = 1 + active.racers.filter(inRace).length;
       return ordinal(racePosition()) + ' / ' + field + '   ·   Checkpoint ' + (active.cpIndex + 1) + ' / ' + d.cps.length;
     }
+    if (d.type === 'courier' && d.boat) {
+      var pk = active.stops.length - 1;
+      return active.cpIndex < pk ? 'Package ' + (active.cpIndex + 1) + ' / ' + pk : 'Bring them in to the pier';
+    }
     if (d.type === 'courier') return 'Delivery ' + (active.cpIndex + 1) + ' / ' + active.stops.length;
     if (d.type === 'icecream') {
       return 'Round ' + active.level + '  ·  sold ' + active.sales + ' / ' + active.quota +
-        '  ·  $' + active.earned + ' taken';
+        '  ·  $' + active.earned + ' taken' + (active.callT > 0 ? '' : '  ·  ' + hornKey() + ' plays the chimes');
+    }
+    if (d.type === 'vigilante') {
+      var pp = active.perp, ff = GAME.focus();
+      var dm = pp && !pp.gone ? Math.round(Math.sqrt(U.dist2(ff.x, ff.z, pp.pos.x, pp.pos.z))) : 0;
+      return 'Lv ' + active.level + '  ·  ' + (active.fleeing ? 'Stop the suspect' : 'Find the suspect') +
+        '  ·  ' + dm + ' m  ·  ' + active.jobCount + ' down';
+    }
+    if (d.type === 'takedown') {
+      var tg = active.perp, tf = GAME.focus();
+      if (!tg) return 'Find the target';
+      var tm = Math.round(Math.sqrt(U.dist2(tf.x, tf.z, tg.pos.x, tg.pos.z)));
+      var arm = Math.max(0, Math.round(100 * (tg.hp - active.maxHp * TARGET_GIVE_UP) / (active.maxHp * (1 - TARGET_GIVE_UP))));
+      return (active.fleeing ? 'Stop the target' : 'Find the target') + '  ·  ' + tm + ' m  ·  ' + arm + '% left in it';
     }
     if (d.type === 'taxifare' || d.type === 'ambulance') {
       var amb = d.type === 'ambulance';
@@ -1096,16 +1524,20 @@ GAME.missions = (function () {
       return t ? [t.x, t.z] : null;
     }
     if (d.type === 'icecream') return null;   // no destination: the chimes ARE the job
+    if (d.type === 'vigilante' || d.type === 'takedown') return active.perp && !active.perp.gone ? [active.perp.pos.x, active.perp.pos.z] : null;
     return null;
   }
 
+  // where a ring stands: the road, or for a job on the water, the sea
+  function markerFloor(d, x, z) { return d.boat ? GAME.city.seaLevel : GAME.city.groundY(x, z); }
   function updateCp() {
     if (!active || active.def.type === 'rampage') { if (cpMarker) cpMarker.visible = false; return; }
     var cp = currentCp();
     if (cp) {
       cpMarker.visible = true;
-      cpMarker.position.set(cp[0], GAME.city.groundY(cp[0], cp[1]) + 1.7, cp[1]);
+      cpMarker.position.set(cp[0], markerFloor(active.def, cp[0], cp[1]) + 1.7, cp[1]);
     } else cpMarker.visible = false;
+    placeCrate();
   }
 
   function setMarkersVisible(v) {
@@ -1133,7 +1565,20 @@ GAME.missions = (function () {
         var field = 1 + active.racers.length;
         head = 'RACE WON — 1st / ' + field + '  ·  ' + value.toFixed(1) + 's  ·  +$';
       }
-      GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : ''), 4.5);
+      // A rampage won is paid for with the heat it raised: twenty bodies
+      // walked you up to four stars, and the pass took the gun straight back
+      // (cleanup) — leaving you at a roadblock with your fists. Whoever set
+      // the job up makes the worst of it go away; two stars is still yours.
+      var cooled = d.type === 'rampage' && GAME.police.wanted > RAMPAGE_HEAT_LEFT;
+      if (cooled) GAME.police.setWanted(RAMPAGE_HEAT_LEFT);
+      GAME.hud.message(head + reward + (isBest ? '  ·  NEW BEST!' : '') +
+        (cooled ? '  ·  your people cooled it down to two stars' : ''), 4.5);
+      // what it counts toward, while the channel is still shut — said only on
+      // the title and pause screens before, never in play
+      if (!d.job && !opened && GAME.isla && !GAME.isla.isOpen()) {
+        var up = GAME.isla.unlockProgress();
+        GAME.hud.message(up.done + ' of ' + up.need + ' missions toward the bridges to Isla Verde', 4.5);
+      }
       GAME.track('mission-completed-' + d.type);
       // a finished run is worth showing off — the card carries the numbers
       var cardStats = [{ label: 'Reward', value: '$' + reward }];
@@ -1146,33 +1591,104 @@ GAME.missions = (function () {
         cardStats.push({ label: 'Time', value: value.toFixed(1) + 's' });
       }
       if (isBest) cardStats.push({ label: 'Result', value: 'NEW BEST' });
+      // Lola's word on it, the first time — and the next chapter when the
+      // bridges open, or the last when there is no work of hers left
+      if (prev === undefined && LOLA[d.id]) lola(LOLA[d.id][1]);
+      if (opened) lola('The bridges east are open. Isla Verde is waiting for you — and so is Rico. Find my rings over there.', 7);
+      else if (prev === undefined && !d.job && namedDone() === DEFS.length) {
+        lola('That\'s every job I had. The town is yours to enjoy — and somebody told me about tapes hidden all over it…', 8);
+      }
       if (opened) return cleanup();     // the bridges card takes the screen
       GAME.share.show({
         slug: d.id,
-        eyebrow: TYPE_LABEL[d.type] || 'COSTA ROSA · 1986',
+        eyebrow: typeLabel(d) || 'COSTA ROSA · 1986',
         title: d.type === 'race' ? 'RACE WON' : 'MISSION PASSED',
         subtitle: d.name,
-        accent: d.type === 'race' ? '#ff8a3d' : d.type === 'rampage' ? '#ff4fa3' : '#38e8ff',
+        accent: d.type === 'race' ? '#ff8a3d' : d.type === 'rampage' ? '#ff4fa3' : d.type === 'takedown' ? '#ff3b3b' : '#38e8ff',
         stats: cardStats
       });
     } else {
       GAME.audio.sting('wasted');
-      var tail = '';
-      if (d.type === 'race') {
+      var tail = '', quit = reason === ABANDONED;
+      if (d.type === 'race' && !quit) {
         var f2 = 1 + active.racers.length;
         // abandoning the car is a DNF — don't credit a position you walked away from
         tail = (GAME.player.inCar && GAME.player.car && !GAME.player.car.dead)
           ? '  ·  finished ' + ordinal(racePosition()) + ' / ' + f2
           : '  ·  DNF';
       }
-      GAME.hud.message('MISSION FAILED — ' + reason + tail, 4);
+      // a death or an arrest offers it once you are back on your feet
+      var down = GAME.player.state !== 'alive';
+      if (!d.job) retry = { def: d, carType: active.carType, until: GAME.time + RETRY_WINDOW, waitRespawn: down };
+      GAME.hud.message((quit ? 'MISSION ABANDONED' : 'MISSION FAILED — ' + reason) + tail + (retry && !down ? '  ·  ' + retryHint() : ''), 4);
     }
     cleanup();
+  }
+
+  // A failed run left you to make your own way back to its marker: often a
+  // kilometre from where a race or a delivery came apart, and further still
+  // from the hospital. For a few seconds after it fails, Y (or RETRY) puts
+  // you back on the start line in what you set off in and runs it again. The
+  // heat still closes every start line, this one included.
+  var RETRY_WINDOW = 12;
+  // the retry key as it is bound, or the pad's button while on the pad
+  function retryHint() { return (GAME.controls ? GAME.controls.label('KeyY') : 'Y') + ' to retry'; }
+  var retry = null;
+  function stepRetry(dt, P, hot) {
+    if (retry.fadeT !== undefined) {
+      retry.fadeT -= dt;
+      if (retry.fadeT <= 0) { var r = retry; retry = null; relaunch(r); }
+      return true;
+    }
+    if (retry.waitRespawn) {
+      retry.waitRespawn = false;
+      retry.until = GAME.time + RETRY_WINDOW;
+      GAME.hud.message(retryHint() + ': ' + retry.def.name, 4);
+    }
+    if (GAME.time > retry.until || !defAvailable(retry.def)) { retry = null; return false; }
+    if (GAME.keyPressed('KeyY') || GAME.input.touch.retry) {
+      GAME.input.touch.retry = false;
+      if (hot) {
+        GAME.hud.message('Lose the stars first — nobody starts a run with the heat on you.', 2.5);
+        return true;
+      }
+      retry.fadeT = 0.45;
+      GAME.hud.fadeSet(1);
+      return true;
+    }
+    return false;
+  }
+  function relaunch(r) {
+    var P = GAME.player, d = r.def;
+    var need = d.type === 'race' || d.type === 'courier';
+    var ride = P.inCar && P.car && !P.car.dead && !P.car.sinking && !P.car.spec.heli && !P.car.spec.plane &&
+      !!P.car.spec.boat === !!d.boat ? P.car : null;
+    if (P.inCar && !ride) GAME.exitCar();
+    if (need && !ride) {
+      ride = GAME.vehicles.spawnCar(d.boat ? 'boat' : r.carType || 'sedan', d.start.x, d.start.z, 0, {});
+      if (ride) GAME.seatInCar(ride);
+    }
+    if (ride && P.car === ride) {
+      ride.pos.set(d.start.x, d.boat ? GAME.city.seaLevel : GAME.city.groundY(d.start.x, d.start.z), d.start.z);
+      ride.speed = 0; ride.lat = 0; ride.vy = 0; ride.air = 0; ride.jumpRamp = null;
+      ride.airVX = ride.airVZ = undefined;
+    } else {
+      P.pos.set(d.start.x, GAME.city.groundY(d.start.x, d.start.z), d.start.z);
+      P.velY = 0; P.airborne = false;
+    }
+    start(d);
+    // a run with no first objective to turn you toward arms at once, with no
+    // blackout of its own to lift
+    if (active && active.state !== 'fade') GAME.hud.fadeSet(0);
+    if (!active) GAME.hud.fadeSet(0);
   }
 
   function cleanup() {
     if (active) {
       for (var i = 0; i < active.racers.length; i++) GAME.vehicles.removeCar(active.racers[i]);
+      // a vigilante suspect still out there goes back to being ordinary
+      // traffic, however the shift ended
+      if (active.perp && !active.perp.gone) { active.perp.perp = false; active.perp.mission = false; }
       if (active.targets) {
         for (var ti = 0; ti < active.targets.length; ti++) {
           var tp = active.targets[ti].ped;
@@ -1193,8 +1709,12 @@ GAME.missions = (function () {
         GAME.combat.refreshWeaponHud();
       }
     }
+    // whichever marker that was waits until you have left it (see START_SPEED)
+    if (active && active.def) leaveFirst = active.def;
     active = null;
+    abandonAsk = 0;
     cpMarker.visible = false;
+    if (crate) crate.visible = false;
     setMarkersVisible(true);
     GAME.hud.fadeSet(0);   // a start that dies mid-blackout takes the black with it
     GAME.hud.missionEnd();
@@ -1203,6 +1723,18 @@ GAME.missions = (function () {
 
   function failActive(reason) {
     if (active) finish(false, reason);
+  }
+  // walking away: a shift clocks off (pay for what you did), a mission fails
+  // as abandoned — and offers the retry like any other, which makes it the
+  // restart button too
+  var ABANDON_CONFIRM = 3, ABANDONED = 'abandoned', abandonAsk = 0;
+  function abandon() {
+    abandonAsk = 0;
+    if (!active) return false;
+    GAME.track('mission-abandoned');
+    if (active.def.job) endJob('clocked off');
+    else finish(false, ABANDONED);
+    return true;
   }
 
   function notifyChaos(pts) {
@@ -1225,10 +1757,13 @@ GAME.missions = (function () {
     for (var k in T) {
       var s = T[k];
       if (s.heli || s.plane || k === 'police') continue;
-      if (!!s.bike !== !!mine.bike) continue;
+      if (!!s.bike !== !!mine.bike || !!s.boat !== !!mine.boat) continue;
       if (s.maxSpeed > bestSp && s.maxSpeed <= mine.maxSpeed * RIVAL_CAP) { best = k; bestSp = s.maxSpeed; }
     }
-    return { type: best, edge: best === playerType ? RIVAL_ENGINE_EDGE : 1 };
+    // (a boat race is the one class with nothing quicker in it, and no
+    // corners or traffic to lose time to either: an edge on the engine there
+    // is a race decided at the start, so the field races the boat you brought)
+    return { type: best, edge: best === playerType && !mine.boat ? RIVAL_ENGINE_EDGE : 1 };
   }
 
   function racerControls(car, dt) {
@@ -1242,9 +1777,11 @@ GAME.missions = (function () {
     }
     // rivals drive the streets to the next checkpoint. Beelining at a diagonal
     // checkpoint just parks them against a building, which is what made the
-    // field look slow — they were stuck, not slow.
+    // field look slow — they were stuck, not slow. (A boat race is laid out
+    // in open water, every leg clear: a boat makes straight for the mark.)
     car.pathT = (car.pathT || 0) - dt;
-    if (!car.path || !car.path.length || car.pathT <= 0) {
+    if (car.spec.boat) car.path = [cp];
+    else if (!car.path || !car.path.length || car.pathT <= 0) {
       car.pathT = 2.5;
       var nodes = GAME.nav.roadPath(car.pos.x, car.pos.z, cp[0], cp[1]);
       var pts = [];
@@ -1286,15 +1823,18 @@ GAME.missions = (function () {
     // of instead, which is the only lever that can.
     var lead = car.cpIndex - active.cpIndex;
     var edge;
-    if (lead > 0) edge = 0.95;
-    else if (lead < 0) edge = 1.13;
+    // On the water the band is gentler: open-water legs are all straights,
+    // so a rival pushed past your top speed simply could not be beaten.
+    var bandUp = car.spec.boat ? 0.05 : 0.13, bandDown = car.spec.boat ? 0.09 : 0.05;
+    if (lead > 0) edge = 1 - bandDown;
+    else if (lead < 0) edge = 1 + bandUp;
     else {
       // same checkpoint, so whoever is further from it is the one behind
       var pc = GAME.player.car;
       var cpNow = d.cps[Math.min(active.cpIndex, d.cps.length - 1)];
       var mine = U.dist(car.pos.x, car.pos.z, cpNow[0], cpNow[1]);
       var yours = pc ? U.dist(pc.pos.x, pc.pos.z, cpNow[0], cpNow[1]) : mine;
-      edge = 1 + U.clamp((mine - yours) / 320, -0.05, 0.13);
+      edge = 1 + U.clamp((mine - yours) / 320, -bandDown, bandUp);
     }
     // the band rides on top of whatever edge the field started with
     car.raceEdge = edge * (active.rivalEdge || 1);
@@ -1325,10 +1865,24 @@ GAME.missions = (function () {
     return { throttle: throttle, steer: U.clamp(dh * 2.6 + steerBias, -1, 1), handbrake: handbrake };
   }
 
+  // Lola introduces herself a few seconds into a first game, once
+  var introT = 0;
+  function storyIntro(dt, P) {
+    if (!GAME.started || P.state !== 'alive' || active) return;
+    if (GAME.prefs && GAME.prefs.storyIntro) return;
+    introT += dt;
+    if (introT < 3) return;
+    GAME.prefs = GAME.prefs || {};
+    GAME.prefs.storyIntro = true;
+    GAME.save();
+    lola('Welcome to Costa Rosa, kid. I\'m Lola — I run the strip. You need work, I have work: the rings on your map are mine. Start with a race, and win it.', 9);
+  }
+
   function update(dt) {
     resprayCooldown -= dt;
     var P = GAME.player;
     var t = GAME.time;
+    storyIntro(dt, P);
     // pulse markers
     for (var i = 0; i < markers.length; i++) {
       if (markers[i].mesh.visible) {
@@ -1348,15 +1902,22 @@ GAME.missions = (function () {
         if (P.car.type === 'taxi') jobKind = 'taxifare';
         else if (P.car.type === 'ambulance') jobKind = 'ambulance';
         else if (P.car.type === 'icecream') jobKind = 'icecream';
+        else if (P.car.type === 'police') jobKind = 'vigilante';
       }
       // Nobody hires a driver the police are actively chasing: no mission or
       // shift starts while you carry stars. Lose the heat first — respray,
       // bribe, or lie low.
       var hot = GAME.police.wanted > 0;
-      GAME.jobAvailable = hot ? null : jobKind;
+      // ...except the one job that works off your record: a stolen cruiser is
+      // stars on you by definition, and vigilante work is how they come off
+      var jobHot = hot && jobKind !== 'vigilante';
+      GAME.jobAvailable = jobHot ? null : jobKind;
+      if (GAME.jobAvailable && GAME.lola) GAME.lola.first('job');
+      GAME.retryAvailable = !!retry && !retry.waitRespawn && retry.fadeT === undefined;
+      if (retry && stepRetry(dt, P, hot)) return;
       if (jobKind && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
         GAME.input.touch.job = false;
-        if (hot) {
+        if (jobHot) {
           GAME.hud.message('Nobody rides with the heat on you — lose the stars first.', 2.5);
           return;
         }
@@ -1379,19 +1940,29 @@ GAME.missions = (function () {
         if (!defAvailable(d)) { markers[m].mesh.visible = false; continue; }
         markers[m].mesh.visible = true;
         // races and courier deliveries need a vehicle; rampages can start on foot
-        var need = d.type === 'race' || d.type === 'courier';
+        var need = d.type === 'race' || d.type === 'courier' || d.type === 'takedown';
         var air = P.car && (P.car.spec.heli || P.car.spec.plane);
+        // and a job on the water wants a boat under you (a road job never
+        // finds one there: its ring is on the street)
+        var wrongHull = need && P.inCar && !!d.boat !== !!(P.car && P.car.spec.boat);
         var dd = U.dist2(px, pz, d.start.x, d.start.z);
+        // (six metres for a vehicle: four and a half took five or ten goes
+        // of shuffling back and forth to land in)
+        var inRing = dd < (need ? 36 : 7);
+        var slow = !P.inCar || Math.abs(P.car.speed) < START_SPEED;
+        if (leaveFirst === d && dd > REARM_R2) leaveFirst = null;
         // name what the marker is (and what it wants) whenever you're standing near it
         if (dd < 34 * 34 && (!hk || dd < hd)) {
           hk = 1; ho = d; hd = dd;
-          hn = hot ? 1 : need && !P.inCar ? 2 : d.type === 'race' && air ? 3 : dd < (need ? 20 : 7) ? 4 : 0;
+          hn = hot ? 1 : need && !P.inCar ? (d.boat ? 7 : 2) : wrongHull ? (d.boat ? 7 : 2) : d.type === 'race' && air ? 3
+            : leaveFirst === d ? 6 : inRing ? (slow ? 4 : 5) : 0;
         }
         if (hot) continue;   // wanted stars close every start line
         if (need && !P.inCar) continue;
+        if (wrongHull) continue;
         // no cheesing a street race from a helicopter or plane
         if (d.type === 'race' && air) continue;
-        if (dd < (need ? 20 : 7)) {
+        if (inRing && slow && leaveFirst !== d) {
           start(d);
           hk = 0;
           break;
@@ -1405,17 +1976,31 @@ GAME.missions = (function () {
       }
       // and the shops share the one readout instead of talking over it
       var sh = GAME.shops && GAME.shops.nearHint(px, pz);
-      if (sh && (!hk || sh.d < hd)) GAME.hud.setPoiHint(sh.text);
+      if (sh && (!hk || sh.d < hd)) {
+        GAME.hud.setPoiHint(sh.text);
+        if (GAME.lola && !P.inCar) GAME.lola.first('shop');   // the first door you walk up to
+      }
       else GAME.hud.setPoiHint(hk ? poiHintText(hk, ho, hn) : '');
       return;
     }
     GAME.jobAvailable = null;
+    GAME.retryAvailable = false;
     GAME.hud.setPoiHint('');
     // J (or the JOB button) again clocks off an ongoing shift
     if (active.def.job && (GAME.keyPressed('KeyJ') || GAME.input.touch.job)) {
       GAME.input.touch.job = false;
       endJob('clocked off');
       return;
+    }
+    // X walks away from it. There was no way out of a run you had gone off
+    // short of dying or getting arrested — a race that started by accident
+    // had to be lost the long way. Once asks, again inside three seconds
+    // means it (ABANDON on the pause screen asks the same way).
+    if (GAME.keyPressed('KeyX')) {
+      if (GAME.time < abandonAsk) { abandon(); return; }
+      abandonAsk = GAME.time + ABANDON_CONFIRM;
+      var xk = GAME.controls ? GAME.controls.label('KeyX') : 'X';
+      GAME.hud.message(xk + ' again to ' + (active.def.job ? 'clock off' : 'abandon ' + active.def.name), ABANDON_CONFIRM);
     }
 
     // active mission
@@ -1442,6 +2027,14 @@ GAME.missions = (function () {
           GAME.audio.pickup();
           GAME.haptics.checkpoint();
           if (active.goSetup) { active.goSetup(); active.goSetup = null; }
+          // the way out of a run, said the first time one starts
+          if (GAME.prefs && !GAME.prefs.abandonTold) {
+            GAME.prefs.abandonTold = true;
+            GAME.save();
+            var padNow = GAME.controls && GAME.controls.usingPad();
+            GAME.hud.message(GAME.isTouch || padNow ? 'Changed your mind? Pause' + (padNow ? ' (START)' : '') + ' → ABANDON MISSION walks away from a run.'
+              : 'Changed your mind? ' + (GAME.controls ? GAME.controls.label('KeyX') : 'X') + ' twice walks away from a run.', 4);
+          }
         } else {
           var num = Math.max(1, Math.ceil(active.countdown));
           if (num !== active.lastNum) { active.lastNum = num; GAME.audio.cashTick(); }
@@ -1484,10 +2077,11 @@ GAME.missions = (function () {
         if (!active.legs || active.legsGated !== gated) { active.legs = []; active.legsGated = gated; }
         var pts = [];
         var here = P.car ? P.car.pos : P.pos;
-        var first = roadRoute(here.x, here.z, d2.cps[active.cpIndex][0], d2.cps[active.cpIndex][1]);
+        var wet = !!d2.boat, road = function (ax, az, bx, bz) { return wet ? [[ax, az], [bx, bz]] : roadRoute(ax, az, bx, bz); };
+        var first = road(here.x, here.z, d2.cps[active.cpIndex][0], d2.cps[active.cpIndex][1]);
         for (var si = 0; si < first.length; si++) pts.push(first[si]);
         for (var k = active.cpIndex + 1; k < d2.cps.length; k++) {
-          var seg = active.legs[k] || (active.legs[k] = roadRoute(d2.cps[k - 1][0], d2.cps[k - 1][1], d2.cps[k][0], d2.cps[k][1]));
+          var seg = active.legs[k] || (active.legs[k] = road(d2.cps[k - 1][0], d2.cps[k - 1][1], d2.cps[k][0], d2.cps[k][1]));
           for (si = 0; si < seg.length; si++) pts.push(seg[si]);
         }
         active.raceRoute = pts;
@@ -1498,12 +2092,15 @@ GAME.missions = (function () {
       if (active.timeLeft <= 0) { finish(false, 'Out of time.'); return; }
       var px2 = P.inCar ? P.car.pos.x : P.pos.x, pz2 = P.inCar ? P.car.pos.z : P.pos.z;
       var stop = currentCp();
-      if (stop && U.dist2(px2, pz2, stop[0], stop[1]) < 25) {
+      bobCrate();
+      if (stop && U.dist2(px2, pz2, stop[0], stop[1]) < (d2.boat ? 49 : 25)) {
         active.cpIndex++;
         GAME.audio.pickup();
         GAME.haptics.checkpoint();
         if (active.cpIndex >= active.stops.length) { finish(true); return; }
-        GAME.hud.message('Delivered! Next stop is marked.', 2);
+        GAME.hud.message(!d2.boat ? 'Delivered! Next stop is marked.'
+          : active.cpIndex < active.stops.length - 1 ? 'Package aboard! The next one is marked.'
+            : 'Got them all — bring them in to the pier!', 2);
         GAME.hud.missionObjective(objectiveText());
         active.routeCp = -1; // force route recompute for the new stop
         updateCp();
@@ -1513,7 +2110,8 @@ GAME.missions = (function () {
       if (active.routeT <= 0 || active.routeCp !== active.cpIndex) {
         active.routeT = 1.0; active.routeCp = active.cpIndex;
         var st2 = currentCp();
-        active.courierRoute = st2 ? roadRoute(px2, pz2, st2[0], st2[1]) : null;
+        // (on the water the line runs straight: there are no streets to follow)
+        active.courierRoute = !st2 ? null : d2.boat ? [[px2, pz2], st2] : roadRoute(px2, pz2, st2[0], st2[1]);
       }
       GAME.hud.missionTimer(active.timeLeft, true);
     } else if (d2.type === 'rampage') {
@@ -1534,6 +2132,10 @@ GAME.missions = (function () {
       if (active.timeLeft <= 0) { finish(false, 'Time up — $' + Math.floor(active.score) + ' of $' + d2.target); return; }
     } else if (d2.type === 'icecream') {
       updateIceCream(dt, P);
+    } else if (d2.type === 'vigilante') {
+      updateVigilante(dt, P);
+    } else if (d2.type === 'takedown') {
+      updateTakedown(dt, P);
     } else if (d2.type === 'taxifare' || d2.type === 'ambulance') {
       // clock off simply by leaving the vehicle; the shift also ends if it's totalled
       if (!P.inCar || !P.car) { endJob('clocked off'); return; }
@@ -1614,22 +2216,31 @@ GAME.missions = (function () {
   // ---------- full completion ----------
   // Every mission (races, rampages, deliveries, the lot) and every stunt
   // jump, both islands. Property is a pastime, not progress. The prize: the
-  // TALON gunship on the mainland helipad (and in the showroom), and money
-  // stops being a question.
-  function completionDone() {
+  // TALON gunship on the mainland helipad (and in the showroom), and a
+  // million dollars, once. It used to pin your cash at $9,999,999 for good,
+  // which ended the economy: nothing cost anything again, and every payout
+  // after that was a number that changed nothing.
+  function namedDone() {
     var b = GAME.bests || {}, n = 0;
     for (var i = 0; i < DEFS.length; i++) if (b[DEFS[i].id] !== undefined) n++;
-    return n >= DEFS.length && !!(GAME.stunts && GAME.stunts.complete);
+    return n;
   }
+  // a hundred per cent: every marked job, every jump on both islands, every
+  // lost tape
+  function completionDone() {
+    var S = GAME.stunts, T = GAME.tapes;
+    return namedDone() >= DEFS.length && !!(S && S.complete && S.islaComplete) && !!(!T || T.complete);
+  }
+  var COMPLETION_BONUS = 1000000;
   function applyComplete() {
     GAME.city.unlockGunship();
-    GAME.completeUnlimited = true;
   }
   function checkCompletion() {
     if (GAME.prefs && GAME.prefs.gameComplete) { applyComplete(); return true; }
     if (!completionDone()) return false;
     GAME.prefs = GAME.prefs || {};
     GAME.prefs.gameComplete = true;
+    GAME.addCash(COMPLETION_BONUS);
     GAME.save();
     applyComplete();
     GAME.track('game-complete');
@@ -1637,7 +2248,7 @@ GAME.missions = (function () {
     GAME.haptics.win();
     GAME.hud.dialog({
       title: 'COSTA ROSA, COMPLETE',
-      body: 'Every mission, every race, every jump — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and money is no longer a question.',
+      body: 'Every mission, every race, every jump, every lost tape — both islands.\nThe TALON is warming up on the mainland helipad (guns live, rockets loaded), the showroom will sell you spares, and there is a million dollars in your pocket that was not there this morning.',
       ok: 'CARRY ON', cancel: false
     });
     return true;
@@ -1670,6 +2281,7 @@ GAME.missions = (function () {
     // five-star manhunt made the sergeant's $2,250 rate card a joke.
     var w = GAME.police.wanted;
     if (w > 0 && w <= 2) GAME.police.clearWanted();
+    if (GAME.lola) GAME.lola.first('respray');
     // works for any driven vehicle, motorcycles included: full repair + fresh
     // paint. Hand the body back to the SHARED vertex-color material (un-
     // burning it), and free a private burnt coat if that's what it wore —
@@ -1705,7 +2317,9 @@ GAME.missions = (function () {
     init: init,
     update: update,
     failActive: failActive,
+    abandon: abandon,
     notifyChaos: notifyChaos,
+    chimed: chimed,
     objectiveText: objectiveText,
     getRoutePoints: function () {
       if (!active || active.state === 'fade' || active.state === 'countdown') return null;
@@ -1728,8 +2342,8 @@ GAME.missions = (function () {
         for (var i = 0; i < markers.length; i++) {
           var d = markers[i].def;
           if (!defAvailable(d)) continue;
-          var kind = d.type === 'race' ? 'race' : d.type === 'courier' ? 'courier' : 'rampage';
-          putBlip(d.start.x, d.start.z, MARKER_HEX[d.type], 4, kind);
+          var kind = d.type === 'race' ? 'race' : d.type === 'courier' ? 'courier' : d.type === 'takedown' ? 'takedown' : 'rampage';
+          putBlip(d.start.x, d.start.z, MARKER_HEX[d.type], 4, kind, d.name, (GAME.bests || {})[d.id] !== undefined);
         }
       } else {
         // every waiting fare/patient shows on the map, not just the nearest

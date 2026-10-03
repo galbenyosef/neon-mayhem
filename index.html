@@ -6,6 +6,12 @@
 <title>NEON MAYHEM</title>
 <meta name="description" content="Steal a ride and cruise a neon open world at night — race, deliver, evade the heat, or just drive. A free, fan-made, browser-playable open-world game set in Costa Rosa, 1986.">
 <meta name="theme-color" content="#0b0714">
+<!-- iPhone has no fullscreen for pages: from the home screen it runs as a
+     full-screen app instead (main.js toggleFullscreen says so) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Neon Mayhem">
 <!-- Open Graph / social link preview -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Neon Mayhem">
@@ -23,11 +29,17 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231b0b33'/%3E%3Ccircle cx='8' cy='7' r='4' fill='%23ff4fa3'/%3E%3Crect y='11' width='16' height='2' fill='%2338e8ff'/%3E%3C/svg%3E">
 <style>
   html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#0b0714; }
+  /* the whole page, not just the HUD: the title, pause, map and WASTED
+     screens set no face of their own and came up in Times New Roman */
+  body { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
   * { box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
   #game-canvas { display:block; width:100%; height:100%; }
   .font80s { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
 
-  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; }
+  /* inside the notch and the home bar (viewport-fit=cover hands us the
+     whole screen, rounded corners and all) */
+  #hud { position:fixed; pointer-events:none; z-index:10; font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    inset:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px); }
   #hud .panel { position:absolute; }
 
   #minimap-wrap { left:14px; bottom:14px; width:180px; height:180px; border-radius:50%;
@@ -57,22 +69,50 @@
     text-shadow:0 0 12px rgba(255,100,200,.9), 2px 2px 0 #3a0f33; opacity:0; transition:opacity .6s; }
 
   /* names the marker/garage you're standing next to, and what it needs */
+  /* "F — get in the Cadenza" (player.js enterHint) */
+  #enter-hint { left:50%; bottom:36%; transform:translateX(-50%); font-size:15px; font-weight:800; letter-spacing:1px;
+    color:#e8f6ff; background:rgba(10,4,20,.6); padding:3px 10px; border-radius:4px; text-shadow:0 1px 3px #000;
+    opacity:0; transition:opacity .2s; white-space:nowrap; pointer-events:none; }
   #poi-hint { left:50%; bottom:31%; transform:translateX(-50%); text-align:center; font-size:16px; font-weight:800;
     letter-spacing:1px; color:#ffe08a; text-shadow:0 0 12px rgba(255,190,60,.85), 0 2px 5px rgba(0,0,0,.9);
     opacity:0; transition:opacity .25s; white-space:nowrap; }
 
-  #msg-line { left:50%; bottom:24%; transform:translateX(-50%); font-size:19px; font-weight:700; color:#fff;
-    text-shadow:0 0 10px rgba(255,120,220,.9); opacity:0; transition:opacity .3s; text-align:center;
-    max-width:70vw; white-space:normal; line-height:1.4; }
+  /* a short stack of messages, newest at the bottom (hud.js pushMessage) */
+  #msg-line { left:50%; bottom:24%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;
+    gap:3px; text-align:center; width:max-content; max-width:70vw; }
+  #msg-line .msg { font-size:19px; font-weight:700; color:#fff; line-height:1.35; white-space:normal;
+    text-shadow:0 0 10px rgba(255,120,220,.9), 0 2px 4px rgba(0,0,0,.85); transition:opacity .3s; }
+  #msg-line .msg.old { font-size:16px; opacity:.75; }
+  #msg-line .msg.out { opacity:0; }
   /* the mission-start countdown: one huge numeral, dead centre, gone on GO */
   #count-big { left:50%; top:34%; transform:translate(-50%,-50%); font-size:clamp(64px,15vh,116px); font-weight:900;
     font-style:italic; color:#8dffd8; text-shadow:0 0 26px rgba(60,255,190,.9), 4px 4px 0 #0a2a20;
     opacity:0; transition:opacity .2s; text-align:center; letter-spacing:6px; }
   #mission-hud { left:50%; top:12px; transform:translateX(-50%); text-align:center; display:none; }
+  /* Lola's pager (hud.js pager): top left, clear of the mission title */
+  #pager { left:16px; top:14px; max-width:min(380px,40vw); padding:8px 12px 10px; background:rgba(10,4,20,.84);
+    border:1px solid rgba(255,79,163,.85); border-radius:6px; box-shadow:0 0 16px rgba(255,79,163,.4);
+    opacity:0; transform:translateY(-8px); transition:opacity .35s, transform .35s; pointer-events:none; }
+  #pager.on { opacity:1; transform:none; }
+  #pager-from { font-size:12px; font-weight:800; letter-spacing:2px; color:#ff8fc8; }
+  #pager-text { font-size:15px; color:#f4ecff; line-height:1.38; margin-top:3px; text-shadow:0 1px 2px #000; }
   #mission-title { font-size:18px; font-weight:800; font-style:italic; color:#ffe08a; text-shadow:0 0 10px rgba(255,190,60,.8); }
   #mission-obj { font-size:15px; color:#e8f6ff; text-shadow:0 1px 3px #000; margin-top:2px; }
   #mission-timer { font-size:22px; font-weight:800; color:#8dffd8; text-shadow:0 0 8px rgba(60,255,190,.8); margin-top:2px; }
 
+  /* which way the hit came from: an arc on a ring round the centre, turned
+     toward the source (hud.js hitFrom) */
+  #hit-dir { left:50%; top:50%; width:min(48vh,380px); height:min(48vh,380px); border-radius:50%;
+    border:7px solid transparent; border-top-color:rgba(255,40,90,.92); transform:translate(-50%,-50%);
+    filter:drop-shadow(0 0 8px rgba(255,40,90,.85)); opacity:0; transition:opacity .45s; }
+  /* low health: the edges of the screen pulse red until you patch up */
+  #low-health { position:fixed; inset:0; pointer-events:none; z-index:9; display:none;
+    box-shadow:inset 0 0 140px 30px rgba(255,10,60,.5); animation:lowPulse 1.1s ease-in-out infinite; }
+  @keyframes lowPulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
+  /* desktop, playing, and the mouse is not captured: say what gets it back */
+  #lock-hint { left:50%; top:58%; transform:translateX(-50%); display:none; font-size:14px; font-weight:800;
+    letter-spacing:2px; color:#9df3ff; background:rgba(8,4,20,.55); border:1px solid rgba(90,220,255,.4);
+    border-radius:8px; padding:6px 14px; text-shadow:0 0 8px rgba(60,220,255,.7); }
   #crosshair { left:50%; top:50%; transform:translate(-50%,-50%); width:26px; height:26px; display:none; }
   #crosshair::before, #crosshair::after { content:""; position:absolute; background:#8dffd8; box-shadow:0 0 5px #46ffbe; }
   #crosshair::before { left:50%; top:0; width:2px; height:100%; transform:translateX(-50%); }
@@ -145,6 +185,11 @@
     #title-footer { font-size:9.5px; bottom:4px; }
   }
   @keyframes blink { 50% { opacity:.25; } }
+  /* the city builds before anything can answer a press: say so, rather than
+     blinking PRESS ENTER at someone for four seconds it cannot hear */
+  #press-enter.loading { animation:loadPulse 0.9s ease-in-out infinite alternate; cursor:progress;
+    color:rgba(141,255,216,.6); border-style:dashed; text-shadow:none; }
+  @keyframes loadPulse { from { opacity:.45; } to { opacity:.9; } }
   #controls-card { margin-top:22px; color:#cfe6ff; font-size:12.5px; line-height:1.75; background:rgba(8,4,20,.55);
     border:1px solid rgba(120,200,255,.3); border-radius:10px; padding:10px 22px; max-height:34vh; overflow:auto; }
   #controls-card b { color:#9df3ff; }
@@ -174,14 +219,14 @@
     #pause-screen .mbtn { margin:4px 3px 0; padding:4px 9px; font-size:11.5px; }
   }
 
-  #fs-btn { position:fixed; right:14px; bottom:14px; z-index:65; width:36px; height:36px; border-radius:8px;
+  #fs-btn { position:fixed; right:calc(14px + env(safe-area-inset-right,0px)); bottom:calc(14px + env(safe-area-inset-bottom,0px)); z-index:65; width:36px; height:36px; border-radius:8px;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
     background:rgba(8,4,20,.55); border:1px solid rgba(120,200,255,.35); color:#9df3ff; font-size:19px;
     text-shadow:0 0 8px rgba(60,220,255,.7); }
   #fs-btn:active { background:rgba(60,220,255,.3); }
 
   #controls-bar { position:fixed; left:50%; bottom:8px; transform:translateX(-50%); z-index:12; display:none;
-    color:#cfe6ff; font-size:12px; background:rgba(8,4,20,.6); border:1px solid rgba(120,200,255,.25);
+    color:#cfe6ff; font-size:13.5px; background:rgba(8,4,20,.6); border:1px solid rgba(120,200,255,.25);
     border-radius:8px; padding:4px 14px; pointer-events:none; white-space:nowrap; }
   #controls-bar b { color:#9df3ff; }
 
@@ -207,6 +252,82 @@
   #map-legend .lgd.sel { background:rgba(255,255,255,.14); box-shadow:0 0 0 1px rgba(255,255,255,.45) inset; }
   /* fingers need bigger targets than mouse pointers do */
   @media (pointer:coarse) { #map-legend .lgd { padding:6px 10px; } }
+  /* CONTROLS (controls.js): over the pause screen */
+  /* the camera (photo.js): the mirror's blink, the print that slides in, the album */
+  #shutter { position:fixed; inset:0; z-index:60; background:#000; opacity:0; pointer-events:none; }
+  #shutter.blink { animation:shutterBlink .16s ease-out; }
+  @keyframes shutterBlink { 0% { opacity:0; } 25% { opacity:1; } 100% { opacity:0; } }
+  /* calling Lola (lola.js): her pager, grown into a card you can answer */
+  #lola-screen { position:fixed; inset:0; z-index:38; display:none; align-items:center; justify-content:center; padding:16px;
+    background:rgba(6,2,14,.6); font-family:'Segoe UI', Arial, Helvetica, sans-serif; }
+  #lola-card { width:min(560px, 100%); max-height:calc(100vh - 32px); display:flex; flex-direction:column; background:rgba(10,4,20,.95);
+    border:1px solid rgba(255,79,163,.85); border-radius:10px; box-shadow:0 0 26px rgba(255,79,163,.4); padding:14px 16px 12px; }
+  #lola-from { font-size:12px; font-weight:800; letter-spacing:2px; color:#ff8fc8; }
+  #lola-say { font-size:16px; color:#f4ecff; line-height:1.45; margin:6px 0 12px; text-shadow:0 1px 2px #000; }
+  #lola-opts { overflow-y:auto; display:flex; flex-direction:column; gap:6px; min-height:0; }
+  .lola-opt { padding:9px 12px; border-radius:7px; border:1px solid rgba(255,150,210,.35); background:rgba(255,105,180,.08);
+    color:#ffe8f6; font-weight:700; font-size:14px; letter-spacing:.5px; cursor:pointer; user-select:none; }
+  .lola-opt.sel, .lola-opt:hover { background:rgba(255,105,180,.28); border-color:rgba(255,150,210,.85); }
+  #lola-hint { margin-top:8px; font-size:11.5px; color:#9fd8ff; letter-spacing:1px; text-align:center; }
+  @media (max-height:460px) { #lola-say { font-size:14px; margin:4px 0 8px; } .lola-opt { padding:6px 10px; font-size:13px; } }
+  /* the glass lift's ride (interiors.js): letterbox in, HUD out, a tap skips */
+  #cine { position:fixed; inset:0; z-index:24; pointer-events:none; }
+  #cine .cine-bar { position:absolute; left:0; right:0; width:auto; height:0; background:#000; transition:height .6s ease; }
+  #cine .cine-top { top:0; }
+  #cine .cine-bot { bottom:0; display:flex; align-items:center; justify-content:flex-end; overflow:hidden; }
+  #cine-skip { color:#9aa4c4; font-size:12px; letter-spacing:2px; margin-right:22px; opacity:0; transition:opacity .5s .9s; }
+  body.cine #cine { pointer-events:auto; }
+  body.cine #cine .cine-bar { height:11vh; }
+  body.cine #cine-skip { opacity:.8; }
+  body.cine #hud, body.cine #controls-bar, body.cine #touch-layer, body.cine #fs-btn, body.cine #pager, body.cine #derby-tv {
+    opacity:0 !important; pointer-events:none !important; transition:opacity .4s; }
+  /* your race at Gull Downs (derby.js), on a set of your own while it runs */
+  #derby-tv { position:fixed; left:50%; top:calc(64px + env(safe-area-inset-top,0px)); transform:translateX(-50%); z-index:16; display:none;
+    width:min(50vw, 420px, 100vh); border:3px solid #ffd24a; border-radius:8px; background:#0b1f16; overflow:hidden;
+    box-shadow:0 6px 28px rgba(0,0,0,.55); pointer-events:none; }
+  #derby-tv canvas { display:block; width:100%; height:auto; }
+  /* IMPORT SAVE on a phone: a page of its own, with no city behind it (main.js importScreen) */
+  #import-screen { position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:16px;
+    background:radial-gradient(circle at 50% 30%, #2a1040, #0a0714); font-family:'Segoe UI', Arial, Helvetica, sans-serif; }
+  #import-card { max-width:420px; width:100%; background:rgba(16,8,30,.97); border:1px solid rgba(255,150,210,.65); border-radius:14px;
+    padding:20px 18px; text-align:center; box-shadow:0 0 30px rgba(255,79,163,.35); }
+  #import-title { color:#ffe8f6; font-weight:900; font-size:20px; letter-spacing:2px; }
+  #import-body { color:#cfe6ff; font-size:14px; line-height:1.5; margin:10px 0 14px; }
+  #import-screen .ibtn { display:block; width:100%; margin:8px 0 0; padding:12px 14px; font:inherit; font-weight:800; font-size:15px; letter-spacing:1px;
+    color:#f4ecff; background:rgba(255,105,180,.16); border:1px solid rgba(255,150,210,.65); border-radius:10px; }
+  #import-screen .ibtn.danger { background:rgba(255,80,80,.2); border-color:rgba(255,120,120,.7); color:#ffd9d9; }
+  #import-msg { min-height:20px; margin-top:10px; font-size:14px; color:#cfe6ff; }
+  #import-msg.bad { color:#ff9a9a; }
+  #import-msg.good { color:#8dffd8; }
+  #photo-toast { position:fixed; right:calc(18px + env(safe-area-inset-right,0px)); top:150px; z-index:33; width:172px; padding:7px 7px 6px;
+    background:#f4efe4; border-radius:3px; box-shadow:0 6px 22px rgba(0,0,0,.55); transform:translateX(130%) rotate(4deg);
+    transition:transform .35s cubic-bezier(.2,.9,.3,1.2); pointer-events:none; }
+  #photo-toast.on { transform:translateX(0) rotate(2deg); }
+  #photo-toast img { display:block; width:100%; height:auto; background:#222; }
+  #photo-toast-text { font:600 11px "Segoe UI",Arial,sans-serif; color:#3a3040; margin-top:5px; text-align:center; }
+  #photo-album { position:fixed; inset:0; z-index:38; display:none; align-items:center; justify-content:safe center;
+    flex-direction:column; background:#08040f; overflow-y:auto; padding:14px 10px; color:#cfe6ff; }
+  #photo-album h2 { margin:4px 0 4px; color:#ffd27a; letter-spacing:4px; font-style:italic; }
+  #photo-empty { font-size:14px; color:#9fb0c8; margin:18px 0; }
+  #photo-grid { display:flex; flex-wrap:wrap; justify-content:center; gap:14px; width:min(94vw,900px); margin:10px 0; }
+  .ph-card { position:relative; width:190px; background:#f4efe4; padding:6px 6px 8px; border-radius:3px; box-shadow:0 4px 14px rgba(0,0,0,.5); }
+  .ph-card img { display:block; width:100%; height:auto; }
+  .ph-when { font:600 11px "Courier New",monospace; color:#7a5030; margin:4px 0 2px; }
+  .ph-card .mbtn { margin:2px 2px 0 0; padding:3px 9px; font-size:11.5px; }
+  .ph-card .ph-save { background:#2e2240; border-color:#2e2240; color:#ffe7b0; }
+  .ph-card.kfocus { outline:3px solid #ffd27a; outline-offset:2px; }
+  .ph-card .ph-del { position:absolute; top:10px; right:10px; padding:1px 7px; background:rgba(10,4,20,.7); }
+  #controls-screen { position:fixed; inset:0; z-index:37; display:none; align-items:center; justify-content:safe center;
+    flex-direction:column; background:#08040f; overflow-y:auto; padding:14px 10px; color:#cfe6ff; }
+  #controls-screen h2 { margin:4px 0 6px; color:#9df3ff; letter-spacing:4px; font-style:italic; }
+  #ctl-pad { font-size:13px; color:#8dffd8; margin-bottom:4px; }
+  #controls-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:2px 18px; width:min(94vw,820px); margin-top:8px; }
+  #controls-list .crow { display:flex; justify-content:space-between; align-items:center; font-size:13.5px; padding:1px 0; }
+  #controls-list .ckey { margin:2px 0; padding:3px 12px; min-width:80px; text-align:center; font-size:13px; }
+  #controls-list .ckey.wait { color:#ffe08a; border-color:#ffe08a; }
+  .ctl-hint { font-size:12.5px; margin-top:8px; color:#9fb4cc; }
+  /* the button the arrow keys are on (pause screen) */
+  .mbtn.kfocus { outline:2px solid #8dffd8; outline-offset:2px; box-shadow:0 0 14px rgba(60,255,190,.65); }
   .mbtn { display:inline-block; margin:10px 8px 0; padding:8px 22px; border-radius:8px; cursor:pointer;
     background:rgba(255,105,180,.18); border:1px solid rgba(255,150,210,.6); color:#ffd9f2; font-weight:800; font-size:14px; }
   .mbtn:active { background:rgba(255,105,180,.45); }
@@ -273,6 +394,7 @@
   #game-modal-hint { color:#9fd8ff; font-size:11.5px; margin-top:10px; letter-spacing:1px; }
   #game-modal .mbtn.danger { background:rgba(255,80,80,.18); border-color:rgba(255,120,120,.65); color:#ffd9d9; }
   #game-modal .mbtn.danger:active { background:rgba(255,80,80,.45); }
+  #pause-abandon.danger { background:rgba(255,80,80,.18); border-color:rgba(255,120,120,.65); color:#ffd9d9; }
 
   #fade-layer { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; z-index:25; transition:opacity .5s; }
   #crt-layer { position:fixed; inset:0; pointer-events:none; z-index:20; display:none;
@@ -281,7 +403,8 @@
   #crt-layer::after { content:""; position:absolute; inset:0;
     background:radial-gradient(ellipse at center, transparent 55%, rgba(10,0,25,.5) 100%); }
 
-  #touch-layer { position:fixed; inset:0; z-index:15; display:none; pointer-events:none; font-family:inherit; }
+  #touch-layer { position:fixed; z-index:15; display:none; pointer-events:none; font-family:inherit;
+    inset:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px); }
   .tbtn { position:absolute; pointer-events:auto; min-width:60px; min-height:60px; border-radius:50%;
     background:rgba(255,105,180,.16); border:2px solid rgba(255,150,210,.55); color:#ffd9f2; font-size:13px; font-weight:800;
     display:flex; align-items:center; justify-content:center; text-shadow:0 1px 3px #000; touch-action:none; }
@@ -297,6 +420,7 @@
 <body>
 <canvas id="game-canvas"></canvas>
 
+<div id="low-health"></div>
 <div id="hud" style="display:none">
   <div class="panel" id="minimap-wrap"><canvas id="minimap" width="180" height="180"></canvas></div>
   <div class="panel" id="stat-block">
@@ -312,6 +436,8 @@
   <div class="panel" id="zone-popup"></div>
   <div class="panel" id="poi-hint"></div>
   <div class="panel" id="msg-line"></div>
+  <div class="panel" id="enter-hint"></div>
+  <div class="panel" id="pager"><div id="pager-from"></div><div id="pager-text"></div></div>
   <div class="panel" id="count-big"></div>
   <div class="panel" id="mission-hud">
     <div id="mission-title"></div>
@@ -319,6 +445,8 @@
     <div id="mission-timer"></div>
   </div>
   <div class="panel" id="crosshair"></div>
+  <div class="panel" id="lock-hint">CLICK TO LOOK AROUND</div>
+  <div class="panel" id="hit-dir"></div>
 </div>
 
 <div id="wasted-screen" class="big-screen"><div class="big-word">WASTED</div><div class="big-rule"></div><div class="big-sub"></div><div class="big-hint">PRESS R TO CONTINUE</div></div>
@@ -342,24 +470,55 @@
   <div id="pause-missions" style="margin-top:2px;color:#8de8b0;font-size:14px;font-weight:800;letter-spacing:2px;text-shadow:0 0 10px rgba(80,232,160,.6)"></div>
   <div style="max-width:520px;text-align:center;">
     <span class="mbtn" id="pause-resume">RESUME</span>
+    <span class="mbtn" id="pause-abandon" style="display:none">✖ ABANDON MISSION</span>
     <span class="mbtn" id="pause-map">🗺 MAP</span>
+    <span class="mbtn" id="pause-lola">📟 ASK LOLA</span>
+    <span class="mbtn" id="pause-photos">📷 PHOTOS</span>
     <span class="mbtn" id="pause-mute">🔊 SOUND</span>
     <span class="mbtn" id="pause-music">🎵 MUSIC: ON</span>
     <span class="mbtn" id="pause-sfx">💥 SFX: ON</span>
     <span class="mbtn" id="pause-crt">📺 CRT</span>
+    <span class="mbtn" id="pause-shake">🎥 SHAKE: ON</span>
+    <span class="mbtn" id="pause-gfx">🖥 GFX: HIGH</span>
+    <span class="mbtn" id="pause-keys">🎮 CONTROLS</span>
+    <span class="mbtn" id="pause-hintbar">💡 HINT BAR: ON</span>
+    <span class="mbtn" id="pause-fs">⛶ FULL SCREEN: OFF</span>
     <span class="mbtn" id="pause-haptic">📳 RUMBLE: ON</span>
+    <span class="mbtn" id="pause-tips">💬 LOLA'S TIPS: ON</span>
     <span class="mbtn" id="pause-lefty">🎮 CONTROLS: RIGHT</span>
     <span class="mbtn" id="pause-chaos">🌆 CITY: LIVELY</span>
     <span class="mbtn" id="pause-day">🕓 TIME: AUTO</span>
+    <span class="mbtn" id="pause-weather">🌧 WEATHER: AUTO</span>
     <span class="mbtn" id="pause-export">💾 EXPORT SAVE</span>
     <span class="mbtn" id="pause-import">📂 IMPORT SAVE</span>
     <span class="mbtn" id="pause-reset">🗑 RESET PROGRESS</span>
     <span class="mbtn" id="pause-exit">EXIT TO TITLE</span>
   </div>
   <input type="file" id="save-file" accept=".json,application/json" style="display:none">
-  <div style="margin-top:9px;color:#8dffd8;font-weight:700;font-size:13px;">ESC or tap anywhere — resume</div>
+  <div style="margin-top:9px;color:#8dffd8;font-weight:700;font-size:13px;">ESC or RESUME to carry on &nbsp;·&nbsp; arrow keys and Enter pick a button</div>
   <div style="margin-top:5px;font-size:11.5px;"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
     style="color:#9fd8ff;" onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
+</div>
+
+<div id="shutter"></div>
+<div id="derby-tv"></div>
+<div id="lola-screen"><div id="lola-card"><div id="lola-from">📟 LOLA</div><div id="lola-say"></div><div id="lola-opts"></div><div id="lola-hint"></div></div></div>
+<div id="cine"><div class="cine-bar cine-top"></div><div class="cine-bar cine-bot"><span id="cine-skip"></span></div></div>
+<div id="photo-toast"><img id="photo-toast-img" alt=""><div id="photo-toast-text"></div></div>
+<div id="photo-album">
+  <h2>📷 PHOTOS</h2>
+  <div style="font-size:12.5px;color:#9fb0c8;max-width:560px;text-align:center">Every shot you take with the camera. Save the ones you want to keep — they are kept here for you between visits, up to the last thirty-six.</div>
+  <div id="photo-empty">No photos yet — press the camera key (or 📷) while you play.</div>
+  <div id="photo-grid"></div>
+  <div><span class="mbtn" id="photo-auto">AUTO-DOWNLOAD: OFF</span><span class="mbtn" id="photo-all">⤓ SAVE ALL</span><span class="mbtn" id="photo-close">DONE</span></div>
+</div>
+<div id="controls-screen">
+  <h2>CONTROLS</h2>
+  <div id="ctl-pad"></div>
+  <div><span class="mbtn" id="ctl-sens">MOUSE: 1.00×</span><span class="mbtn" id="ctl-invert">INVERT Y: OFF</span><span class="mbtn" id="ctl-fov">FIELD OF VIEW: 62°</span></div>
+  <div id="controls-list"></div>
+  <div class="ctl-hint">Click a key, then press the one you want. A key that is already in use swaps over.</div>
+  <div><span class="mbtn" id="ctl-reset">RESET ALL</span><span class="mbtn" id="ctl-close">DONE</span></div>
 </div>
 
 <div id="game-modal">
@@ -380,7 +539,7 @@
   <div class="sun"></div>
   <div id="title-logo">NEON&nbsp;MAYHEM</div>
   <div id="title-sub">COSTA ROSA &nbsp;·&nbsp; 1986</div>
-  <div id="press-enter">PRESS ENTER</div>
+  <div id="press-enter" class="loading">LOADING COSTA ROSA…</div>
   <div id="title-best"></div>
   <div id="controls-card">
     <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / Tab</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>
@@ -401,8 +560,8 @@
   <div id="map-title">COSTA ROSA</div>
   <canvas id="bigmap" width="560" height="560"></canvas>
   <div id="map-legend"></div>
-  <div id="map-hint">Click anywhere to set a destination &nbsp;·&nbsp; tap a legend entry to show only that family, tap again for all &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
-  <div><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
+  <div id="map-hint">Click to set a destination &nbsp;·&nbsp; scroll or + / − to zoom, drag to move &nbsp;·&nbsp; tap a legend entry (or ← →) to show only that family &nbsp;·&nbsp; C clear &nbsp;·&nbsp; P / Esc close</div>
+  <div><span class="mbtn" id="map-zin">＋</span><span class="mbtn" id="map-zout">−</span><span class="mbtn" id="map-clear">CLEAR ROUTE</span><span class="mbtn" id="map-close">CLOSE</span></div>
 </div>
 
 <div id="shop-screen">
@@ -476,12 +635,19 @@ window.addEventListener('load', function () {
 <script src="js/player.js"></script>
 <script src="js/combat.js"></script>
 <script src="js/aircraft.js"></script>
+<script src="js/weather.js"></script>
 <script src="js/police.js"></script>
 <script src="js/missions.js"></script>
+<script src="js/tapes.js"></script>
+<script src="js/lola.js"></script>
+<script src="js/photo.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/share.js"></script>
 <script src="js/shops.js"></script>
+<script src="js/derby.js"></script>
+<script src="js/interiors.js"></script>
 <script src="js/touch.js"></script>
+<script src="js/controls.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

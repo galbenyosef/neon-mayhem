@@ -16,6 +16,9 @@ var WEAPON_KEYS = WEAPON_ORDER.map(function (w, i) { return 'Digit' + (i + 1); }
 GAME.combat = (function () {
   var aiming = false, lockTarget = null, lockIdx = 0;
   var cooldown = 0, aimToggle = false, aimYawRef = 0, rmbWas = false;
+  // the lock holds what it is on: the view follows it, and only a real flick
+  // of the camera (or Q/E/the wheel) moves it to somebody else
+  var flickAcc = 0, LOCK_FLICK = 0.44, LOCK_FOLLOW = 5;
   var reticle = null;
 
   function initReticle() {
@@ -74,12 +77,31 @@ GAME.combat = (function () {
     }
     return P.pos.y + 1.35;
   }
+  // In view: no building in the way, and no car either — a car body stops
+  // your rounds (raycast), so somebody crouched behind one is not a target you
+  // can lock on to and then never hit.
+  function inView(P, t, eye) {
+    if (!GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z, eye)) return false;
+    var dx = t.pos.x - P.pos.x, dz = t.pos.z - P.pos.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.01) return true;
+    dx /= d; dz /= d;
+    var cars = GAME.world.cars;
+    for (var i = 0; i < cars.length; i++) {
+      var c = cars[i];
+      if (c === t || c === P.car || c.sinking) continue;
+      if (Math.abs(c.pos.y - P.pos.y) > 2.5) continue;
+      var tc = rayCarBody(P.pos.x, P.pos.z, dx, dz, c);
+      if (tc >= 0 && tc < d - 0.3) return false;
+    }
+    return true;
+  }
   // every target in view, best first: what Q/E and the wheel step through
   function candidates() {
     var P = GAME.player, eye = gather(), list = [];
     for (var i = 0; i < scoredN; i++) {
       var e = scored[i];
-      if (GAME.city.hash.segmentClear(P.pos.x, P.pos.z, e.t.pos.x, e.t.pos.z, eye)) list.push({ t: e.t, score: e.score });
+      if (inView(P, e.t, eye)) list.push({ t: e.t, score: e.score });
       e.t = null;
     }
     list.sort(function (a, b) { return a.score - b.score; });
@@ -99,7 +121,7 @@ GAME.combat = (function () {
       if (bi < 0) break;
       var t = scored[bi].t;
       scored[bi].t = null;
-      if (GAME.city.hash.segmentClear(P.pos.x, P.pos.z, t.pos.x, t.pos.z, eye)) found = t;
+      if (inView(P, t, eye)) found = t;
     }
     for (var k = 0; k < scoredN; k++) scored[k].t = null;
     return found;
@@ -112,6 +134,7 @@ GAME.combat = (function () {
       lockTarget = bestCandidate();
       lockIdx = 0;
       aimYawRef = GAME.cam.yaw;
+      flickAcc = 0;
     } else {
       lockTarget = null;
     }
@@ -174,6 +197,27 @@ GAME.combat = (function () {
     return { t: bestT, hit: hit };
   }
 
+  // A ray against a car's body as it actually sits — a box, length by width,
+  // turned to its heading. Distance to where it enters, or -1.
+  function rayCarBody(ox, oz, dx, dz, car) {
+    var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+    var rx = ox - car.pos.x, rz = oz - car.pos.z;
+    var tmin = -Infinity, tmax = Infinity;
+    for (var k = 0; k < 2; k++) {
+      var ax = k ? fz : fx, az = k ? -fx : fz;          // forward, then side
+      var half = k ? car.spec.w / 2 : car.spec.l / 2;
+      var o = rx * ax + rz * az, v = dx * ax + dz * az;
+      if (Math.abs(v) < 1e-9) { if (Math.abs(o) > half) return -1; continue; }
+      var t1 = (-half - o) / v, t2 = (half - o) / v;
+      if (t1 > t2) { var tt = t1; t1 = t2; t2 = tt; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmin > tmax) return -1;
+    }
+    if (tmax < 0) return -1;
+    return tmin < 0 ? 0 : tmin;
+  }
+
   function rayCircle(ox, oz, dx, dz, cx, cz, r) {
     var mx = ox - cx, mz = oz - cz;
     var b = mx * dx + mz * dz;
@@ -226,6 +270,7 @@ GAME.combat = (function () {
         } else if (res.hit.kind === 'car') {
           GAME.haptics.hit();
           GAME.vehicles.damageCar(res.hit.obj, wd.damage * 0.8, 'gun');
+          GAME.vehicles.shotAt(res.hit.obj);   // and whoever is driving it reacts (vehicles.js)
           GAME.fx.spawn(hx, 0.8, hz, { count: 3, color: 0xffe0a0, spread: 2, life: 0.3 });
           if (res.hit.obj.isPolice && !res.hit.obj.mission) GAME.police.reportCrime('hit_cop_car', P.pos);
           else if (res.hit.obj.ai && res.hit.obj.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);
@@ -296,7 +341,8 @@ GAME.combat = (function () {
   function update(dt) {
     var P = GAME.player, inp = GAME.input, T = inp.touch;
     cooldown -= dt;
-    if (P.state !== 'alive' || P.entering) { setAiming(false); aimToggle = false; inp.lmbPressed = false; return; }
+    // (and no gunplay in the water: both hands are swimming)
+    if (P.state !== 'alive' || P.entering || P.swimming || P.interior) { setAiming(false); aimToggle = false; inp.lmbPressed = false; return; }
 
     // weapon select
     for (var i = 0; i < WEAPON_ORDER.length; i++) {
@@ -325,15 +371,24 @@ GAME.combat = (function () {
       if (GAME.keyPressed('KeyQ')) { cycleTarget(-1); aimYawRef = GAME.cam.yaw; }
       if (GAME.keyPressed('KeyE')) { cycleTarget(1); aimYawRef = GAME.cam.yaw; }
       if (inp.wheel !== 0) { cycleTarget(inp.wheel > 0 ? 1 : -1); inp.wheel = 0; aimYawRef = GAME.cam.yaw; }
-      // The cursor picks the target: swing the camera while locked and the
-      // lock re-acquires whatever the hand now points at, instead of staying
-      // glued to the first thing it grabbed. A manual Q/E/wheel pick holds
-      // until the camera genuinely moves again.
-      if (Math.abs(U.wrapPI(GAME.cam.yaw - aimYawRef)) > 0.055) {
-        aimYawRef = GAME.cam.yaw;
+      // The lock holds its target. It used to re-pick on any camera turn of
+      // three degrees, so a nudge of the mouse handed it to whoever stood
+      // nearest the new line, and nothing turned the view after whoever it
+      // was on, so a runner took the lock straight out of the frame. Now what
+      // the HAND turned since the last tick is added up (and lets go of itself
+      // over a moment): past ~25 degrees it is a flick, and the lock goes to
+      // whoever the view now points at; short of that the view eases round to
+      // follow the target.
+      flickAcc = flickAcc * Math.exp(-3 * dt) + U.wrapPI(GAME.cam.yaw - aimYawRef);
+      if (Math.abs(flickAcc) > LOCK_FLICK) {
+        flickAcc = 0;
         var best = bestCandidate();
         if (best) lockTarget = best;
+      } else if (lockTarget && !P.inCar) {
+        var bearing = Math.atan2(lockTarget.pos.x - P.pos.x, lockTarget.pos.z - P.pos.z);
+        GAME.cam.yaw = U.angleLerp(GAME.cam.yaw, bearing, Math.min(1, LOCK_FOLLOW * dt));
       }
+      aimYawRef = GAME.cam.yaw;
       var keep = lockRange() + 8;
       if (lockTarget && (lockTarget.dead || lockTarget.gone || U.dist2(lockTarget.pos.x, lockTarget.pos.z, P.pos.x, P.pos.z) > keep * keep)) {
         lockTarget = bestCandidate();
@@ -451,7 +506,7 @@ GAME.combat = (function () {
   // ---------- pickups ----------
   var PICKUP_DEFS = {
     health: { color: 0xff4d6a, label: 'HEALTH' },
-    armor: { color: 0x39c8ff, label: 'ARMOR' },
+    armor: { color: 0x4a6cff, label: 'ARMOR' },   // the map's armour blue (hud.js PICKUP_BLIP)
     pistol: { color: 0xd8d8e8, label: 'PISTOL AMMO' },
     smg: { color: 0xffe14f, label: 'SMG AMMO' },
     shotgun: { color: 0xff8a3d, label: 'SHOTGUN AMMO' },
@@ -618,6 +673,7 @@ GAME.combat = (function () {
   // somebody shooting at you.
   //
   // Everything that should make a marksman worse widens the cone instead.
+  var CAR_ROUND = 0.35;   // share of a round's damage the player's car takes
   var NPC_AIM = {
     base: 0.09,        // rad — a settled shooter at arm's length, about 5 degrees
     perMetre: 0.0032,  // range: a pistol at forty metres is a different proposition
@@ -637,6 +693,7 @@ GAME.combat = (function () {
     var inCar = atPlayer && !!(P.inCar && P.car);
     var tx = atPlayer ? (inCar ? P.car.pos.x : P.pos.x) : victim.pos.x;
     var tz = atPlayer ? (inCar ? P.car.pos.z : P.pos.z) : victim.pos.z;
+    var ty = (atPlayer ? (inCar ? P.car.pos.y : P.pos.y) : victim.pos.y) + 1.2;
     var d = U.dist(fromX, fromZ, tx, tz);
 
     // Officers are individuals. One spawns a better shot than the next and
@@ -659,13 +716,34 @@ GAME.combat = (function () {
     var yaw = Math.atan2(tx - fromX, tz - fromZ) + err;
     var dx = Math.sin(yaw), dz = Math.cos(yaw);
     GAME.audio.gunshot('pistol', fromX, fromZ);
-    GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * d, 1.2, fromZ + dz * d);
+    // A car in the line takes the round. Only buildings ever stopped these,
+    // so the police shot straight through the van you were crouched behind —
+    // a quarter of their rounds at twelve metres — while yours stopped dead on
+    // the same van. The shooter's own car and the one you are in don't count,
+    // and nor does anything well above or below the shooter (a helicopter
+    // passing over, a car on the deck overhead).
+    var sy = shooter && shooter.pos ? shooter.pos.y : 0;
+    var stop = d, cars = GAME.world.cars;
+    for (var ci = 0; ci < cars.length; ci++) {
+      var cv = cars[ci];
+      if (cv === shooter || cv.sinking || (inCar && cv === P.car)) continue;
+      if (Math.abs(cv.pos.y - sy) > 2.5) continue;
+      var tc = rayCarBody(fromX, fromZ, dx, dz, cv);
+      if (tc >= 0 && tc < stop) stop = tc;
+    }
+    // to wherever it stopped, at the height it had got to on the way there
+    // (up at a roof edge, down from a deck), not at a fixed 1.2 m off sea level
+    GAME.fx.tracer(fromX, fromY, fromZ, fromX + dx * stop, fromY + (ty - fromY) * (stop / (d || 1)), fromZ + dz * stop);
+    if (stop < d - 0.3) return false;
     // how far off it passes at your range, against how wide you are: what you
     // saw happen is now what happened
     if (Math.abs(Math.sin(err)) * d <= (inCar ? NPC_AIM.car : NPC_AIM.torso)) {
       if (!atPlayer) GAME.peds.damage(victim, damage, false, shooter);
-      else if (inCar) GAME.vehicles.damageCar(P.car, damage * 0.7, 'cop');
-      else GAME.playerDamage(damage, 'shot');
+      // A car is cover you are sitting in. Rounds did 70% of their damage to
+      // the bodywork, which took a sports car apart in fifteen seconds of a
+      // three-star chase — gone before any getaway could begin. Half that.
+      else if (inCar) { GAME.vehicles.damageCar(P.car, damage * CAR_ROUND, 'cop'); GAME.hud.hitFrom(fromX, fromZ); }
+      else GAME.playerDamage(damage, 'shot', fromX, fromZ);
       return true;
     }
     return false;

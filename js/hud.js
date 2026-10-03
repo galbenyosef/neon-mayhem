@@ -6,7 +6,7 @@ GAME.hud = (function () {
   var lastHealthW = -1, lastArmorW = -1, lastAirPct = -2, lastAirCol = '', vehicleLine;
   var lastPoiHint = null;
   var shownCash = 0, targetCash = 0;
-  var msgT = 0, countT = 0, zoneT = 0, lastZone = '';
+  var countT = 0, zoneT = 0, lastZone = '';
   var radioT = 0;
   // the star count as the HUD last drew it, so wantedChanged can tell going up
   // from coming down — nothing that calls it passes the level you were on
@@ -16,7 +16,7 @@ GAME.hud = (function () {
   var dmgFlash = null;
   var PICKUP_BLIP = {
     pistol: '#eef0ff', smg: '#ffe14f', shotgun: '#ff8a3d',
-    health: '#ff4d6a', armor: '#39c8ff', rifle: '#8dffd8'
+    health: '#ff4d6a', armor: '#4a6cff', rifle: '#8dffd8'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -25,12 +25,12 @@ GAME.hud = (function () {
     ['minimap', 'clock', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'weapon-line', 'radio-popup', 'zone-popup',
       'msg-line', 'count-big', 'poi-hint', 'mission-hud', 'mission-title', 'mission-obj', 'mission-timer', 'title-screen', 'pause-screen',
       'wasted-screen', 'busted-screen', 'fade-layer', 'crt-layer', 'press-enter', 'title-best', 'pause-controls',
-      'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close']
+      'controls-bar', 'map-screen', 'bigmap', 'map-clear', 'map-close', 'pager', 'pager-from', 'pager-text', 'enter-hint']
       .forEach(function (id) { el[id] = $(id); });
     var stars = '';
     for (var i = 0; i < 5; i++) stars += '<span>★</span>';
     el['wanted-stars'].innerHTML = stars;
-    el['pause-controls'].innerHTML = document.getElementById('controls-card').innerHTML;
+    paintKeyHelp();
 
     dmgFlash = document.createElement('div');
     dmgFlash.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:22;background:radial-gradient(ellipse at center, transparent 55%, rgba(255,30,60,.45) 100%);opacity:0;transition:opacity .35s;';
@@ -73,9 +73,9 @@ GAME.hud = (function () {
       $('game-modal-cancel').addEventListener(ev, function (e) { e.stopPropagation(); e.preventDefault(); closeDialog(false); });
     });
 
-    // pause: tap anywhere resumes; buttons stop the bubble
-    el['pause-screen'].addEventListener('click', function () { if (GAME.paused) GAME.togglePause(); });
-    el['pause-screen'].addEventListener('touchend', function (e) { e.preventDefault(); if (GAME.paused) GAME.togglePause(); });
+    // pause: RESUME or Esc carries on. A tap anywhere used to as well, so a
+    // finger or a click that just missed a button threw you back into the
+    // game; the background now does nothing.
     function pauseBtn(id, fn) {
       var b = $(id);
       ['click', 'touchend'].forEach(function (ev) {
@@ -84,7 +84,42 @@ GAME.hud = (function () {
     }
     pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
-    pauseBtn('pause-mute', function () { var m = GAME.audio.toggleMute(); $('pause-mute').textContent = m ? '🔇 MUTED' : '🔊 SOUND'; });
+    // Lola, called up (lola.js): the way a touchscreen reaches her
+    pauseBtn('pause-lola', function () { if (GAME.lola) GAME.lola.open(); });
+    // walking away from a run, for the pad and the touchscreen as much as
+    // anybody (X on a keyboard): shown only with one going, and asks once
+    var abandonSure = false;
+    function paintAbandon() {
+      var b = $('pause-abandon'), a = GAME.missions && GAME.missions.active;
+      b.style.display = a ? '' : 'none';
+      if (!a) return;
+      var what = a.def.job ? 'CLOCK OFF' : 'ABANDON MISSION';
+      b.textContent = abandonSure ? '✖ ' + what + ' — SURE?' : '✖ ' + what;
+      b.classList.toggle('danger', abandonSure);
+    }
+    api.paintAbandon = function (reset) { if (reset) abandonSure = false; paintAbandon(); };
+    // Lola's first-time tips (lola.js), off for anybody who knows the town
+    function paintTips() { $('pause-tips').textContent = (GAME.lola && !GAME.lola.tips) ? '💬 LOLA\'S TIPS: OFF' : '💬 LOLA\'S TIPS: ON'; }
+    pauseBtn('pause-tips', function () { if (GAME.lola) GAME.lola.setTips(!GAME.lola.tips); paintTips(); });
+    paintTips();
+    pauseBtn('pause-abandon', function () {
+      if (!GAME.missions || !GAME.missions.active) return;
+      if (!abandonSure) { abandonSure = true; paintAbandon(); return; }
+      abandonSure = false;
+      if (GAME.paused) GAME.togglePause();
+      GAME.missions.abandon();
+    });
+    // Mute is one switch however you reach it — the button here or M — and it
+    // is remembered like the others. M used to flip the sound behind this
+    // label's back (it still said SOUND) and nothing kept it past a reload.
+    function paintMute() { $('pause-mute').textContent = GAME.audio.muted ? '🔇 MUTED' : '🔊 SOUND'; }
+    api.toggleMute = function () {
+      var m = GAME.audio.toggleMute();
+      if (GAME.prefs) { GAME.prefs.muted = m; GAME.save(); }
+      paintMute();
+      return m;
+    };
+    pauseBtn('pause-mute', function () { api.toggleMute(); });
     // music and effects are separate taps: kill the radio and keep the crashes,
     // or the other way round. The choice is remembered.
     function paintAudioBtns() {
@@ -104,8 +139,10 @@ GAME.hud = (function () {
     if (GAME.prefs) {
       if (GAME.prefs.musicOff) GAME.audio.setMusicOn(false);
       if (GAME.prefs.sfxOff) GAME.audio.setSfxOn(false);
+      if (GAME.prefs.muted && !GAME.audio.muted) GAME.audio.toggleMute();
     }
     paintAudioBtns();
+    paintMute();
     // Rumble sits with the other outputs and is remembered the same way. The
     // button only appears where a buzz could actually happen: a phone with the
     // API. Desktop Chrome has navigator.vibrate and no motor to run it, and a
@@ -161,7 +198,57 @@ GAME.hud = (function () {
       $('pause-lefty').style.display = 'none';
     }
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
+    pauseBtn('pause-keys', function () { GAME.controls.show(true); });
+    // the bar of controls along the bottom, which only H could hide — out of
+    // reach of a controller (touch screens never show it)
+    function paintHintBar() {
+      var b = $('pause-hintbar');
+      if (!b) return;
+      b.style.display = GAME.isTouch ? 'none' : '';
+      b.textContent = GAME.prefs && GAME.prefs.hideCtl ? '💡 HINT BAR: OFF' : '💡 HINT BAR: ON';
+    }
+    pauseBtn('pause-hintbar', function () { api.toggleControlsBar(); });
+    // Full screen from the pause screen, which is the only way a controller
+    // can ask for it: every button on a pad already has a job, and the one
+    // left over (the Xbox / PS / Home button) is taken by the system before
+    // a page sees it. A browser goes full screen only for a gesture, and not
+    // every one counts a controller's press as one; where it does not, the
+    // request would just be refused, so it waits for the next click, key or
+    // tap and says so.
+    pauseBtn('pause-fs', function () {
+      var ua = navigator.userActivation;
+      if (!GAME.fullscreenEl() && GAME.canFullscreen && GAME.controls && GAME.controls.usingPad() && ua && !ua.isActive) {
+        GAME.fullscreenOnNextGesture();
+        GAME.hud.message('This browser goes full screen only for a click, a key or a tap — the next one you make takes it there.', 5);
+        return;
+      }
+      GAME.toggleFullscreen();
+    });
+    api.paintHintBar = paintHintBar;
+    paintHintBar();
+    // camera shake, for anyone it makes ill (remembered like the rest)
+    function paintShakeBtn() { $('pause-shake').textContent = GAME.prefs && GAME.prefs.noShake ? '🎥 SHAKE: OFF' : '🎥 SHAKE: ON'; }
+    pauseBtn('pause-shake', function () {
+      GAME.prefs = GAME.prefs || {};
+      GAME.prefs.noShake = !GAME.prefs.noShake;
+      GAME.save();
+      paintShakeBtn();
+    });
+    paintShakeBtn();
+    // graphics: resolution, draw distance and crowd, in three steps (main.js)
+    function paintGfxBtn() { $('pause-gfx').textContent = '🖥 GFX: ' + GAME.quality.toUpperCase(); }
+    pauseBtn('pause-gfx', function () {
+      var order = ['high', 'medium', 'low'];
+      GAME.setQuality(order[(order.indexOf(GAME.quality) + 1) % order.length]);
+      paintGfxBtn();
+    });
+    if (GAME.prefs && GAME.prefs.quality) GAME.setQuality(GAME.prefs.quality, true);
+    paintGfxBtn();
     pauseBtn('pause-day', function () { api.refreshTimeBtn(GAME.cycleTimeMode()); });
+    function paintWeatherBtn() { $('pause-weather').textContent = '🌧 WEATHER: ' + GAME.weather.mode.toUpperCase(); }
+    pauseBtn('pause-weather', function () { GAME.weather.cycle(); paintWeatherBtn(); });
+    if (GAME.prefs && GAME.prefs.weather) GAME.weather.setMode(GAME.prefs.weather, true);
+    paintWeatherBtn();
     api.refreshTimeBtn(GAME.timeMode);
     // the save travels: export downloads a file, import reads one back and
     // reloads into the imported life
@@ -181,7 +268,13 @@ GAME.hud = (function () {
         title: 'IMPORT SAVE',
         body: 'Importing REPLACES your current progress — cash, property, garage, your look, everything.\nWant to keep this life? Cancel and use EXPORT SAVE first.',
         ok: 'IMPORT & OVERWRITE', danger: true,
-        onOk: function () { $('save-file').click(); }
+        onOk: function () {
+          // a phone picks the file on a page with no city behind it (main.js
+          // importScreen): the picker sends the tab to the background, where
+          // a game this size is what Android reclaims first
+          if (GAME.isTouch) { GAME.save(); location.hash = 'import'; location.reload(); return; }
+          $('save-file').click();
+        }
       });
     });
     pauseBtn('pause-reset', function () {
@@ -235,6 +328,42 @@ GAME.hud = (function () {
     });
 
     el['bigmap'].addEventListener('click', onMapClick);
+    // the wheel zooms about the pointer, a drag pans (and is then not a
+    // click), two fingers pinch
+    el['bigmap'].addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var r = el.bigmap.getBoundingClientRect();
+      zoomMapAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.35 : 1 / 1.35);
+    }, { passive: false });
+    var mapPtrs = {}, mapMoved = 0, pinchD = 0;
+    el['bigmap'].addEventListener('pointerdown', function (e) {
+      mapPtrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+      mapMoved = 0; pinchD = 0; mapDragged = false;
+    });
+    el['bigmap'].addEventListener('pointermove', function (e) {
+      var p = mapPtrs[e.pointerId];
+      if (!p) return;
+      var ids = Object.keys(mapPtrs);
+      if (ids.length >= 2) {
+        p.x = e.clientX; p.y = e.clientY;
+        var a = mapPtrs[ids[0]], b = mapPtrs[ids[1]];
+        var d = Math.hypot(a.x - b.x, a.y - b.y), r = el.bigmap.getBoundingClientRect();
+        if (pinchD > 0 && d > 0) zoomMapAt((a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, d / pinchD);
+        pinchD = d; mapDragged = true;
+        return;
+      }
+      var dx = e.clientX - p.x, dy = e.clientY - p.y;
+      p.x = e.clientX; p.y = e.clientY;
+      mapMoved += Math.abs(dx) + Math.abs(dy);
+      if (mapMoved > 6 && mapZoom > 1) { mapDragged = true; mapPanX -= dx; mapPanY -= dy; drawBigMap(); }
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+      el['bigmap'].addEventListener(ev, function (e) { delete mapPtrs[e.pointerId]; pinchD = 0; });
+    });
+    ['click', 'touchend'].forEach(function (ev) {
+      $('map-zin').addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); api.mapZoom(1.5); });
+      $('map-zout').addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); api.mapZoom(1 / 1.5); });
+    });
     // the full map is drawn to size each time it opens (drawBigMap), so while
     // it is shut its canvas holds nothing — ~1.7 MB it used to keep for the
     // rest of the session after the first look
@@ -255,13 +384,17 @@ GAME.hud = (function () {
   }
 
   // ---------- toggleable legend ----------
+  var HOSPITAL_HEX = '#f2f4f8', DEST_HEX = '#c6ff3d', DEPOT_HEX = '#ffe9b0';
   var LEGEND = [
-    ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'],
-    ['#c86bff', 'S — Respray', 'respray'], ['#ff8aa8', 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
-    ['#eef0ff', 'Weapon', 'weapon'], ['#ff4d6a', 'Health', 'health'], ['#39c8ff', 'Armor', 'armor'],
-    ['#8de0ff', '✈ Airport · Ⓗ Helipad', 'airport'], ['#ffd7e4', '☀ Ice cream depot', 'icecream'],
+    ['#ff8a3d', 'Race', 'race'], ['#38e8ff', 'Courier', 'courier'], ['#ff4fa3', 'Rampage', 'rampage'], ['#ff3b3b', 'Takedown', 'takedown'],
+    // no two families a near-match: armour was the courier's cyan, and the
+    // hospital, the destination and the depot were three more pinks beside
+    // the rampage's
+    ['#c86bff', 'S — Respray', 'respray'], [HOSPITAL_HEX, 'H — Hospital', 'hospital'], ['#5aa0ff', 'P — Police', 'police'],
+    ['#eef0ff', 'Weapon', 'weapon'], ['#ff4d6a', 'Health', 'health'], ['#4a6cff', 'Armor', 'armor'],
+    ['#8de0ff', '✈ Airport · Ⓗ Helipad · ⚓ Boats', 'airport'], [DEPOT_HEX, '☀ Ice cream depot', 'icecream'],
     ['#8de8b0', '$ Shops & property', 'shops'], ['#5dff9e', '⌂ Your safehouse', 'home'],
-    ['#ff8aff', 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
+    [DEST_HEX, 'Destination', 'dest'], ['#ffe14f', 'Objective', 'objective']
   ];
   // Tap-to-SOLO, like muting a mixing desk: tap a legend and everything ELSE
   // is struck — only that category (plus navigation) stays on the map. Tap it
@@ -298,6 +431,20 @@ GAME.hud = (function () {
     refreshLegend();
     if (GAME.mapOpen) drawBigMap();
   }
+  // The arrows (a pad's D-pad) step the solo through the families, then
+  // back to all of them: the legend answered only a click or a tap.
+  function stepSolo(dir) {
+    var fams = LEGEND.filter(function (e) { return !NAV_ALWAYS[e[2]]; }).map(function (e) { return e[2]; });
+    var i = (mapSolo ? fams.indexOf(mapSolo) : -1) + dir;
+    if (i < -1) i = fams.length - 1;
+    if (i >= fams.length) i = -1;
+    mapSolo = i < 0 ? null : fams[i];
+    GAME.prefs = GAME.prefs || {};
+    GAME.prefs.mapSolo = mapSolo;
+    GAME.save();
+    refreshLegend();
+    if (GAME.mapOpen) drawBigMap();
+  }
   function refreshLegend() {
     var box = $('map-legend');
     box.innerHTML = LEGEND.map(function (e) {
@@ -319,7 +466,61 @@ GAME.hud = (function () {
   }
 
   // ---------- full-screen map ----------
-  var mapScale = 1, mapOffY = 0;
+  // It zooms now (wheel, pinch, the +/- buttons or keys) and pans by drag;
+  // the pan is in canvas pixels at the current zoom, held inside the map.
+  var mapScale = 1, mapZoom = 1, mapPanX = 0, mapPanY = 0, MAP_ZOOM_MAX = 5;
+  var mapDragged = false, mapCentreOnYou = false;
+  // A cursor for a pad, in world metres. The map was a mouse screen — click
+  // to route, wheel to zoom — and a controller could open it and close it
+  // and nothing in between. The left stick moves this; A routes to it.
+  var mapCur = null;
+  // where each district's name is written on the big map
+  var DISTRICT_LABELS = [['OCEAN STRIP', 262, -230], ['CENTRO ALTO', -100, -150], ['PUERTO VIEJO', -330, 330],
+    ['LAS COLINAS', 40, 330], ['LAS COLINAS', -340, -320]];
+  // Isla Verde's districts, named on the map the way Costa Rosa's are. They
+  // were only ever named on the HUD as you drove through; the map left the
+  // island blank. Found once by sampling the island's land and labelling the
+  // middle of each district's ground (the sample nearest its centre, so a
+  // curved district is never named out at sea).
+  var islaLabels = null;
+  function islaDistrictLabels() {
+    if (islaLabels) return islaLabels;
+    var I = GAME.isla, B = GAME.city.isla && GAME.city.isla.bounds;
+    if (!I || !I.districtName || !B) return [];
+    islaLabels = [];
+    var acc = {}, order = [];
+    for (var x = B.cx - B.rx * 1.2; x <= B.cx + B.rx * 1.2; x += 12) {
+      for (var z = B.cz - B.rz * 1.2; z <= B.cz + B.rz * 1.2; z += 12) {
+        if (!I.contains(x, z) || GAME.city.isInWater(x, z)) continue;
+        var n = I.districtName(x, z);
+        if (!acc[n]) { acc[n] = { x: 0, z: 0, n: 0, pts: [] }; order.push(n); }
+        acc[n].x += x; acc[n].z += z; acc[n].n++; acc[n].pts.push(x, z);
+      }
+    }
+    order.forEach(function (n) {
+      var a = acc[n], cx = a.x / a.n, cz = a.z / a.n, bx = cx, bz = cz, bd = 1e18;
+      for (var i = 0; i < a.pts.length; i += 2) {
+        var d = U.dist2(a.pts[i], a.pts[i + 1], cx, cz);
+        if (d < bd) { bd = d; bx = a.pts[i]; bz = a.pts[i + 1]; }
+      }
+      islaLabels.push([n.toUpperCase(), bx, bz]);
+    });
+    return islaLabels;
+  }
+  function clampMapPan(cv) {
+    mapPanX = U.clamp(mapPanX, 0, Math.max(0, MAP_W * mapScale - cv.width));
+    mapPanY = U.clamp(mapPanY, 0, Math.max(0, MAP_H * mapScale - cv.height));
+  }
+  // zoom by `f` keeping the map point under canvas pixel (cx, cy) where it is
+  function zoomMapAt(cx, cy, f) {
+    var z1 = U.clamp(mapZoom * f, 1, MAP_ZOOM_MAX);
+    if (z1 === mapZoom) return;
+    var k = z1 / mapZoom;
+    mapPanX = (cx + mapPanX) * k - cx;
+    mapPanY = (cy + mapPanY) * k - cy;
+    mapZoom = z1;
+    drawBigMap();
+  }
   function drawBigMap() {
     var cv = el.bigmap;
     // short screens hand more of their height to the legend and buttons —
@@ -329,16 +530,42 @@ GAME.hud = (function () {
     var size = Math.floor(Math.min(window.innerWidth * 0.92, window.innerHeight * hFactor * MAP_W / MAP_H, 900));
     cv.width = size; cv.height = Math.floor(size * MAP_H / MAP_W);
     var g = cv.getContext('2d');
-    mapScale = size / MAP_W; mapOffY = 0;
+    mapScale = size / MAP_W;   // the whole map across the canvas: zoom 1 (times mapZoom below)
     g.fillStyle = '#141020';
     g.fillRect(0, 0, cv.width, cv.height);
-    g.drawImage(mapBuffer, 0, 0, MAP_W * mapScale, MAP_H * mapScale);
-    function w2mx(x) { return (x + MAP_OX) * MAP_S * mapScale; }
-    function w2my(z) { return mapOffY + (z + MAP_OY) * MAP_S * mapScale; }
+    mapScale = mapScale * mapZoom;
+    if (mapCentreOnYou) {
+      // opened zoomed in: start on wherever you are, not where you last looked
+      mapCentreOnYou = false;
+      var you = GAME.focus();
+      mapPanX = (you.x + MAP_OX) * MAP_S * mapScale - cv.width / 2;
+      mapPanY = (you.z + MAP_OY) * MAP_S * mapScale - cv.height / 2;
+    }
+    clampMapPan(cv);
+    g.drawImage(mapBuffer, -mapPanX, -mapPanY, MAP_W * mapScale, MAP_H * mapScale);
+    function w2mx(x) { return (x + MAP_OX) * MAP_S * mapScale - mapPanX; }
+    function w2my(z) { return (z + MAP_OY) * MAP_S * mapScale - mapPanY; }
+    // a name, outlined so it reads over streets and water alike
+    function label(text, x, y, color, px, align) {
+      g.font = '800 ' + px + 'px "Segoe UI", Arial, sans-serif';
+      g.textAlign = align || 'left'; g.textBaseline = 'middle';
+      g.lineWidth = 3; g.strokeStyle = 'rgba(8,4,18,.85)';
+      g.strokeText(text, x, y);
+      g.fillStyle = color;
+      g.fillText(text, x, y);
+    }
+    // the districts, faint and large, under everything else
+    var dpx = Math.round(U.clamp(11 * Math.sqrt(mapZoom) * cv.width / 900, 9, 22));
+    var dls = DISTRICT_LABELS.concat(islaDistrictLabels());
+    for (var dl = 0; dl < dls.length; dl++) {
+      var D = dls[dl];
+      label(D[0], w2mx(D[1]), w2my(D[2]), 'rgba(207,230,255,.42)', dpx, 'center');
+    }
     // route + destination
     var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var PF = GAME.focus();
+    var px = PF.x;
+    var pz = PF.z;
     if (GAME.nav.dest && catVis('dest')) {
       // an empty path is "no route" (a destination the streets can't reach,
       // e.g. the island while the bridges are closed) — stroking through it
@@ -352,7 +579,7 @@ GAME.hud = (function () {
         g.lineTo(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z));
         g.stroke();
       }
-      g.fillStyle = '#ff8aff';
+      g.fillStyle = DEST_HEX;
       g.beginPath();
       g.arc(w2mx(GAME.nav.dest.x), w2my(GAME.nav.dest.z), 6, 0, Math.PI * 2);
       g.fill();
@@ -375,14 +602,25 @@ GAME.hud = (function () {
         g.fill();
       }
     }
-    // mission / respray blips
+    // mission / respray blips: a mission you have beaten is a ring with a
+    // tick in it, one still to do a solid dot; each named once there is room
     var mb = GAME.missions.getBlips();
+    var named = mapZoom >= 1.5 || cv.width >= 700;
     for (var i = 0; i < mb.length; i++) {
       if (mb[i].kind && !catVis(mb[i].kind)) continue;
-      g.fillStyle = mb[i].color;
+      var bx = w2mx(mb[i].x), by = w2my(mb[i].z);
       g.beginPath();
-      g.arc(w2mx(mb[i].x), w2my(mb[i].z), 5, 0, Math.PI * 2);
-      g.fill();
+      g.arc(bx, by, 5, 0, Math.PI * 2);
+      if (mb[i].done) {
+        g.fillStyle = 'rgba(12,8,22,.9)'; g.fill();
+        g.strokeStyle = mb[i].color; g.lineWidth = 2; g.stroke();
+        g.beginPath(); g.moveTo(bx - 2.4, by + 0.2); g.lineTo(bx - 0.6, by + 2); g.lineTo(bx + 2.6, by - 2.2);
+        g.lineWidth = 1.6; g.stroke();
+      } else {
+        g.fillStyle = mb[i].color; g.fill();
+        if (mb[i].name) { g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.2; g.stroke(); }
+      }
+      if (named && mb[i].name) label(mb[i].name, bx + 8, by, mb[i].done ? 'rgba(207,230,255,.6)' : mb[i].color, 10);
     }
     // labelled POI badges
     function badge(x, z, color, letter) {
@@ -405,7 +643,7 @@ GAME.hud = (function () {
       g.arc(w2mx(pk.pos.x), w2my(pk.pos.z), 3.5, 0, Math.PI * 2);
       g.fill();
     });
-    if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, '#ff8aa8', 'H'); });
+    if (catVis('hospital')) GAME.city.pois.hospitals.forEach(function (hp) { badge(hp.x, hp.z, HOSPITAL_HEX, 'H'); });
     if (catVis('police')) GAME.city.pois.stations.forEach(function (st) { badge(st.x, st.z, '#5aa0ff', 'P'); });
     if (catVis('respray')) GAME.city.pois.resprays.forEach(function (r) { badge(r.door.x, r.door.z, '#c86bff', 'S'); });
     if (GAME.shops) GAME.shops.blips().forEach(function (s) {
@@ -427,7 +665,7 @@ GAME.hud = (function () {
       g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
     });
     if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
-    if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, '#ffd7e4', '☀');
+    if (catVis('icecream') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, DEPOT_HEX, '☀');
     // helipads: a ringed cyan disc with an H, one per pad. Both of them —
     // the Alta Verde summit across the channel, and the one on the downtown
     // tower here, which is where the mainland's only helicopter stands.
@@ -443,6 +681,23 @@ GAME.hud = (function () {
       g.moveTo(hxp - 3, hyp); g.lineTo(hxp + 3, hyp);
       g.stroke();
     });
+    // boat moorings: the same disc with an anchor drawn on it (a font's ⚓
+    // cannot be counted on in a canvas) — shown with the airfield and pads,
+    // the other places to find something that is not a car
+    if (catVis('airport')) (GAME.city.moorings || []).forEach(function (mo) {
+      if (mo.isla && GAME.isla && !GAME.isla.isOpen()) return;
+      var ax = w2mx(mo.x), ay = w2my(mo.z);
+      g.fillStyle = '#8de0ff';
+      g.beginPath(); g.arc(ax, ay, 8, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.stroke();
+      g.strokeStyle = '#0c0816'; g.lineWidth = 1.8;
+      g.beginPath();
+      g.moveTo(ax, ay - 4.5); g.lineTo(ax, ay + 4);
+      g.moveTo(ax - 3, ay - 2); g.lineTo(ax + 3, ay - 2);
+      g.moveTo(ax - 4, ay + 1); g.quadraticCurveTo(ax - 3.5, ay + 4.5, ax, ay + 4.5);
+      g.quadraticCurveTo(ax + 3.5, ay + 4.5, ax + 4, ay + 1);
+      g.stroke();
+    });
     // player arrow
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.save();
@@ -453,6 +708,17 @@ GAME.hud = (function () {
     g.moveTo(0, 8); g.lineTo(6, -7); g.lineTo(0, -3); g.lineTo(-6, -7);
     g.closePath(); g.fill(); g.stroke();
     g.restore();
+    // the pad's cursor: a ring and a cross, over everything but the rose
+    if (mapCur) {
+      var qx = w2mx(mapCur.x), qy = w2my(mapCur.z);
+      g.strokeStyle = 'rgba(8,4,18,.9)'; g.lineWidth = 4;
+      g.beginPath(); g.arc(qx, qy, 11, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = '#8dffd8'; g.lineWidth = 2;
+      g.beginPath(); g.arc(qx, qy, 11, 0, Math.PI * 2);
+      g.moveTo(qx - 18, qy); g.lineTo(qx - 5, qy); g.moveTo(qx + 5, qy); g.lineTo(qx + 18, qy);
+      g.moveTo(qx, qy - 18); g.lineTo(qx, qy - 5); g.moveTo(qx, qy + 5); g.lineTo(qx, qy + 18);
+      g.stroke();
+    }
     // compass rose — the big map is drawn north-up, and now it says so
     var rcx = cv.width - 42, rcy = 42, RR = 24;
     g.fillStyle = 'rgba(8,4,18,.78)';
@@ -476,10 +742,38 @@ GAME.hud = (function () {
   }
 
   function onMapClick(e) {
+    if (mapDragged) { mapDragged = false; return; }   // that was a pan, not a pick
     var rect = el.bigmap.getBoundingClientRect();
     var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    var wx = cx / mapScale / MAP_S - MAP_OX;
-    var wz = (cy - mapOffY) / mapScale / MAP_S - MAP_OY;
+    pickMapAt((cx + mapPanX) / mapScale / MAP_S - MAP_OX, (cy + mapPanY) / mapScale / MAP_S - MAP_OY);
+  }
+  // the pad's stick on the open map: the cursor moves at a steady speed on
+  // screen whatever the zoom, and pushes a zoomed map along at its edges
+  function mapPad(dt, lx, ly) {
+    if (!GAME.mapOpen || (!lx && !ly)) return;
+    if (!mapCur) { var f = GAME.focus(); mapCur = { x: f.x, z: f.z }; }
+    var cv = el.bigmap, step = 360 * dt / (mapScale * MAP_S);   // metres this frame at full tilt
+    mapCur.x = U.clamp(mapCur.x + lx * step, -MAP_OX, MAP_W / MAP_S - MAP_OX);
+    mapCur.z = U.clamp(mapCur.z + ly * step, -MAP_OY, MAP_H / MAP_S - MAP_OY);
+    var cx = (mapCur.x + MAP_OX) * MAP_S * mapScale - mapPanX, cy = (mapCur.z + MAP_OY) * MAP_S * mapScale - mapPanY, M = 28;
+    if (cx < M) mapPanX -= M - cx; else if (cx > cv.width - M) mapPanX += cx - (cv.width - M);
+    if (cy < M) mapPanY -= M - cy; else if (cy > cv.height - M) mapPanY += cy - (cv.height - M);
+    drawBigMap();
+  }
+  function mapPick() {
+    if (!GAME.mapOpen || !mapCur) return false;
+    pickMapAt(mapCur.x, mapCur.z);
+    return true;
+  }
+  function mapHint() {
+    var h = $('map-hint');
+    if (!h) return;
+    if (h.getAttribute('data-keys') === null) h.setAttribute('data-keys', h.innerHTML);
+    h.innerHTML = GAME.controls && GAME.controls.usingPad()
+      ? '<b>Left stick</b> move the cursor &nbsp;·&nbsp; <b>A</b> set a destination there &nbsp;·&nbsp; <b>X</b> clear &nbsp;·&nbsp; <b>LB / RB</b> zoom &nbsp;·&nbsp; <b>D-pad ← →</b> show one kind &nbsp;·&nbsp; <b>BACK</b> or <b>B</b> close'
+      : h.getAttribute('data-keys');
+  }
+  function pickMapAt(wx, wz) {
     wx = U.clamp(wx, -495, 1500);
     wz = U.clamp(wz, -540, 540);
     // no charting a course into open sea: a click on the water walks the pin
@@ -495,6 +789,42 @@ GAME.hud = (function () {
 
   // ---------- controls hint bar ----------
   var ctlMode = '';
+  // the key help on the title and pause screens, in whatever the keys are
+  // bound to now (controls.js)
+  function K(code) { return GAME.controls ? GAME.controls.label(code) : code; }
+  function onPad() { return !!(GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad()); }
+  function titleText() {
+    el['press-enter'].textContent = GAME.isTouch ? 'TAP TO START' : onPad() ? 'PRESS A' : 'PRESS ENTER';
+  }
+  // the same help for a controller, while one is what you are playing with
+  var PAD_HELP = '<b>Left stick</b> move / steer &nbsp;·&nbsp; <b>Right stick</b> camera &nbsp;·&nbsp; <b>LT</b> aim lock-on &nbsp;·&nbsp; <b>RT</b> fire ' +
+    '(in a vehicle <b>RT / LT</b> are throttle and brake)<br>' +
+    '<b>LB / RB</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>A</b> jump · climb / handbrake &nbsp;·&nbsp; <b>Y</b> enter / exit car &nbsp;·&nbsp; <b>B</b> sprint<br>' +
+    '<b>D-pad ↓</b> weapons &nbsp;·&nbsp; <b>D-pad ← / →</b> radio &nbsp;·&nbsp; <b>R3</b> horn / siren &nbsp;·&nbsp; <b>X</b> job &nbsp;·&nbsp; <b>D-pad ↑</b> retry &nbsp;·&nbsp; ' +
+    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound, full screen and the rest are there';
+  var PAD_BAR = {
+    car: '<b>RT / LT</b> drive · <b>stick</b> steer · <b>A</b> handbrake · <b>LB / RB</b> drive-by · <b>Y</b> exit · <b>R3</b> horn · <b>D-pad ← →</b> radio · <b>BACK</b> map',
+    foot: '<b>stick</b> move · <b>B</b> sprint · <b>A</b> jump · <b>LT</b> aim · <b>RT</b> fire · <b>D-pad ↓</b> weapons · <b>Y</b> enter car · <b>BACK</b> map',
+    heli: '<b>RT</b> up · <b>LT</b> down · <b>stick</b> forward / yaw · <b>Y</b> exit / bail out · <b>BACK</b> map',
+    plane: '<b>RT / LT</b> throttle · <b>stick</b> pitch / turn · <b>A</b> climb · <b>B</b> dive · <b>LB / RB</b> barrel roll · <b>Y</b> bail out',
+    chute: '<b>stick</b> steer your descent · glide down to land',
+    swim: '<b>stick</b> swim · <b>B</b> faster stroke · climb out at a beach, pier or low edge · <b>Y</b> board a boat · <b>BACK</b> map',
+    boat: '<b>RT / LT</b> throttle · <b>stick</b> steer · <b>A</b> slide · <b>Y</b> step off · <b>R3</b> horn · <b>D-pad ← →</b> radio · <b>BACK</b> map'
+  };
+  function paintKeyHelp() {
+    if (onPad()) {
+      var pc = document.getElementById('controls-card');
+      if (pc) pc.innerHTML = PAD_HELP;
+      if (el['pause-controls']) el['pause-controls'].innerHTML = PAD_HELP;
+      return;
+    }
+    var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
+      '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
+      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo &nbsp;·&nbsp; <b>' + K('KeyL') + '</b> Lola &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
+    var card = document.getElementById('controls-card');
+    if (card) card.innerHTML = h;
+    if (el['pause-controls']) el['pause-controls'].innerHTML = h;
+  }
   function refreshControlsBar() {
     if (GAME.isTouch) { el['controls-bar'].style.display = 'none'; return; }
     var hidden = GAME.prefs && GAME.prefs.hideCtl;
@@ -502,17 +832,21 @@ GAME.hud = (function () {
     var mode = GAME.player.parachuting ? 'chute'
       : (GAME.player.inCar && GAME.player.car && GAME.player.car.spec.plane) ? 'plane'
         : (GAME.player.inCar && GAME.player.car && GAME.player.car.spec.heli) ? 'heli'
-          : GAME.player.inCar ? 'car' : 'foot';
+          : (GAME.player.inCar && GAME.player.car && GAME.player.car.spec.boat) ? 'boat'
+            : GAME.player.inCar ? 'car' : GAME.player.swimming ? 'swim' : 'foot';
     if (mode === ctlMode && el['controls-bar'].style.display === 'block') return;
     ctlMode = mode;
+    var wasd = K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD');
     var txt = {
-      car: '<b>WASD</b> drive · <b>Space</b> handbrake · <b>Q/E</b> drive-by · <b>F</b> exit · <b>,/.</b> radio · <b>P</b> map · <b>H</b> hide',
-      foot: '<b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-5</b> weapons · <b>F</b> enter car · <b>P</b> map · <b>H</b> hide',
-      heli: '<b>Space</b> up · <b>Shift</b> down · <b>W/S</b> forward · <b>A/D</b> yaw · <b>F</b> exit / bail out · <b>P</b> map',
-      plane: '<b>W/S</b> throttle · <b>Space</b> climb · <b>Shift</b> dive · <b>A/D</b> turn · <b>Q/E</b> barrel roll · <b>F</b> bail out',
-      chute: '<b>WASD</b> steer your descent · glide down to land'
+      car: '<b>' + wasd + '</b> drive · <b>' + K('Space') + '</b> handbrake · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> drive-by · <b>' + K('KeyF') + '</b> exit · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
+      foot: '<b>' + wasd + '</b> move · <b>' + K('ShiftLeft') + '</b> sprint · <b>' + K('Space') + '</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-5</b> weapons · <b>' + K('KeyF') + '</b> enter car · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
+      heli: '<b>' + K('Space') + '</b> up · <b>' + K('ShiftLeft') + '</b> down · <b>' + K('KeyW') + '/' + K('KeyS') + '</b> forward · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> yaw · <b>' + K('KeyF') + '</b> exit / bail out · <b>' + K('KeyP') + '</b> map',
+      plane: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('Space') + '</b> climb · <b>' + K('ShiftLeft') + '</b> dive · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> turn · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> barrel roll · <b>' + K('KeyF') + '</b> bail out',
+      chute: '<b>' + wasd + '</b> steer your descent · glide down to land',
+      swim: '<b>' + wasd + '</b> swim · <b>' + K('ShiftLeft') + '</b> faster stroke · climb out at a beach, pier or low edge · <b>' + K('KeyF') + '</b> board a boat · <b>' + K('KeyP') + '</b> map',
+      boat: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> steer · <b>' + K('Space') + '</b> slide · <b>' + K('KeyF') + '</b> step off · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map'
     };
-    el['controls-bar'].innerHTML = txt[mode];
+    el['controls-bar'].innerHTML = onPad() ? PAD_BAR[mode] : txt[mode];
     el['controls-bar'].style.display = 'block';
   }
 
@@ -624,23 +958,21 @@ GAME.hud = (function () {
     }
   }
 
-  // Where a home you own goes on the radar, and as WHAT.
-  //
-  // In range it is a dot on its real position. Out of range it becomes an
-  // arrow on the rim pointing at it, because the radar's job there is to say
-  // which way home is, not to claim it is somewhere it is not. Kept out of
-  // the drawing code so the decision can be tested without a canvas.
+  // Where a home you own goes on the radar: a ringed dot on its real
+  // position while it is on the radar, and nothing once it is not. It used
+  // to become an arrow pinned to the rim pointing home from anywhere on the
+  // map — a yellow triangle that never left the radar, however far out you
+  // were. The big map still shows every home. Kept out of the drawing code
+  // so the decision can be tested without a canvas.
   //
   // The rim is 90 — the canvas is 180 square, drawn from its centre — and the
-  // arrow tip needs room, so the anchor sits at 80 and the point reaches 85.
+  // ring needs room, so a home counts as on the radar inside 80.
   var RADAR_RIM = 80;
   function homeMarker(dx, dz, zoom) {
     var rx = dx * MAP_S, rz = dz * MAP_S;
     var rr = Math.sqrt(rx * rx + rz * rz);
-    var lim = RADAR_RIM / zoom;
-    if (rr <= lim) return { mode: 'dot', x: rx, z: rz, ux: 0, uz: 0, dist: rr };
-    var ux = rx / rr, uz = rz / rr;
-    return { mode: 'arrow', x: ux * lim, z: uz * lim, ux: ux, uz: uz, dist: rr };
+    if (rr <= RADAR_RIM / zoom) return { mode: 'dot', x: rx, z: rz, dist: rr };
+    return { mode: 'off', dist: rr };
   }
 
   // The radar's two stamps. They were closures made afresh inside every draw,
@@ -665,8 +997,10 @@ GAME.hud = (function () {
   function drawMinimap() {
     var cv = el.minimap, g = cv.getContext('2d');
     var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    // (GAME.focus: the car when driving — and the front door from a room)
+    var F = GAME.focus();
+    var px = F.x;
+    var pz = F.z;
     var h = P.inCar && P.car ? P.car.heading : P.heading;
     g.clearRect(0, 0, 180, 180);
     var zoom = P.inCar ? 0.62 : 0.85;
@@ -678,6 +1012,11 @@ GAME.hud = (function () {
     g.scale(zoom, zoom);
     g.drawImage(mapBuffer, -(px + MAP_OX) * MAP_S, -(pz + MAP_OY) * MAP_S);
     // blips (drawn in the rotated frame so they track the map)
+    // a lost tape close by glints on the radar (only then: tapes.js)
+    if (GAME.tapes) {
+      var tn = GAME.tapes.nearby(px, pz);
+      for (var tg = 0; tg < tn.length; tg++) blip(tn[tg].x, tn[tg].z, '#ffd0ea', 2.2 / zoom);
+    }
     // weapon / health / armor pickups near the player
     var pk = GAME.world.pickups;
     for (var pu = 0; pu < pk.length; pu++) {
@@ -688,8 +1027,7 @@ GAME.hud = (function () {
       blip(pp.pos.x, pp.pos.z, PICKUP_BLIP[pp.type], 2.6 / zoom);
     }
     // nearby shops and property, so the doormats are findable from the radar.
-    // Homes you own ignore the range gate and wear a white ring — wherever
-    // you are, the radar says which way home is.
+    // Homes you own wear a white ring, shown whenever they are on the radar.
     if (GAME.shops) {
       var sb = GAME.shops.blips();
       for (var sbi = 0; sbi < sb.length; sbi++) {
@@ -698,28 +1036,10 @@ GAME.hud = (function () {
         if (!sbp.home && U.dist2(sbp.x, sbp.z, px, pz) > 170 * 170) continue;
         if (sbp.home) {
           var hm = homeMarker(sbp.x - px, sbp.z - pz, zoom);
-          g.fillStyle = sbp.color;
           if (hm.mode === 'dot') {
+            g.fillStyle = sbp.color;
             g.beginPath(); g.arc(hm.x, hm.z, 4.4 / zoom, 0, Math.PI * 2); g.fill();
             g.strokeStyle = '#ffffff'; g.lineWidth = 1.6 / zoom; g.stroke();
-          } else {
-            // Out of range: an ARROW on the rim pointing the way, not a dot.
-            //
-            // A clamped dot drawn exactly like an in-range one is the same
-            // picture as a house sitting that far from you — so as you drove,
-            // your property appeared to hold station off your shoulder and
-            // then snap onto its real spot the moment it came into range. It
-            // was doing what it was told; it just said the wrong thing.
-            var s2 = 5.5 / zoom;
-            g.beginPath();
-            g.moveTo(hm.x + hm.ux * s2, hm.z + hm.uz * s2);
-            g.lineTo(hm.x - hm.ux * s2 * 0.55 - hm.uz * s2 * 0.85,
-                     hm.z - hm.uz * s2 * 0.55 + hm.ux * s2 * 0.85);
-            g.lineTo(hm.x - hm.ux * s2 * 0.55 + hm.uz * s2 * 0.85,
-                     hm.z - hm.uz * s2 * 0.55 - hm.ux * s2 * 0.85);
-            g.closePath();
-            g.fill();
-            g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 / zoom; g.stroke();
           }
         } else {
           blip(sbp.x, sbp.z, sbp.color, 3.2 / zoom);
@@ -751,7 +1071,7 @@ GAME.hud = (function () {
         g.lineTo((GAME.nav.dest.x - px) * MAP_S, (GAME.nav.dest.z - pz) * MAP_S);
         g.stroke();
       }
-      blip(GAME.nav.dest.x, GAME.nav.dest.z, '#ff8aff', 4.5 / zoom);
+      blip(GAME.nav.dest.x, GAME.nav.dest.z, DEST_HEX, 4.5 / zoom);
     }
     var mb = GAME.missions.getBlips();
     for (var i = 0; i < mb.length; i++) {
@@ -761,7 +1081,7 @@ GAME.hud = (function () {
     // POI dots, live and legend-aware (they used to be baked into the base
     // image, where the legend couldn't touch them)
     var pois = GAME.city.pois, pi;
-    if (catVis('hospital')) for (pi = 0; pi < pois.hospitals.length; pi++) blip(pois.hospitals[pi].x, pois.hospitals[pi].z, '#ff8aa8', 3);
+    if (catVis('hospital')) for (pi = 0; pi < pois.hospitals.length; pi++) blip(pois.hospitals[pi].x, pois.hospitals[pi].z, HOSPITAL_HEX, 3);
     if (catVis('police')) for (pi = 0; pi < pois.stations.length; pi++) blip(pois.stations[pi].x, pois.stations[pi].z, '#5aa0ff', 3);
     if (catVis('respray')) for (pi = 0; pi < pois.resprays.length; pi++) blip(pois.resprays[pi].door.x, pois.resprays[pi].door.z, '#c86bff', 3);
     if (catVis('airport')) landmark(GAME.city.airport.apron.x, GAME.city.airport.apron.z);
@@ -808,6 +1128,7 @@ GAME.hud = (function () {
 
   function update(dt) {
     if (!mapBuffer) return;
+    stepPager(dt);
     GAME.nav.update(dt);
     if (GAME.frame % 3 === 0) drawMinimap();
     if (GAME.frame % 10 === 0) { refreshControlsBar(); api.refreshFsBtn(); }
@@ -855,7 +1176,12 @@ GAME.hud = (function () {
         } else vl.style.display = 'none';
       }
     }
-    if (msgT > 0) { msgT -= dt; if (msgT <= 0) el['msg-line'].style.opacity = 0; }
+    stepMessages(dt);
+    stepLockHint();
+    if (hitT > 0) { hitT -= dt; if (hitT <= 0) $('hit-dir').style.opacity = 0; }
+    var P0 = GAME.player, low = P0.state === 'alive' && P0.health > 0 && P0.health < LOW_HEALTH;
+    if (low !== lowShown) { lowShown = low; $('low-health').style.display = low ? 'block' : 'none'; }
+    stepTips(dt);
     if (countT > 0) { countT -= dt; if (countT <= 0) el['count-big'].style.opacity = 0; }
     if (radioT > 0) { radioT -= dt; if (radioT <= 0) el['radio-popup'].style.opacity = 0; }
     zoneT -= dt;
@@ -866,9 +1192,180 @@ GAME.hud = (function () {
       if (zn !== lastZone) {
         lastZone = zn;
         el['zone-popup'].textContent = zn;
+        placeZone();
         el['zone-popup'].style.opacity = 1;
         setTimeout(function () { el['zone-popup'].style.opacity = 0; }, 2600);
       }
+    }
+  }
+
+  // The district name shares the top centre with a running mission's title
+  // and objective, and was drawn straight over them: it goes underneath while
+  // one is up (and moves when one starts or ends under it).
+  function placeZone() {
+    var mh = el['mission-hud'];
+    el['zone-popup'].style.top = mh.style.display === 'block' ? (mh.offsetTop + mh.offsetHeight + 6) + 'px' : '';
+  }
+
+  // ---------- keys on the pause screen ----------
+  // It was mouse-only. The arrows walk the buttons (up and down by row),
+  // Enter or Space presses the lit one, Esc still resumes.
+  var pauseSel = 0;
+  function pauseButtons() {
+    var all = el['pause-screen'].querySelectorAll('.mbtn'), out = [];
+    for (var i = 0; i < all.length; i++) if (all[i].offsetParent !== null) out.push(all[i]);
+    return out;
+  }
+  function paintPauseSel() {
+    var bs = pauseButtons();
+    if (!bs.length) return;
+    pauseSel = (pauseSel % bs.length + bs.length) % bs.length;
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('kfocus', i === pauseSel);
+  }
+  function pauseRowStep(bs, cur, dir) {
+    var r0 = bs[cur].getBoundingClientRect(), cx = r0.left + r0.width / 2, cy = r0.top + r0.height / 2;
+    var best = cur, bd = 1e9;
+    for (var i = 0; i < bs.length; i++) {
+      var r = bs[i].getBoundingClientRect(), y = r.top + r.height / 2;
+      if ((y - cy) * dir <= 4) continue;
+      var d = Math.abs(y - cy) * 3 + Math.abs(r.left + r.width / 2 - cx);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  function pauseKey(code) {
+    var bs = pauseButtons();
+    if (!bs.length) return false;
+    if (code === 'ArrowRight' || code === 'Tab') pauseSel++;
+    else if (code === 'ArrowLeft') pauseSel--;
+    else if (code === 'ArrowDown') pauseSel = pauseRowStep(bs, pauseSel, 1);
+    else if (code === 'ArrowUp') pauseSel = pauseRowStep(bs, pauseSel, -1);
+    else if (code === 'Enter' || code === 'Space') {
+      bs[(pauseSel % bs.length + bs.length) % bs.length].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      if (GAME.paused) paintPauseSel();   // a toggle relabels; keep the light on it
+      return true;
+    } else return false;
+    paintPauseSel();
+    return true;
+  }
+
+  // ---------- what is hurting you ----------
+  // Damage was a red flash of the whole screen, with no way to tell which
+  // way to look. Now an arc turns toward whoever did it and fades over a
+  // second; and below a quarter of your health the screen's edges pulse
+  // until you patch up.
+  var hitT = 0, lowShown = false, LOW_HEALTH = 25;
+  function hitFrom(x, z) {
+    var h = $('hit-dir');
+    if (!h || !isFinite(x) || !isFinite(z)) return;
+    var f = GAME.focus(), dx = x - f.x, dz = z - f.z, d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.5) return;
+    var yaw = GAME.cam.yaw;
+    var right = dx * -Math.cos(yaw) + dz * Math.sin(yaw), ahead = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    h.style.transform = 'translate(-50%,-50%) rotate(' + Math.atan2(right, ahead).toFixed(3) + 'rad)';
+    h.style.opacity = 1;
+    hitT = 1;
+  }
+
+  // ---------- the first minute ----------
+  // The mouse needed a click nobody mentioned, at the start and again after
+  // every pause resumed from the keyboard (Esc carries no gesture the lock
+  // can use). Say so whenever it is missing.
+  var lockHintOn = false;
+  function lockHint(on) {
+    if (on === lockHintOn) return;
+    lockHintOn = on;
+    var h = $('lock-hint');
+    if (h) h.style.display = on ? 'block' : 'none';
+  }
+  function stepLockHint() {
+    lockHint(!!GAME.started && !GAME.isTouch && !GAME.input.pointerLocked && GAME.player.state === 'alive');
+  }
+  // Two tips, once per save, for someone who has not done anything yet: what
+  // the coloured rings are, and what four of them open. The welcome line was
+  // the only guidance there was.
+  var tipT = 0, TIPS = [
+    { at: 7, text: function () {
+      return 'The coloured rings are missions — races, deliveries, rampages and takedowns. Stop in one to start it. ' +
+        (GAME.isTouch ? 'Tap the radar for the map.' : 'P opens the map.');
+    } },
+    { at: 17, text: function () {
+      return GAME.isla && !GAME.isla.isOpen() ? 'Pass any 4 of them and the bridges east to Isla Verde open.' : '';
+    } }
+  ];
+  function stepTips(dt) {
+    var pr = GAME.prefs || {};
+    if (pr.tipsSeen || !GAME.started) return;
+    // a save with missions in it already knows all this
+    for (var k in (GAME.bests || {})) { GAME.prefs = pr; pr.tipsSeen = true; return; }
+    var before = tipT;
+    tipT += dt;
+    for (var i = 0; i < TIPS.length; i++) {
+      if (before < TIPS[i].at && tipT >= TIPS[i].at) {
+        var t = TIPS[i].text();
+        if (t) api.message(t, 6);
+      }
+    }
+    if (tipT >= TIPS[TIPS.length - 1].at) {
+      GAME.prefs = pr;
+      pr.tipsSeen = true;
+      GAME.save();
+    }
+  }
+
+  // ---------- the message feed ----------
+  // One line used to carry everything, and each message wiped the one before
+  // it: "MISSION FAILED" was gone the moment the radio named a station. Now a
+  // short stack, newest at the bottom, each line on its own clock; the same
+  // message again just restarts the newest one's.
+  var MSG_MAX = 3, msgs = [];
+  function pushMessage(text, dur) {
+    var top = msgs[msgs.length - 1];
+    if (top && !top.fading && top.el.textContent === text) { top.t = dur; return; }
+    var line = document.createElement('div');
+    line.className = 'msg';
+    line.textContent = text;
+    el['msg-line'].appendChild(line);
+    msgs.push({ el: line, t: dur, fading: false });
+    while (msgs.length > MSG_MAX) msgs.shift().el.remove();
+    for (var i = 0; i < msgs.length; i++) msgs[i].el.classList.toggle('old', i < msgs.length - 1);
+  }
+  // The pager: who the work is from, and what they have to say about it — a
+  // card of its own up in the corner, so a line of story never shoves a
+  // MISSION PASSED out of the message stack. One page at a time; the rest
+  // wait their turn.
+  var pages = [], pageT = 0, paging = false, gapT = 0;
+  function nextPage() {
+    var p = pages.shift();
+    if (!p || !el.pager) { paging = false; if (el.pager) el.pager.classList.remove('on'); return; }
+    paging = true;
+    pageT = p.dur;
+    el['pager-from'].textContent = '📟 ' + p.from;
+    el['pager-text'].textContent = p.text;
+    // under the radar on a phone, where it moves up into this corner
+    el.pager.style.top = GAME.isTouch ? '152px' : '';
+    el.pager.classList.add('on');
+    if (GAME.audio.pagerBeep) GAME.audio.pagerBeep();
+  }
+  function pager(from, text, dur) {
+    pages.push({ from: from, text: String(text), dur: dur || Math.max(5, Math.min(10, String(text).length * 0.065)) });
+    if (!paging && gapT <= 0) nextPage();
+  }
+  function stepPager(dt) {
+    if (paging) {
+      pageT -= dt;
+      if (pageT <= 0) { el.pager.classList.remove('on'); paging = false; gapT = 0.45; }
+      return;
+    }
+    if (gapT > 0) gapT -= dt;
+    if (pages.length && gapT <= 0) nextPage();
+  }
+  function stepMessages(dt) {
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var m = msgs[i];
+      m.t -= dt;
+      if (m.t <= 0 && !m.fading) { m.fading = true; m.el.classList.add('out'); }
+      if (m.t <= -0.35) { m.el.remove(); msgs.splice(i, 1); }
     }
   }
 
@@ -907,8 +1404,15 @@ GAME.hud = (function () {
       el['map-screen'].style.display = open ? 'flex' : 'none';
       // the sim loop halts while the map is open; syncOverlayMusic below
       // silences every voice the halted tick would otherwise leave held
-      if (open) drawBigMap();
-      else {
+      if (open) {
+        mapCentreOnYou = mapZoom > 1;
+        // on a pad the cursor starts on you; with a mouse there is none
+        var you = GAME.focus();
+        mapCur = GAME.controls && GAME.controls.usingPad() ? { x: you.x, z: you.z } : null;
+        mapHint();
+        drawBigMap();
+      } else {
+        mapCur = null;
         el.bigmap.width = el.bigmap.height = 0;
         if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
       }
@@ -921,6 +1425,32 @@ GAME.hud = (function () {
       api.refreshFsBtn();
     },
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
+    pauseKey: pauseKey,
+    // after a rebind: the bar and both help cards say the new keys
+    keysChanged: function () {
+      ctlMode = ''; refreshControlsBar(); paintKeyHelp();
+      if (api.paintHintBar) api.paintHintBar();
+      if (!GAME.started && el['press-enter'] && !el['press-enter'].classList.contains('loading')) titleText();
+      if (GAME.mapOpen) {
+        mapHint();
+        // a mouse back in hand: the pad's cursor goes
+        if (mapCur && !(GAME.controls && GAME.controls.usingPad())) { mapCur = null; drawBigMap(); }
+      }
+    },
+    lockHint: lockHint,
+    hitFrom: hitFrom,
+    // +/- (keys and buttons): about the middle of the map
+    mapZoom: function (f) {
+      if (!GAME.mapOpen) return;
+      if (mapCur) zoomMapAt((mapCur.x + MAP_OX) * MAP_S * mapScale - mapPanX, (mapCur.z + MAP_OY) * MAP_S * mapScale - mapPanY, f);
+      else zoomMapAt(el.bigmap.width / 2, el.bigmap.height / 2, f);
+    },
+    mapPad: mapPad,
+    mapPick: mapPick,
+    mapSoloStep: stepSolo,
+    get mapSolo() { return mapSolo; },
+    get mapCursor() { return mapCur ? { x: mapCur.x, z: mapCur.z } : null; },
+    get mapZoomLevel() { return mapZoom; },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },
     toggleControlsBar: function () {
       GAME.prefs = GAME.prefs || {};
@@ -928,6 +1458,7 @@ GAME.hud = (function () {
       GAME.save();
       ctlMode = '';
       refreshControlsBar();
+      if (api.paintHintBar) api.paintHintBar();
       return !GAME.prefs.hideCtl;
     },
     cashChanged: function () { targetCash = GAME.player.cash; },
@@ -938,6 +1469,8 @@ GAME.hud = (function () {
       // place that sees every change — but neither of them passes the level
       // you were ON, and the direction is the whole message. Keep it here.
       if (n > wantedShown) GAME.haptics.wantedUp(n);
+      // the first star, and the first time it is three: what they mean
+      if (n > wantedShown && GAME.lola && GAME.started) GAME.lola.first(n >= 3 ? 'stars3' : 'star');
       else if (n === 0 && wantedShown > 0) GAME.haptics.wantedClear();
       wantedShown = n;
     },
@@ -945,11 +1478,23 @@ GAME.hud = (function () {
       if (!el['weapon-line']) return; // may fire before the HUD is wired up
       el['weapon-line'].textContent = name + (ammo === '' ? '' : '  ·  ' + ammo);
     },
-    message: function (text, dur) {
-      el['msg-line'].textContent = text;
-      el['msg-line'].style.opacity = 1;
-      msgT = dur || 2.5;
+    message: function (text, dur) { pushMessage(String(text), dur || 2.5); },
+    // Letterbox for a moment that plays itself (the glass lift): black bars
+    // in, the HUD and the thumbs out, and a tap anywhere to skip it.
+    cine: function (on, onSkip) {
+      document.body.classList.toggle('cine', !!on);
+      var c = $('cine'), sk = $('cine-skip');
+      if (sk) sk.textContent = GAME.isTouch ? 'TAP TO SKIP' : 'SPACE OR CLICK TO SKIP';
+      if (c) c.onpointerdown = on && onSkip ? function (e) { e.preventDefault(); onSkip(); } : null;
     },
+    pager: pager,
+    enterHint: function (text) {
+      var e = el['enter-hint'];
+      if (!e) return;
+      if (text) e.textContent = text;
+      e.style.opacity = text ? 1 : 0;
+    },
+    get pagerText() { return paging && el['pager-text'] ? el['pager-text'].textContent : ''; },
     // the huge centre numeral for mission countdowns. Callers repeat it every
     // frame while the count runs; it lets go of the screen on its own once
     // they stop (which is how "GO!" gets its moment and then clears itself)
@@ -975,6 +1520,7 @@ GAME.hud = (function () {
       el['mission-title'].textContent = title;
       el['mission-obj'].textContent = obj;
       el['mission-timer'].textContent = '';
+      placeZone();
     },
     missionObjective: function (obj) { el['mission-obj'].textContent = obj; },
     missionTimer: function (t, countdown) {
@@ -983,14 +1529,22 @@ GAME.hud = (function () {
       el['mission-timer'].textContent = mm + ':' + (ss < 10 ? '0' : '') + ss;
       el['mission-timer'].style.color = countdown && s < 12 ? '#ff5d7a' : '#8dffd8';
     },
-    missionEnd: function () { el['mission-hud'].style.display = 'none'; },
+    missionEnd: function () { el['mission-hud'].style.display = 'none'; placeZone(); },
     // the corner fullscreen control — available everywhere (menus, portrait
     // overlay and in-game) and hidden only once you're actually fullscreen.
     refreshFsBtn: function () {
       var e = $('fs-btn');
       if (!e) return;
-      // always on hand until you're actually fullscreen, then it's redundant
-      e.style.display = document.fullscreenElement ? 'none' : 'flex';
+      // always on hand until you're actually fullscreen (or playing from the
+      // home screen, which is), then it's redundant
+      e.style.display = (GAME.fullscreenEl && GAME.fullscreenEl()) || (GAME.isStandalone && GAME.isStandalone()) ? 'none' : 'flex';
+      // and the pause screen's switch, which says which it is (a home-screen
+      // app is full screen already, and has no use for it)
+      var pf = $('pause-fs');
+      if (pf) {
+        pf.style.display = GAME.isStandalone && GAME.isStandalone() ? 'none' : '';
+        pf.textContent = GAME.fullscreenEl && GAME.fullscreenEl() ? '⛶ FULL SCREEN: ON' : '⛶ FULL SCREEN: OFF';
+      }
     },
     // AUTO runs the day/night cycle; DAY / NIGHT pin it
     refreshTimeBtn: function (mode) {
@@ -1013,7 +1567,7 @@ GAME.hud = (function () {
       scr.style.display = 'flex';
       scr.querySelector('.big-sub').textContent = sub || '';
       var hint = scr.querySelector('.big-hint');
-      if (hint) hint.textContent = GAME.isTouch ? 'TAP TO CONTINUE' : 'PRESS R TO CONTINUE';
+      if (hint) hint.textContent = GAME.isTouch ? 'TAP TO CONTINUE' : 'PRESS ' + K('KeyR') + ' TO CONTINUE';
     },
     hideBig: function () {
       el['wasted-screen'].style.display = 'none';
@@ -1030,6 +1584,11 @@ GAME.hud = (function () {
     // the raw dimmer, for rituals that keep their own time (mission starts
     // count the blackout in game ticks, so pausing pauses it)
     fadeSet: function (v) { el['fade-layer'].style.opacity = v; },
+    titleReady: function () {
+      var pe = el['press-enter'];
+      pe.classList.remove('loading');
+      titleText();
+    },
     hideTitle: function () {
       el['title-screen'].style.display = 'none';
       document.getElementById('hud').style.display = 'block';
@@ -1037,10 +1596,14 @@ GAME.hud = (function () {
     },
     setPaused: function (p) {
       el['pause-screen'].style.display = p ? 'flex' : 'none';
+      if (api.paintAbandon) api.paintAbandon(true);
+      if (p) { pauseSel = 0; paintPauseSel(); }
       var sj = $('pause-stunts');
       if (sj && GAME.stunts) {
-        sj.textContent = 'STUNT JUMPS  ' + GAME.stunts.found + ' / ' + GAME.stunts.total +
-          (GAME.stunts.complete ? '   ·   ALL FOUND' : '');
+        var ST = GAME.stunts, isOpen = !GAME.isla || GAME.isla.isOpen();
+        sj.textContent = 'STUNT JUMPS  ' + ST.found + ' / ' + ST.total + (ST.complete ? ' ✓' : '') +
+          (isOpen && ST.islaTotal ? '   ·   ISLA  ' + ST.islaFound + ' / ' + ST.islaTotal + (ST.islaComplete ? ' ✓' : '') : '') +
+          (GAME.tapes && GAME.tapes.total ? '   ·   LOST TAPES  ' + GAME.tapes.found + ' / ' + GAME.tapes.total : '');
       }
       // missions alongside the jumps: distinct marked missions finished, and
       // what the count is FOR while the bridges are still shut
@@ -1050,7 +1613,7 @@ GAME.hud = (function () {
         for (var mi = 0; mi < defs.length; mi++) if (bests[defs[mi].id] !== undefined) done++;
         var open = !GAME.isla || GAME.isla.isOpen();
         pm.textContent = 'MISSIONS  ' + done + ' / ' + defs.length +
-          (open ? (done >= defs.length ? '   ·   ALL DONE' : '') : '   ·   4 OPEN THE BRIDGES');
+          (open ? (done >= defs.length ? '   ·   ALL DONE' : '') : '   ·   ' + Math.min(done, 4) + ' / 4 TO OPEN THE BRIDGES TO ISLA VERDE');
       }
       api.refreshFsBtn();
     },
@@ -1061,6 +1624,7 @@ GAME.hud = (function () {
     },
     // headless hook: where a home you own lands on the radar, and as what
     testHomeMarker: homeMarker,
+    testIslaLabels: islaDistrictLabels,
     testHelipads: shownHelipads,
     testToggleCat: toggleCat,
     // How much marker-cyan the BAKED base image carries around a world point.
@@ -1153,9 +1717,9 @@ GAME.nav = (function () {
 
   function computePath() {
     if (!dest) { path = []; return; }
-    var P = GAME.player;
-    var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-    var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+    var PF = GAME.focus();
+    var px = PF.x;
+    var pz = PF.z;
     // route to the road nearest the destination, then a short hop off the road,
     // so the drawn line stays on the streets instead of cutting through blocks
     var rp = GAME.city.nearestRoadPoint(dest.x, dest.z);
@@ -1180,8 +1744,9 @@ GAME.nav = (function () {
       recompT -= dt;
       if (recompT <= 0) { recompT = 1.5; computePath(); }
       var P = GAME.player;
-      var px = P.inCar && P.car ? P.car.pos.x : P.pos.x;
-      var pz = P.inCar && P.car ? P.car.pos.z : P.pos.z;
+      var PF = GAME.focus();
+      var px = PF.x;
+      var pz = PF.z;
       // Arrived means near, not on top of. A map click often lands mid-block,
       // somewhere no road passes — so pulling up on the kerb beside it counts,
       // and a car counts from further out than a person walking the last bit.

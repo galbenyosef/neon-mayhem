@@ -445,6 +445,23 @@ SpatialHash.prototype.insert = function (box) {
     arr.push(box);
   }
 };
+// The other way: a lamp post a car has flattened stops being in the way of
+// anything until it is put back up (insert again).
+SpatialHash.prototype.remove = function (box) {
+  var ai = this.all.indexOf(box);
+  if (ai < 0) return false;
+  this.all.splice(ai, 1);
+  var c = this.cell;
+  var i0 = Math.floor(box.minX / c), i1 = Math.floor(box.maxX / c);
+  var j0 = Math.floor(box.minZ / c), j1 = Math.floor(box.maxZ / c);
+  for (var i = i0; i <= i1; i++) for (var j = j0; j <= j1; j++) {
+    var arr = this.map.get(hashCell(i, j));
+    if (!arr) continue;
+    var k = arr.indexOf(box);
+    if (k >= 0) arr.splice(k, 1);
+  }
+  return true;
+};
 // A non-finite lookup is a bug wherever it came from, but it must not take
 // the tab down with it. Math.floor(±Infinity) is ±Infinity and `i++` on an
 // infinity never advances, so `for (i = i0; i <= i1; i++)` spins forever and
@@ -571,29 +588,44 @@ GAME.input = {
   lmbPressed: false,
   wheel: 0,
   pointerLocked: false,
-  touch: { active: false, stickX: 0, stickY: 0, fire: false, aim: false, brake: false, handbrake: false, enter: false, weaponCycle: false, radio: false, driveByL: false, driveByR: false }
+  touch: { active: false, stickX: 0, stickY: 0, fire: false, aim: false, brake: false, handbrake: false, enter: false, weaponCycle: false, radio: false, driveByL: false, driveByR: false, photo: false, rollL: false, rollR: false }
 };
 
 GAME.initInput = function (canvas) {
   var inp = GAME.input;
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Tab') e.preventDefault();
-    if (!e.repeat) { inp.keys[e.code] = true; inp.pressed[e.code] = true; }
+    // the keyboard is what you are playing with now: prompts say keys again
+    if (GAME.controls && GAME.controls.noteDevice) GAME.controls.noteDevice(false);
+    // the CONTROLS screen owns the keyboard while it is up (a rebind, or Esc)
+    if (GAME.controls && GAME.controls.open) {
+      if (!e.repeat) GAME.controls.key(e.code);
+      e.preventDefault();
+      return;
+    }
+    // rebinding: the key as the game should hear it (controls.js)
+    var code = GAME.controls ? GAME.controls.map(e.code) : e.code;
+    if (code === null) return;
+    if (!e.repeat) { inp.keys[code] = true; inp.pressed[code] = true; }
     // Any key is a real gesture that can bring fullscreen back after the
     // browser dropped it over an Esc — EXCEPT Esc itself, which browsers
     // refuse to honor for requestFullscreen (it is the reserved exit key).
     // So resuming with Esc stays windowed for exactly one keypress: the
     // first W (or anything else) restores it.
     if (GAME.started && !e.repeat && e.code !== 'Escape' && GAME.maybeRestoreFullscreen) GAME.maybeRestoreFullscreen();
-    if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(e.code);
+    if (GAME.onKeyDown && !e.repeat) GAME.onKeyDown(code);
   });
-  window.addEventListener('keyup', function (e) { inp.keys[e.code] = false; });
+  window.addEventListener('keyup', function (e) {
+    var code = GAME.controls ? GAME.controls.map(e.code) : e.code;
+    if (code !== null) inp.keys[code] = false;
+  });
   // focus loss eats the keyup, so drop the held keys AND any press nobody
   // claimed — coming back to a key the game still thinks is down is the
   // oldest stuck-input bug there is
   window.addEventListener('blur', function () { inp.keys = {}; inp.pressed = {}; inp.lmb = false; inp.rmb = false; });
 
   canvas.addEventListener('mousedown', function (e) {
+    if (GAME.controls && GAME.controls.noteDevice) GAME.controls.noteDevice(false);
     // The click that ACQUIRES pointer lock is aim, not fire. Without this,
     // the first click after the title screen (or after any overlay released
     // the lock) squeezed off a round with whatever the save had loaded and
@@ -648,7 +680,7 @@ GAME.releasePointer = function () {
 // canvas acquires the lock as always — swallowed as aim, never fired.
 GAME.regainPointer = function () {
   if (GAME.isTouch || !GAME.started) return;
-  if (GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen) return;
+  if (GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen || GAME.lolaOpen) return;
   var cv = document.getElementById('game-canvas');
   if (cv && cv.requestPointerLock) {
     try {
@@ -686,3 +718,26 @@ GAME.keyPressed = function (code) {
   return true;
 };
 GAME.clearPressed = function () { GAME.input.pressed = {}; };
+
+// Somewhere the player can see right now: in front of the camera, nearer
+// than the fog swallows things, and with no building in the way. New traffic
+// and pedestrians are made where this is false — a third of the cars used to
+// appear out of nothing 100-200 m up the road in broad daylight.
+var _viewFrustum = null, _viewPM = null, _viewSphere = null;
+GAME.inPlainView = function (x, y, z) {
+  var cam = GAME.cameraObj, scene = GAME.scene;
+  if (!cam || !scene || !GAME.started) return false;
+  var cx = cam.position.x, cz = cam.position.z, dx = x - cx, dz = z - cz;
+  var far = scene.fog ? scene.fog.far * 0.92 : 400;
+  if (dx * dx + dz * dz > far * far) return false;
+  if (!_viewFrustum) { _viewFrustum = new THREE.Frustum(); _viewPM = new THREE.Matrix4(); _viewSphere = new THREE.Sphere(); }
+  cam.updateMatrixWorld();
+  _viewPM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+  if (_viewFrustum.setFromProjectionMatrix) _viewFrustum.setFromProjectionMatrix(_viewPM);
+  else _viewFrustum.setFromMatrix(_viewPM);
+  _viewSphere.center.set(x, y + 1, z);
+  _viewSphere.radius = 3;
+  if (!_viewFrustum.intersectsSphere(_viewSphere)) return false;
+  // a block between you and it hides it; things lower than your eye do not
+  return GAME.city.hash.segmentClear(cx, cz, x, z, cam.position.y);
+};

@@ -138,6 +138,30 @@ GAME.audio = (function () {
     // makes a lot of these and a graph that only grows starts to crackle
     src.onended = function () { try { src.disconnect(); f.disconnect(); g.disconnect(); } catch (e) { } };
   }
+  // rain: a held hiss whose level follows how hard it is coming down
+  // (weather.js), built the first time it rains; thunder: a long low roll
+  var rainNode = null;
+  function rainLevel(v) {
+    if (!ctx) return;
+    if (!rainNode) {
+      if (!(v > 0)) return;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      var f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1500;
+      var g = ctx.createGain(); g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(sfxSwitch);
+      src.start();
+      rainNode = { g: g, v: -1 };
+    }
+    var lv = Math.round(Math.max(0, v) * 50) / 50;
+    if (lv === rainNode.v) return;
+    rainNode.v = lv;
+    rainNode.g.gain.setTargetAtTime(lv * 0.14, ctx.currentTime, 0.4);
+  }
+  function thunder(level) {
+    if (!ctx) return;
+    noiseBurst(2.6, 140, 0.55 * level, 'lowpass', ctx.currentTime, sfxBus);
+    noiseBurst(0.5, 600, 0.25 * level, 'lowpass', ctx.currentTime, sfxBus);
+  }
   function tone(freq, dur, gain, type, slideTo, when, bus) {
     if (!ctx) return;
     var t = when || ctx.currentTime;
@@ -263,17 +287,47 @@ GAME.audio = (function () {
             tone(midi(chord[(st >> 2) % chord.length] + 24), spb * 3.4, 0.06, 'sine', 0, t, verb);
           }
         }
+      },
+      // The pirate DJ's station, back on the air once every one of the lost
+      // tapes is found (tapes.js). Italo: four on the floor, an octave
+      // gallop in the bass, a square-wave hook.
+      {
+        name: 'TAPE DECK FM', bpm: 124, secret: true,
+        chords: [[57, 60, 64], [55, 59, 62], [53, 57, 60], [55, 59, 62]],
+        bass: [45, 43, 41, 43],
+        mel: [76, 79, 81, 79, 76, 74, 72, 74, 76, 76, 79, 84, 81, 79, 76, 72],
+        play: function (t, st, bar, chord, bass) {
+          var spb = 60 / this.bpm / 4;
+          if (st % 4 === 0) tone(54, 0.12, 0.9, 'sine', 30, t, radioBus);
+          if (st % 4 === 2) noiseBurst(0.06, 7000, 0.14, 'highpass', t, radioBus);
+          if (st % 8 === 4) noiseBurst(0.1, 2000, 0.3, 'bandpass', t, radioBus);
+          tone(midi(bass + (st % 2 ? 12 : 0)), spb * 0.8, 0.2, 'sawtooth', 0, t, radioBus);
+          if (st % 2 === 0) tone(midi(this.mel[(st / 2 + bar * 2) % this.mel.length]), spb * 1.7, 0.1, 'square', 0, t, verb);
+          if (st % 16 === 0) for (var i = 0; i < chord.length; i++) tone(midi(chord[i] + 12), spb * 12, 0.05, 'sawtooth', 0, t, verb);
+        }
       }
     ];
+    // a secret station is on the dial only once it has been earned
+    function avail(i) { return i >= stations.length || !stations[i].secret || !!(GAME.prefs && GAME.prefs.tapeDeck); }
     // On foot, with MUSIC: OFF or muted, the radio is a clock with nothing on
     // the end of it — but a clock that built its ~60 voices a second anyway.
     // A step nobody can hear is still counted, so the beat is where it would
     // have been when the radio comes back, rather than restarting the bar.
+    // one more click on the dial is OFF: the clock keeps counting (on the
+    // first station's tempo) so nothing jumps when it comes back on
+    var OFF = stations.length;
+    function nameOf(i) { return i === OFF ? 'RADIO OFF' : stations[i].name; }
+    function retune(i) {
+      current = i;
+      step = 0;
+      if (ctx) nextTime = ctx.currentTime + 0.08;
+      return nameOf(current);
+    }
     function schedule() {
       if (!ctx || !playing || ctx.state !== 'running') return;
-      var s = stations[current];
+      var s = stations[current] || stations[0];
       var spb = 60 / s.bpm / 4;
-      var quiet = radioSilent();
+      var quiet = radioSilent() || current === OFF;
       while (nextTime < ctx.currentTime + 0.25) {
         var bar = Math.floor(step / 16);
         var ci = bar % s.chords.length;
@@ -284,7 +338,9 @@ GAME.audio = (function () {
     }
     return {
       stations: stations,
-      get name() { return stations[current].name; },
+      get name() { return nameOf(current); },
+      get index() { return current; },
+      get off() { return current === OFF; },
       start: function () {
         if (playing || !ctx) return;
         playing = true;
@@ -292,18 +348,18 @@ GAME.audio = (function () {
         timer = setInterval(schedule, 90);
       },
       switchStation: function (dir) {
-        current = (current + dir + stations.length) % stations.length;
-        step = 0;
-        if (ctx) nextTime = ctx.currentTime + 0.08;
-        return stations[current].name;
+        var i = current;
+        for (var k = 0; k <= OFF; k++) { i = (i + dir + OFF + 1) % (OFF + 1); if (avail(i)) break; }
+        return retune(i);
       },
-      // tune to a random station — the dial isn't always left where you found it
+      // a car you have not been in yet: wherever its last driver left it
       randomStation: function () {
-        current = Math.floor(Math.random() * stations.length) % stations.length;
-        step = 0;
-        if (ctx) nextTime = ctx.currentTime + 0.08;
-        return stations[current].name;
+        var pool = [];
+        for (var i = 0; i < stations.length; i++) if (avail(i)) pool.push(i);
+        return retune(pool[Math.floor(Math.random() * pool.length) % pool.length]);
       },
+      // and one you have: where you left it (OFF included)
+      tune: function (i) { i = Math.max(0, Math.min(OFF, i | 0)); return retune(avail(i) ? i : 0); },
       setVolume: function (v) {
         if (!ctx) return;
         // keep playing into the fade rather than cutting it off short
@@ -395,6 +451,8 @@ GAME.audio = (function () {
       if (ctx && musicSwitch) musicSwitch.gain.setTargetAtTime(musicOn ? 1 : 0, ctx.currentTime, 0.05);
       return musicOn;
     },
+    rain: rainLevel,
+    thunder: thunder,
     setSfxOn: function (v) {
       sfxOn = !!v;
       if (ctx && sfxSwitch) sfxSwitch.gain.setTargetAtTime(sfxOn ? 1 : 0, ctx.currentTime, 0.05);
@@ -468,6 +526,17 @@ GAME.audio = (function () {
       noiseBurst(0.18 * a + 0.08, 1400, 0.5 * a, null, null, b);
       tone(140, 0.1, 0.3 * a, 'square', 50, null, b);
     },
+    // a car horn, two notes a third apart; the bigger the car the lower it
+    // sits, and it is quieter the further off it is
+    horn: function (x, z, low) {
+      if (!ctx) return;
+      var d = Math.sqrt((x - lisX) * (x - lisX) + (z - lisZ) * (z - lisZ));
+      var a = U.clamp(1 - d / 110, 0, 1);
+      if (a <= 0.02) return;
+      var b = spatialBus(x, z, 0.6), f = low ? 300 : 410;
+      tone(f, 0.45, 0.05 * a, 'square', 0, null, b);
+      tone(f * 1.26, 0.45, 0.04 * a, 'square', 0, null, b);
+    },
     yelp: function (x, z) { if (ctx) tone(500 + Math.random() * 300, 0.18, 0.14, 'triangle', 900, null, spatialBus(x, z, 0.25)); },
     pickup: function () { if (ctx) { tone(880, 0.09, 0.2, 'sine'); tone(1320, 0.14, 0.2, 'sine', 0, ctx.currentTime + 0.08); } },
     // the ice cream chimes: a little run of bells, thin and carrying
@@ -481,6 +550,30 @@ GAME.audio = (function () {
       }
     },
     cashTick: function () { if (ctx) tone(1560, 0.04, 0.08, 'square'); },
+    // a lift arriving: two soft bells, high then low
+    ding: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      tone(1318, 0.5, 0.11, 'sine', 0, t);
+      tone(1046, 0.7, 0.1, 'sine', 0, t + 0.22);
+    },
+    // a pager going off: two short chirps
+    pagerBeep: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      tone(2100, 0.07, 0.06, 'square', 0, t);
+      tone(2100, 0.07, 0.06, 'square', 0, t + 0.13);
+    },
+    // an old SLR going off: the mirror slapping up, the cloth shutter, the
+    // mirror coming back down
+    shutter: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      noiseBurst(0.035, 3200, 0.5, 'bandpass', t);
+      tone(180, 0.04, 0.12, 'square', 90, t);
+      noiseBurst(0.05, 2400, 0.4, 'bandpass', t + 0.075);
+      tone(140, 0.05, 0.1, 'square', 70, t + 0.075);
+    },
     splash: function () { if (ctx) noiseBurst(0.5, 700, 0.4); },
     sting: function (kind) {
       if (!ctx) return;

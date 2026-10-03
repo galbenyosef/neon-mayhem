@@ -4,16 +4,22 @@ GAME.touch = (function () {
   var baseX = 0, baseY = 0;
   var footBtns = [], carBtns = [];
   var btns = {};
-  var enabled = false;
+  var enabled = false;     // the layer has been built (once, on first use)
+  var touchMode = false;   // ...and is what the player is using right now
   var lastCarRef = null;   // the vehicle (or null) the flags were last cleared for
   var wasPlaying = false;  // were the on-foot/in-car controls applying last frame
   var lefty = false;       // stick under the right thumb, buttons under the left
 
+  // Start on touch only where a finger is the main way in. Being ABLE to
+  // take a touch is not that: a touchscreen laptop, a Surface, a Chromebook
+  // all report touch points, and treating them as phones put the buttons over
+  // the screen, cut the crowd and switched the mouse off. Those start on the
+  // mouse; touching the screen switches over, and the mouse switches back.
   function detect() {
-    if ('ontouchstart' in window) return true;
-    if (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) return true;
-    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
-    return false;
+    var mq = window.matchMedia;
+    if (mq && mq('(pointer: coarse)').matches) return true;
+    if (mq && mq('(any-pointer: fine)').matches) return false;
+    return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   }
 
   function mkBtn(label, right, bottom, size, opts) {
@@ -58,27 +64,100 @@ GAME.touch = (function () {
 
   function init() {
     if (detect()) enable();
-    // a real touch at any point enables the layer even if boot-time detection missed
-    window.addEventListener('touchstart', function () { enable(); }, { passive: true, once: true });
+    // a real touch at any point switches to touch, whatever boot decided...
+    window.addEventListener('touchstart', function () { if (!touchMode) enable(); }, { passive: true });
+    // ...and a real mouse switches back. Pointer events, not mouse ones: the
+    // mouse events a browser makes up after a tap must not count, and those
+    // never arrive as a pointer of type 'mouse'.
+    var back = function (e) { if (touchMode && e.pointerType === 'mouse') useMouse(); };
+    window.addEventListener('pointerdown', back, true);
+    window.addEventListener('pointermove', function (e) {
+      if (touchMode && e.pointerType === 'mouse' && (e.movementX || e.movementY)) useMouse();
+    }, true);
+  }
+
+  // What switching to touch changes outside the layer, so switching back can
+  // put it back as it was.
+  var saved = null;
+  var TOUCH_BUDGET = { pixelRatioCap: 1.4, bubbleRadius: 110, maxTraffic: 8, maxPeds: 12, maxParked: 9 };
+  function applySettings(vals, fogFar) {
+    var S = GAME.settings;
+    for (var k in vals) S[k] = vals[k];
+    // after boot: apply what the renderer already consumed (through the
+    // graphics setting, which scales whatever is authored here)
+    if (GAME.applyQuality) GAME.applyQuality();
+    if (GAME.scene && GAME.scene.fog && fogFar) GAME.scene.fog.far = fogFar;
+  }
+  function moveCorner(el, css) {
+    if (!el) return;
+    if (el.__mouseCss === undefined) el.__mouseCss = el.getAttribute('style') || '';
+    for (var k in css) el.style[k] = css[k];
+  }
+  function restoreCorner(el) {
+    if (el && el.__mouseCss !== undefined) el.setAttribute('style', el.__mouseCss);
   }
 
   function enable() {
-    if (enabled) return;
-    enabled = true;
+    if (touchMode) return;
+    touchMode = true;
     GAME.isTouch = true;
+    GAME.input.touch.active = true;
     var S = GAME.settings;
-    S.pixelRatioCap = 1.4;
-    S.bubbleRadius = 110;
-    S.maxTraffic = 8;
-    S.maxPeds = 12;
-    S.maxParked = 9;
-    // late enable (after boot): apply what the renderer already consumed
-    if (GAME.renderer) GAME.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, S.pixelRatioCap));
-    if (GAME.scene && GAME.scene.fog) GAME.scene.fog.far = 320;
+    if (!saved) {
+      saved = { fogFar: GAME.scene && GAME.scene.fog ? GAME.scene.fog.far : 0, vals: {} };
+      for (var k in TOUCH_BUDGET) saved.vals[k] = S[k];
+    }
+    applySettings(TOUCH_BUDGET, 320);
     if (!GAME.started) {
       var pe = document.getElementById('press-enter');
-      if (pe) pe.textContent = 'TAP TO START';
+      if (pe && !pe.classList.contains('loading')) pe.textContent = 'TAP TO START';
     }
+    // the radar moves to the top-left on touch: the bottom-left corner is the
+    // virtual stick's zone, and the two were fighting for the same thumb.
+    // PAUSE sits just right of it, then the camera, and fullscreen keeps its
+    // own control after those (shown only while not full screen, see
+    // hud.refreshFsBtn) — last in the row, so hiding it leaves no gap, and
+    // never on top of the camera, which it covered when the two shared a slot
+    moveCorner(document.getElementById('minimap-wrap'), { bottom: 'auto', left: '10px', top: '10px', width: '132px', height: '132px', pointerEvents: 'auto' });
+    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(260px + env(safe-area-inset-left, 0px))',
+      top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
+    if (enabled) {
+      if (layer) layer.style.display = '';
+      checkOrientation();
+      return;
+    }
+    build();
+  }
+
+  // Back to the mouse and keyboard: the layer goes, the HUD corners and the
+  // crowd budget come back, and the mouse fires and looks again.
+  function useMouse() {
+    if (!touchMode) return;
+    touchMode = false;
+    GAME.isTouch = false;
+    var T = GAME.input.touch;
+    T.active = false;
+    T.stickX = T.stickY = 0;
+    releaseButtons();
+    stickId = null; camId = null;
+    if (stickBase) { stickBase.style.display = 'none'; stickNub.style.display = 'none'; }
+    if (layer) { layer.style.display = 'none'; layer._disp = 'none'; }
+    var rh = document.getElementById('rotate-hint');
+    if (rh) rh.style.display = 'none';
+    GAME.isPortrait = false;
+    if (saved) applySettings(saved.vals, saved.fogFar);
+    restoreCorner(document.getElementById('minimap-wrap'));
+    restoreCorner(document.getElementById('fs-btn'));
+    if (!GAME.started) {
+      var pe = document.getElementById('press-enter');
+      if (pe && !pe.classList.contains('loading')) pe.textContent = 'PRESS ENTER';
+    }
+    // (the controls bar comes back on the HUD's own refresh)
+    if (GAME.hud && GAME.hud.refreshFsBtn) GAME.hud.refreshFsBtn();
+  }
+
+  function build() {
+    enabled = true;
 
     layer = document.getElementById('touch-layer');
     stickZone = document.getElementById('tstick-zone');
@@ -107,23 +186,25 @@ GAME.touch = (function () {
     btns.exit = mkBtn('EXIT', 122, 124, 62, { flag: 'enter' });
     btns.driveby = mkBtn('FIRE', 232, 30, 68, { flag: 'driveByAuto' });
     btns.job = mkBtn('JOB', 116, 200, 54, { press: function () { T.job = true; } });
-    btns.radio = mkBtn('♪', 200, 200, 50, { press: function () { GAME.hud.radioPopup(GAME.audio.radio.switchStation(1)); } });
+    btns.radio = mkBtn('♪', 200, 200, 50, { press: function () { GAME.switchRadio(1); } });
+    btns.horn = mkBtn('📢', 232, 112, 56, { press: function () { T.horn = true; } });
     // the TALON's arsenal: chin gun and rockets, shown only in the gunship
     // (they drive the same fire/aim flags the gunship reads in aircraft.js)
     btns.gsGun = mkBtn('GUN', 232, 30, 68, { flag: 'fire' });
     btns.gsRkt = mkBtn('RKT', 232, 112, 62, { flag: 'aim' });
-    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt);
+    // the plane's barrel roll, which Q/E and a pad's bumpers had and a
+    // touchscreen did not; they take the slots the horn and handbrake leave
+    // empty in the air
+    btns.rollL = mkBtn('⟲', 232, 112, 62, { flag: 'rollL' });
+    btns.rollR = mkBtn('⟳', 34, 132, 62, { flag: 'rollR' });
+    carBtns.push(btns.gas, btns.brake, btns.handbrake, btns.driveby, btns.exit, btns.radio, btns.job, btns.gsGun, btns.gsRkt, btns.horn,
+      btns.rollL, btns.rollR);
+    // a failed run's retry offer, on foot or at the wheel (missions.js)
+    btns.retry = mkBtn('RETRY', 24, 236, 62, { press: function () { T.retry = true; } });
 
-    // the radar moves to the top-left on touch: the bottom-left corner is the
-    // virtual stick's zone, and the two were fighting for the same thumb
+    // the radar (moved top-left by enable()) opens the full map on a tap
     var mm = document.getElementById('minimap-wrap');
     if (mm) {
-      mm.style.bottom = 'auto';
-      mm.style.left = '10px';
-      mm.style.top = '10px';
-      mm.style.width = '132px';
-      mm.style.height = '132px';
-      mm.style.pointerEvents = 'auto';
       // tap the radar to open the full map
       mm.addEventListener('touchend', function (e) { e.preventDefault(); e.stopPropagation(); GAME.hud.toggleMap(true); }, { passive: false });
     }
@@ -133,16 +214,11 @@ GAME.touch = (function () {
     pauseB.style.right = ''; pauseB.style.bottom = '';
     pauseB.style.left = '152px'; pauseB.style.top = '12px';
     pauseB.style.fontSize = '15px';
-    // fullscreen keeps its own corner control, shown on the menus (see hud.refreshFsBtn)
-    var fsb = document.getElementById('fs-btn');
-    if (fsb) {
-      fsb.style.bottom = 'auto';
-      fsb.style.right = 'auto';
-      fsb.style.left = '206px';
-      fsb.style.top = '12px';
-      fsb.style.width = '46px';
-      fsb.style.height = '46px';
-    }
+    // and the camera beside it: a shot is always one tap away (photo.js)
+    var photoB = mkBtn('📷', 0, 0, 46, { press: function () { T.photo = true; } });
+    photoB.style.right = ''; photoB.style.bottom = '';
+    photoB.style.left = '206px'; photoB.style.top = '12px';
+    photoB.style.fontSize = '18px';
 
     // virtual stick
     stickZone.addEventListener('touchstart', function (e) {
@@ -282,9 +358,9 @@ GAME.touch = (function () {
   // any interruption — applied to the buttons beside it.
   function releaseButtons() {
     var T = GAME.input.touch;
-    T.gas = T.brake = T.handbrake = T.driveByAuto = false;
+    T.gas = T.brake = T.handbrake = T.driveByAuto = T.rollL = T.rollR = false;
     T.fire = T.jump = T.aim = T.run = T.enter = false;
-    T.firePressed = T.weaponCycle = T.job = false;
+    T.firePressed = T.weaponCycle = T.job = T.retry = T.photo = false;
     for (var k in btns) {
       if (!btns[k]) continue;
       btns[k].classList.remove('held');
@@ -293,7 +369,7 @@ GAME.touch = (function () {
   }
 
   function update() {
-    if (!enabled || !GAME.started) return;
+    if (!enabled || !touchMode || !GAME.started) return;
     var T = GAME.input.touch;
     var P = GAME.player;
     // hide all controls behind menus / death screens
@@ -307,9 +383,11 @@ GAME.touch = (function () {
       if (wasPlaying) { wasPlaying = false; releaseButtons(); }
       for (var i = 0; i < footBtns.length; i++) setDisplay(footBtns[i], 'none');
       for (var j = 0; j < carBtns.length; j++) setDisplay(carBtns[j], 'none');
+      show(btns.retry, false);
       return;
     }
     wasPlaying = true;
+    show(btns.retry, !!GAME.retryAvailable);
     var inCar = P.inCar;
 
     // Stepping into or out of any vehicle lets the whole set go. The two sides
@@ -324,18 +402,21 @@ GAME.touch = (function () {
     }
 
     if (!inCar) {
-      show(btns.fire, true);
+      // in the water: RUN is the faster stroke, and nothing else applies
+      // but climbing into a boat
+      var swim = !!P.swimming;
+      show(btns.fire, !swim);
       show(btns.run, true);
-      show(btns.jump, true);
+      show(btns.jump, !swim);
       // AIM only with a gun drawn (fists auto-target on the fire button)
-      show(btns.aim, P.currentWeapon !== 'fist');
+      show(btns.aim, !swim && P.currentWeapon !== 'fist');
       // weapon switch only when more than one weapon is owned
       var owned = 0;
       for (var w in P.weapons) if (P.weapons[w] && P.weapons[w].have) owned++;
-      show(btns.wpn, owned > 1);
-      // ENTER only when a car is within reach
+      show(btns.wpn, !swim && owned > 1);
+      // ENTER only when a car is within reach (a boat, from the water)
       var near = GAME.vehicles.findNearestCar(P.pos.x, P.pos.z, 5.5, null);
-      show(btns.enter, !!near);
+      show(btns.enter, !!near && (!swim || !!near.spec.boat));
       for (var c = 0; c < carBtns.length; c++) setDisplay(carBtns[c], 'none');
     } else {
       var heli = P.car && P.car.spec.heli;
@@ -348,13 +429,21 @@ GAME.touch = (function () {
       setText(btns.brake, heli ? '▼ DN' : plane ? 'THR−' : 'BRAKE');
       show(btns.handbrake, !air);
       show(btns.radio, !air);
+      show(btns.horn, !air);
       var hasSMG = !air && P.weapons.smg && P.weapons.smg.have && P.weapons.smg.ammo > 0;
       show(btns.driveby, hasSMG);
-      show(btns.job, !air && !!GAME.jobAvailable);
+      // JOB starts a shift and, during one, ends it (J does both on a
+      // keyboard) — it used to vanish the moment the shift began, so a
+      // touchscreen had no way to clock off but stepping out
+      var onShift = !!(GAME.missions && GAME.missions.active && GAME.missions.active.def.job);
+      show(btns.job, !air && (onShift || !!GAME.jobAvailable));
+      setText(btns.job, onShift ? 'END' : 'JOB');
       // the gunship gets its own trigger pair — before this, the TALON had
       // no way to fire on touch at all (FIRE/AIM live in the foot cluster)
       show(btns.gsGun, gunship);
       show(btns.gsRkt, gunship);
+      show(btns.rollL, !!plane);
+      show(btns.rollR, !!plane);
       for (var f = 0; f < footBtns.length; f++) setDisplay(footBtns[f], 'none');
     }
 
@@ -376,7 +465,7 @@ GAME.touch = (function () {
   }
 
   return {
-    init: init, update: update,
+    init: init, update: update, useMouse: useMouse, useTouch: enable,
     get lefty() { return lefty; },
     setLefty: function (v) { lefty = !!v; applyHandedness(); return lefty; }
   };
