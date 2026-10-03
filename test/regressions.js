@@ -2624,6 +2624,10 @@ function withTimeout(p, ms) {
       // a controller: left stick walks, right stick looks, Start pauses
       var btn = function () { var a2 = []; for (var i = 0; i < 17; i++) a2.push({ pressed: false, value: 0 }); return a2; };
       var fake = { connected: true, axes: [0, -1, 0.8, 0], buttons: btn() };
+      // a clear patch to walk in: on CI a passer-by (or a parked car) stood
+      // in the way and the walk came up short at 1.6 m of the usual 3.1
+      GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - P.pos.x, p.pos.z - P.pos.z) < 12) GAME.peds.removePed(p); });
+      GAME.world.cars.slice().forEach(function (c) { if (c !== P.car && Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 14) GAME.vehicles.removeCar(c); });
       var gp0 = navigator.getGamepads;
       navigator.getGamepads = function () { return [fake]; };
       try {
@@ -4693,6 +4697,12 @@ function withTimeout(p, ms) {
     GAME.test.teleport(-60, 120);
     GAME.test.fastForward(0.5);
     GAME.godMode = true;          // two thousand rounds, and a live player
+    // A car in the line of fire takes the round (that is a fix of its own),
+    // so the range is cleared of traffic first: on CI one stood on it and
+    // every round at twelve metres hit the car, standing or running alike.
+    GAME.world.cars.slice().forEach(function (c) {
+      if (c !== P.car && c.pos.x > P.pos.x - 6 && c.pos.x < P.pos.x + 42 && Math.abs(c.pos.z - P.pos.z) < 8) GAME.vehicles.removeCar(c);
+    });
 
     // Record where each round was DRAWN and whether it hurt. Audio and the
     // tracer geometry are stubbed for the duration: this measures ballistics,
