@@ -145,8 +145,11 @@ GAME.importSave = function (text) {
 GAME.playerDamage = function (amt, cause, fromX, fromZ) {
   var P = GAME.player;
   if (!GAME.started || P.state !== 'alive' || GAME.godMode) return;
+  // in the glass lift, out of everybody's reach for the ride (interiors.js)
+  if (GAME.interiors && GAME.interiors.riding && GAME.interiors.riding()) return;
   if (fromX !== undefined) GAME.hud.hitFrom(fromX, fromZ);
-  if (P.armor > 0) {
+  // a vest stops a bullet, not the pavement
+  if (P.armor > 0 && cause !== 'fall') {
     var absorbed = Math.min(P.armor, amt * 0.7);
     P.armor -= absorbed;
     amt -= absorbed;
@@ -604,6 +607,8 @@ GAME.ejectBike = function (impact) {
 
 GAME.updatePlayer = function (dt) {
   var P = GAME.player, inp = GAME.input, T = inp.touch;
+  // riding the glass lift: the ride has the body and the camera (interiors.js)
+  if (GAME.interiors && GAME.interiors.riding && GAME.interiors.riding()) return;
   if (P.state !== 'alive') {
     P.stateT += dt;
     // R means NOW: it arms almost immediately, and the automatic continue
@@ -1060,6 +1065,17 @@ function updateOnFoot(dt) {
     rp = GAME.resolveCircle(nx, nz, 0.45, P.pos.y, footPush);
     nx = rp.x; nz = rp.z;
   }
+  // A walled roof keeps you on it: the parapet round the helipad was drawn
+  // but not solid (a solid wall up there would fight a helicopter's skids),
+  // so you walked straight through it and off the tower. It holds anybody
+  // walking at roof level; a jump that clears it still clears it.
+  var rails = GAME.city.roofRails;
+  for (var rr = 0; rails && rr < rails.length; rr++) {
+    var rl = rails[rr];
+    if (P.pos.y < rl.y - 0.3 || P.pos.y > rl.y + rl.h) continue;
+    if (P.pos.x < rl.minX || P.pos.x > rl.maxX || P.pos.z < rl.minZ || P.pos.z > rl.maxZ) continue;
+    nx = U.clamp(nx, rl.minX, rl.maxX); nz = U.clamp(nz, rl.minZ, rl.maxZ);
+  }
   P.pos.x = nx; P.pos.z = nz;
   // the closed channel's line stops walkers too — parachuting onto the
   // bridge deck past the barrier used to leave a free stroll to the island
@@ -1320,9 +1336,14 @@ function updateHelm(car) {
 }
 
 // what coming down at `impact` m/s does to you
+// A fall hurts in proportion to how hard you land, and a long one kills.
+// It was capped at 95 — so from full health no height was fatal, and with a
+// vest on (which soaked up most of it) seventy metres off the helipad tower
+// cost a few points. Three metres is nothing, ten hurts badly, and from
+// about nineteen nobody gets up.
 function landOnFeet(impact) {
   if (impact <= 12) return;
-  GAME.playerDamage(Math.min(95, (impact - 12) * 6), 'fall');
+  GAME.playerDamage((impact - 12) * 6, 'fall');
   GAME.cameraShake = Math.min(1, impact / 18);
 }
 

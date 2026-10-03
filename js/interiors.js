@@ -665,6 +665,11 @@ GAME.interiors = (function () {
   // other (city.js builds the doors). It runs whatever is going on — a lift
   // to a helicopter is a fine way to leave a chase.
   var lift = null, LIFT_ON = 1.0, LIFT_REARM = 1.7, LIFT_HINT = 8;
+  // The ride is a ride: seventy metres up the outside of the tower in a glass
+  // car, seen through your own eyes, with the street dropping away and the
+  // city opening out to the sea — doors, a smooth climb, doors. It used to be
+  // a fade to black and a teleport. Any key or a tap skips it.
+  var LIFT_RIDE = 9.5, LIFT_DOORS = 0.9, ridingNow = null, skipRide = false;
   function buildLift() {
     var L = GAME.city.towerLift;
     if (!L) return;
@@ -680,9 +685,10 @@ GAME.interiors = (function () {
       lift.push({ id: s[0], at: at, to: L[s[1]], toId: s[1], mesh: m, label: s[2], armed: true });
     });
   }
-  function stepLift() {
+  function stepLift(dt) {
     var P = GAME.player;
     if (!lift) return;
+    if (ridingNow) { stepRide(dt || 1 / 60); return; }
     for (var i = 0; i < lift.length; i++) lift[i].mesh.material.opacity = 0.5 + 0.25 * Math.sin(GAME.time * 3 + i);
     if (P.state !== 'alive' || P.inCar || P.swimming || P.parachuting || P.mantle) return;
     var hint = '';
@@ -696,19 +702,59 @@ GAME.interiors = (function () {
     if (hint) GAME.hud.setPoiHint(hint);
   }
   function ride(s) {
-    var P = GAME.player, to = s.to, up = s.toId === 'roof';
+    var P = GAME.player, L = GAME.city.towerLift, up = s.toId === 'roof';
     s.armed = false;
     GAME.audio.pagerBeep();
-    fadeThen(function () {
-      if (P.state !== 'alive' || P.inCar) return;
-      var y = up ? to.y : GAME.city.groundY(to.out.x, to.out.z);
-      P.pos.set(to.out.x, y, to.out.z);
-      P.heading = to.heading; P.velY = 0; P.airborne = false; P.moveSpeed = 0; P.mantle = null; P.roofCar = null;
-      GAME.cam.yaw = P.heading; GAME.cam.x = 0;
-      for (var i = 0; i < lift.length; i++) lift[i].armed = false;
-      GAME.hud.message(up ? 'HELIPAD — seventy metres up. Mind the edge.' : 'Street level.', 2.5);
-      GAME.track('lift-' + s.toId);
-    });
+    ridingNow = { s: s, t: 0, up: up, y0: up ? 0.02 : L.shaft.top, y1: up ? L.shaft.top : 0.02, yaw0: Math.random() < 0.5 ? -1 : 1 };
+    skipRide = false;
+    P.mesh.visible = false;
+    P.velY = 0; P.airborne = false; P.moveSpeed = 0; P.mantle = null; P.roofCar = null;
+    GAME.hud.setPoiHint('');
+    if (GAME.hud.cine) GAME.hud.cine(true, function () { skipRide = true; });
+    GAME.track('lift-ride-' + s.toId);
+  }
+  function stepRide(dt) {
+    var R = ridingNow, P = GAME.player, L = GAME.city.towerLift;
+    R.t += dt;
+    // any key that means "go", a tap, or the button that means "out"
+    var T = GAME.input.touch;
+    if (R.t > 0.5 && (skipRide || GAME.keyPressed('Space') || GAME.keyPressed('KeyF') || GAME.keyPressed('Enter') || T.jump || T.exit)) R.t = LIFT_RIDE;
+    if (P.state !== 'alive') { endRide(false); return; }
+    // doors, then a smooth climb (eased in and out), then doors
+    var m = U.clamp((R.t - LIFT_DOORS) / (LIFT_RIDE - 2 * LIFT_DOORS), 0, 1), e = m * m * (3 - 2 * m);
+    var y = R.y0 + (R.y1 - R.y0) * e;
+    L.cab.position.y = y;
+    P.pos.set(L.shaft.x, y, L.shaft.z);
+    // a passenger at the back of the car looking out through the glass: the
+    // view drifts across the city as it opens out, and tips down to the
+    // street on the way up (and up to the skyline on the way down)
+    var k = R.up ? e : 1 - e;
+    // (kept between the car's front posts: swung further, a post stood
+    // down the middle of the picture)
+    var yaw = R.yaw0 * 0.34 * Math.sin(Math.min(1, R.t / LIFT_RIDE) * Math.PI * 0.9);
+    var pitch = -0.04 + 0.24 * Math.sin(k * Math.PI * 0.85) + 0.06 * k;
+    var ex = L.shaft.x - Math.sin(yaw) * 0.55, ez = L.shaft.z - Math.cos(yaw) * 0.55, ey = y + 1.62 + Math.sin(R.t * 1.7) * 0.01;
+    var cam = GAME.cameraObj;
+    cam.position.set(ex, ey, ez);
+    cam.lookAt(ex + Math.sin(yaw) * Math.cos(pitch) * 10, ey - Math.sin(pitch) * 10, ez + Math.cos(yaw) * Math.cos(pitch) * 10);
+    if (R.t >= LIFT_RIDE) endRide(true);
+  }
+  function endRide(arrived) {
+    var R = ridingNow, P = GAME.player, L = GAME.city.towerLift;
+    ridingNow = null;
+    if (GAME.hud.cine) GAME.hud.cine(false);
+    P.mesh.visible = true;
+    var to = arrived ? R.s.to : R.s.at, up = arrived ? R.up : !R.up;
+    L.cab.position.y = up ? L.shaft.top : 0.02;
+    if (P.state !== 'alive') return;
+    var y = up ? to.y : GAME.city.groundY(to.out.x, to.out.z);
+    P.pos.set(to.out.x, y, to.out.z);
+    P.heading = to.heading; P.velY = 0; P.airborne = false; P.moveSpeed = 0;
+    GAME.cam.yaw = P.heading; GAME.cam.pitch = 0.25; GAME.cam.x = GAME.cam.y = GAME.cam.z = 0;
+    for (var i = 0; i < lift.length; i++) lift[i].armed = false;
+    if (GAME.audio.ding) GAME.audio.ding();
+    GAME.hud.message(up ? 'HELIPAD — seventy metres up. Mind the edge.' : 'Street level.', 2.5);
+    GAME.track('lift-' + R.s.toId);
   }
 
   // ---------- going in and out ----------
@@ -773,6 +819,12 @@ GAME.interiors = (function () {
   // out without ceremony: a respawn, a teleport, a reload
   function reset() {
     pending = null;
+    if (ridingNow) {
+      // (out of the lift without ceremony too: a teleport mid-ride)
+      ridingNow = null;
+      if (GAME.hud.cine) GAME.hud.cine(false);
+      GAME.player.mesh.visible = true;
+    }
     if (!cur) return;
     var c = cur;
     cur = null;
@@ -800,7 +852,7 @@ GAME.interiors = (function () {
       }
       return;
     }
-    if (!cur) { stepLift(); return; }
+    if (!cur) { stepLift(dt); return; }
     if (P.state !== 'alive') return;
     var room = cur.room, hint = '', hd = 1e9;
     for (var i = 0; i < room.rings.length; i++) {
@@ -860,7 +912,8 @@ GAME.interiors = (function () {
     build: build, update: update, enter: enter, enterable: enterable, reset: reset, ceiling: ceiling, camFloor: camFloor,
     get current() { return cur ? cur.room : null; },
     get door() { return cur ? cur.door : null; },
-    get busy() { return !!pending; },
+    get busy() { return !!pending || !!ridingNow; },
+    riding: function () { return !!ridingNow; },
     leave: exitRoom,
     // headless: the two lift stops
     lift: function () { return lift; },

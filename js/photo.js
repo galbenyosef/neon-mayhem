@@ -20,7 +20,7 @@ GAME.photo = (function () {
 
   // ---------- taking one ----------
   function snap() {
-    if (pending || !GAME.started || GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen) return false;
+    if (pending || !GAME.started || GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen || GAME.lolaOpen) return false;
     pending = true;
     if (GAME.audio.shutter) GAME.audio.shutter();
     if (GAME.haptics && GAME.haptics.uiTap) GAME.haptics.uiTap();

@@ -1113,6 +1113,73 @@ GAME.vehicles = (function () {
     if (!byPlayer && !d.dead) GAME.peds.startFlee(d, other.pos.x, other.pos.z, 6);
   }
 
+  // Shot at. A driver whose car took a round sat in it and drove on as if
+  // nothing had happened, and only got out once it was burning. There is a
+  // person in there, and people differ: one floors it and gets away from
+  // you, one bails out and runs, one gets out and comes at you, one gets out
+  // with a gun, and one leans out of the window and shoots back as they go.
+  // Rolled once per car, on the first hit. Keep shooting at somebody who
+  // chose to drive it out, and once the car is half gone they give up on it
+  // and run.
+  var SHOT_REACT = [['flee', 0.32], ['bail', 0.26], ['fight', 0.16], ['shoot', 0.14], ['fireback', 0.12]];
+  var FIREBACK_T = 7, FIREBACK_R = 34;
+  function shotAt(car) {
+    if (!car || car.dead || car.occupied !== 'ai' || car.isPolice || car.mission || car.perp) return null;
+    var ai = car.ai;
+    if (!ai || ai.mode !== 'traffic' || car.spec.heli || car.spec.plane || car.spec.boat) return null;
+    if (ai.shotReact) {
+      if ((ai.shotReact === 'flee' || ai.shotReact === 'fireback') && car.hp < car.spec.hp * 0.5 && !car.spec.bike) {
+        ai.fireBackT = 0;
+        return shotReaction(car, 'bail');
+      }
+      return ai.shotReact;
+    }
+    var r = Math.random(), kind = 'flee';
+    for (var i = 0; i < SHOT_REACT.length; i++) { r -= SHOT_REACT[i][1]; if (r <= 0) { kind = SHOT_REACT[i][0]; break; } }
+    // a rider sits in the open with nothing to lean out of: off and away,
+    // or off and at you
+    if (car.spec.bike) kind = kind === 'fireback' ? 'flee' : kind;
+    // with the city switched off, nobody on the street is carrying
+    if (!GAME.chaos.on && (kind === 'shoot' || kind === 'fireback')) kind = kind === 'shoot' ? 'bail' : 'flee';
+    return shotReaction(car, kind);
+  }
+  function shotReaction(car, kind) {
+    var ai = car.ai, P = GAME.player;
+    ai.shotReact = kind;
+    ai.reacted = true;          // (a ram after this is the same incident)
+    if (kind === 'flee' || kind === 'fireback') {
+      ai.panicT = 14;
+      honk(car);
+      if (kind === 'fireback') { ai.fireBackT = FIREBACK_T; ai.fireShotT = 0.7; }
+      return kind;
+    }
+    var d = ejectDriver(car);
+    if (!d) { ai.panicT = 14; ai.shotReact = 'flee'; return 'flee'; }
+    var f = GAME.focus();
+    if (kind === 'bail') { GAME.peds.startFlee(d, f.x, f.z, 10); return kind; }
+    d.temper = Math.max(d.temper || 0, 0.9);
+    d.carrying = kind === 'shoot';
+    if (!GAME.peds.startFight(d, { kind: 'player' }, 16)) { GAME.peds.startFlee(d, f.x, f.z, 10); ai.shotReact = 'bail'; return 'bail'; }
+    return kind;
+  }
+  // Out of the window as they go: a few rounds back at you while you are
+  // close enough to hit and in plain sight, then just driving.
+  function stepFireBack(car, dt) {
+    var ai = car.ai;
+    ai.fireBackT -= dt;
+    var P = GAME.player, f = GAME.focus();
+    if (P.state !== 'alive' || P.interior) return;
+    var d2 = U.dist2(car.pos.x, car.pos.z, f.x, f.z);
+    if (d2 > FIREBACK_R * FIREBACK_R || d2 < 9) return;
+    if (!GAME.city.hash.segmentClear(car.pos.x, car.pos.z, f.x, f.z)) return;
+    ai.fireShotT -= dt;
+    if (ai.fireShotT > 0) return;
+    ai.fireShotT = 0.55 + Math.random() * 0.7;
+    GAME.combat.npcShoot(car.pos.x, car.pos.y + 1.3, car.pos.z, 0.12, 6, car);
+    GAME.fx.spawn(car.pos.x, car.pos.y + 1.3, car.pos.z, { count: 2, color: 0xffe0a0, spread: 0.6, life: 0.12 });
+    GAME.peds.panic(car.pos.x, car.pos.z, 22);
+  }
+
   // Nobody sits in a fire. Out and away from it before it goes up — an
   // officer back to the chase on foot if there is one, otherwise off duty
   // the way a stand-down releases them, and running like everybody else.
@@ -1698,6 +1765,8 @@ GAME.vehicles = (function () {
     }
 
     var desired = ai.desired || 11;
+    // shooting back out of the window: slow enough to keep you in range
+    if (ai.fireBackT > 0) { stepFireBack(car, dt); desired = Math.min(desired, 9); }
     // a cruiser coming up behind with its siren going: pull over and let it by
     var sc = GAME.playerSiren();
     if (sc && sc !== car) {
@@ -2103,6 +2172,7 @@ GAME.vehicles = (function () {
     spawnCar: spawnCar,
     removeCar: removeCar,
     ejectDriver: ejectDriver,
+    shotAt: shotAt,
     seatOccupant: seatOccupant,
     exposedRider: exposedRider,
     seatPos: seatPos,

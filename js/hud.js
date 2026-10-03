@@ -84,6 +84,8 @@ GAME.hud = (function () {
     }
     pauseBtn('pause-resume', function () { if (GAME.paused) GAME.togglePause(); });
     pauseBtn('pause-map', function () { if (GAME.paused) GAME.togglePause(); api.toggleMap(true); });
+    // Lola, called up (lola.js): the way a touchscreen reaches her
+    pauseBtn('pause-lola', function () { if (GAME.lola) GAME.lola.open(); });
     // walking away from a run, for the pad and the touchscreen as much as
     // anybody (X on a keyboard): shown only with one going, and asks once
     var abandonSure = false;
@@ -710,7 +712,7 @@ GAME.hud = (function () {
   function paintKeyHelp() {
     var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
       '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
-      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
+      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo &nbsp;·&nbsp; <b>' + K('KeyL') + '</b> Lola &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
     var card = document.getElementById('controls-card');
     if (card) card.innerHTML = h;
     if (el['pause-controls']) el['pause-controls'].innerHTML = h;
@@ -1343,6 +1345,14 @@ GAME.hud = (function () {
       el['weapon-line'].textContent = name + (ammo === '' ? '' : '  ·  ' + ammo);
     },
     message: function (text, dur) { pushMessage(String(text), dur || 2.5); },
+    // Letterbox for a moment that plays itself (the glass lift): black bars
+    // in, the HUD and the thumbs out, and a tap anywhere to skip it.
+    cine: function (on, onSkip) {
+      document.body.classList.toggle('cine', !!on);
+      var c = $('cine'), sk = $('cine-skip');
+      if (sk) sk.textContent = GAME.isTouch ? 'TAP TO SKIP' : 'SPACE OR CLICK TO SKIP';
+      if (c) c.onpointerdown = on && onSkip ? function (e) { e.preventDefault(); onSkip(); } : null;
+    },
     pager: pager,
     enterHint: function (text) {
       var e = el['enter-hint'];

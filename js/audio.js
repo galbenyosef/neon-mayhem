@@ -550,6 +550,13 @@ GAME.audio = (function () {
       }
     },
     cashTick: function () { if (ctx) tone(1560, 0.04, 0.08, 'square'); },
+    // a lift arriving: two soft bells, high then low
+    ding: function () {
+      if (!ctx) return;
+      var t = ctx.currentTime;
+      tone(1318, 0.5, 0.11, 'sine', 0, t);
+      tone(1046, 0.7, 0.1, 'sine', 0, t + 0.22);
+    },
     // a pager going off: two short chirps
     pagerBeep: function () {
       if (!ctx) return;

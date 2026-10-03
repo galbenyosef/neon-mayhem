@@ -677,7 +677,7 @@ GAME.releasePointer = function () {
 // canvas acquires the lock as always — swallowed as aim, never fired.
 GAME.regainPointer = function () {
   if (GAME.isTouch || !GAME.started) return;
-  if (GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen) return;
+  if (GAME.paused || GAME.mapOpen || GAME.shopOpen || GAME.shareOpen || GAME.lolaOpen) return;
   var cv = document.getElementById('game-canvas');
   if (cv && cv.requestPointerLock) {
     try {

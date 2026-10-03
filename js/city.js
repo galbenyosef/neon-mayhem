@@ -1258,13 +1258,21 @@ GAME.city = (function () {
     batches.downtown.addBox(HT.x, HT.h / 2, HT.z, 30, HT.h, 30, 0, 0xb8c4e8, 28);
     addSolid(HT.x, HT.z, 30, 30, HT.h);
     var roofY = HT.h + 0.06, padX = HT.x, padZ = HT.z;
-    // low parapet, scenery only — a wall solid up here would fight the skids.
+    // The glass lift runs up the outside of the north face, west of the
+    // lobby doors (below), and the parapet stands open where it arrives.
+    var SHX = HT.x - 8, LZ = HT.z + 15, SHZ = LZ + 1.7, SHW = 3.0;
+    // Low parapet. Not a solid box — a wall solid up here would fight the
+    // skids — but a rail that holds anybody walking (roofRails, player.js).
     // Inset from the tower edge (outer faces shared the wall planes) and
     // mitred at the corners (the bars used to overlap there, both faces
     // fighting for the same pixels on approach from the air)
-    [[-14.3, 0, 1.2, 29.8], [14.3, 0, 1.2, 29.8], [0, -14.3, 27.4, 1.2], [0, 14.3, 27.4, 1.2]].forEach(function (pp) {
+    var gap0 = SHX - HT.x - 1.4, gap1 = SHX - HT.x + 1.4;
+    [[-14.3, 0, 1.2, 29.8], [14.3, 0, 1.2, 29.8], [0, -14.3, 27.4, 1.2],
+      [(-13.7 + gap0) / 2, 14.3, gap0 + 13.7, 1.2], [(gap1 + 13.7) / 2, 14.3, 13.7 - gap1, 1.2]].forEach(function (pp) {
       batches.generic.addBox(HT.x + pp[0], HT.h + 0.5, HT.z + pp[1], pp[2], 1.0, pp[3], 0, 0x8a94b8, 0);
     });
+    city.roofRails = city.roofRails || [];
+    city.roofRails.push({ minX: HT.x - 13.25, maxX: HT.x + 13.25, minZ: HT.z - 13.25, maxZ: HT.z + 13.25, y: HT.h + 0.06, h: 1.0 });
     batches.ground.addGroundQuad(padX, roofY + 0.06, padZ, 16, 16, 0, 0x1a1a22);
     batches.marks.addGroundQuad(padX - 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
     batches.marks.addGroundQuad(padX + 2.2, roofY + 0.12, padZ, 1, 7, 0, 0xf0d020);
@@ -1294,10 +1302,10 @@ GAME.city = (function () {
     // and a lift, for anybody who arrives on foot. The way up used to be out
     // of the sky and nothing else, and a helicopter sitting on a roof with no
     // door to it read as a find you were not allowed. A lit lobby on the north
-    // face, a lift house on the roof by the pad, and a ring at each
-    // (interiors.js rides you between them). Plain-lit, not the window-
-    // textured batches: a hut with office windows read as a tiny tower.
-    var LZ = HT.z + 15;          // the north face
+    // face, and beside it a glass lift up the outside of the tower, with a
+    // ring at its door in the street and another on the roof where it
+    // arrives (interiors.js rides you up, looking out through the glass).
+    // Plain-lit, not the window-textured batches.
     batches.marks.addBox(HT.x, 1.6, LZ + 0.06, 5.4, 3.2, 0.14, 0, 0xffe2a8, 0);        // the lit doors
     batches.wood.addBox(HT.x, 1.6, LZ + 0.1, 0.18, 3.2, 0.12, 0, 0x2a2e3a, 0);      // the split between them
     batches.wood.addBox(HT.x, 3.5, LZ + 1.6, 7.4, 0.3, 3.2, 0, 0x2a2e3a, 0);        // canopy
@@ -1305,14 +1313,46 @@ GAME.city = (function () {
     [[-3.5], [3.5]].forEach(function (cp) {
       batches.wood.addBox(HT.x + cp[0], 1.7, LZ + 3.0, 0.24, 3.4, 0.24, 0, 0x8a94b8, 0);
     });
-    var LH = { x: HT.x + 10.6, z: HT.z + 11, w: 3.6, d: 4, h: 3.2 };
-    batches.wood.addBox(LH.x, HT.h + LH.h / 2, LH.z, LH.w, LH.h, LH.d, 0, 0x8a94b8, 0);
-    batches.marks.addBox(LH.x - LH.w / 2 - 0.05, HT.h + 1.2, LH.z, 0.12, 2.3, 1.6, 0, 0xffe2a8, 0);   // its door, toward the pad
-    batches.marks.addBox(LH.x, HT.h + LH.h + 0.04, LH.z, LH.w + 0.1, 0.08, LH.d + 0.1, 0, 0x8fb4ff, 0);
-    addSolid(LH.x, LH.z, LH.w, LH.d, HT.h + LH.h);
+    // ---- the glass lift: a steel frame up the face, glass between, a lit
+    // head at the top, and a glass car that rides it
+    var shTop = roofY + 4.2;
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (c) {
+      batches.wood.addBox(SHX + c[0] * SHW / 2, shTop / 2, SHZ + c[1] * SHW / 2, 0.2, shTop, 0.2, 0, 0x8a94b8, 0);
+    });
+    for (var fy = 6; fy < shTop; fy += 6) {
+      batches.wood.addBox(SHX, fy, SHZ + SHW / 2, SHW, 0.12, 0.12, 0, 0x8a94b8, 0);
+      batches.wood.addBox(SHX - SHW / 2, fy, SHZ, 0.12, 0.12, SHW, 0, 0x8a94b8, 0);
+      batches.wood.addBox(SHX + SHW / 2, fy, SHZ, 0.12, 0.12, SHW, 0, 0x8a94b8, 0);
+    }
+    batches.wood.addBox(SHX, shTop + 0.3, SHZ - 0.4, SHW + 0.6, 0.6, SHW + 1.4, 0, 0x2a2e3a, 0);      // the head
+    batches.marks.addBox(SHX, shTop - 0.02, SHZ, SHW, 0.06, SHW, 0, 0x8fb4ff, 0);                     // lit underneath
+    batches.wood.addBox(SHX, roofY - 0.05, (LZ - 0.6 + SHZ - SHW / 2) / 2, SHW - 0.4, 0.12, SHZ - SHW / 2 - LZ + 0.6, 0, 0x5a6278, 0);  // the sill to the roof
+    var glass = new THREE.Mesh(new THREE.BoxGeometry(SHW - 0.1, shTop, SHW - 0.1),
+      new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.16, depthWrite: false }));
+    glass.position.set(SHX, shTop / 2, SHZ);
+    city.scene.add(glass);
+    addSolid(SHX, SHZ, SHW, SHW, shTop);
+    // the car itself: glass on three sides and the door, a floor, a lit roof
+    var cab = new THREE.Group(), CW = SHW - 0.35;
+    function cabPart(w, h, d, x, y, z, mat) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); cab.add(m); }
+    var steel = new THREE.MeshBasicMaterial({ color: 0x9aa4c4 });
+    var pane = new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+    cabPart(CW, 0.12, CW, 0, 0.06, 0, new THREE.MeshBasicMaterial({ color: 0x6a7288 }));
+    cabPart(CW, 0.1, CW, 0, 2.75, 0, steel);
+    cabPart(CW - 0.6, 0.04, CW - 0.6, 0, 2.69, 0, new THREE.MeshBasicMaterial({ color: 0xfff2dc }));
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (c) { cabPart(0.09, 2.7, 0.09, c[0] * CW / 2, 1.4, c[1] * CW / 2, steel); });
+    cabPart(CW, 2.6, 0.02, 0, 1.4, CW / 2, pane);
+    cabPart(0.02, 2.6, CW, -CW / 2, 1.4, 0, pane);
+    cabPart(0.02, 2.6, CW, CW / 2, 1.4, 0, pane);
+    cabPart(CW, 2.6, 0.02, 0, 1.4, -CW / 2, pane);
+    cabPart(CW - 0.2, 0.06, 0.06, 0, 1.0, CW / 2 - 0.12, steel);        // the rail you hold on the way up
+    cab.position.set(SHX, 0.02, SHZ);
+    city.scene.add(cab);
     city.towerLift = {
-      street: { x: HT.x, z: LZ + 2.8, y: 0, heading: 0, out: { x: HT.x, z: LZ + 4.4 } },
-      roof: { x: LH.x - LH.w / 2 - 1.3, z: LH.z, y: roofY, heading: -Math.PI / 2, out: { x: LH.x - LH.w / 2 - 2.9, z: LH.z } }
+      street: { x: SHX, z: SHZ + SHW / 2 + 1.2, y: 0, heading: 0, out: { x: SHX, z: SHZ + SHW / 2 + 2.6 } },
+      roof: { x: SHX, z: HT.z + 12.4, y: roofY, heading: Math.PI, out: { x: SHX, z: HT.z + 11.0 } },
+      shaft: { x: SHX, z: SHZ, top: roofY },
+      cab: cab
     };
     // the find has to be findable: the tower shows from half the map, so the
     // helicopter on it exists at long range instead of popping in at 210 m —

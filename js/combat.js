@@ -270,6 +270,7 @@ GAME.combat = (function () {
         } else if (res.hit.kind === 'car') {
           GAME.haptics.hit();
           GAME.vehicles.damageCar(res.hit.obj, wd.damage * 0.8, 'gun');
+          GAME.vehicles.shotAt(res.hit.obj);   // and whoever is driving it reacts (vehicles.js)
           GAME.fx.spawn(hx, 0.8, hz, { count: 3, color: 0xffe0a0, spread: 2, life: 0.3 });
           if (res.hit.obj.isPolice && !res.hit.obj.mission) GAME.police.reportCrime('hit_cop_car', P.pos);
           else if (res.hit.obj.ai && res.hit.obj.ai.mode === 'traffic') GAME.police.reportCrime('shoot_car', P.pos);

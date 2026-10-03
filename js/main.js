@@ -81,6 +81,8 @@
       if (!GAME.started) return;
       // an open dialog owns the keys — Esc must cancel it, not unpause
       if (GAME.hud.dialogOpen()) { GAME.hud.dialogKey(code); return; }
+      // and so does Lola, while you are talking to her
+      if (GAME.lolaOpen) { GAME.lola.key(code); return; }
       // and so does the photo album, over the pause screen
       if (GAME.photo.key(code)) return;
       // the result card closes on any of the keys a hand is likely to be on —
@@ -97,6 +99,7 @@
         else GAME.togglePause();
       }
       if (code === 'KeyP') GAME.hud.toggleMap();
+      if (code === 'KeyL' && !GAME.paused && !GAME.mapOpen && !GAME.shopOpen && !GAME.shareOpen) GAME.lola.open();
       if (code === 'KeyC' && GAME.mapOpen) GAME.hud.mapClear();
       if ((code === 'Equal' || code === 'NumpadAdd') && GAME.mapOpen) GAME.hud.mapZoom(1.5);
       if ((code === 'Minus' || code === 'NumpadSubtract') && GAME.mapOpen) GAME.hud.mapZoom(1 / 1.5);
@@ -395,7 +398,7 @@
     // overlay opening) is not the user's Esc — grants and exits resolve
     // asynchronously, so our own release can arrive a tick displaced
     if (GAME.releasePointerT && performance.now() - GAME.releasePointerT < 1500) return;
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen &&
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && !GAME.lolaOpen &&
       GAME.player.state === 'alive') GAME.togglePause();
   });
 
@@ -414,7 +417,7 @@
   // by hand — and only to a living driver, or closing the map over your own
   // corpse would undo the silence death just asked for.
   GAME.syncOverlayMusic = function () {
-    var over = !GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen;
+    var over = !GAME.started || GAME.paused || GAME.mapOpen || !!GAME.shareOpen || !!GAME.shopOpen || !!GAME.lolaOpen;
     if (over) GAME.hud.lockHint(false);   // an overlay is a mouse screen: no "click to look" under it
     if (!GAME.audio.ctx) return;
     if (over) GAME.audio.rain(0);   // the tick that keeps it level stops behind an overlay
@@ -461,7 +464,7 @@
   // audio. Pausing no longer suspends the context (the pads play on), so a
   // hidden tab always suspends explicitly here.
   function onHide() {
-    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && GAME.player.state === 'alive') GAME.togglePause();
+    if (GAME.started && !GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && !GAME.lolaOpen && GAME.player.state === 'alive') GAME.togglePause();
     GAME.audio.suspend();
   }
   function onShow() {
@@ -650,7 +653,7 @@
         g0++;
       }
       if (g0 === MAX_TICKS) accumulator = 0;
-    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen) {
+    } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && !GAME.lolaOpen) {
       // only while the sim is actually running: a paused or overlaid frame
       // draws a still city and says nothing about what the crowd costs
       GAME.perf.sample(rawMs);

@@ -77,6 +77,9 @@
 //   5k. HOMES LIKE THEIR OUTSIDES — buying a place takes you in; the flat is
 //       one room, the condo's bedroom is through a door, the villa has stairs
 //       up to its bedroom; the ice cream truck's horn is its chimes.
+//   5l. SHOT AT, AND LOLA ON CALL — a driver you shoot reacts (flee, bail,
+//       fight, shoot back); the tower lift is a glass ride up the outside;
+//       the helipad's parapet holds and a long fall kills; L calls Lola.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -1009,7 +1012,8 @@ function withTimeout(p, ms) {
     GAME.test.fastForward(0.3);
     P.health = 100;
     var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
-    P.pos.y = surf + 0.04; P.velY = -40; P.airborne = false;
+    // (22 m/s: a fall that hurts badly but not one of the ones that kill now)
+    P.pos.y = surf + 0.04; P.velY = -22; P.airborne = false;
     GAME.test.fastForward(1 / 60);
     r.fallHurt = 100 - P.health;
     P.health = 100;
@@ -1032,7 +1036,7 @@ function withTimeout(p, ms) {
   check('audit: nor inside your own head',
     foot.camInHead === 0, foot.camInHead + ' of 16 angles within 1 m of the head');
   check('audit: a fall that ends inside the on-your-feet margin still lands',
-    foot.fallHurt > 50, 'took ' + (foot.fallHurt || 0).toFixed(1) + ' hp coming down at 40 m/s');
+    foot.fallHurt > 50, 'took ' + (foot.fallHurt || 0).toFixed(1) + ' hp coming down at 22 m/s');
   check('audit: and the group leaves the player alive (anchor sanity)', foot.alive === true);
 
   // A mission marker is a place you pull up at, not a tripwire, and the one
@@ -2004,18 +2008,26 @@ function withTimeout(p, ms) {
     var home = GAME.shops.startSpawn();
     r.home = home ? { name: home.name, near: Math.hypot(home.x - sh.sh.at.x, home.z - sh.sh.at.z) < 1 } : null;
     GAME.prefs.safehouses = owned0; GAME.prefs.lastHome = last0;
-    // SHAKE: OFF holds the picture still through a knock
-    function jitter() {
+    // SHAKE: OFF holds the picture still through a knock. Measured against
+    // the same twenty frames with no knock at all: the camera is still
+    // settling from the car this group just stepped out of, and that
+    // movement (anywhere from 0.002 to 0.022 m a frame, run to run) is not
+    // shake and was being scored as if it were.
+    function jitter(k) {
       var xs = [];
-      for (var f = 0; f < 20; f++) { GAME.cameraShake = 0.9; GAME.test.fastForward(1 / 60); xs.push(GAME.cameraObj.position.y); }
+      for (var f = 0; f < 20; f++) { GAME.cameraShake = k; GAME.test.fastForward(1 / 60); xs.push(GAME.cameraObj.position.y); }
       var m = 0; for (var q = 1; q < xs.length; q++) m = Math.max(m, Math.abs(xs[q] - xs[q - 1]));
       return m;
     }
     GAME.godMode = true;
-    GAME.test.fastForward(0.5);
-    r.shakeOn = +jitter().toFixed(3);
+    GAME.test.fastForward(1.5);
+    r.shakeBase = +jitter(0).toFixed(3);
+    r.shakeOn = +jitter(0.9).toFixed(3);
     GAME.prefs.noShake = true;
-    r.shakeOff = +jitter().toFixed(3);
+    // (a few frames for the camera to ease back from the shaken ones, with
+    // the knock still going, before the still frames are the ones measured)
+    for (var sf = 0; sf < 15; sf++) { GAME.cameraShake = 0.9; GAME.test.fastForward(1 / 60); }
+    r.shakeOff = +jitter(0.9).toFixed(3);
     GAME.prefs.noShake = false;
     GAME.cameraShake = 0;
     GAME.godMode = false;
@@ -2079,7 +2091,8 @@ function withTimeout(p, ms) {
   check('ux: a save with a bed starts at that bed, one without on the strip',
     ux.noHome === null && ux.home && ux.home.near, JSON.stringify([ux.noHome, ux.home]));
   check('ux: SHAKE: OFF holds the camera still through a knock',
-    ux.shakeOn > 0.02 && ux.shakeOff < ux.shakeOn / 3, 'frame-to-frame jitter on=' + ux.shakeOn + ' off=' + ux.shakeOff);
+    ux.shakeOn - ux.shakeBase > 0.02 && ux.shakeOff - ux.shakeBase < (ux.shakeOn - ux.shakeBase) / 3,
+    'frame-to-frame jitter with no knock=' + ux.shakeBase + ' on=' + ux.shakeOn + ' off=' + ux.shakeOff);
   check('ux: GFX LOW lowers resolution, draw distance and crowd, and HIGH puts them back',
     ux.low.pr < 0.7 && ux.low.fog < 0.8 && ux.low.crowd < 0.7 && ux.highBack, JSON.stringify(ux.low) + ' back=' + ux.highBack);
   check('ux: a machine under 12 fps still thins the crowd', ux.slowScale < 1, 'scale=' + ux.slowScale);
@@ -3304,13 +3317,13 @@ function withTimeout(p, ms) {
       walkTo(st.x, st.z + 6, 3);
       r.liftHint = /ELEVATOR/.test(document.getElementById('poi-hint').textContent) && document.getElementById('poi-hint').style.opacity === '1';
       walkTo(st.x, st.z);
-      GAME.test.fastForward(2);
+      GAME.test.fastForward(11);     // the ride up the glass (5l)
       r.up = { y: +P.pos.y.toFixed(1), d: +Math.hypot(P.pos.x - rf.x, P.pos.z - rf.z).toFixed(1), alive: P.state === 'alive' };
       var pad = GAME.city.roofHelipad;
       r.padNear = Math.hypot(P.pos.x - pad.x, P.pos.z - pad.z) < 16;
       walkTo(rf.x - 4, rf.z, 4);
       walkTo(rf.x, rf.z, 4);
-      GAME.test.fastForward(1);
+      GAME.test.fastForward(11);
       r.down = { y: +P.pos.y.toFixed(1), d: +Math.hypot(P.pos.x - st.x, P.pos.z - st.z).toFixed(1), alive: P.state === 'alive' };
       // a car parked on the ring goes nowhere
       var lc = V.spawnCar('sedan', st.x + 4, st.z + 6, 0, {});
@@ -4327,6 +4340,242 @@ function withTimeout(p, ms) {
     chimes.onRound && chimes.silent && chimes.silent.played === 0 && chimes.silent.walkUps === 0, JSON.stringify(chimes));
   check('ice cream: sound them and people come to the hatch', chimes.heard && chimes.heard.played === 1 && chimes.heard.walkUps > 0, JSON.stringify(chimes));
   check('ice cream: the round says which button plays them', chimes.hint, JSON.stringify(chimes));
+
+  // ---------- 5l: shot-at drivers, the glass lift, the roof, and Lola on call ----------
+  // A driver whose car took a round only ever got out once it was burning;
+  // now they floor it, bail and run, come at you, get out shooting, or shoot
+  // back from the window. The tower's lift is a glass car up the outside of
+  // the building, ridden through your own eyes; the helipad's parapet holds
+  // you, and a fall from up there kills. And Lola can be called up — L, or
+  // ASK LOLA on the pause screen — to say what to do next and mark it.
+  var shot = await page.evaluate(function () {
+    var P = GAME.player, V = GAME.vehicles, r = { kinds: {} };
+    // (the city as it ships: with it switched off nobody is carrying, and an
+    // earlier group leaves it that way)
+    var city0 = GAME.chaos.level;
+    GAME.chaos.set(3);
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    GAME.test.teleport(356, 40); GAME.test.fastForward(0.5);
+    function traffic(dz) {
+      var c = V.spawnCar('sedan', P.pos.x, P.pos.z + dz, 0, { occupied: 'ai', ai: { mode: 'traffic', desired: 0, laneX: 0, laneZ: 0 } });
+      if (c) c.speed = 0;
+      return c;
+    }
+    // a real round from a real gun reaches the driver
+    GAME.combat.giveWeapon('pistol', 60); P.currentWeapon = 'pistol'; GAME.combat.refreshWeaponHud();
+    var c0 = traffic(9), seen = null, sa0 = V.shotAt;
+    V.shotAt = function (car) { if (car === c0) seen = true; return sa0.apply(V, arguments); };
+    try {
+      P.heading = 0; GAME.cam.yaw = 0; GAME.cam.pitch = 0.05;
+      GAME.input.lockGraceT = 0;
+      for (var shotN = 0; shotN < 6 && !seen; shotN++) {
+        GAME.input.lmbPressed = true; GAME.test.fastForward(0.4);
+      }
+    } finally { V.shotAt = sa0; }
+    r.realRound = !!seen && c0.hp < c0.spec.hp;
+    if (c0 && !c0.dead) V.removeCar(c0);
+    // each way a driver can take it, forced in turn
+    var rolls = { flee: 0.1, bail: 0.4, fight: 0.65, shoot: 0.8, fireback: 0.95 }, rnd = Math.random;
+    var shots = 0, sh0 = GAME.combat.npcShoot;
+    GAME.combat.npcShoot = function () { shots++; return false; };
+    try {
+      Object.keys(rolls).forEach(function (k) {
+        var c = traffic(14);
+        if (!c) return;
+        var drivers0 = GAME.world.peds.length;
+        Math.random = function () { return rolls[k]; };
+        var got;
+        try { got = V.shotAt(c); } finally { Math.random = rnd; }
+        var out = GAME.world.peds.filter(function (p) { return p.leftCar === c.serial; })[0];
+        var o = { got: got, inCar: c.occupied === 'ai', out: !!out, state: out && out.state, armed: out && out.carrying };
+        if (k === 'flee') { o.panic = c.ai && c.ai.panicT > 0; }
+        shots = 0;
+        if (k === 'shoot' || k === 'fireback') {
+          for (var t = 0; t < 5 * 60; t++) { P.pos.set(c.pos.x, P.pos.y, c.pos.z - 14); GAME.test.fastForward(1 / 60); }
+          o.shots = shots;
+        }
+        r.kinds[k] = o;
+        if (out && !out.dead) { out.state = 'walk'; out.foe = null; out.carrying = false; }
+        if (!c.dead) V.removeCar(c);
+      });
+      // and a second volley at somebody who chose to drive it out: they give up on it
+      var c2 = traffic(14);
+      Math.random = function () { return 0.1; };
+      try { V.shotAt(c2); } finally { Math.random = rnd; }
+      c2.hp = c2.spec.hp * 0.4;
+      r.secondVolley = V.shotAt(c2);
+      if (!c2.dead) V.removeCar(c2);
+      // police cars and mission cars are none of this
+      var cop = V.spawnCar('police', P.pos.x + 6, P.pos.z + 14, 0, { occupied: 'ai', ai: { mode: 'traffic', desired: 0, laneX: 0, laneZ: 0 } });
+      r.copIgnored = cop ? V.shotAt(cop) === null : true;
+      if (cop) V.removeCar(cop);
+    } finally { GAME.combat.npcShoot = sh0; Math.random = rnd; GAME.chaos.set(city0); }
+    GAME.world.peds.forEach(function (p) { if (p.state === 'attack') { p.state = 'walk'; p.foe = null; } });
+    GAME.police.clearWanted();
+    return r;
+  });
+  check('drivers: a round from your gun reaches whoever is driving', shot.realRound, JSON.stringify(shot));
+  check('drivers: some floor it and get away from you', shot.kinds.flee && shot.kinds.flee.got === 'flee' && shot.kinds.flee.inCar && shot.kinds.flee.panic, JSON.stringify(shot.kinds.flee));
+  check('drivers: some bail out and run', shot.kinds.bail && shot.kinds.bail.out && shot.kinds.bail.state === 'flee', JSON.stringify(shot.kinds.bail));
+  check('drivers: some get out and come at you', shot.kinds.fight && shot.kinds.fight.out && shot.kinds.fight.state === 'attack' && !shot.kinds.fight.armed, JSON.stringify(shot.kinds.fight));
+  check('drivers: some get out with a gun and use it', shot.kinds.shoot && shot.kinds.shoot.out && shot.kinds.shoot.armed && shot.kinds.shoot.shots > 0, JSON.stringify(shot.kinds.shoot));
+  check('drivers: some shoot back from the window as they go', shot.kinds.fireback && shot.kinds.fireback.inCar && shot.kinds.fireback.shots > 0, JSON.stringify(shot.kinds.fireback));
+  check('drivers: keep shooting at one driving it out and they give up on the car', shot.secondVolley === 'bail', JSON.stringify(shot));
+  check('drivers: a police car is still the police', shot.copIgnored, JSON.stringify(shot));
+
+  var tower = await page.evaluate(function () {
+    var P = GAME.player, I = GAME.interiors, L = GAME.city.towerLift, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    GAME.test.teleport(L.street.x, L.street.z + 4); GAME.test.fastForward(0.4);
+    P.health = 100; P.armor = 100;
+    // nobody standing in the four metres to the ring: shove an officer on
+    // the way there and the ride starts in handcuffs (it did, one run in three)
+    GAME.world.peds.slice().forEach(function (p) {
+      if (Math.hypot(p.pos.x - L.street.x, p.pos.z - (L.street.z + 2)) < 9) GAME.peds.removePed(p);
+    });
+    GAME.police.clearWanted();
+    r.start = { state: P.state, wanted: GAME.police.wanted };
+    // onto the ring: the ride begins, letterboxed, through your own eyes
+    for (var w = 0; w < 4 * 60 && !I.riding(); w++) {
+      var dx = L.street.x - P.pos.x, dz = L.street.z - P.pos.z;
+      P.heading = Math.atan2(dx, dz); GAME.cam.yaw = P.heading; GAME.test.pressKey('KeyW', true); GAME.test.fastForward(1 / 60);
+    }
+    GAME.test.pressKey('KeyW', false);
+    r.riding = I.riding() && document.body.classList.contains('cine') && P.mesh.visible === false;
+    GAME.test.fastForward(4);
+    var cam = GAME.cameraObj.position, cab = L.cab.position;
+    r.mid = { cabY: +cab.y.toFixed(1), camInCab: Math.hypot(cam.x - L.shaft.x, cam.z - L.shaft.z) < 1.3 && cam.y > cab.y + 1 && cam.y < cab.y + 2.6, y: +P.pos.y.toFixed(1) };
+    // nobody can hurt you in there
+    GAME.playerDamage(50, 'test');
+    r.immune = P.health === 100;
+    GAME.test.fastForward(7);
+    r.top = { riding: I.riding(), y: +P.pos.y.toFixed(1), cine: document.body.classList.contains('cine'), visible: P.mesh.visible };
+    // and the way down skips with a key
+    var rf = L.roof;
+    P.pos.set(rf.x, rf.y, rf.z - 2.5); GAME.test.fastForward(0.3);
+    for (w = 0; w < 4 * 60 && !I.riding(); w++) {
+      P.heading = Math.atan2(rf.x - P.pos.x, rf.z - P.pos.z); GAME.cam.yaw = P.heading; GAME.test.pressKey('KeyW', true); GAME.test.fastForward(1 / 60);
+    }
+    GAME.test.pressKey('KeyW', false);
+    GAME.test.fastForward(0.8);
+    GAME.test.pressKey('Space'); GAME.test.fastForward(1 / 60); GAME.test.pressKey('Space', false);
+    GAME.test.fastForward(0.3);
+    r.skipped = { riding: I.riding(), y: +P.pos.y.toFixed(1) };
+    // the parapet holds a walker, at a run
+    GAME.police.clearWanted();
+    r.stateBefore = P.state;
+    var pad = GAME.city.roofHelipad;
+    P.pos.set(pad.x + 9, pad.y, pad.z); GAME.test.fastForward(0.3);
+    P.heading = Math.PI / 2; GAME.cam.yaw = P.heading;
+    GAME.test.pressKey('KeyW', true); GAME.test.pressKey('ShiftLeft', true);
+    GAME.test.fastForward(3);
+    r.held = { off: +(P.pos.x - pad.x).toFixed(2), y: +P.pos.y.toFixed(1) };
+    // a jump clears it, and seventy metres is not a few points, vest or no vest
+    P.health = 100; P.armor = 100;
+    GAME.test.pressKey('Space', true); GAME.test.fastForward(0.1); GAME.test.pressKey('Space', false);
+    GAME.test.fastForward(0.8);
+    GAME.test.pressKey('KeyW', false); GAME.test.pressKey('ShiftLeft', false);
+    GAME.test.fastForward(5);
+    r.fell = { state: P.state, y: +P.pos.y.toFixed(1) };
+    return r;
+  });
+  // Back on your feet: R, again, until it takes. A respawn ignores R for a
+  // second and a half of real time after the last one, and the fade back in
+  // runs on a real clock too, so this waits in real time between presses.
+  async function comeRound() {
+    for (var i = 0; i < 25; i++) {
+      var up = await page.evaluate(function () {
+        if (GAME.player.state === 'alive') return true;
+        GAME.input.keys['KeyR'] = true; GAME.test.fastForward(0.7); GAME.input.keys['KeyR'] = false;
+        return GAME.player.state === 'alive';
+      });
+      if (up) return true;
+      await page.waitForTimeout(400);
+    }
+    return false;
+  }
+  var towerUp = await comeRound();
+  var smallFall = await page.evaluate(function () {
+    var P = GAME.player;
+    GAME.test.teleport(356, 60); GAME.test.fastForward(0.5);
+    P.health = 100; P.armor = 0;
+    var surf = GAME.city.surfaceY(P.pos.x, P.pos.z, P.pos.y);
+    P.pos.y = surf + 5; P.velY = 0; P.airborne = true;          // five metres
+    GAME.test.fastForward(2);
+    var five = { state: P.state, hp: Math.round(P.health) };
+    P.health = 100;
+    P.pos.y = surf + 30; P.velY = 0; P.airborne = true;         // thirty
+    GAME.test.fastForward(4);
+    return { five: five, thirty: P.state };
+  });
+  towerUp = (await comeRound()) && towerUp;
+  await page.evaluate(function () { GAME.player.health = 100; GAME.police.clearWanted(); });
+  check('lift: stepping on it starts the ride, letterboxed, through your own eyes', tower.riding, JSON.stringify(tower));
+  check('lift: halfway up, the camera rides inside the glass car as it climbs the tower',
+    tower.mid && tower.mid.camInCab && tower.mid.cabY > 10 && tower.mid.cabY < 65, JSON.stringify(tower.mid));
+  check('lift: nobody can hurt you in the lift', tower.immune, JSON.stringify(tower));
+  check('lift: it puts you out on the roof, back in your own shoes', tower.top && !tower.top.riding && tower.top.y > 70 && !tower.top.cine && tower.top.visible, JSON.stringify(tower.top));
+  check('lift: a key skips the ride down', tower.skipped && !tower.skipped.riding && tower.skipped.y < 1, JSON.stringify(tower.skipped));
+  check('roof: the helipad parapet holds you at a run', tower.held && tower.held.off < 13.5 && tower.held.y > 70, JSON.stringify(tower.held));
+  check('roof: jump it and the fall kills — armor or not', tower.fell && tower.fell.state === 'wasted', JSON.stringify(tower.fell));
+  check('falls: five metres hurts but does not kill, thirty does', smallFall.five.state === 'alive' && smallFall.five.hp < 100 && smallFall.thirty === 'wasted', JSON.stringify(smallFall));
+  check('falls: and you come round afterwards (anchor sanity)', towerUp);
+
+  var lola = await page.evaluate(function () {
+    var P = GAME.player, Lo = GAME.lola, r = {};
+    GAME.test.teleport(356, 40); GAME.test.fastForward(0.5);
+    GAME.police.clearWanted();
+    r.bindable = GAME.controls.ACTIONS.some(function (a) { return a[0] === 'KeyL'; });
+    GAME.onKeyDown('KeyL');
+    r.open = GAME.lolaOpen && document.getElementById('lola-screen').style.display === 'flex';
+    r.asks = /What can I do for you/.test(Lo.says);
+    r.menu = Lo.options();
+    Lo.choose(/DO NEXT/);
+    r.next = Lo.says;
+    if (GAME.nav && GAME.nav.clear) GAME.nav.clear();
+    r.marked = Lo.choose(/MARK IT/) && !GAME.lolaOpen;
+    r.navSet = !!(GAME.nav && GAME.nav.hasDest ? GAME.nav.hasDest() : GAME.hud && true);
+    GAME.onKeyDown('KeyL');
+    Lo.choose(/TAKE ME/); Lo.choose(/GUNS/);
+    r.guns = Lo.says;
+    GAME.onKeyDown('Escape');
+    r.backToTop = Lo.options().some(function (o) { return /DO NEXT/.test(o); }) && GAME.lolaOpen;
+    GAME.onKeyDown('Escape');
+    r.closed = !GAME.lolaOpen && !GAME.paused;
+    // wanted: the law is the first thing she offers
+    GAME.test.setWanted(3);
+    GAME.onKeyDown('KeyL');
+    r.lawFirst = /LAW/.test(Lo.options()[0]);
+    Lo.choose(/LAW/); r.law = Lo.says;
+    GAME.onKeyDown('Escape'); GAME.onKeyDown('Escape');
+    GAME.police.clearWanted();
+    // from the pause screen, the way a phone reaches her
+    GAME.togglePause();
+    document.getElementById('pause-lola').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    r.fromPause = GAME.lolaOpen && !GAME.paused;
+    GAME.onKeyDown('Escape');
+    return r;
+  });
+  // and the world holds still while you talk (real frames, not the test clock)
+  var held = await page.evaluate(function () {
+    GAME.lola.open();
+    window.__t0 = GAME.time;
+    return true;
+  });
+  await page.waitForTimeout(600);
+  var stillT = await page.evaluate(function () { var d = GAME.time - window.__t0; GAME.lola.close(); return d; });
+  check('lola: calling her is an action you can rebind', lola.bindable);
+  check('lola: L calls her, and she asks what she can do', lola.open && lola.asks && lola.menu.length >= 6, JSON.stringify(lola.menu));
+  check('lola: she says what to do next, and where', /m (north|south|east|west)/.test(lola.next || ''), lola.next);
+  check('lola: and marks it on your map', lola.marked, JSON.stringify(lola));
+  check('lola: she finds you a shop', /is \d+ m|is [\d.]+ km/.test(lola.guns || ''), lola.guns);
+  check('lola: Esc steps back, then closes', lola.backToTop && lola.closed, JSON.stringify(lola));
+  check('lola: with the law on you, that is the first thing she offers, and she says how to lose them',
+    lola.lawFirst && /stars|star/.test(lola.law || ''), lola.law);
+  check('lola: ASK LOLA on the pause screen reaches her too', lola.fromPause, JSON.stringify(lola));
+  check('lola: the world holds still while you talk', Math.abs(stillT) < 0.02, 'game time moved ' + stillT.toFixed(3) + ' s');
 
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a
@@ -7494,6 +7743,10 @@ function withTimeout(p, ms) {
     car.speed = 40; car.pitch = 0.2;
     GAME.test.fastForward(0.3);
     r.flying = window.__rumbleState();
+    // set it down before stepping out: a step out of a plane forty metres up,
+    // with no chute, is a fall that kills now (5l)
+    car.pos.y = GAME.city.surfaceY(car.pos.x, car.pos.z) + car.spec.wheelH;
+    car.speed = 0; car.pitch = 0;
     GAME.exitCar();
     window.__hap('rumble', 0);
     // and take the plane with us: it was left forty metres up, and the groups
