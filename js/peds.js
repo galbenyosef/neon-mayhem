@@ -204,10 +204,20 @@ GAME.peds = (function () {
       stolenCar: null, hadDriver: undefined, yankT: 0, yankWarned: false, leftCar: 0,
       jobPed: false, iceServed: false, carrying: undefined,
       patrol: false, onCase: null, beatX: 0, beatZ: 0, beatT: 0, grabbing: false,
-      aimSkill: NaN, lastShotT: 0
+      aimSkill: NaN, lastShotT: 0,
+      enterX: NaN, enterZ: NaN, enterT: 0   // a door they are making for (walkInto)
     };
     world.peds.push(ped);
     return ped;
+  }
+
+  // Send somebody in through a door: they walk to it and go inside. Up to
+  // `patience` seconds to get there; whatever is in the way, they go in then.
+  var INSIDE_T = 0.45;
+  var FX_DOOR = { count: 8, color: 0xe8f6ff, spread: 0.9, vy: 1.2, life: 0.5, grav: -1, keep: true };
+  function walkInto(ped, x, z, patience) {
+    ped.enterX = x; ped.enterZ = z; ped.enterT = patience || 40;
+    ped.state = 'enter';
   }
 
   function removePed(ped) {
@@ -256,7 +266,7 @@ GAME.peds = (function () {
       // overwrites heading and speed regardless of what this sets — so all a
       // scare could do was leave them carrying a 'flee' they could not act
       // on. A state nothing honours is worse than no state.
-      if (p.dead || p.isCop || p.jobPed) continue;
+      if (p.dead || p.isCop || p.jobPed || p.state === 'inside') continue;
       if (p.state === 'attack' && !force) continue;   // mid-brawl, past being scared off
       if (U.dist2(p.pos.x, p.pos.z, x, z) < r2) {
         p.state = 'flee';
@@ -397,7 +407,7 @@ GAME.peds = (function () {
       // dive away from fast cars — but not every time. People need a moment to
       // react, some are slower to notice than others, and once a bonnet is on
       // top of them it's simply too late.
-      if (ped.state !== 'dive') {
+      if (ped.state !== 'dive' && ped.state !== 'inside') {
         var threat = false;
         for (var c = 0; c < world.cars.length; c++) {
           var car = world.cars[c];
@@ -426,7 +436,31 @@ GAME.peds = (function () {
         if (!threat) ped.reactT = 0;
       }
 
-      if (ped.state === 'walk') {
+      // somebody on their way in somewhere picks the walk back up after a
+      // fright, rather than forgetting where they were going
+      if (ped.state === 'walk' && !isNaN(ped.enterX)) ped.state = 'enter';
+      if (ped.state === 'enter') {
+        // a patient delivered to the hospital, making for its doors at an
+        // unhurried walk (walkInto) — then through them, and gone
+        ped.enterT -= dt;
+        var ex = ped.enterX - ped.pos.x, ez = ped.enterZ - ped.pos.z;
+        if (ex * ex + ez * ez < 1.4 * 1.4 || ped.enterT <= 0) {
+          ped.state = 'inside'; ped.enterT = INSIDE_T;
+          GAME.fx.spawn(ped.enterX, ped.pos.y + 1.2, ped.enterZ, FX_DOOR);
+        } else {
+          ped.heading = U.angleLerp(ped.heading, Math.atan2(ex, ez), Math.min(1, dt * 5));
+          ped.speed = U.damp(ped.speed, 2.6, 3, dt);
+        }
+      }
+      if (ped.state === 'inside') {
+        // through the doors: a last step in, shrinking into the light
+        ped.enterT -= dt;
+        ped.speed = 1.4;
+        ped.mesh.scale.setScalar(Math.max(0.05, ped.enterT / INSIDE_T));
+        if (ped.enterT <= 0) { removePed(ped); continue; }
+      } else if (ped.state === 'enter') {
+        // (steered above; moved below with everyone else)
+      } else if (ped.state === 'walk') {
         ped.wpT -= dt;
         var wd2 = U.dist2(ped.pos.x, ped.pos.z, ped.wpX, ped.wpZ);
         if (wd2 < 4 || ped.wpT <= 0) newWaypoint(ped);
@@ -937,7 +971,7 @@ GAME.peds = (function () {
   // Commit this one to a fight. Returns false if it did not take — the
   // ceiling is full, or the target is not something to fight.
   function startFight(ped, foe, secs) {
-    if (ped.dead || ped.gone || ped.isCop || ped.jobPed) return false;
+    if (ped.dead || ped.gone || ped.isCop || ped.jobPed || ped.state === 'inside') return false;
     if (foe && foe.kind === 'ped' && (!foe.ped || foe.ped.dead || foe.ped.gone || foe.ped === ped)) return false;
     // An existing brawler is already counted; a fresh one has to fit. But
     // SWINGING BACK is not a new fight, it is the other half of one that is
@@ -974,6 +1008,7 @@ GAME.peds = (function () {
 
   // Turn and run from wherever the trouble came from.
   function startFlee(ped, fromX, fromZ, secs) {
+    if (ped.state === 'inside') return;   // already through the door
     ped.state = 'flee';
     ped.fleeT = secs || 6;
     ped.fleeX = fromX; ped.fleeZ = fromZ;
@@ -1022,7 +1057,7 @@ GAME.peds = (function () {
     startFlee(ped, fromX, fromZ, 6);
   }
 
-  return { spawnPed: spawnPed, removePed: removePed, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair,
+  return { spawnPed: spawnPed, removePed: removePed, walkInto: walkInto, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair,
     // so a crash in vehicles.js can put somebody's back up without knowing
     // anything about how a fight is represented
     startFight: startFight, startFlee: startFlee, fightCount: fightCount };

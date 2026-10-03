@@ -1990,7 +1990,24 @@ GAME.vehicles = (function () {
           // happens to stand over the water.)
           if (hgy < 1 && car.pos.y <= hgy + restY + 0.05 &&
             GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) { sinkCar(car); continue; }
-          car.speed = (car.speed || 0) * Math.exp(-1.5 * dt);
+          if (car.spec.plane && Math.abs(car.speed || 0) > 0.2) {
+            // An empty plane rolls on. Jump out at landing speed and it used
+            // to stop dead beside you — the speed bled off with nothing
+            // moving it. It carries on along its heading, coasting down the
+            // way a car does, until it slows to a stop or meets something
+            // standing in its way (a bump at a crawl, a crash at speed).
+            var cnx = car.pos.x + Math.sin(car.heading) * car.speed * dt;
+            var cnz = car.pos.z + Math.cos(car.heading) * car.speed * dt;
+            if (car.pos.y < GAME.city.surfaceY(cnx, cnz) - 0.8) {
+              damageCar(car, Math.abs(car.speed) * (Math.abs(car.speed) > 18 ? 6 : 0.6), 'wall');
+              car.speed = 0;
+            } else {
+              car.pos.x = cnx; car.pos.z = cnz;
+              var rolling = car.pos.y <= hgy + restY + 0.05;
+              var sp = Math.abs(car.speed) * Math.exp(-(rolling ? 0.25 : 0.05) * dt) - (rolling ? 1.2 : 0) * dt;
+              car.speed = sp > 0.2 ? Math.sign(car.speed) * sp : 0;
+            }
+          } else car.speed = (car.speed || 0) * Math.exp(-1.5 * dt);
         }
         car.rotorSpin = U.damp(car.rotorSpin || 0, (powered || (car.vy || 0) < -2) ? 42 : 0, 1.5, dt);
         if (car.mesh.userData.rotor) car.mesh.userData.rotor.rotation.y += car.rotorSpin * dt;

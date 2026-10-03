@@ -420,6 +420,36 @@ GAME.hud = (function () {
   // where each district's name is written on the big map
   var DISTRICT_LABELS = [['OCEAN STRIP', 262, -230], ['CENTRO ALTO', -100, -150], ['PUERTO VIEJO', -330, 330],
     ['LAS COLINAS', 40, 330], ['LAS COLINAS', -340, -320]];
+  // Isla Verde's districts, named on the map the way Costa Rosa's are. They
+  // were only ever named on the HUD as you drove through; the map left the
+  // island blank. Found once by sampling the island's land and labelling the
+  // middle of each district's ground (the sample nearest its centre, so a
+  // curved district is never named out at sea).
+  var islaLabels = null;
+  function islaDistrictLabels() {
+    if (islaLabels) return islaLabels;
+    var I = GAME.isla, B = GAME.city.isla && GAME.city.isla.bounds;
+    if (!I || !I.districtName || !B) return [];
+    islaLabels = [];
+    var acc = {}, order = [];
+    for (var x = B.cx - B.rx * 1.2; x <= B.cx + B.rx * 1.2; x += 12) {
+      for (var z = B.cz - B.rz * 1.2; z <= B.cz + B.rz * 1.2; z += 12) {
+        if (!I.contains(x, z) || GAME.city.isInWater(x, z)) continue;
+        var n = I.districtName(x, z);
+        if (!acc[n]) { acc[n] = { x: 0, z: 0, n: 0, pts: [] }; order.push(n); }
+        acc[n].x += x; acc[n].z += z; acc[n].n++; acc[n].pts.push(x, z);
+      }
+    }
+    order.forEach(function (n) {
+      var a = acc[n], cx = a.x / a.n, cz = a.z / a.n, bx = cx, bz = cz, bd = 1e18;
+      for (var i = 0; i < a.pts.length; i += 2) {
+        var d = U.dist2(a.pts[i], a.pts[i + 1], cx, cz);
+        if (d < bd) { bd = d; bx = a.pts[i]; bz = a.pts[i + 1]; }
+      }
+      islaLabels.push([n.toUpperCase(), bx, bz]);
+    });
+    return islaLabels;
+  }
   function clampMapPan(cv) {
     mapPanX = U.clamp(mapPanX, 0, Math.max(0, MAP_W * mapScale - cv.width));
     mapPanY = U.clamp(mapPanY, 0, Math.max(0, MAP_H * mapScale - cv.height));
@@ -469,8 +499,9 @@ GAME.hud = (function () {
     }
     // the districts, faint and large, under everything else
     var dpx = Math.round(U.clamp(11 * Math.sqrt(mapZoom) * cv.width / 900, 9, 22));
-    for (var dl = 0; dl < DISTRICT_LABELS.length; dl++) {
-      var D = DISTRICT_LABELS[dl];
+    var dls = DISTRICT_LABELS.concat(islaDistrictLabels());
+    for (var dl = 0; dl < dls.length; dl++) {
+      var D = dls[dl];
       label(D[0], w2mx(D[1]), w2my(D[2]), 'rgba(207,230,255,.42)', dpx, 'center');
     }
     // route + destination
@@ -807,23 +838,21 @@ GAME.hud = (function () {
     }
   }
 
-  // Where a home you own goes on the radar, and as WHAT.
-  //
-  // In range it is a dot on its real position. Out of range it becomes an
-  // arrow on the rim pointing at it, because the radar's job there is to say
-  // which way home is, not to claim it is somewhere it is not. Kept out of
-  // the drawing code so the decision can be tested without a canvas.
+  // Where a home you own goes on the radar: a ringed dot on its real
+  // position while it is on the radar, and nothing once it is not. It used
+  // to become an arrow pinned to the rim pointing home from anywhere on the
+  // map — a yellow triangle that never left the radar, however far out you
+  // were. The big map still shows every home. Kept out of the drawing code
+  // so the decision can be tested without a canvas.
   //
   // The rim is 90 — the canvas is 180 square, drawn from its centre — and the
-  // arrow tip needs room, so the anchor sits at 80 and the point reaches 85.
+  // ring needs room, so a home counts as on the radar inside 80.
   var RADAR_RIM = 80;
   function homeMarker(dx, dz, zoom) {
     var rx = dx * MAP_S, rz = dz * MAP_S;
     var rr = Math.sqrt(rx * rx + rz * rz);
-    var lim = RADAR_RIM / zoom;
-    if (rr <= lim) return { mode: 'dot', x: rx, z: rz, ux: 0, uz: 0, dist: rr };
-    var ux = rx / rr, uz = rz / rr;
-    return { mode: 'arrow', x: ux * lim, z: uz * lim, ux: ux, uz: uz, dist: rr };
+    if (rr <= RADAR_RIM / zoom) return { mode: 'dot', x: rx, z: rz, dist: rr };
+    return { mode: 'off', dist: rr };
   }
 
   // The radar's two stamps. They were closures made afresh inside every draw,
@@ -878,8 +907,7 @@ GAME.hud = (function () {
       blip(pp.pos.x, pp.pos.z, PICKUP_BLIP[pp.type], 2.6 / zoom);
     }
     // nearby shops and property, so the doormats are findable from the radar.
-    // Homes you own ignore the range gate and wear a white ring — wherever
-    // you are, the radar says which way home is.
+    // Homes you own wear a white ring, shown whenever they are on the radar.
     if (GAME.shops) {
       var sb = GAME.shops.blips();
       for (var sbi = 0; sbi < sb.length; sbi++) {
@@ -888,28 +916,10 @@ GAME.hud = (function () {
         if (!sbp.home && U.dist2(sbp.x, sbp.z, px, pz) > 170 * 170) continue;
         if (sbp.home) {
           var hm = homeMarker(sbp.x - px, sbp.z - pz, zoom);
-          g.fillStyle = sbp.color;
           if (hm.mode === 'dot') {
+            g.fillStyle = sbp.color;
             g.beginPath(); g.arc(hm.x, hm.z, 4.4 / zoom, 0, Math.PI * 2); g.fill();
             g.strokeStyle = '#ffffff'; g.lineWidth = 1.6 / zoom; g.stroke();
-          } else {
-            // Out of range: an ARROW on the rim pointing the way, not a dot.
-            //
-            // A clamped dot drawn exactly like an in-range one is the same
-            // picture as a house sitting that far from you — so as you drove,
-            // your property appeared to hold station off your shoulder and
-            // then snap onto its real spot the moment it came into range. It
-            // was doing what it was told; it just said the wrong thing.
-            var s2 = 5.5 / zoom;
-            g.beginPath();
-            g.moveTo(hm.x + hm.ux * s2, hm.z + hm.uz * s2);
-            g.lineTo(hm.x - hm.ux * s2 * 0.55 - hm.uz * s2 * 0.85,
-                     hm.z - hm.uz * s2 * 0.55 + hm.ux * s2 * 0.85);
-            g.lineTo(hm.x - hm.ux * s2 * 0.55 + hm.uz * s2 * 0.85,
-                     hm.z - hm.uz * s2 * 0.55 - hm.ux * s2 * 0.85);
-            g.closePath();
-            g.fill();
-            g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 / zoom; g.stroke();
           }
         } else {
           blip(sbp.x, sbp.z, sbp.color, 3.2 / zoom);
@@ -1451,6 +1461,7 @@ GAME.hud = (function () {
     },
     // headless hook: where a home you own lands on the radar, and as what
     testHomeMarker: homeMarker,
+    testIslaLabels: islaDistrictLabels,
     testHelipads: shownHelipads,
     testToggleCat: toggleCat,
     // How much marker-cyan the BAKED base image carries around a world point.

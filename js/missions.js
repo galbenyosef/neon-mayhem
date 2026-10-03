@@ -756,7 +756,7 @@ GAME.missions = (function () {
       // the opening clock covers the first call and a breath, no more — the
       // shift is earned fare by fare (see completeFare)
       timeLeft: kind === 'ambulance' ? 70 : 60,
-      jobCount: 0, earned: 0, routeCp: null
+      jobCount: 0, earned: 0, routeCp: null, hospital: null
     };
     startRound();
     // no auto-orient here: taxi and ambulance shifts start from a moving cab
@@ -1064,7 +1064,20 @@ GAME.missions = (function () {
       if (dd < bd) { bd = dd; best = hs[hi]; }
     }
     best = best || hs[0];
+    active.hospital = best;
     return clearOfRoad(best.x + 30, best.spawn.z);
+  }
+  // Where the patients go in: the middle of the hospital's front face. Every
+  // hospital faces +z; its main block is the biggest building box across its
+  // own x (the cross tower beside it is a thin fin).
+  function hospitalDoor(H) {
+    var best = null, area = 0;
+    GAME.city.hash.query(H.x, H.z, 40).forEach(function (b) {
+      if (b.tag !== 'building' || b.h === undefined || b.minX > H.x || b.maxX < H.x) return;
+      var a = (b.maxX - b.minX) * (b.maxZ - b.minZ);
+      if (a > area) { area = a; best = b; }
+    });
+    return best ? { x: H.x, z: best.maxZ + 0.6 } : { x: H.spawn.x, z: H.spawn.z };
   }
 
   // collect whoever is at this stop
@@ -1106,9 +1119,15 @@ GAME.missions = (function () {
     GAME.addCash(fare); active.earned += fare;
     GAME.audio.sting('win');
     GAME.haptics.win();
+    // Patients walk in through the hospital doors and are gone; they used to
+    // step out and wander off into town like anybody else, straight past the
+    // place they had been rushed to. A fare still steps off and goes about
+    // their business.
+    var door = kind === 'ambulance' && active.hospital ? hospitalDoor(active.hospital) : null;
     for (var i = 0; i < n; i++) {
       var out = GAME.peds.spawnPed(tgt[0] + (i - n / 2) * 1.4, tgt[1] + 1.5);
-      out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z;
+      if (door) GAME.peds.walkInto(out, door.x + (i - (n - 1) / 2) * 0.9, door.z);
+      else { out.state = 'flee'; out.fleeT = 3.5; out.fleeX = f.x; out.fleeZ = f.z; }
     }
     active.aboard = 0;
     var word = kind === 'ambulance' ? (n > 1 ? n + ' patients delivered' : 'Patient delivered') : 'Fare dropped';

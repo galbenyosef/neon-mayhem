@@ -60,6 +60,9 @@
 //       as END); a lift runs from the helipad tower's lobby to its roof and
 //       back; starting or waking at home, the camera clears the house front;
 //       no island jump stands in the Marina Villa's front yard.
+//   5g. FROM YOUR PLAY — Isla Verde's districts are named on the map;
+//       a delivered patient walks in through the hospital doors; a night's
+//       sleep runs the weather on; a plane you jump out of rolls on.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -114,7 +117,7 @@
 //   3r. THE BEACH AT THE BRIDGES — the sand parts for the span and for
 //       nothing else, so no slot of open sea is left beside it.
 //   3q. THE RADAR'S HOME MARKER — a property in range is a dot where it
-//       actually is; one out of range is an ARROW, not a dot pretending.
+//       actually is; one off the radar is not drawn at all.
 //   3p. THE ICE CREAM ROUND — a customer walks over and is SERVED, rather
 //       than sprinting at the hatch and teleporting money into the till.
 //   3o. PICKUPS ON DRY LAND — nothing you are meant to walk to stands at
@@ -3414,6 +3417,140 @@ function withTimeout(p, ms) {
   check('answers: waking up at home after a wasted, too',
     homeUp && woke.atDoor && woke.house && woke.gap >= 1.5, JSON.stringify({ up: homeUp, woke: woke }));
 
+  // ---------- 5g: from your play ----------
+  // The map named Costa Rosa's districts and left Isla Verde blank. A patient
+  // delivered to the hospital wandered off into town instead of going in. A
+  // night's sleep left the weather as it was — two in a row, the same
+  // shower. And a plane you jumped out of at landing speed stopped dead
+  // beside you instead of rolling on the way a car does.
+  var play = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, V = GAME.vehicles, M = GAME.missions, r = {};
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    if (M.active) M.failActive('test');
+    GAME.test.fastForward(0.3);
+    // --- the island's districts on the map
+    var L = GAME.hud.testIslaLabels ? GAME.hud.testIslaLabels() : [];
+    r.labels = L.map(function (l) {
+      return { n: l[0], land: GAME.isla.contains(l[1], l[2]) && !C.isInWater(l[1], l[2]),
+        right: GAME.isla.districtName(l[1], l[2]).toUpperCase() === l[0] };
+    });
+
+    // --- a patient delivered goes in through the hospital doors
+    var wasOpen = GAME.isla.isOpen();
+    GAME.godMode = true;
+    var H = C.pois.hospitals[0];
+    GAME.test.teleport(H.x + 40, H.spawn.z + 6);
+    GAME.test.fastForward(0.3);
+    var amb = V.spawnCar('ambulance', H.x + 40, H.spawn.z + 2, Math.PI / 2, {});
+    GAME.test.enterNearestCar(amb); GAME.test.fastForward(1.2);
+    GAME.test.pressKey('KeyJ', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyJ', false);
+    GAME.test.fastForward(0.3);
+    var A = M.active;
+    r.shift = !!(A && A.def.id === 'ambulance');
+    if (r.shift) {
+      var t0 = A.targets[0];
+      amb.pos.set(t0.x + 3, C.groundY(t0.x + 3, t0.z), t0.z); amb.speed = 0;
+      for (var k = 0; k < 600 && A.aboard === 0; k++) GAME.test.fastForward(1 / 60);
+      r.aboard = A.aboard;
+      // run them to the first hospital, at its own drop-off
+      A.hospital = H; A.dropoff = [H.x + 30, H.spawn.z]; A.phase = 'dropoff';
+      amb.pos.set(A.dropoff[0], C.groundY(A.dropoff[0], A.dropoff[1]), A.dropoff[1]); amb.speed = 0;
+      GAME.test.fastForward(0.3);
+      var w = GAME.world.peds.filter(function (p) { return p.state === 'enter'; })[0];
+      r.walking = !!w;
+      if (w) {
+        var face = C.hash.query(H.x, H.z, 40).filter(function (b) { return b.tag === 'building' && b.minX <= H.x && b.maxX >= H.x; })
+          .sort(function (a, b) { return (b.maxX - b.minX) * (b.maxZ - b.minZ) - (a.maxX - a.minX) * (a.maxZ - a.minZ); })[0];
+        r.doorAtFront = !!face && Math.abs(w.enterZ - face.maxZ) < 1.5 && Math.abs(w.enterX - H.x) < 3;
+        var tt = 0;
+        for (; tt < 40 && !w.gone; tt += 0.25) GAME.test.fastForward(0.25);
+        r.inside = { gone: w.gone, took: tt, fromDoor: +Math.hypot(w.pos.x - w.enterX, w.pos.z - w.enterZ).toFixed(1) };
+      }
+      GAME.test.pressKey('KeyJ', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyJ', false);
+      GAME.test.fastForward(0.3);
+    }
+    if (P.inCar) GAME.exitCar();
+    GAME.test.fastForward(0.3);
+    V.removeCar(amb);
+    GAME.godMode = false;
+    GAME.isla.setOpen(wasOpen);
+
+    // --- a night's sleep runs the weather on: from a shower, you wake dry
+    var W = GAME.weather, mode0 = W.mode, dry = 0, n = 200;
+    W.setMode('auto', true);
+    for (var i = 0; i < n; i++) {
+      for (var g = 0; g < 400 && !(W.rain > 0); g++) W.pass(15);
+      if (W.rain > 0) { W.pass(GAME.DAY_SECONDS / 3); if (W.rain === 0) dry++; }
+    }
+    r.dryWakes = dry + '/' + n;
+    W.setMode(mode0, true);
+
+    // --- a plane you jump out of at speed rolls on
+    var x0 = -300, rp = C.nearestRoadPoint(x0, 0); x0 = rp.x;
+    GAME.test.teleport(x0 - 4, rp.z);
+    GAME.test.fastForward(0.3);
+    var pl = V.spawnCar('airplane', x0, rp.z, Math.PI / 2, {});
+    GAME.test.enterNearestCar(pl); GAME.test.fastForward(1.2);
+    r.flying = P.inCar && P.car === pl;
+    pl.pos.set(x0, C.groundY(x0, rp.z) + pl.spec.wheelH, rp.z); pl.heading = Math.PI / 2; pl.pitch = 0; pl.speed = 35;
+    GAME.test.fastForward(1 / 60);
+    GAME.test.pressKey('KeyF', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyF', false);
+    GAME.test.fastForward(0.1);
+    var bx = pl.pos.x;
+    GAME.test.fastForward(1);
+    r.plane = { out: !P.inCar, firstSecond: +(pl.pos.x - bx).toFixed(1) };
+    GAME.test.fastForward(20);
+    r.plane.rolled = +(pl.pos.x - bx).toFixed(1); r.plane.stopped = pl.speed === 0; r.plane.dead = pl.dead;
+    V.removeCar(pl);
+    GAME.test.teleport(400, 0);
+    GAME.test.fastForward(0.3);
+    return r;
+  });
+  check('play: Isla Verde has its districts named on the map, as Costa Rosa does',
+    play.labels.length === 4, JSON.stringify(play.labels.map(function (l) { return l.n; })));
+  check('play: each on the island\'s own ground, inside the district it names',
+    play.labels.length > 0 && play.labels.every(function (l) { return l.land && l.right; }), JSON.stringify(play.labels));
+  check('play: a paramedic shift delivers a patient (anchor sanity)', play.shift && play.aboard === 1 && play.walking,
+    JSON.stringify({ shift: play.shift, aboard: play.aboard, walking: play.walking }));
+  check('play: the delivered patient makes for the hospital\'s front doors', play.doorAtFront);
+  check('play: and goes in — gone at the door, not wandering the town',
+    play.inside && play.inside.gone && play.inside.took < 30 && play.inside.fromDoor < 2.5, JSON.stringify(play.inside));
+  check('play: a night\'s sleep in a shower wakes up dry, every time', play.dryWakes === '200/200', play.dryWakes);
+  check('play: out of a plane at landing speed (anchor sanity)', play.flying && play.plane.out, JSON.stringify(play.plane));
+  check('play: and it rolls on rather than stopping dead beside you',
+    play.plane.firstSecond > 15 && play.plane.rolled > 40, JSON.stringify(play.plane));
+  check('play: coasting down to a stop, in one piece', play.plane.stopped && !play.plane.dead, JSON.stringify(play.plane));
+
+  // and the bed is what runs the night on
+  var bedWx = await page.evaluate(function () {
+    var P = GAME.player, W = GAME.weather, calls = [];
+    if (P.inCar) GAME.exitCar();
+    var home = GAME.shops.locations().filter(function (l) { return l.kind === 'safehouse'; })[0];
+    GAME.prefs.safehouses = GAME.prefs.safehouses || [];
+    window.__ownedBefore = GAME.prefs.safehouses.slice();
+    if (GAME.prefs.safehouses.indexOf(home.sh.id) < 0) GAME.prefs.safehouses.push(home.sh.id);
+    window.__pass0 = W.pass;
+    W.pass = function (sec) { calls.push(sec); return window.__pass0(sec); };
+    window.__wxCalls = calls;
+    window.__msgs = [];
+    GAME.shops.open(home);
+    return { rested: GAME.shops.buy('rest') };
+  });
+  try {
+    await page.waitForFunction(function () {
+      return window.__msgs.some(function (m) { return m.indexOf('Eight hours later') >= 0; });
+    }, null, { timeout: 8000 });
+  } catch (e) { /* reported below */ }
+  var bedCalls = await page.evaluate(function () {
+    GAME.weather.pass = window.__pass0;
+    GAME.prefs.safehouses = window.__ownedBefore;
+    if (GAME.shops.isOpen) GAME.shops.close();
+    return { calls: window.__wxCalls, day: GAME.DAY_SECONDS };
+  });
+  check('play: sleeping hands the sky its eight hours',
+    bedWx.rested && bedCalls.calls.length === 1 && Math.abs(bedCalls.calls[0] - bedCalls.day / 3) < 0.01, JSON.stringify(bedCalls));
+
   // ---------- 3c: each star costs more than the last ----------
   // The ladder used to be one body per star: kill_ped is 70 heat against a
   // first threshold of 50, and the gaps grew by twenty a level while every
@@ -4519,31 +4656,23 @@ function withTimeout(p, ms) {
       'marker-cyan pixels baked at the pads: ' + JSON.stringify(pads.ink));
   }
 
-  // ---------- 3q: a home off the radar is a direction, not a place ----------
-  // A home you own ignores the range gate so the radar can always say which
-  // way it is — but a far one was CLAMPED to a circle around the player and
-  // then drawn exactly like an in-range blip. That is the same picture as a
-  // house sitting that far from you: it appeared to hold station off your
-  // shoulder as you drove, and snap onto its real spot when it came into
-  // range. It was doing what it was told, it just said the wrong thing.
+  // ---------- 3q: a home is on the radar while it is on the radar ----------
+  // A home you own is a ringed dot on its real position while it is in
+  // range. Off the radar it used to become an arrow pinned to the rim,
+  // pointing home from anywhere on the map — a triangle that never left the
+  // radar however far out you were. Now it is simply not on it; the big map
+  // still shows every home.
   var radar = await page.evaluate(function () {
     var hm = GAME.hud.testHomeMarker;
     if (!hm) return { missing: true };
     var Z = 0.62;                                  // the in-car zoom
     function px(m) { return Math.hypot(m.x, m.z) * Z; }   // canvas px from centre
     var near = [hm(20, 0, Z), hm(60, 0, Z), hm(120, 0, Z)];
-    var far = [hm(400, 0, Z), hm(800, 0, Z), hm(1600, 0, Z)];
-    // and the direction has to be the real one
-    var diag = hm(600, 600, Z);
+    var far = [hm(400, 0, Z), hm(800, 0, Z), hm(1600, 0, Z), hm(600, 600, Z)];
     return {
       nearModes: near.map(function (m) { return m.mode; }),
       nearPx: near.map(function (m) { return +px(m).toFixed(1); }),
-      farModes: far.map(function (m) { return m.mode; }),
-      farPx: far.map(function (m) { return +px(m).toFixed(1); }),
-      diagMode: diag.mode,
-      // unit vector should point at the home: equal parts x and z here
-      diagAim: +(diag.ux - diag.uz).toFixed(3),
-      diagUx: +diag.ux.toFixed(3)
+      farModes: far.map(function (m) { return m.mode; })
     };
   });
   check('radar: the home marker answers at all', !radar.missing,
@@ -4553,18 +4682,9 @@ function withTimeout(p, ms) {
       radar.nearModes.every(function (m) { return m === 'dot'; }) &&
       radar.nearPx[0] < radar.nearPx[1] && radar.nearPx[1] < radar.nearPx[2],
       'at 20/60/120 m: ' + radar.nearModes.join(', ') + ' at ' + radar.nearPx.join(', ') + ' px');
-    // The clamp itself is not the bug and is still here — an edge indicator
-    // has to sit at the edge. What must differ is WHAT IS DRAWN there.
-    check('radar: one out of range is an arrow rather than a dot',
-      radar.farModes.every(function (m) { return m === 'arrow'; }),
-      'at 400/800/1600 m: ' + radar.farModes.join(', '));
-    check('radar: pinned to the rim, inside the 90 px face',
-      radar.farPx.every(function (v) { return Math.abs(v - radar.farPx[0]) < 0.01; }) &&
-      radar.farPx[0] > 60 && radar.farPx[0] + 6 < 90,
-      'all three at ' + radar.farPx[0] + ' px, tip reaching about ' + (radar.farPx[0] + 5.5).toFixed(0));
-    check('radar: and it points at the house, not just outward',
-      radar.diagMode === 'arrow' && Math.abs(radar.diagAim) < 0.01 && radar.diagUx > 0.5,
-      'a home to the north-east gives a heading of (' + radar.diagUx + ', ' + radar.diagUx + ')');
+    check('radar: one off the radar is not drawn at all — no arrow pinned to the rim',
+      radar.farModes.every(function (m) { return m === 'off'; }),
+      'at 400/800/1600 m and to the north-east: ' + radar.farModes.join(', '));
   }
 
   // ---------- 3p: the round has a pace ----------

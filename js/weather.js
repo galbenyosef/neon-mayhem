@@ -121,6 +121,24 @@ GAME.weather = (function () {
     }
   }
 
+  // Hours going by at once — a night's sleep. The spells run their course
+  // over them and you wake to whatever the sky has come round to, all at
+  // once rather than on the eighteen-second ramp. A sleep used to leave the
+  // weather exactly as it was: two nights in a row, the same shower. (A
+  // pinned CLEAR or RAIN stays pinned; that is a setting, not the sky.)
+  function pass(sec) {
+    if (mode === 'auto') {
+      while (sec > 0) {
+        if (spellT <= 0) nextSpell();
+        var step = Math.min(sec, spellT);
+        spellT -= step; sec -= step;
+      }
+      if (spellT <= 0) nextSpell();
+    } else target = mode === 'rain' ? 1 : 0;
+    rain = target; flash = 0; thunderT = -1;
+    lastApplied = 1;   // the next update re-lights the sky for it
+  }
+
   function setMode(m, quiet) {
     if (MODES.indexOf(m) < 0) m = 'auto';
     mode = m;
@@ -134,6 +152,7 @@ GAME.weather = (function () {
     build: build,
     update: update,
     setMode: setMode,
+    pass: pass,
     cycle: function () { return setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); },
     get mode() { return mode; },
     get rain() { return rain; },

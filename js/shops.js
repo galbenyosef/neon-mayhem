@@ -373,6 +373,7 @@ GAME.shops = (function () {
         var unpinned = GAME.timeMode !== 'auto';
         if (unpinned) GAME.setTimeMode('auto');   // persists the preference too
         GAME.dayPhase = (GAME.dayPhase + 8 / 24) % 1;
+        if (GAME.weather && GAME.weather.pass) GAME.weather.pass(GAME.DAY_SECONDS / 3);   // and the sky's eight hours
         GAME.applyTimeOfDay(0.5 - 0.5 * Math.cos(GAME.dayPhase * Math.PI * 2));
         GAME.world.pickups.forEach(function (p) {
           if (p.taken && isFinite(p.respawnT)) p.respawnT -= GAME.DAY_SECONDS / 3;
