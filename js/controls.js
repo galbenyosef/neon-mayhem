@@ -251,7 +251,7 @@ GAME.controls = (function () {
   // the whole pad, said once where the keys are listed (it is not rebindable)
   var PAD_LAYOUT = 'left stick move · right stick look · RT fire / throttle · LT aim / brake · A jump, handbrake · ' +
     'B sprint · X job · Y get in / out · LB / RB target, drive-by · L3 photo · R3 horn · D-pad ↑ retry, ↓ weapon, ← → radio · ' +
-    'BACK map · START pause (Lola, abandon and the rest are there).';
+    'BACK map · START pause (Lola, abandon, full screen and the rest are there).';
   // The screen's own buttons, for the arrows and a pad's D-pad: a pad could
   // open this screen and not change a thing on it — invert-Y and the look
   // speed (the right stick turns at it too) were out of reach.

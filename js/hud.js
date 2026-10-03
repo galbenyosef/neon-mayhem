@@ -208,6 +208,22 @@ GAME.hud = (function () {
       b.textContent = GAME.prefs && GAME.prefs.hideCtl ? '💡 HINT BAR: OFF' : '💡 HINT BAR: ON';
     }
     pauseBtn('pause-hintbar', function () { api.toggleControlsBar(); });
+    // Full screen from the pause screen, which is the only way a controller
+    // can ask for it: every button on a pad already has a job, and the one
+    // left over (the Xbox / PS / Home button) is taken by the system before
+    // a page sees it. A browser goes full screen only for a gesture, and not
+    // every one counts a controller's press as one; where it does not, the
+    // request would just be refused, so it waits for the next click, key or
+    // tap and says so.
+    pauseBtn('pause-fs', function () {
+      var ua = navigator.userActivation;
+      if (!GAME.fullscreenEl() && GAME.canFullscreen && GAME.controls && GAME.controls.usingPad() && ua && !ua.isActive) {
+        GAME.fullscreenOnNextGesture();
+        GAME.hud.message('This browser goes full screen only for a click, a key or a tap — the next one you make takes it there.', 5);
+        return;
+      }
+      GAME.toggleFullscreen();
+    });
     api.paintHintBar = paintHintBar;
     paintHintBar();
     // camera shake, for anyone it makes ill (remembered like the rest)
@@ -785,7 +801,7 @@ GAME.hud = (function () {
     '(in a vehicle <b>RT / LT</b> are throttle and brake)<br>' +
     '<b>LB / RB</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>A</b> jump · climb / handbrake &nbsp;·&nbsp; <b>Y</b> enter / exit car &nbsp;·&nbsp; <b>B</b> sprint<br>' +
     '<b>D-pad ↓</b> weapons &nbsp;·&nbsp; <b>D-pad ← / →</b> radio &nbsp;·&nbsp; <b>R3</b> horn / siren &nbsp;·&nbsp; <b>X</b> job &nbsp;·&nbsp; <b>D-pad ↑</b> retry &nbsp;·&nbsp; ' +
-    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound and the rest are there';
+    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound, full screen and the rest are there';
   var PAD_BAR = {
     car: '<b>RT / LT</b> drive · <b>stick</b> steer · <b>A</b> handbrake · <b>LB / RB</b> drive-by · <b>Y</b> exit · <b>R3</b> horn · <b>D-pad ← →</b> radio · <b>BACK</b> map',
     foot: '<b>stick</b> move · <b>B</b> sprint · <b>A</b> jump · <b>LT</b> aim · <b>RT</b> fire · <b>D-pad ↓</b> weapons · <b>Y</b> enter car · <b>BACK</b> map',
@@ -1522,6 +1538,13 @@ GAME.hud = (function () {
       // always on hand until you're actually fullscreen (or playing from the
       // home screen, which is), then it's redundant
       e.style.display = (GAME.fullscreenEl && GAME.fullscreenEl()) || (GAME.isStandalone && GAME.isStandalone()) ? 'none' : 'flex';
+      // and the pause screen's switch, which says which it is (a home-screen
+      // app is full screen already, and has no use for it)
+      var pf = $('pause-fs');
+      if (pf) {
+        pf.style.display = GAME.isStandalone && GAME.isStandalone() ? 'none' : '';
+        pf.textContent = GAME.fullscreenEl && GAME.fullscreenEl() ? '⛶ FULL SCREEN: ON' : '⛶ FULL SCREEN: OFF';
+      }
     },
     // AUTO runs the day/night cycle; DAY / NIGHT pin it
     refreshTimeBtn: function (mode) {

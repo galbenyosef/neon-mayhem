@@ -201,6 +201,10 @@
   GAME.maybeRestoreFullscreen = function () {
     if (fsRestore && !GAME.fullscreenEl()) GAME.enterFullscreen();
   };
+  // Full screen at the next click, key or tap, for a request made where the
+  // browser would refuse it: a controller's press, which not every browser
+  // counts as a gesture (hud.js, the pause screen's FULL SCREEN)
+  GAME.fullscreenOnNextGesture = function (on) { fsRestore = on !== false; };
 
   // ---------- bringing a save in, on a page of its own ----------
   // A phone's file picker sends the browser to the background, and a tab

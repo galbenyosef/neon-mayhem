@@ -146,7 +146,9 @@ A plane rolls down the runway on throttle and climbs once it's fast; airborne, t
 | Skip the glass lift's ride | `Space`, `F` or `Enter` | A or Y | tap |
 | Mute · CRT · day/night | `M` · `T` · `N` | pause → SOUND · CRT · TIME | pause → SOUND · CRT · TIME |
 | Hide the hint bar | `H` | pause → HINT BAR | (no bar on touch) |
-| Fullscreen | ⛶ | — (browsers go fullscreen only on a click, key or tap) | ⛶ |
+| Fullscreen | ⛶ · pause → FULL SCREEN | START → FULL SCREEN ¹ | ⛶ · pause → FULL SCREEN |
+
+¹ Every button on a controller already has a job, and the one left over — the Xbox / PS / Home button — is taken by the system before a web page sees it, so full screen lives on the pause screen. A browser goes full screen only for a gesture, and not every browser counts a controller's press as one: where it does, FULL SCREEN goes straight there; where it does not, it says so and the next click, key or tap does it.
 
 **Menus**
 

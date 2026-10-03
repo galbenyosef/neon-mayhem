@@ -7026,6 +7026,45 @@ function withTimeout(p, ms) {
       tap(9);
       r.resumed = !GAME.paused;
 
+      // FULL SCREEN on the pause screen. A browser goes full screen only for
+      // a gesture; where a pad's press is not one, the switch waits for the
+      // next click, key or tap (and says so) instead of being refused, and
+      // where it is one, it goes straight there.
+      var fsCalls = 0, de = document.documentElement, uaFake = { isActive: false, hasBeenActive: true };
+      var fsMsgs = [], fsM0 = GAME.hud.message, fsEl0 = GAME.fullscreenEl;
+      // (a test's evaluate carries a gesture, so the game's own start may
+      // really have gone full screen by now: this starts from windowed)
+      GAME.fullscreenEl = function () { return null; };
+      de.requestFullscreen = function () { fsCalls++; return Promise.reject(new TypeError('refused')); };
+      Object.defineProperty(navigator, 'userActivation', { configurable: true, get: function () { return uaFake; } });
+      GAME.hud.message = function (t) { fsMsgs.push(String(t)); return fsM0.apply(GAME.hud, arguments); };
+      try {
+        tap(9);
+        var fsb = document.getElementById('pause-fs');
+        r.fsListed = !!fsb && fsb.offsetParent !== null && /FULL SCREEN/.test(fsb.textContent);
+        if (fsb) fsb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        r.fsWaited = fsCalls === 0 && fsMsgs.some(function (t) { return /next one you make/.test(t); });
+        tap(9);     // (resuming tries again too, as it always has)
+        var fsBefore = fsCalls;
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' }));
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyZ' }));
+        r.fsOnNextKey = fsCalls === fsBefore + 1;
+        r.fsDbg = { calls: fsCalls, msgs: fsMsgs.slice(-2) };
+        GAME.fullscreenOnNextGesture(false);
+        uaFake.isActive = true;
+        tap(9);
+        var fsBefore2 = fsCalls;
+        if (fsb) fsb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        r.fsStraight = fsCalls === fsBefore2 + 1;
+        tap(9);
+      } finally {
+        delete de.requestFullscreen;
+        delete navigator.userActivation;
+        GAME.hud.message = fsM0;
+        GAME.fullscreenEl = fsEl0;
+        GAME.fullscreenOnNextGesture(false);
+      }
+
       // a dialog in the world: A answers it
       var okd = false;
       GAME.hud.dialog({ title: 'CHECK', body: 'pad', ok: 'OK', cancel: false, onOk: function () { okd = true; } });
@@ -7130,6 +7169,9 @@ function withTimeout(p, ms) {
     'left ' + (pad.rollLeft && pad.rollLeft.toFixed(2)) + ', right ' + (pad.rollRight && pad.rollRight.toFixed(2)));
   check('pad: the CONTROLS screen changes a setting from the pad', pad.paused && pad.invertToggled);
   check('pad: and closes on its CLOSE button or B, leaving the game paused', pad.ctlClosedByButton && pad.ctlClosedByB);
+  check('pad: FULL SCREEN is on the pause screen', pad.fsListed);
+  check('pad: where a pad press is no gesture, it waits for the next key, click or tap', pad.fsWaited && pad.fsOnNextKey, JSON.stringify(pad.fsDbg));
+  check('pad: where it is one, it goes straight to full screen', pad.fsStraight, JSON.stringify(pad.fsDbg));
   check('pad: A answers a dialog in the world', pad.dialogAnswered);
   check('pad: a button held through a pause lets go of its own key', pad.spaceHeld && pad.spaceLetGo && pad.resumedAgain);
   check('pad: the TALON fires its chin gun on RB and rockets on LB', pad.chinGun && pad.rockets && pad.lmbLetGo);
