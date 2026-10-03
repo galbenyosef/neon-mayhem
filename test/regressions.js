@@ -2823,7 +2823,12 @@ function withTimeout(p, ms) {
         GAME.vehicles.damageCar(t, t.hp * 0.85, 'bullet', true);
         GAME.test.fastForward(0.5);
       }
-      r.passed = !M.active && GAME.bests && GAME.bests.hit0 !== undefined;
+      // Passed is the job's own record, not "nothing is running": the chase
+      // goes wherever the target ran, and a car left stopped in another job's
+      // ring when this one ends starts that one (as it should) — on CI the
+      // target ran to DOWNTOWN DASH and the race began on the next tick.
+      r.passed = !!(GAME.bests && GAME.bests.hit0 !== undefined) && !(M.active && M.active.def.id === 'hit0');
+      if (M.active) { M.failActive('test cleanup'); GAME.test.fastForward(0.3); }
       r.pages = pages.slice();
       if (bests0 === undefined && GAME.bests) delete GAME.bests.hit0; else if (GAME.bests) GAME.bests.hit0 = bests0;
       GAME.exitCar();
