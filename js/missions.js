@@ -1620,7 +1620,7 @@ GAME.missions = (function () {
       // a death or an arrest offers it once you are back on your feet
       var down = GAME.player.state !== 'alive';
       if (!d.job) retry = { def: d, carType: active.carType, until: GAME.time + RETRY_WINDOW, waitRespawn: down };
-      GAME.hud.message((quit ? 'MISSION ABANDONED' : 'MISSION FAILED — ' + reason) + tail + (retry && !down ? '  ·  ' + RETRY_HINT : ''), 4);
+      GAME.hud.message((quit ? 'MISSION ABANDONED' : 'MISSION FAILED — ' + reason) + tail + (retry && !down ? '  ·  ' + retryHint() : ''), 4);
     }
     cleanup();
   }
@@ -1630,7 +1630,9 @@ GAME.missions = (function () {
   // from the hospital. For a few seconds after it fails, Y (or RETRY) puts
   // you back on the start line in what you set off in and runs it again. The
   // heat still closes every start line, this one included.
-  var RETRY_WINDOW = 12, RETRY_HINT = 'Y to retry';
+  var RETRY_WINDOW = 12;
+  // the retry key as it is bound, or the pad's button while on the pad
+  function retryHint() { return (GAME.controls ? GAME.controls.label('KeyY') : 'Y') + ' to retry'; }
   var retry = null;
   function stepRetry(dt, P, hot) {
     if (retry.fadeT !== undefined) {
@@ -1641,7 +1643,7 @@ GAME.missions = (function () {
     if (retry.waitRespawn) {
       retry.waitRespawn = false;
       retry.until = GAME.time + RETRY_WINDOW;
-      GAME.hud.message(RETRY_HINT + ': ' + retry.def.name, 4);
+      GAME.hud.message(retryHint() + ': ' + retry.def.name, 4);
     }
     if (GAME.time > retry.until || !defAvailable(retry.def)) { retry = null; return false; }
     if (GAME.keyPressed('KeyY') || GAME.input.touch.retry) {
@@ -2029,7 +2031,8 @@ GAME.missions = (function () {
           if (GAME.prefs && !GAME.prefs.abandonTold) {
             GAME.prefs.abandonTold = true;
             GAME.save();
-            GAME.hud.message(GAME.isTouch ? 'Changed your mind? Pause → ABANDON MISSION walks away from a run.'
+            var padNow = GAME.controls && GAME.controls.usingPad();
+            GAME.hud.message(GAME.isTouch || padNow ? 'Changed your mind? Pause' + (padNow ? ' (START)' : '') + ' → ABANDON MISSION walks away from a run.'
               : 'Changed your mind? ' + (GAME.controls ? GAME.controls.label('KeyX') : 'X') + ' twice walks away from a run.', 4);
           }
         } else {

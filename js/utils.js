@@ -595,6 +595,8 @@ GAME.initInput = function (canvas) {
   var inp = GAME.input;
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Tab') e.preventDefault();
+    // the keyboard is what you are playing with now: prompts say keys again
+    if (GAME.controls && GAME.controls.noteDevice) GAME.controls.noteDevice(false);
     // the CONTROLS screen owns the keyboard while it is up (a rebind, or Esc)
     if (GAME.controls && GAME.controls.open) {
       if (!e.repeat) GAME.controls.key(e.code);
@@ -623,6 +625,7 @@ GAME.initInput = function (canvas) {
   window.addEventListener('blur', function () { inp.keys = {}; inp.pressed = {}; inp.lmb = false; inp.rmb = false; });
 
   canvas.addEventListener('mousedown', function (e) {
+    if (GAME.controls && GAME.controls.noteDevice) GAME.controls.noteDevice(false);
     // The click that ACQUIRES pointer lock is aim, not fire. Without this,
     // the first click after the title screen (or after any overlay released
     // the lock) squeezed off a round with whatever the save had loaded and

@@ -85,6 +85,10 @@
       if (GAME.lolaOpen) { GAME.lola.key(code); return; }
       // and so does the photo album, over the pause screen
       if (GAME.photo.key(code)) return;
+      // and an open shop its list and its confirmation card (Esc below)
+      if (GAME.shopOpen && GAME.shops.key(code)) return;
+      // the full map: A (or Enter) sets the route at a pad's cursor
+      if (GAME.mapOpen && code === 'Enter' && GAME.hud.mapPick()) return;
       // the result card closes on any of the keys a hand is likely to be on —
       // it never needed the mouse
       if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {

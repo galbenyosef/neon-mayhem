@@ -199,6 +199,17 @@ GAME.hud = (function () {
     }
     pauseBtn('pause-crt', function () { GAME.hud.toggleCRT(); });
     pauseBtn('pause-keys', function () { GAME.controls.show(true); });
+    // the bar of controls along the bottom, which only H could hide — out of
+    // reach of a controller (touch screens never show it)
+    function paintHintBar() {
+      var b = $('pause-hintbar');
+      if (!b) return;
+      b.style.display = GAME.isTouch ? 'none' : '';
+      b.textContent = GAME.prefs && GAME.prefs.hideCtl ? '💡 HINT BAR: OFF' : '💡 HINT BAR: ON';
+    }
+    pauseBtn('pause-hintbar', function () { api.toggleControlsBar(); });
+    api.paintHintBar = paintHintBar;
+    paintHintBar();
     // camera shake, for anyone it makes ill (remembered like the rest)
     function paintShakeBtn() { $('pause-shake').textContent = GAME.prefs && GAME.prefs.noShake ? '🎥 SHAKE: OFF' : '🎥 SHAKE: ON'; }
     pauseBtn('pause-shake', function () {
@@ -429,6 +440,10 @@ GAME.hud = (function () {
   // the pan is in canvas pixels at the current zoom, held inside the map.
   var mapScale = 1, mapZoom = 1, mapPanX = 0, mapPanY = 0, MAP_ZOOM_MAX = 5;
   var mapDragged = false, mapCentreOnYou = false;
+  // A cursor for a pad, in world metres. The map was a mouse screen — click
+  // to route, wheel to zoom — and a controller could open it and close it
+  // and nothing in between. The left stick moves this; A routes to it.
+  var mapCur = null;
   // where each district's name is written on the big map
   var DISTRICT_LABELS = [['OCEAN STRIP', 262, -230], ['CENTRO ALTO', -100, -150], ['PUERTO VIEJO', -330, 330],
     ['LAS COLINAS', 40, 330], ['LAS COLINAS', -340, -320]];
@@ -663,6 +678,17 @@ GAME.hud = (function () {
     g.moveTo(0, 8); g.lineTo(6, -7); g.lineTo(0, -3); g.lineTo(-6, -7);
     g.closePath(); g.fill(); g.stroke();
     g.restore();
+    // the pad's cursor: a ring and a cross, over everything but the rose
+    if (mapCur) {
+      var qx = w2mx(mapCur.x), qy = w2my(mapCur.z);
+      g.strokeStyle = 'rgba(8,4,18,.9)'; g.lineWidth = 4;
+      g.beginPath(); g.arc(qx, qy, 11, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = '#8dffd8'; g.lineWidth = 2;
+      g.beginPath(); g.arc(qx, qy, 11, 0, Math.PI * 2);
+      g.moveTo(qx - 18, qy); g.lineTo(qx - 5, qy); g.moveTo(qx + 5, qy); g.lineTo(qx + 18, qy);
+      g.moveTo(qx, qy - 18); g.lineTo(qx, qy - 5); g.moveTo(qx, qy + 5); g.lineTo(qx, qy + 18);
+      g.stroke();
+    }
     // compass rose — the big map is drawn north-up, and now it says so
     var rcx = cv.width - 42, rcy = 42, RR = 24;
     g.fillStyle = 'rgba(8,4,18,.78)';
@@ -689,8 +715,35 @@ GAME.hud = (function () {
     if (mapDragged) { mapDragged = false; return; }   // that was a pan, not a pick
     var rect = el.bigmap.getBoundingClientRect();
     var cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    var wx = (cx + mapPanX) / mapScale / MAP_S - MAP_OX;
-    var wz = (cy + mapPanY) / mapScale / MAP_S - MAP_OY;
+    pickMapAt((cx + mapPanX) / mapScale / MAP_S - MAP_OX, (cy + mapPanY) / mapScale / MAP_S - MAP_OY);
+  }
+  // the pad's stick on the open map: the cursor moves at a steady speed on
+  // screen whatever the zoom, and pushes a zoomed map along at its edges
+  function mapPad(dt, lx, ly) {
+    if (!GAME.mapOpen || (!lx && !ly)) return;
+    if (!mapCur) { var f = GAME.focus(); mapCur = { x: f.x, z: f.z }; }
+    var cv = el.bigmap, step = 360 * dt / (mapScale * MAP_S);   // metres this frame at full tilt
+    mapCur.x = U.clamp(mapCur.x + lx * step, -MAP_OX, MAP_W / MAP_S - MAP_OX);
+    mapCur.z = U.clamp(mapCur.z + ly * step, -MAP_OY, MAP_H / MAP_S - MAP_OY);
+    var cx = (mapCur.x + MAP_OX) * MAP_S * mapScale - mapPanX, cy = (mapCur.z + MAP_OY) * MAP_S * mapScale - mapPanY, M = 28;
+    if (cx < M) mapPanX -= M - cx; else if (cx > cv.width - M) mapPanX += cx - (cv.width - M);
+    if (cy < M) mapPanY -= M - cy; else if (cy > cv.height - M) mapPanY += cy - (cv.height - M);
+    drawBigMap();
+  }
+  function mapPick() {
+    if (!GAME.mapOpen || !mapCur) return false;
+    pickMapAt(mapCur.x, mapCur.z);
+    return true;
+  }
+  function mapHint() {
+    var h = $('map-hint');
+    if (!h) return;
+    if (h.getAttribute('data-keys') === null) h.setAttribute('data-keys', h.innerHTML);
+    h.innerHTML = GAME.controls && GAME.controls.usingPad()
+      ? '<b>Left stick</b> move the cursor &nbsp;·&nbsp; <b>A</b> set a destination there &nbsp;·&nbsp; <b>X</b> clear &nbsp;·&nbsp; <b>LB / RB</b> zoom &nbsp;·&nbsp; <b>BACK</b> or <b>B</b> close'
+      : h.getAttribute('data-keys');
+  }
+  function pickMapAt(wx, wz) {
     wx = U.clamp(wx, -495, 1500);
     wz = U.clamp(wz, -540, 540);
     // no charting a course into open sea: a click on the water walks the pin
@@ -709,7 +762,32 @@ GAME.hud = (function () {
   // the key help on the title and pause screens, in whatever the keys are
   // bound to now (controls.js)
   function K(code) { return GAME.controls ? GAME.controls.label(code) : code; }
+  function onPad() { return !!(GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad()); }
+  function titleText() {
+    el['press-enter'].textContent = GAME.isTouch ? 'TAP TO START' : onPad() ? 'PRESS A' : 'PRESS ENTER';
+  }
+  // the same help for a controller, while one is what you are playing with
+  var PAD_HELP = '<b>Left stick</b> move / steer &nbsp;·&nbsp; <b>Right stick</b> camera &nbsp;·&nbsp; <b>LT</b> aim lock-on &nbsp;·&nbsp; <b>RT</b> fire ' +
+    '(in a vehicle <b>RT / LT</b> are throttle and brake)<br>' +
+    '<b>LB / RB</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>A</b> jump · climb / handbrake &nbsp;·&nbsp; <b>Y</b> enter / exit car &nbsp;·&nbsp; <b>B</b> sprint<br>' +
+    '<b>D-pad ↓</b> weapons &nbsp;·&nbsp; <b>D-pad ← / →</b> radio &nbsp;·&nbsp; <b>R3</b> horn / siren &nbsp;·&nbsp; <b>X</b> job &nbsp;·&nbsp; <b>D-pad ↑</b> retry &nbsp;·&nbsp; ' +
+    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound and the rest are there';
+  var PAD_BAR = {
+    car: '<b>RT / LT</b> drive · <b>stick</b> steer · <b>A</b> handbrake · <b>LB / RB</b> drive-by · <b>Y</b> exit · <b>R3</b> horn · <b>D-pad ← →</b> radio · <b>BACK</b> map',
+    foot: '<b>stick</b> move · <b>B</b> sprint · <b>A</b> jump · <b>LT</b> aim · <b>RT</b> fire · <b>D-pad ↓</b> weapons · <b>Y</b> enter car · <b>BACK</b> map',
+    heli: '<b>RT</b> up · <b>LT</b> down · <b>stick</b> forward / yaw · <b>Y</b> exit / bail out · <b>BACK</b> map',
+    plane: '<b>RT / LT</b> throttle · <b>stick</b> pitch / turn · <b>A</b> climb · <b>B</b> dive · <b>LB / RB</b> barrel roll · <b>Y</b> bail out',
+    chute: '<b>stick</b> steer your descent · glide down to land',
+    swim: '<b>stick</b> swim · <b>B</b> faster stroke · climb out at a beach, pier or low edge · <b>Y</b> board a boat · <b>BACK</b> map',
+    boat: '<b>RT / LT</b> throttle · <b>stick</b> steer · <b>A</b> slide · <b>Y</b> step off · <b>R3</b> horn · <b>D-pad ← →</b> radio · <b>BACK</b> map'
+  };
   function paintKeyHelp() {
+    if (onPad()) {
+      var pc = document.getElementById('controls-card');
+      if (pc) pc.innerHTML = PAD_HELP;
+      if (el['pause-controls']) el['pause-controls'].innerHTML = PAD_HELP;
+      return;
+    }
     var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
       '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
       '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo &nbsp;·&nbsp; <b>' + K('KeyL') + '</b> Lola &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
@@ -738,7 +816,7 @@ GAME.hud = (function () {
       swim: '<b>' + wasd + '</b> swim · <b>' + K('ShiftLeft') + '</b> faster stroke · climb out at a beach, pier or low edge · <b>' + K('KeyF') + '</b> board a boat · <b>' + K('KeyP') + '</b> map',
       boat: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> steer · <b>' + K('Space') + '</b> slide · <b>' + K('KeyF') + '</b> step off · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map'
     };
-    el['controls-bar'].innerHTML = txt[mode];
+    el['controls-bar'].innerHTML = onPad() ? PAD_BAR[mode] : txt[mode];
     el['controls-bar'].style.display = 'block';
   }
 
@@ -1296,8 +1374,15 @@ GAME.hud = (function () {
       el['map-screen'].style.display = open ? 'flex' : 'none';
       // the sim loop halts while the map is open; syncOverlayMusic below
       // silences every voice the halted tick would otherwise leave held
-      if (open) { mapCentreOnYou = mapZoom > 1; drawBigMap(); }
-      else {
+      if (open) {
+        mapCentreOnYou = mapZoom > 1;
+        // on a pad the cursor starts on you; with a mouse there is none
+        var you = GAME.focus();
+        mapCur = GAME.controls && GAME.controls.usingPad() ? { x: you.x, z: you.z } : null;
+        mapHint();
+        drawBigMap();
+      } else {
+        mapCur = null;
         el.bigmap.width = el.bigmap.height = 0;
         if (!GAME.paused) GAME.audio.resume(); // don't leave the context suspended
       }
@@ -1312,11 +1397,27 @@ GAME.hud = (function () {
     mapClear: function () { GAME.nav.clear(); if (GAME.mapOpen) drawBigMap(); },
     pauseKey: pauseKey,
     // after a rebind: the bar and both help cards say the new keys
-    keysChanged: function () { ctlMode = ''; refreshControlsBar(); paintKeyHelp(); },
+    keysChanged: function () {
+      ctlMode = ''; refreshControlsBar(); paintKeyHelp();
+      if (api.paintHintBar) api.paintHintBar();
+      if (!GAME.started && el['press-enter'] && !el['press-enter'].classList.contains('loading')) titleText();
+      if (GAME.mapOpen) {
+        mapHint();
+        // a mouse back in hand: the pad's cursor goes
+        if (mapCur && !(GAME.controls && GAME.controls.usingPad())) { mapCur = null; drawBigMap(); }
+      }
+    },
     lockHint: lockHint,
     hitFrom: hitFrom,
     // +/- (keys and buttons): about the middle of the map
-    mapZoom: function (f) { if (GAME.mapOpen) zoomMapAt(el.bigmap.width / 2, el.bigmap.height / 2, f); },
+    mapZoom: function (f) {
+      if (!GAME.mapOpen) return;
+      if (mapCur) zoomMapAt((mapCur.x + MAP_OX) * MAP_S * mapScale - mapPanX, (mapCur.z + MAP_OY) * MAP_S * mapScale - mapPanY, f);
+      else zoomMapAt(el.bigmap.width / 2, el.bigmap.height / 2, f);
+    },
+    mapPad: mapPad,
+    mapPick: mapPick,
+    get mapCursor() { return mapCur ? { x: mapCur.x, z: mapCur.z } : null; },
     get mapZoomLevel() { return mapZoom; },
     redrawMap: function () { if (GAME.mapOpen) drawBigMap(); },
     toggleControlsBar: function () {
@@ -1325,6 +1426,7 @@ GAME.hud = (function () {
       GAME.save();
       ctlMode = '';
       refreshControlsBar();
+      if (api.paintHintBar) api.paintHintBar();
       return !GAME.prefs.hideCtl;
     },
     cashChanged: function () { targetCash = GAME.player.cash; },
@@ -1426,7 +1528,7 @@ GAME.hud = (function () {
       scr.style.display = 'flex';
       scr.querySelector('.big-sub').textContent = sub || '';
       var hint = scr.querySelector('.big-hint');
-      if (hint) hint.textContent = GAME.isTouch ? 'TAP TO CONTINUE' : 'PRESS R TO CONTINUE';
+      if (hint) hint.textContent = GAME.isTouch ? 'TAP TO CONTINUE' : 'PRESS ' + K('KeyR') + ' TO CONTINUE';
     },
     hideBig: function () {
       el['wasted-screen'].style.display = 'none';
@@ -1446,7 +1548,7 @@ GAME.hud = (function () {
     titleReady: function () {
       var pe = el['press-enter'];
       pe.classList.remove('loading');
-      pe.textContent = GAME.isTouch ? 'TAP TO START' : 'PRESS ENTER';
+      titleText();
     },
     hideTitle: function () {
       el['title-screen'].style.display = 'none';

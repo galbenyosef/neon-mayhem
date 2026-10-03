@@ -9,6 +9,7 @@
 // anybody who knows the town already.
 GAME.lola = (function () {
   function K(code) { return GAME.controls ? GAME.controls.label(code) : code.replace(/^Key/, ''); }
+  function onPad() { return !!(GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad()); }
   function touch() { return !!GAME.isTouch; }
   // the lines, written as she talks; a function where it names a control
   var TIPS = {
@@ -106,7 +107,7 @@ GAME.lola = (function () {
     var M = GAME.missions, a = M && M.active;
     if (a) {
       return { say: 'You\'re on ' + a.def.name + ' right now: ' + (M.objectiveText() || 'see it through') +
-        '. Finish it — or ' + (touch() ? 'ABANDON on the pause screen' : K('KeyX') + ' twice') + ' if you want out.' };
+        '. Finish it — or ' + (touch() || onPad() ? 'ABANDON on the pause screen' : K('KeyX') + ' twice') + ' if you want out.' };
     }
     var bests = GAME.bests || {};
     var left = M ? M.DEFS.filter(function (d) { return bests[d.id] === undefined && (!d.isla || islaOpen()); }) : [];
@@ -199,6 +200,9 @@ GAME.lola = (function () {
       '. Call it ' + pct + '% of Costa Rosa. ' + (pct < 25 ? 'Plenty left.' : pct < 75 ? 'Getting somewhere.' : 'Nearly there, kid.') };
   }
   function controlsHelp() {
+    if (onPad()) return { say: 'Left stick moves, right stick looks. RT fires and LT aims on foot; in anything with an engine they are the throttle and the brake. ' +
+      'A jumps, B sprints, Y gets in and out, X starts a job. LB and RB pick a target or fire out of the window, R3 the horn, L3 a photo, the D-pad weapons and the radio. ' +
+      'BACK is the map. START pauses — and that is where you find me.' };
     if (touch()) return { say: 'Left thumb: wherever it lands is your stick. Right side: FIRE, JUMP and RUN on foot, the pedals in a car. EXIT gets you in and out, JOB starts a shift, 📢 is the horn, 📷 takes a photo. PAUSE has the map, your settings — and me.' };
     return { say: K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + ' to move, the mouse to look, left click to fire and right click (or ' + K('Tab') + ') to lock on. ' +
       K('KeyF') + ' gets in and out, ' + K('Space') + ' jumps or climbs, ' + K('ShiftLeft') + ' sprints. ' + K('KeyJ') + ' starts a job, ' + K('KeyG') + ' the horn, ' +

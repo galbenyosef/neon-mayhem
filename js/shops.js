@@ -1535,17 +1535,24 @@ GAME.shops = (function () {
     GAME.regainPointer();
   }
 
-  function onKey(e) {
-    if (!GAME.shopOpen || !openShop) return;
+  // A key for the open shop, as the game hears it (main.js hands it over),
+  // so a pad's D-pad and A — which arrive that way and no other — browse
+  // and buy. It used to listen to the browser's own key events, which a
+  // controller never makes: on a pad a shop opened and could only be shut.
+  // Esc is left to main.js, which closes the card and then the shop.
+  function key(code) {
+    if (!GAME.shopOpen || !openShop) return false;
     if (pendingBuy !== null) {
       // the confirmation card owns the keys while it's up
-      if (e.code === 'Enter' || e.code === 'KeyE') confirmYes();
-      return;
+      if (code === 'Enter' || code === 'KeyE') { confirmYes(); return true; }
+      return code !== 'Escape';
     }
     var list = items(openShop);
-    if (e.code === 'KeyS' || e.code === 'ArrowDown') { sel = (sel + 1) % list.length; render(); }
-    else if (e.code === 'KeyW' || e.code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; render(); }
-    else if (e.code === 'Enter' || e.code === 'KeyE') { if (list[sel]) openConfirm(list[sel]); }
+    if (code === 'KeyS' || code === 'ArrowDown') { sel = (sel + 1) % list.length; render(); }
+    else if (code === 'KeyW' || code === 'ArrowUp') { sel = (sel - 1 + list.length) % list.length; render(); }
+    else if (code === 'Enter' || code === 'KeyE') { if (list[sel]) openConfirm(list[sel]); }
+    else return false;
+    return true;
   }
 
   function init(scene) {
@@ -1556,7 +1563,6 @@ GAME.shops = (function () {
       $('shop-confirm-yes').addEventListener(ev, function (e) { e.preventDefault(); confirmYes(); });
       $('shop-confirm-no').addEventListener(ev, function (e) { e.preventDefault(); cancelConfirm(); });
     });
-    window.addEventListener('keydown', onKey);
     buildLocations();
     buildShopfronts(scene);   // may slide a doormat to fit its building
     buildMarkers(scene);
@@ -1658,7 +1664,7 @@ GAME.shops = (function () {
   }
 
   return {
-    init: init, update: update, open: open, close: close, buy: buy,
+    init: init, update: update, open: open, close: close, buy: buy, key: key,
     nearHint: nearHint, blips: blips, applyOutfit: applyOutfit,
     homeSpawn: homeSpawn, ownsAny: ownsAny, owns: owns, startSpawn: startSpawn,
     renderPreview: renderPreview,

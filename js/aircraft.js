@@ -487,7 +487,7 @@ GAME.aircraft = (function () {
     if (rig) rig.visible = true;
     GAME.audio.engineState(false, 0);
     GAME.haptics.chuteOpen();
-    GAME.hud.message('Parachute out — WASD to steer, glide to the ground', 3.5);
+    GAME.hud.message('Parachute out — ' + (GAME.controls && GAME.controls.usingPad() ? 'the stick' : 'WASD') + ' to steer, glide to the ground', 3.5);
   }
 
   function updateParachute(dt) {

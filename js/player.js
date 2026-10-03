@@ -429,6 +429,11 @@ function stepEnter(dt) {
   }
 }
 
+// The pad, for the prompts said on climbing in: they named keys a
+// controller does not have (controls.js says which device is in hand).
+function promptOnPad() { return !!(GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad()); }
+function jobKey() { return promptOnPad() ? 'X' : 'J (or JOB)'; }
+
 // In the seat: the end of the walk to the door, and all of a mission retry,
 // which hands you the wheel on the start line behind a fade.
 function sitIn(car) {
@@ -452,14 +457,19 @@ function sitIn(car) {
     GAME.hud.radioPopup(car.radioStation >= 0 ? R.tune(car.radioStation) : R.randomStation());
     car.radioStation = R.index;
   }
-  if (car.spec.gunship) GAME.hud.message('TALON — Space up · Shift down · WASD fly · LMB/GUN chin gun · RMB/RKT rockets · F to exit', 5);
-  else if (car.spec.plane) GAME.hud.message('Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
-  else if (car.spec.heli) GAME.hud.message('Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
-  else if (car.type === 'taxi') GAME.hud.message('Cab — press J (or JOB) to start a fare', 3);
-  else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press J (or JOB) for a paramedic run', 3);
-  else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press J (or JOB) to start a round', 3);
+  var pad = promptOnPad();
+  if (car.spec.gunship) GAME.hud.message(pad ? 'TALON — RT up · LT down · stick fly · RB chin gun · LB rockets · Y to exit'
+    : 'TALON — Space up · Shift down · WASD fly · LMB/GUN chin gun · RMB/RKT rockets · F to exit', 5);
+  else if (car.spec.plane) GAME.hud.message(pad ? 'Plane — RT throttle up the runway, pull back on the stick to climb once fast · stick turns · Y to bail out'
+    : 'Plane — W throttle up the runway, Space to climb once fast · A/D turn · F to bail out', 4.5);
+  else if (car.spec.heli) GAME.hud.message(pad ? 'Heli — RT up · LT down · stick fly · Y to exit (bail with a chute if high up)'
+    : 'Heli — Space up · Shift down · WASD fly · F to exit (bail with a chute if high up)', 4);
+  else if (car.type === 'taxi') GAME.hud.message('Cab — press ' + jobKey() + ' to start a fare', 3);
+  else if (car.type === 'ambulance') GAME.hud.message('Ambulance — press ' + jobKey() + ' for a paramedic run', 3);
+  else if (car.type === 'icecream') GAME.hud.message('Ice cream truck — press ' + jobKey() + ' to start a round', 3);
   else if (car.type === 'police') GAME.hud.message('Cruiser — G for lights and siren, J (or JOB) for vigilante work', 3.5);
-  else if (car.spec.boat) GAME.hud.message('Boat — W/S throttle · A/D steer · Space to slide it round · F to step off (onto a pier, or over the side)', 4.5);
+  else if (car.spec.boat) GAME.hud.message(pad ? 'Boat — RT/LT throttle · stick steers · A to slide it round · Y to step off (onto a pier, or over the side)'
+    : 'Boat — W/S throttle · A/D steer · Space to slide it round · F to step off (onto a pier, or over the side)', 4.5);
 }
 
 // a turn of the dial is this car's from now on (sitIn tunes back to it)

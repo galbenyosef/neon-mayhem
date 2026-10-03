@@ -80,6 +80,11 @@
 //   5l. SHOT AT, AND LOLA ON CALL — a driver you shoot reacts (flee, bail,
 //       fight, shoot back); the tower lift is a glass ride up the outside;
 //       the helipad's parapet holds and a long fall kills; L calls Lola.
+//   5m. A CONTROLLER REACHES EVERYTHING — a pad browses and buys in a shop,
+//       moves a cursor on the map and routes to it, works the CONTROLS
+//       screen, answers a dialog, carries on from WASTED, fires the TALON;
+//       D-pad down changes weapon without calling Lola, a held button lets go
+//       of the key it pressed, and the prompts name the pad's buttons.
 //   4y. AROUND THE GAME — messages stack; the district name keeps out of a
 //       mission's title; every overlay uses the game's face; the title says
 //       LOADING until it can answer; pause takes keys and ignores a missed
@@ -6903,6 +6908,191 @@ function withTimeout(p, ms) {
   check('radio: heard again, it plays on the beat it left',
     tap.running && tap.back.voices > 0 && tap.offBeat < 1e-4,
     'voices=' + (tap.back && tap.back.voices) + ' off by ' + tap.offBeat + ' of a step');
+
+  // ---------- 5m: a controller reaches everything ----------
+  // Every check drives a fake pad through controls.poll, the way the game's
+  // loop does: buttons become the keys they stand for, menus get the D-pad
+  // and A/B. Each evaluate puts the real getGamepads back before it returns,
+  // so the page's own loop never sees the fake between them.
+  var pad = await page.evaluate(function () {
+    var P = GAME.player, Cs = GAME.controls, r = {};
+    var fake = { connected: true, axes: [0, 0, 0, 0], buttons: [] };
+    for (var i = 0; i < 17; i++) fake.buttons.push({ pressed: false, value: 0 });
+    var gp0 = navigator.getGamepads;
+    navigator.getGamepads = function () { return [fake]; };
+    function down(b) { fake.buttons[b].pressed = true; fake.buttons[b].value = 1; Cs.poll(1 / 60); }
+    function up(b) { fake.buttons[b].pressed = false; fake.buttons[b].value = 0; Cs.poll(1 / 60); }
+    function tap(b) { down(b); up(b); }
+    try {
+      GAME.godMode = true;
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      var node = GAME.city.nearestNode(-150, 150);
+      GAME.test.teleport(node.x, node.z);
+      GAME.test.fastForward(0.3);
+      Cs.poll(1 / 60);
+
+      // a shop: the D-pad walks the list, A asks, A buys, B leaves. The shop
+      // listened to the browser's key events, which a pad never makes.
+      P.cash = 100000;
+      var shop = GAME.shops.locations().filter(function (l) { return l.kind === 'hardware'; })[0];
+      GAME.shops.open(shop);
+      var first = GAME.shops.selected && GAME.shops.selected.name;
+      tap(13);
+      r.shopMoved = !!GAME.shops.selected && GAME.shops.selected.name !== first;
+      var cash0 = P.cash;
+      tap(0);
+      tap(0);
+      r.shopBought = P.cash < cash0;
+      tap(1);
+      r.shopClosed = !GAME.shopOpen;
+      GAME.test.fastForward(0.2);
+
+      // D-pad down on foot: the next weapon, and not Lola's menu as well
+      P.weapons.pistol = { have: true, ammo: 60 };
+      P.weapons.smg = { have: true, ammo: 60 };
+      var w0 = P.currentWeapon;
+      tap(13);
+      GAME.test.fastForward(1 / 30);
+      r.weaponCycled = P.currentWeapon !== w0;
+      r.lolaStayedShut = !GAME.lolaOpen;
+      if (GAME.lolaOpen) GAME.lola.close();
+
+      // the prompts name the pad's buttons once it is the pad in your hands
+      r.padLabel = Cs.label('KeyF');
+      r.padBar = (document.getElementById('pause-controls').innerHTML || '').indexOf('LB / RB') >= 0;
+      r.keyScreenStillKeys = Cs.keyLabel('KeyF');
+
+      // the map: BACK opens it, the stick moves a cursor, A routes there,
+      // RB zooms, X clears, BACK closes
+      GAME.nav.clear();
+      tap(8);
+      r.mapOpen = !!GAME.mapOpen;
+      var c0 = GAME.hud.mapCursor;
+      r.cursorOnYou = !!c0 && Math.hypot(c0.x - P.pos.x, c0.z - P.pos.z) < 2;
+      fake.axes = [1, 0.6, 0, 0];
+      for (var k = 0; k < 40; k++) Cs.poll(1 / 60);
+      fake.axes = [0, 0, 0, 0];
+      Cs.poll(1 / 60);
+      var c1 = GAME.hud.mapCursor;
+      r.cursorMoved = !!c1 && c1.x - c0.x > 20 && c1.z - c0.z > 10;
+      tap(0);
+      var d = GAME.nav.dest;
+      r.routed = !!d && Math.hypot(d.x - c1.x, d.z - c1.z) < 60;
+      tap(5);
+      r.zoomed = GAME.hud.mapZoomLevel > 1;
+      tap(2);
+      r.cleared = !GAME.nav.dest;
+      for (var zi = 0; zi < 8 && GAME.hud.mapZoomLevel > 1; zi++) tap(4);
+      r.zoomedOut = GAME.hud.mapZoomLevel === 1;
+      tap(8);
+      r.mapClosed = !GAME.mapOpen;
+
+      // the CONTROLS screen: reachable from START, the D-pad and A change a
+      // setting, and B shuts it without unpausing the game beneath it
+      tap(9);
+      r.paused = !!GAME.paused;
+      Cs.show(true);
+      var inv0 = Cs.invertY;
+      tap(13);          // look speed -> invert Y
+      tap(0);
+      r.invertToggled = Cs.invertY !== inv0;
+      tap(13); tap(13); tap(13);   // invert -> fov -> reset -> close
+      tap(0);
+      r.ctlClosedByButton = !Cs.open;
+      Cs.show(true);
+      tap(1);
+      r.ctlClosedByB = !Cs.open && !!GAME.paused;
+      Cs.setInvertY(inv0);
+      tap(9);
+      r.resumed = !GAME.paused;
+
+      // a dialog in the world: A answers it
+      var okd = false;
+      GAME.hud.dialog({ title: 'CHECK', body: 'pad', ok: 'OK', cancel: false, onOk: function () { okd = true; } });
+      tap(0);
+      r.dialogAnswered = okd && !GAME.hud.dialogOpen();
+
+      // a held button lets go of the key it pressed: A held as the jump
+      // through a pause and back used to come up as Enter, Space stuck down
+      down(0);
+      r.spaceHeld = !!GAME.input.keys.Space;
+      tap(9);
+      up(0);
+      r.spaceLetGo = !GAME.input.keys.Space;
+      tap(9);
+      r.resumedAgain = !GAME.paused;
+
+      // the TALON's guns: RB the chin gun, LB the rockets (the triggers fly it)
+      var gs = GAME.test.spawnCar('gunship', 6, 0);
+      GAME.seatInCar(gs);
+      gs.mgT = 0; gs.rkT = 0;
+      down(5);
+      GAME.test.fastForward(1 / 30);
+      r.chinGun = gs.mgT > 0;
+      up(5);
+      down(4);
+      GAME.test.fastForward(1 / 30);
+      r.rockets = gs.rkT > 0;
+      up(4);
+      GAME.test.fastForward(0.1);
+      r.lmbLetGo = !GAME.input.lmb && !GAME.input.rmb;
+      GAME.exitCar();
+      GAME.vehicles.removeCar(gs);
+      GAME.police.clearWanted();
+      GAME.test.fastForward(0.3);
+
+      // WASTED: A carries on, as R does, well before the six seconds run out
+      GAME.godMode = false;
+      GAME.playerWasted('test');
+      GAME.test.fastForward(0.8);
+      down(0);
+      GAME.test.fastForward(1 / 30);
+      r.continued = !!P.respawnQueued && P.stateT < 6;
+      up(0);
+      r.keyRLetGo = !GAME.input.keys.KeyR;
+    } finally {
+      navigator.getGamepads = gp0;
+      Cs.poll(1 / 60);
+      if (GAME.shopOpen) GAME.shops.close();
+      if (GAME.mapOpen) GAME.hud.toggleMap(false);
+      if (Cs.open) Cs.show(false);
+      if (GAME.paused) GAME.togglePause();
+    }
+    return r;
+  });
+  try {
+    await page.waitForFunction(function () { return GAME.player.state === 'alive'; }, null, { timeout: 10000 });
+  } catch (e) { /* reported below */ }
+  var padAfter = await page.evaluate(function () {
+    var Cs = GAME.controls, r = {};
+    // and the keyboard back in hand: the prompts say keys again
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyZ' }));
+    r.keyLabel = Cs.label('KeyF');
+    r.alive = GAME.player.state === 'alive';
+    GAME.godMode = false;
+    return r;
+  });
+  check('pad: a shop list moves on the D-pad', pad.shopMoved, JSON.stringify(pad));
+  check('pad: A asks and A buys', pad.shopBought);
+  check('pad: B leaves the shop', pad.shopClosed);
+  check('pad: D-pad down changes weapon', pad.weaponCycled);
+  check('pad: and does not open Lola as well', pad.lolaStayedShut);
+  check('pad: prompts name the pad\'s buttons', pad.padLabel === 'Y' && pad.padBar, 'F is "' + pad.padLabel + '"');
+  check('pad: while the rebinding screen still lists keys', pad.keyScreenStillKeys === 'F', pad.keyScreenStillKeys);
+  check('pad: BACK opens the map with a cursor on you', pad.mapOpen && pad.cursorOnYou);
+  check('pad: the stick moves the cursor', pad.cursorMoved);
+  check('pad: A sets the route at the cursor', pad.routed);
+  check('pad: RB zooms the map in, LB out, and X clears the route', pad.zoomed && pad.zoomedOut && pad.cleared);
+  check('pad: BACK closes the map it opened', pad.mapClosed);
+  check('pad: the CONTROLS screen changes a setting from the pad', pad.paused && pad.invertToggled);
+  check('pad: and closes on its CLOSE button or B, leaving the game paused', pad.ctlClosedByButton && pad.ctlClosedByB);
+  check('pad: A answers a dialog in the world', pad.dialogAnswered);
+  check('pad: a button held through a pause lets go of its own key', pad.spaceHeld && pad.spaceLetGo && pad.resumedAgain);
+  check('pad: the TALON fires its chin gun on RB and rockets on LB', pad.chinGun && pad.rockets && pad.lmbLetGo);
+  check('pad: A carries on from WASTED', pad.continued && pad.keyRLetGo);
+  check('pad: back on the keyboard the prompts say keys', padAfter.keyLabel === 'F' && padAfter.alive, JSON.stringify(padAfter));
 
   // ---------- 6: a rider follows the deck when it tilts ----------
   // vehicles.js pitches a chassis over a ramp (negative rotation.x lifts the
