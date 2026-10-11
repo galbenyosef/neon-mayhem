@@ -13239,9 +13239,16 @@ function withTimeout(p, ms) {
       settle();
       GAME.test.teleport(barber.at.x + 3, barber.at.z); ff(0.3);
       GAME.interiors.enter(barber); ff(1.5);
-      S.open(barber); ff(0.2); S.close(); ff(0.3);
+      // a cut, as the game has it: the chair is a menu, and nothing ticks
+      // while it is open (fastForward would, so none is run until it shuts)
+      var cash0 = P.cash;
+      GAME.test.addCash(5000);
+      S.open(barber);
+      var cut = ['style_buzz', 'style_mullet', 'style_crew', 'style_pompadour'].filter(function (id) { return S.buy(id); })[0];
+      S.close(); ff(0.3);
       GAME.interiors.leave(); ff(1.5);
-      r.out = { scene: GAME.scenes.active, step: G.step, threads: false };
+      r.out = { scene: GAME.scenes.active, step: G.step, threads: false, cut: cut, first: ((GAME.scenes.line || {}).text || '') };
+      P.cash = cash0;
       for (var j = 0; j < 40 && GAME.scenes.active; j++) { if (/THREADS/.test((GAME.scenes.line || {}).text || '')) r.out.threads = true; GAME.scenes.advance(); ff(0.3); GAME.scenes.advance(); ff(0.1); }
       r.out.asked = L.isOpen && L.options().some(function (o) { return /MARK THREADS/.test(o); });
       if (L.isOpen) L.choose(/EXPLORE/);
@@ -13311,6 +13318,7 @@ function withTimeout(p, ms) {
   check('first day: and after it, CORTES CUTS is marked', fd.paid && fd.paid.after.over && fd.paid.after.routed && fd.paid.step === 'barber', JSON.stringify(fd.paid));
   check('first day: out of the barber\'s, a scene on the pavement, then THREADS — marked, or on your own',
     fd.out && fd.out.scene && fd.out.threads && fd.out.step === 'outro' && fd.out.asked && fd.out.done, JSON.stringify(fd.out));
+  check('first day: with a new cut, she says so — not "Not today?"', fd.out && !!fd.out.cut && /belong on the strip/.test(fd.out.first), JSON.stringify(fd.out));
   check('radio: an ad while you cruise, never in the middle of a job', fd.ads && fd.ads.roaming && fd.ads.roamAd && fd.ads.inJob && !fd.ads.jobRoaming && !fd.ads.jobAd, JSON.stringify(fd.ads));
   check('business: in a shop of your own it is on the house; anywhere else it costs', fd.owned && fd.owned.free && fd.owned.cut && fd.owned.paysElsewhere, JSON.stringify(fd.owned));
   check('doors: get out of the car by a door mat and step on it, and you are in', fd.door, JSON.stringify(fd.door));
