@@ -53,10 +53,12 @@ GAME.stunts = (function () {
   }
 
   // called when a jump that started on ramp `idx` lands successfully
-  function credit(idx, airT, dist) {
+  // `air` is what the jump itself just paid (vehicles.js landStunt), and
+  // `stats` its line: a first find says both in one message, with the total
+  function credit(idx, airT, dist, air, stats) {
     if (idx === undefined || idx === null) return 0;
     var ramp = ramps()[idx];
-    if (ramp && ramp.idx === idx && ramp.isla) return creditIsla(ramp.islaN);
+    if (ramp && ramp.idx === idx && ramp.isla) return creditIsla(ramp.islaN, air, stats);
     total = mainTotal();
     if (found[idx]) return 0;
     found[idx] = true;
@@ -66,7 +68,7 @@ GAME.stunts = (function () {
     GAME.audio.sting('win');
     GAME.haptics.win();
     var left = total - n;
-    GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
+    GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   ' + paidLine(bonus, air, stats) +
       (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
     GAME.track('stunt-jump-found');
     if (GAME.lola) GAME.lola.first('stunt');
@@ -75,7 +77,11 @@ GAME.stunts = (function () {
     return bonus;
   }
   // keyed by the island ramp's own number, not its place in the whole list
-  function creditIsla(k) {
+  function paidLine(bonus, air, stats) {
+    if (!air) return '+$' + bonus;
+    return '+$' + (bonus + air) + '  (' + (stats ? stats.split('   ')[0].replace(/!$/, '') : 'JUMP') + ' $' + air + ' + FIND $' + bonus + ')';
+  }
+  function creditIsla(k, air, stats) {
     if (k === undefined || k < 0 || islaFound[k]) return 0;
     islaFound[k] = true;
     var n = islaCount(), all = islaTotal();
@@ -84,7 +90,7 @@ GAME.stunts = (function () {
     GAME.audio.sting('win');
     GAME.haptics.win();
     var left = all - n;
-    GAME.hud.message('ISLA VERDE STUNT JUMP  ' + n + ' / ' + all + '   ·   +$' + bonus +
+    GAME.hud.message('ISLA VERDE STUNT JUMP  ' + n + ' / ' + all + '   ·   ' + paidLine(bonus, air, stats) +
       (left > 0 ? '   —   ' + left + ' more on the island' : ''), 4.5);
     GAME.track('isla-stunt-jump-found');
     if (GAME.lola) GAME.lola.first('islaJump');

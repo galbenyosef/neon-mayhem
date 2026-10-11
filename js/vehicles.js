@@ -1008,18 +1008,21 @@ GAME.vehicles = (function () {
       // missions put together.
       var key = jumpKey(car), last = jumpPaidAt[key];
       var wait = last === undefined ? 0 : JUMP_COOLDOWN - (GAME.time - last);
-      if (wait > 0) {
-        GAME.hud.message(stats + ' · paid out — again in ' + clockText(wait), 3);
-      } else {
+      var paid = 0;
+      if (wait <= 0) {
         jumpPaidAt[key] = GAME.time;
+        paid = cash;
         GAME.addCash(cash);
         GAME.audio.sting('win');
         GAME.haptics.stunt();
-        GAME.hud.message(stats + ' · +$' + cash, 3);
       }
       GAME.missions.notifyChaos(60);
-      // a jump launched off one of the city's ramps also logs it as found
-      if (car.jumpRamp !== undefined && car.jumpRamp !== null) GAME.stunts.credit(car.jumpRamp, airT, dist);
+      // A jump launched off one of the city's ramps also logs it as found —
+      // and the first time, that is one line with the whole of what it paid.
+      // The air bonus used to land as its own message under the find's, so
+      // the cash went up by more than the line you read said.
+      var found = earned ? GAME.stunts.credit(car.jumpRamp, airT, dist, paid, stats) : 0;
+      if (!found) GAME.hud.message(paid ? stats + ' · +$' + paid : stats + ' · paid out — again in ' + clockText(wait), 3);
     }
     car.jumpSpin = 0; car.jumpRamp = null;
     // hard landings still hurt

@@ -332,6 +332,8 @@
 //      hospital visit takes the rest; a blade you carry still replaces it.
 //  35. THE DEAD STAY DOWN — a stranger shot on their spot is not stood back
 //      up beside the body; they are there again once you have been away.
+//  36. OFF THE CARD — the project link shows on the pause screen whichever
+//      section is open, and a click off Lola's card closes her.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -3190,10 +3192,17 @@ function withTimeout(p, ms) {
       GAME.test.enterNearestCar(jc); GAME.test.fastForward(1.2);
       jc.pos.set(sx, C.groundY(sx, sz), sz); jc.heading = rp.rot; jc.speed = 0; jc.vx = jc.vz = 0;
       var air = 0;
+      // and what it says it paid is what it paid: one line, the whole sum
+      var jm = [], jm0 = GAME.hud.message, cashJ = P.cash;
+      GAME.hud.message = function (t) { if (/\+\$/.test(String(t))) jm.push(String(t)); return jm0.apply(GAME.hud, arguments); };
       GAME.test.pressKey('KeyW', true);
-      for (var k = 0; k < 60 * 5; k++) { GAME.test.fastForward(1 / 60); air = Math.max(air, jc.air || 0); }
+      try {
+        for (var k = 0; k < 60 * 5; k++) { GAME.test.fastForward(1 / 60); air = Math.max(air, jc.air || 0); }
+      } finally { GAME.hud.message = jm0; }
       GAME.test.pressKey('KeyW', false);
-      r.islaJump = { air: +air.toFixed(2), isla: GAME.stunts.islaFound - i0, main: GAME.stunts.found - m0 };
+      var said = jm.length === 1 ? +(/\+\$([0-9,]+)/.exec(jm[0]) || [0, '0'])[1].replace(/,/g, '') : -1;
+      r.islaJump = { air: +air.toFixed(2), isla: GAME.stunts.islaFound - i0, main: GAME.stunts.found - m0,
+        msgs: jm, said: said, gained: Math.round(P.cash - cashJ) };
       GAME.exitCar();
       GAME.vehicles.removeCar(jc);
       // lost tapes
@@ -3250,6 +3259,8 @@ function withTimeout(p, ms) {
     con.islaRamps === 10 && con.islaOnIsland && con.mainTotal === 25, JSON.stringify({ isla: con.islaRamps, on: con.islaOnIsland, main: con.mainTotal }));
   check('isla jumps: one launches and counts on the island tally, not the mainland one',
     con.islaJump.air > 0.45 && con.islaJump.isla === 1 && con.islaJump.main === 0, JSON.stringify(con.islaJump));
+  check('stunt jumps: a first find says what it paid in one line — the air and the find together — and that is what you got',
+    con.islaJump.msgs.length === 1 && con.islaJump.said > 0 && con.islaJump.said === con.islaJump.gained, JSON.stringify(con.islaJump));
   check('tapes: thirty, twenty on the mainland and ten on Isla Verde', con.tapes.n === 30 && con.tapes.main === 20 && con.tapes.isla === 10, JSON.stringify(con.tapes));
   check('tapes: every one where you can stand to pick it up, and spread out', con.tapesDry && con.tapesClear && con.tapesSpread,
     JSON.stringify({ dry: con.tapesDry, clear: con.tapesClear, spread: con.tapesSpread }));
@@ -13683,6 +13694,29 @@ function withTimeout(p, ms) {
   });
   check('dead stay down: a stranger shot on their spot is not stood back up beside the body', dd.out && dd.notBack, JSON.stringify(dd));
   check('dead stay down: and they are back on it once you have been away', dd.backLater, JSON.stringify(dd));
+
+  // ---------- 36: the pause screen's link, and off Lola's card ----------
+  var oc = await page.evaluate(function () {
+    var r = {}, $ = function (id) { return document.getElementById(id); };
+    GAME.police.clearWanted();
+    GAME.togglePause();
+    r.link = ['ptab-stats', 'ptab-settings', 'ptab-game'].map(function (id) {
+      $(id).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      var a = $('pause-link').querySelector('a'), b = a.getBoundingClientRect();
+      return a.offsetParent !== null && b.width > 0;
+    });
+    if (GAME.paused) GAME.togglePause();
+    // Lola: a click on her card is not a close; one off it is
+    r.opened = GAME.lola.open();
+    $('lola-card').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    r.cardKeeps = !!GAME.lolaOpen;
+    $('lola-screen').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    r.offCloses = !GAME.lolaOpen;
+    if (GAME.lolaOpen) GAME.lola.close();
+    return r;
+  });
+  check('off the card: the project link shows on the pause screen, whichever section is open', oc.link.every(Boolean), JSON.stringify(oc.link));
+  check('off the card: a click on Lola\'s card keeps her, one off it closes her', oc.opened && oc.cardKeeps && oc.offCloses, JSON.stringify(oc));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

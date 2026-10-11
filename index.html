@@ -300,7 +300,7 @@
   #pause-stats .v.gold { color:#ffe08a; text-shadow:0 0 8px rgba(255,190,60,.55); }
   .pstat-note { color:#bcd0ee; font-size:12px; line-height:1.5; letter-spacing:1px; }
   #pause-controls { margin-top:8px; color:#cfe6ff; font-size:12px; line-height:1.7; }
-  #pause-link { margin-top:6px; font-size:11.5px; }
+  #pause-link { margin-top:5px; font-size:11.5px; text-align:center; flex-shrink:0; }
   #pause-link a { color:#9fd8ff; }
   #pause-hint { margin-top:12px; color:#8dffd8; font-weight:700; font-size:12.5px; text-align:center; flex-shrink:0; }
   /* a phone held upright, or anything narrow: the menu runs across the top
@@ -655,13 +655,14 @@
           <span class="mbtn" id="pause-cheats">🕹 CHEATS</span></div>
         <div class="pgroup"><h4>LEAVE</h4>
           <span class="mbtn" id="pause-exit">EXIT TO TITLE</span></div>
-        <div id="pause-link"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
-          onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
       </div>
     </div>
   </div>
   <input type="file" id="save-file" accept=".json,application/json" style="display:none">
   <div id="pause-hint">ESC, RESUME or a click off the menu to carry on &nbsp;·&nbsp; ↑ ↓ pick · → / Enter open · ← back</div>
+  <!-- always there, whichever card is open -->
+  <div id="pause-link"><a href="https://github.com/pranshuparmar/neon-mayhem" target="_blank" rel="noopener"
+    onclick="event.stopPropagation()" ontouchend="event.stopPropagation()">github.com/pranshuparmar/neon-mayhem</a></div>
 </div>
 
 <div id="shutter"></div>

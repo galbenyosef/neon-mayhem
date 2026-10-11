@@ -293,7 +293,13 @@ GAME.lola = (function () {
     if (GAME.player.state !== 'alive') return false;
     if (GAME.paused) GAME.togglePause();
     GAME.lolaOpen = true;
-    $('lola-screen').style.display = 'flex';
+    var scr = $('lola-screen');
+    // a click or a tap off her card closes it, as Esc does at her top level
+    if (!scr.__offCard) {
+      scr.__offCard = true;
+      scr.addEventListener('click', function (e) { if (e.target === scr) { e.preventDefault(); close(); } });
+    }
+    scr.style.display = 'flex';
     if (GAME.audio && GAME.audio.pagerBeep) GAME.audio.pagerBeep();
     if (GAME.releasePointer) GAME.releasePointer();
     if (GAME.syncOverlayMusic) GAME.syncOverlayMusic();
