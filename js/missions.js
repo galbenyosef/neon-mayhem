@@ -1181,8 +1181,42 @@ GAME.missions = (function () {
     active.acts = d.then; active.actIndex = -1; active.stage = null;
     GAME.audio.sting('win');
     GAME.haptics.checkpoint();
+    // The job's own part was won without a word: the race ended, a pager
+    // line about a black sedan arrived, and the win card only came after
+    // that — nobody could tell what had happened. Now whoever is behind
+    // what comes next rings first: you won, and here is what is coming.
+    // (a run whose next part is a scene of its own says it there)
+    var first = d.then[0];
+    if (first && first.kind !== 'scene') {
+      var script = actIntro(d, first), ran = active;
+      active.introSaid = true;
+      var go = function () { if (active === ran && !active.stage) nextAct(); };
+      if (GAME.scenes && GAME.scenes.play(script, go)) return true;
+      sceneOnPager(script);
+    }
     nextAct();
     return true;
+  }
+  // what was won, then what is coming, as a call
+  var WON = {
+    race: 'First across the line! Nice driving, kid.',
+    courier: 'That\'s every drop made. Nice work.',
+    rampage: 'Now that\'s a mess. Good.',
+    takedown: 'He\'s down. Good.'
+  };
+  function actIntro(d, a) {
+    var lines = [['lola', WON[d.type] || 'Job done, kid.']];
+    if (a.say) lines.push(['lola', a.say]);
+    if (a.lola) lines.push(['lola', a.lola]);
+    if (a.rico) lines.push(['rico', a.rico]);
+    return { id: 'act-' + d.id, shots: [{ set: null, lines: lines }] };
+  }
+  // a part after the job's own, on the mission's title: so the second half
+  // reads as the same job going on, not something new out of nowhere
+  function partTitle() {
+    var n = 1;
+    for (var i = 0; i <= active.actIndex; i++) if (active.acts[i].kind !== 'scene') n++;
+    return active.def.name + '  ·  PART ' + n;
   }
   function nextAct() {
     if (!active) return;
@@ -1194,9 +1228,12 @@ GAME.missions = (function () {
     var s = active.stage = { kind: a.kind, a: a, t: 0 };
     active.courierRoute = null; active.routeT = 0;
     if (a.time) active.timeLeft = a.time;
-    if (a.say) GAME.hud.message(a.say, 3.5);
-    if (a.lola) lola(a.lola, 7);
-    if (a.rico) rico(a.rico, 7);
+    // (said already, in the call that opened the first of them)
+    var said = active.introSaid && active.actIndex === 0;
+    if (a.say && !said) GAME.hud.message(a.say, 3.5);
+    if (a.lola && !said) lola(a.lola, 7);
+    if (a.rico && !said) rico(a.rico, 7);
+    if (a.kind !== 'scene') GAME.hud.missionStart(partTitle(), '');
     if (a.kind === 'grab') {
       var at = a.at ? place(a.at) : active.lastAt;
       s.item = dropItem(at.x, at.z, a.color || 0x5a3a22);

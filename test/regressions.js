@@ -334,6 +334,8 @@
 //      up beside the body; they are there again once you have been away.
 //  36. OFF THE CARD — the project link shows on the pause screen whichever
 //      section is open, and a click off Lola's card closes her.
+//  37. ON FIRE — a Molotov sets whoever is in it alight: they burn on as
+//      they run, and an officer on fire neither cuffs you nor shoots.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -12410,8 +12412,14 @@ function withTimeout(p, ms) {
       GAME.test.fastForward(0.5);
       // a rampage won, and his friends turn up
       r.r0 = walkIn(def('rampage0'));
-      M.notifyChaos(99999); GAME.test.fastForward(0.3);
+      var paged = [], pg0 = GAME.hud.pager;
+      GAME.hud.pager = function (from, text) { paged.push(String(text)); return pg0.apply(GAME.hud, arguments); };
+      try { M.notifyChaos(99999); GAME.test.fastForward(0.3); } finally { GAME.hud.pager = pg0; }
       r.r0act = M.act && M.act.kind;
+      // the part won is said out loud before what comes next, and the
+      // mission's title says this is the same job going on
+      r.r0said = { won: paged.some(function (t) { return /mess/.test(t); }), next: paged.some(function (t) { return /friends/.test(t); }),
+        title: document.getElementById('mission-title').textContent };
       r.r0still = !!M.active && bests.rampage0 === undefined;
       // fail it there, and the retry starts the rampage again
       M.failActive('test'); GAME.test.fastForward(0.2);
@@ -12419,7 +12427,21 @@ function withTimeout(p, ms) {
       for (var j = 0; j < 120 && !M.active; j++) GAME.test.fastForward(1 / 60);
       r.retryTop = !!(M.active && M.active.def.id === 'rampage0' && !M.act);
       for (var j2 = 0; j2 < 300 && M.active && M.active.state !== 'run'; j2++) GAME.test.fastForward(1 / 30);
-      M.notifyChaos(99999); GAME.test.fastForward(0.3);
+      // and with the scenes on, it is a call: nothing comes for you until
+      // she has said it
+      GAME.scenes.enabled = true;
+      try {
+        M.notifyChaos(99999); GAME.test.fastForward(0.3);
+        r.r0call = { scene: !!GAME.scenes.active, line: '', waiting: !M.act };
+        for (var sc = 0; sc < 30 && GAME.scenes.active; sc++) {
+          GAME.test.fastForward(0.5);
+          var ln = GAME.scenes.line;
+          if (ln && ln.text && r.r0call.line.indexOf(ln.text) < 0) r.r0call.line += ln.text + ' | ';
+          if (M.act) r.r0call.waiting = false;
+          GAME.scenes.advance(); GAME.test.fastForward(0.1); GAME.scenes.advance();
+        }
+        r.r0call.after = M.act && M.act.kind;
+      } finally { GAME.scenes.enabled = false; }
       clear();
       r.r0done = !M.active && bests.rampage0 !== undefined;
       if (GAME.share && GAME.share.hide) GAME.share.hide();
@@ -12481,6 +12503,10 @@ function withTimeout(p, ms) {
     return r;
   });
   check('acts: a rampage won goes on — his friends come for you', acts.r0 && acts.r0act === 'heavies' && acts.r0still, JSON.stringify(acts));
+  check('acts: the part won is said before what comes next, and the title reads PART 2',
+    acts.r0said && acts.r0said.won && acts.r0said.next && /PART 2/.test(acts.r0said.title), JSON.stringify(acts.r0said));
+  check('acts: with the scenes on it is a call — "now that\'s a mess" — and they come once she has said it',
+    acts.r0call && acts.r0call.scene && /mess/.test(acts.r0call.line) && acts.r0call.waiting && acts.r0call.after === 'heavies', JSON.stringify(acts.r0call));
   check('acts: failed in a later act, the retry starts the job from the top', acts.retryTop, JSON.stringify(acts));
   check('acts: and with them down, it is passed', acts.r0done, JSON.stringify(acts));
   check('acts: the warehouse foreman waits down the street with his crew', acts.r1act === 'crew' && acts.r1away > 40 && acts.r1men >= 4 && acts.r1boss, JSON.stringify(acts));
@@ -13717,6 +13743,47 @@ function withTimeout(p, ms) {
   });
   check('off the card: the project link shows on the pause screen, whichever section is open', oc.link.every(Boolean), JSON.stringify(oc.link));
   check('off the card: a click on Lola\'s card keeps her, one off it closes her', oc.opened && oc.cardKeeps && oc.offCloses, JSON.stringify(oc));
+
+  // ---------- 37: a Molotov sets them alight ----------
+  // The fire was a patch of ground that took a nick out of whoever stood in
+  // it: an officer stepped out of it and arrested you.
+  var of = await page.evaluate(function () {
+    var r = {}, P = GAME.player, ff = function (t) { GAME.test.fastForward(t); };
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    GAME.test.teleport(-60, 40); ff(0.5);
+    // an officer at your elbow with one star on you: he would have you
+    GAME.police.setWanted(1);
+    var cop = GAME.peds.spawnPed(P.pos.x + 1.2, P.pos.z, { cop: true });
+    GAME.arsenal.testLight(cop.pos.x, cop.pos.z);
+    var busted = false, burnSeen = false;
+    for (var i = 0; i < 60 * 3; i++) {
+      ff(1 / 60);
+      if (cop.burnT > 0) burnSeen = true;
+      if (P.state === 'busted') { busted = true; break; }
+      // stay put next to him, as somebody who threw it would
+      P.pos.x = cop.pos.x - 1.2; P.pos.z = cop.pos.z;
+    }
+    r.cop = { burned: burnSeen, busted: busted, dead: !!cop.dead, hp: cop.hp };
+    // a passer-by caught in it burns on after leaving the flames, and dies of it
+    GAME.police.clearWanted();
+    GAME.test.teleport(-60, 40); ff(1);
+    var by = GAME.peds.spawnPed(P.pos.x + 12, P.pos.z, {});
+    GAME.arsenal.testLight(by.pos.x, by.pos.z);
+    ff(0.2);   // one lick of the flames, then out
+    var hp1 = by.hp;
+    r.oneLick = hp1;
+    by.pos.x += 30;   // well clear of the patch
+    ff(1.2);
+    r.by = { alight: by.burnT > 0 || by.dead, hurtAway: by.dead || by.hp < hp1, fled: by.dead || by.state === 'flee' };
+    ff(5);
+    r.by.dead = !!by.dead;
+    GAME.police.clearWanted();
+    if (P.state !== 'alive') { P.state = 'alive'; P.health = 100; }
+    return r;
+  });
+  check('on fire: an officer in a Molotov\'s flames burns, and does not cuff you while he does', of.cop.burned && !of.cop.busted, JSON.stringify(of.cop));
+  check('on fire: whoever catches it burns on as they run, and dies of it', of.by.alight && of.by.hurtAway && of.by.fled && of.by.dead, JSON.stringify(of.by));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
