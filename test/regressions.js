@@ -13224,6 +13224,9 @@ function withTimeout(p, ms) {
         GAME.test.fastForward(1 / 30);
       }
       r.won = !R.running && P.cash - cash === 800 && GAME.prefs.rc.won === true && !P.inCar;
+      // and the result card, as any race won has (it only ever had a line)
+      r.card = !!GAME.shareOpen && document.getElementById('share-screen').style.display === 'flex';
+      if (GAME.shareOpen) GAME.share.hide();
     } finally {
       if (R.running) R.end();
       GAME.prefs.rc = JSON.parse(saved);
@@ -13235,6 +13238,7 @@ function withTimeout(p, ms) {
   check('rc: step in and it is you in a toy against three, after a countdown', rcr.notHot && rcr.started && rcr.go, JSON.stringify(rcr));
   check('rc: put the controller down and it is over, back at the gate', rcr.quit, JSON.stringify(rcr));
   check('rc: home first, and it pays', rcr.won, JSON.stringify(rcr));
+  check('rc: and a win puts up the result card', rcr.card, JSON.stringify(rcr));
 
   // ---------- 27: the route line stops where it is going ----------
   // The search runs junction to junction, and the junction nearest a place

@@ -83,6 +83,16 @@ GAME.rc = (function () {
       GAME.audio.sting('win');
       GAME.hud.message('RC RACE WON  ·  ' + t.toFixed(1) + 's  ·  +$' + pay + (best ? '  ·  NEW BEST' : ''), 4.5);
       if (GAME.save) GAME.save();
+      // the result card every other race won gets (it only ever had a line)
+      if (GAME.share) GAME.share.show({
+        slug: 'rc-race',
+        eyebrow: 'MINI MAYHEM · 1986',
+        title: 'RACE WON',
+        subtitle: 'Two laps round the cones, first past the last gate',
+        accent: '#ffd24a',
+        stats: [{ label: 'Time', value: t.toFixed(1) + 's' }, { label: 'Best', value: pr.best.toFixed(1) + 's' + (best ? ' ★' : '') },
+          { label: 'Paid', value: '$' + pay.toLocaleString() }]
+      });
     } else {
       GAME.audio.sting('wasted');
       GAME.hud.message('RC RACE LOST — ' + why, 3.5);
