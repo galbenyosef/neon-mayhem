@@ -878,13 +878,20 @@ GAME.vehicles = (function () {
       car.onRampIdx = ramp ? ramp.idx : null;
       car.deckCap = ramp && ramp.cap ? ramp.cap : 0;
       if (ramp && ramp.boost) {
-        if (!car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
+        // (a capped one only announces itself when it is hauling you UP: the
+        // chain's rooftop lip reins a fast car in, and a boost ping and a
+        // kick on the way to being slowed read as a lie)
+        var hauls = !ramp.cap || car.speed < ramp.cap - 1;
+        if (hauls && !car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
           GAME.audio.pickup();
           GAME.cameraShake = 0.35;
         }
         if (ramp.cap) {
           // the chain launcher: it accelerates you TO its speed, never past
-          // it — the landing is a rooftop, and the rooftop is only so deep
+          // it — the landing is a rooftop, and the rooftop is only so deep.
+          // The rooftop lip at the far end is one too (city.js placeChain):
+          // a roof is no run-up, and its pace is the fastest the street
+          // beyond has room to land
           car.capPing = true;
           car.boostT = 0;
           // (an island booster only ever hauls you UP to its pace: arriving

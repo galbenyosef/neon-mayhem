@@ -192,8 +192,10 @@
 //       its push ends at the lip rather than firing into the road on
 //       landing, the speed it hands back comes off smoothly, and the capped
 //       chain launcher gets every car to its pace, not just the fast ones.
-//       The chain's rooftop ramp is a metered drop and no longer poses as a
-//       booster; it eases you to its pace instead of snapping you to it.
+//       The chain's rooftop ramp is a booster too, capped: a slow car is
+//       hauled up to its pace (and told so), a fast one eased down to it
+//       quietly instead of snapped; with a deep roof across the street the
+//       pace throws you onto it, roof to roof.
 //   3v. INTO THE SEA — a vehicle that goes into the water goes UNDER and is
 //       cleared away, the player's own included, rather than skimming out
 //       across the surface and stopping there for good.
@@ -965,11 +967,12 @@ function withTimeout(p, ms) {
     !!boost.chain && boost.chain.every(function (c) { return Math.abs(c.landY - c.roofY) < 0.5; }),
     JSON.stringify((boost.chain || []).map(function (c) { return c.type + ' landed y=' + (c.landY || 0).toFixed(1) + ' roof=' + c.roofY.toFixed(1); })));
 
-  // The chain's rooftop ramp is a metered drop, not a booster: it sets the
-  // pace the drop leaves at (any faster and it lands against the next block),
-  // which is slower than nearly anything drives. It used to dress as a booster
-  // — the ping, the shake, the paint — and then snap the car down to that pace
-  // on its first tick of deck.
+  // The chain's rooftop ramp sets the pace the drop leaves at (any faster
+  // and it lands against the next block). It once dressed as a booster and
+  // then snapped every car DOWN to that pace on its first tick of deck; then
+  // it was a plain metered ramp, and a roof is no run-up, so the drop was a
+  // dud. Now it is a capped booster: a slow car is hauled up to its pace with
+  // the ping, a fast one is eased down quietly over the deck.
   var drop = await page.evaluate(function () {
     var C = GAME.city, P = GAME.player;
     var roof = C.ramps.filter(function (q) { return q.cap && q.base; })[0];
@@ -983,7 +986,7 @@ function withTimeout(p, ms) {
     GAME.test.enterNearestCar(car);
     GAME.test.fastForward(0.7);
     var r = { found: true, boost: roof.boost, cap: roof.cap, aboard: P.inCar };
-    car.speed = car.spec.maxSpeed;
+    car.speed = roof.cap + 15;   // quicker than its pace, whatever that is
     r.entry = car.speed;
     var pings = 0, pk0 = GAME.audio.pickup;
     GAME.audio.pickup = function () { pings++; return pk0.apply(GAME.audio, arguments); };
@@ -999,19 +1002,46 @@ function withTimeout(p, ms) {
     GAME.test.pressKey('KeyW', false);
     GAME.audio.pickup = pk0;
     r.onDeck = onDeck; r.pings = pings; r.maxStep = maxStep; r.lip = lip; r.landY = landY;
-    r.street = landY === null ? null : C.groundY(car.pos.x, car.pos.z, 0);
+    // (what is under it: the street, or the roof across it — surfaceY)
+    r.street = landY === null ? null : C.surfaceY(car.pos.x, car.pos.z);
     GAME.exitCar();
     GAME.vehicles.removeCar(car);
+    // and a car that crawls up it is thrown off at the pace, pinged
+    var sl = GAME.vehicles.spawnCar('sedan', sx, sz, roof.rot, {});
+    sl.pos.y = roof.base; P.pos.y = roof.base;
+    GAME.test.teleport(sx - uz * 4, sz + ux * 4); P.pos.y = roof.base;
+    GAME.test.enterNearestCar(sl); GAME.test.fastForward(0.7);
+    sl.pos.set(sx, roof.base, sz); sl.heading = roof.rot; sl.speed = 6;
+    var pings2 = 0;
+    GAME.audio.pickup = function () { pings2++; return pk0.apply(GAME.audio, arguments); };
+    GAME.test.pressKey('KeyW', true);
+    var lip2 = null, land2 = null, on2 = false;
+    try {
+      for (var k = 0; k < 400; k++) {
+        GAME.test.fastForward(1 / 60);
+        if (sl.onRampIdx === roof.idx) on2 = true;
+        if (on2 && lip2 === null && sl.air > 0) lip2 = Math.hypot(sl.airVX, sl.airVZ);
+        if (lip2 !== null && !(sl.air > 0)) { land2 = sl.pos.y; break; }
+      }
+    } finally { GAME.test.pressKey('KeyW', false); GAME.audio.pickup = pk0; }
+    r.slow = { pings: pings2, lip: lip2, landY: land2, street: land2 === null ? null : C.surfaceY(sl.pos.x, sl.pos.z), roofY: roof.base };
+    GAME.exitCar();
+    GAME.vehicles.removeCar(sl);
     P.health = 100;
     return r;
   });
   check('drop: a sports car rides onto the rooftop ramp at full pace (anchor sanity)',
     drop.found && drop.aboard && drop.onDeck && drop.entry > drop.cap + 10, JSON.stringify(drop));
-  check('drop: the rooftop ramp is not dressed as a booster, and does not ping as one',
-    drop.found && !drop.boost && drop.pings === 0, 'boost=' + drop.boost + ' pings=' + drop.pings);
+  check('drop: the rooftop ramp is a booster — and a car quicker than its pace, reined in, hears no boost',
+    drop.found && drop.boost && drop.cap >= 22 && drop.pings === 0, 'boost=' + drop.boost + ' cap=' + drop.cap + ' pings=' + drop.pings);
+  check('drop: a car that crawls up it is hauled to its pace, pinged, and lands on what is under it',
+    drop.found && drop.slow && drop.slow.pings >= 1 && drop.slow.lip >= drop.cap - 0.5 && drop.slow.landY !== null &&
+    Math.abs(drop.slow.landY - drop.slow.street) < 0.3, JSON.stringify(drop.slow));
+  check('drop: with a deep roof across the street, it throws you onto it — roof to roof',
+    drop.found && drop.cap >= 40 && drop.slow && drop.slow.landY > drop.slow.roofY - 1.5, 'cap=' + drop.cap + ' ' + JSON.stringify(drop.slow));
   check('drop: it brings the car to its pace over the deck, not on the first tick',
     drop.found && drop.maxStep < 3, 'largest drop in one tick ' + (drop.maxStep || 0).toFixed(2) + ' m/s');
-  check('drop: and still sends it off the lip at that pace, down onto the street',
+  check('drop: and still sends it off the lip at that pace, down onto what is under it',
     drop.found && drop.lip >= drop.cap - 0.5 && drop.lip <= drop.cap + 1.5 && drop.landY !== null &&
     Math.abs(drop.landY - drop.street) < 0.3,
     'lip ' + (drop.lip || 0).toFixed(1) + ' m/s (pace ' + drop.cap + '), landed y=' + drop.landY + ' street=' + drop.street);
