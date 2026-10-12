@@ -338,6 +338,9 @@
 //      section is open, and a click off Lola's card closes her.
 //  37. ON FIRE — a Molotov sets whoever is in it alight: they burn on as
 //      they run, and an officer on fire neither cuffs you nor shoots.
+//  38. FLYING TO THE CHANNEL — Q rolls the plane left and E right; flown at
+//      the closed channel it is turned back short of the line, not pinned
+//      to it and sunk into the sea with the air units on it.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -7602,7 +7605,9 @@ function withTimeout(p, ms) {
   check('pad: RB zooms the map in, LB out, and X clears the route', pad.zoomed && pad.zoomedOut && pad.cleared);
   check('pad: the D-pad shows one kind of marker on the map, and all again', pad.soloStepped && pad.soloBack);
   check('pad: BACK closes the map it opened', pad.mapClosed);
-  check('touch: ⟲ and ⟳ barrel-roll the plane, opposite ways', pad.rollLeft > 0.3 && pad.rollRight < -0.3,
+  // (⟲ is anticlockwise as you look at the tail: the left wing goes down,
+  // which is a negative roll — it was the other way round, against its icon)
+  check('touch: ⟲ and ⟳ barrel-roll the plane, opposite ways — ⟲ to the left', pad.rollLeft < -0.3 && pad.rollRight > 0.3,
     'left ' + (pad.rollLeft && pad.rollLeft.toFixed(2)) + ', right ' + (pad.rollRight && pad.rollRight.toFixed(2)));
   check('pad: the CONTROLS screen changes a setting from the pad', pad.paused && pad.invertToggled);
   check('pad: and closes on its CLOSE button or B, leaving the game paused', pad.ctlClosedByButton && pad.ctlClosedByB);
@@ -11693,7 +11698,7 @@ function withTimeout(p, ms) {
     return r;
   });
   check('touch: no roll buttons in a car (anchor sanity)', rollBtn.hiddenInCar, JSON.stringify(rollBtn));
-  check('touch: in a plane ⟲ and ⟳ are there, and ⟲ rolls it', rollBtn.shownInPlane && rollBtn.rolled > 0.3, JSON.stringify(rollBtn));
+  check('touch: in a plane ⟲ and ⟳ are there, and ⟲ rolls it (to the left)', rollBtn.shownInPlane && rollBtn.rolled < -0.3, JSON.stringify(rollBtn));
   check('touch: and the radio button is there in the air', rollBtn.radioInPlane, JSON.stringify(rollBtn));
 
   // the camera is one tap away on a touchscreen too
@@ -13818,6 +13823,49 @@ function withTimeout(p, ms) {
   });
   check('on fire: an officer in a Molotov\'s flames burns, and does not cuff you while he does', of.cop.burned && !of.cop.busted, JSON.stringify(of.cop));
   check('on fire: whoever catches it burns on as they run, and dies of it', of.by.alight && of.by.hurtAway && of.by.fled && of.by.dead, JSON.stringify(of.by));
+
+  // ---------- 38: the plane, its roll, and the closed channel ----------
+  var pl = await page.evaluate(function () {
+    var r = {}, P = GAME.player, ff = function (t) { GAME.test.fastForward(t); };
+    var open0 = GAME.isla.isOpen();
+    GAME.isla.setOpen(false);
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    var c = GAME.vehicles.spawnCar('airplane', 380, 0, Math.PI / 2, {});
+    try {
+      GAME.test.teleport(383, 0); ff(0.2);
+      GAME.test.enterNearestCar(c); ff(0.5);
+      // Q is roll LEFT: the pilot's left wing (+X, the nose being +Z) goes down
+      function wingY() { var v = new THREE.Vector3(5, 1.35, -0.4); c.mesh.updateMatrixWorld(true); return c.mesh.localToWorld(v).y - c.pos.y; }
+      c.pos.set(0, 120, -300); c.speed = 50; c.heading = 0; c.pitch = 0; c.roll = 0; ff(0.1);
+      GAME.input.keys.KeyQ = true; ff(0.15); GAME.input.keys.KeyQ = false;
+      r.qLeftWing = +wingY().toFixed(2);
+      c.roll = 0; ff(0.1);
+      GAME.input.keys.KeyE = true; ff(0.15); GAME.input.keys.KeyE = false;
+      r.eLeftWing = +wingY().toFixed(2);
+      c.roll = 0;
+      // flat out at the closed channel, held level by the pilot
+      c.pos.set(420, 60, 0); c.speed = 60; c.heading = Math.PI / 2; c.pitch = 0;
+      var msgs = [], m0 = GAME.hud.message, maxX = 0;
+      GAME.hud.message = function (t) { msgs.push(String(t)); return m0.apply(GAME.hud, arguments); };
+      GAME.input.keys.KeyW = true;
+      try {
+        for (var i = 0; i < 60 * 8 && !c.dead; i++) { c.pitch = 0; ff(1 / 60); maxX = Math.max(maxX, c.pos.x); }
+      } finally { GAME.input.keys.KeyW = false; GAME.hud.message = m0; }
+      r.channel = { maxX: Math.round(maxX), alive: !c.dead, headingWest: Math.sin(c.heading) < -0.3, stars: GAME.police.wanted,
+        told: msgs.some(function (t) { return /RESTRICTED AIRSPACE/.test(t) && /Turning you back/.test(t); }) };
+    } finally {
+      if (P.inCar) GAME.exitCar();
+      if (!c.dead) GAME.vehicles.removeCar(c);
+      GAME.isla.setOpen(open0);
+      GAME.police.clearWanted();
+      GAME.test.teleport(-60, 40); ff(0.5);
+    }
+    return r;
+  });
+  check('plane: Q rolls it left (the left wing goes down) and E rolls it right', pl.qLeftWing < -0.5 && pl.eLeftWing > 0.5, JSON.stringify(pl));
+  check('plane: flown at the closed channel it is told and turned back short of the line — no wall, no stars, no sea',
+    pl.channel && pl.channel.maxX < 555 && pl.channel.alive && pl.channel.headingWest && pl.channel.stars === 0 && pl.channel.told, JSON.stringify(pl.channel));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

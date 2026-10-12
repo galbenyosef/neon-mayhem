@@ -69,12 +69,20 @@ GAME.aircraft = (function () {
   // harder the closer it gets, and told why. And there is a ceiling: above a
   // few hundred metres the ground fades out into the fog and there is nothing
   // left to fly over, so the air is too thin to climb past it.
-  var EDGE_WARN = 90, CEIL_HELI = 200, CEIL_PLANE = 240, edgeToldT = -99, ceilToldT = -99;
+  // The closed channel turns you back the same way. It used to be left to
+  // the clamp and the strike ladder alone: a plane flown at it hung against
+  // an invisible wall at full throttle, sinking unseen (nothing outside was
+  // moving) into the sea — "ditched" — with the air units shooting at it.
+  // Its band is wider: a plane flat out covers ninety metres in a second
+  // and a quarter, too little to come round in before the line.
+  var EDGE_WARN = 90, CHANNEL_WARN = 150, CEIL_HELI = 200, CEIL_PLANE = 240, edgeToldT = -99, ceilToldT = -99;
   function edgeTurn(car, lim, dt) {
     var west = car.pos.x - WEST_X, east = lim.maxX - car.pos.x;
     var north = car.pos.z - lim.minZ, south = lim.maxZ - car.pos.z;
-    // the closed channel has its own rule (warnAirspace) and keeps it
-    if (lim.maxX <= CLOSED_X) east = 1e9;
+    var channel = lim.maxX <= CLOSED_X;
+    // (measured on the same scale as the other edges: the channel's wider
+    // band counts as being that much closer)
+    if (channel) east *= EDGE_WARN / CHANNEL_WARN;
     var d = Math.min(west, east, north, south);
     if (d >= EDGE_WARN) return false;
     var cx = (WEST_X + lim.maxX) / 2, cz = (lim.minZ + lim.maxZ) / 2;
@@ -85,7 +93,8 @@ GAME.aircraft = (function () {
     car.heading = U.angleLerp(car.heading, home, Math.min(1, pull * dt));
     if (GAME.time - edgeToldT > 8) {
       edgeToldT = GAME.time;
-      GAME.hud.message('Edge of the map — bringing you round.', 2.5);
+      GAME.hud.message(channel && d === east ? 'RESTRICTED AIRSPACE — Isla Verde is closed until the bridges open. Turning you back.'
+        : 'Edge of the map — bringing you round.', 3);
     }
     return true;
   }
@@ -302,12 +311,15 @@ GAME.aircraft = (function () {
     if (GAME.key('ShiftLeft') || GAME.key('ShiftRight') || GAME.key('ControlLeft')) pitchIn -= 1;
     if (GAME.key('KeyA')) yawIn += 1;
     if (GAME.key('KeyD')) yawIn -= 1;
-    // Q/E barrel-roll the airframe right the way round
-    if (GAME.key('KeyQ')) rollIn += 1;
-    if (GAME.key('KeyE')) rollIn -= 1;
+    // Q/E barrel-roll the airframe right the way round — Q to the left (the
+    // left wing goes down, as the left key says), E to the right. They were
+    // the other way about: +roll lifts the left wing (+X, the pilot's left,
+    // the nose being +Z), and Q added to it.
+    if (GAME.key('KeyQ')) rollIn -= 1;
+    if (GAME.key('KeyE')) rollIn += 1;
     // touch: THR+/THR- buttons drive throttle; the stick is a yoke — pull it
     // back (down) to bring the nose up and climb, push forward (up) to dive.
-    if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; rollIn += (T.rollL ? 1 : 0) - (T.rollR ? 1 : 0); }
+    if (T.active) { thr += (T.gas ? 1 : 0) - (T.brake ? 1 : 0); pitchIn += T.stickY; yawIn += -T.stickX; rollIn += (T.rollR ? 1 : 0) - (T.rollL ? 1 : 0); }
     if (GAME.pad.on) { thr += GAME.pad.rt - GAME.pad.lt; pitchIn += GAME.pad.ly; yawIn += -GAME.pad.lx; }
 
     var gy = GAME.city.surfaceY(car.pos.x, car.pos.z);
