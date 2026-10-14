@@ -358,6 +358,8 @@ GAME.enterCar = function (car) {
   // nor is one that has gone into the sea (vehicles.js is taking it down),
   // or one still in the air off a ramp
   if (car.sinking || (car.air || 0) > 0.05) return false;
+  // nor one going up on the export crane, or already on its way to the boat
+  if (car.shipping || car.stow) return false;
   // boarding is a same-level act everywhere it can be asked for — a rooftop
   // helicopter is not takeable from the pavement under it
   if (Math.abs(car.pos.y - P.pos.y) > 3) return false;

@@ -341,6 +341,10 @@
 //  38. FLYING TO THE CHANNEL — Q rolls the plane left and E right; flown at
 //      the closed channel it is turned back short of the line, not pinned
 //      to it and sunk into the sea with the air units on it.
+//  39. ONE FACE, ONE BODY; AND IN THEY GET — a stranger's body wears their
+//      portrait's skin, hair and shirt, and YOU are drawn as you are dressed;
+//      whoever you pick up walks to the car and gets in, and Gina waits a
+//      proper drive from the casino.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -9078,6 +9082,9 @@ function withTimeout(p, ms) {
     function last(re) { for (var i = msgs.length - 1; i >= 0; i--) if (re.test(msgs[i])) return msgs[i]; return ''; }
     function car(type, x, z) { var c = GAME.vehicles.spawnCar(type, x, z, 0); GAME.test.teleport(x + 2.5, z); ff(0.2); GAME.test.enterNearestCar(c); ff(1.3); return c; }
     function put(c, x, z) { c.pos.set(x, C.groundY(x, z), z); c.speed = 0; c.vx = c.vz = 0; }
+    // whoever is walking over to get in has the time to (strangers.js
+    // boardStep): drive off first and they stop and wait
+    function boarded() { for (var b = 0; b < 600 && K.job && K.job.boarding; b++) ff(1 / 30); }
     // (and any ring the car was stood in when a favour ended — VINCE's
     // lock-up is a random spot, and once it was NIGHT MAIL's ring, whose
     // run then went on into every group after this one)
@@ -9112,7 +9119,7 @@ function withTimeout(p, ms) {
       r.ringBlocked = !M.active;
       GAME.exitCar(); ff(0.3);
       // --- RAY: into a car near him, and to the airport against the clock ---
-      var rc = car('sedan', ray.at.x + 4, ray.at.z + 3); ff(0.5);
+      var rc = car('sedan', ray.at.x + 4, ray.at.z + 3); ff(0.5); boarded();
       r.rayGo = { phase: K.job && K.job.phase, timer: K.job ? Math.round(K.job.timer) : 0, route: (M.getRoutePoints() || []).length, gone: !ray.ped };
       put(rc, -152, 398); ff(0.5);
       r.rayDone = { busy: K.busy, done: K.done, msg: last(/FAVOUR/) };
@@ -9197,7 +9204,7 @@ function withTimeout(p, ms) {
       // --- VINCE: the bank, the wait, the heat, the lock-up — clean ---
       var vince = near('vince');
       K.ask('vince'); ff(0.2);
-      var vc = car('sedan', vince.at.x + 4, vince.at.z + 3); ff(0.5);
+      var vc = car('sedan', vince.at.x + 4, vince.at.z + 3); ff(0.5); boarded();
       put(vc, K.job.bank.x, K.job.bank.z); ff(1);
       r.vinceWait = K.job && K.job.phase;
       ff(9);
@@ -9214,14 +9221,14 @@ function withTimeout(p, ms) {
       r.marcoSedan = K.job && K.job.phase;
       off();
       var mc = car('sports', marco.at.x + 4, marco.at.z + 3); ff(0.5);
-      put(mc, K.job.her.x, K.job.her.z); ff(0.6);
+      put(mc, K.job.her.x, K.job.her.z); ff(0.6); boarded();
       r.marcoDrive = K.job && K.job.phase;
       GAME.vehicles.damageCar(mc, mc.spec.hp * 0.25, 'wall'); ff(0.3);
       r.marcoScraped = { busy: K.busy, msg: last(/FAVOUR FAILED/) };
       off();
       near('marco'); K.ask('marco'); ff(0.2);
       mc = car('sports', marco.at.x + 4, marco.at.z + 3); ff(0.5);
-      put(mc, K.job.her.x, K.job.her.z); ff(0.6);
+      put(mc, K.job.her.x, K.job.her.z); ff(0.6); boarded();
       put(mc, 346, 250); ff(0.6);
       r.marco = { busy: K.busy, msg: last(/FAVOUR/), done: K.done };
       off();
@@ -13154,8 +13161,10 @@ function withTimeout(p, ms) {
       GAME.test.teleport(s.x + 30, s.z); GAME.test.fastForward(0.3);
       var c1 = drive('sedan');
       var cash = P.cash;
-      GAME.test.teleport(s.x, s.z); GAME.test.fastForward(0.5);
+      // (out by the door, a beat beside it, and then it goes: paid as it does)
+      GAME.test.teleport(s.x, s.z); GAME.test.fastForward(1.5);
       r.shipped = !P.inCar && P.cash > cash && !X.wanted('sedan') && (!!c1.gone || !!c1.stow);
+      if (GAME.shareOpen) GAME.share.hide();
       // and the same again is not wanted
       GAME.test.teleport(s.x + 30, s.z); GAME.test.fastForward(0.3);
       drive('sedan');
@@ -13170,8 +13179,9 @@ function withTimeout(p, ms) {
       drive('police');
       GAME.police.clearWanted();
       var cash3 = P.cash;
-      GAME.test.teleport(s.x, s.z); GAME.test.fastForward(0.5);
+      GAME.test.teleport(s.x, s.z); GAME.test.fastForward(1.5);
       r.bonus = P.cash - cash3 >= X.LISTS[0].bonus;
+      if (GAME.shareOpen) GAME.share.hide();
     } finally {
       GAME.police.clearWanted();
       if (P.inCar) GAME.exitCar();
@@ -13539,14 +13549,29 @@ function withTimeout(p, ms) {
       // --- an exported car goes up on the hook, then it is gone ---
       var X = GAME.exporter, site = X.site;
       GAME.prefs.exported = {};
+      Sc.enabled = true;   // (the loading is a scene)
       var ex = GAME.test.spawnCar('sedan', 4, 0); spawned.push(ex);
       ff(0.2); GAME.test.enterNearestCar(ex); ff(1.5);
-      var y0 = P.car ? P.car.pos.y : 0, xc = P.car;
-      GAME.test.teleport(site.x, site.z); ff(0.6);
-      ff(1.5);
-      r.exp = { up: !!xc && !xc.gone && xc.pos.y > y0 + 2, onFoot: !P.inCar };
-      ff(5);
+      var y0 = P.car ? P.car.pos.y : 0, xc = P.car, cashX = P.cash;
+      GAME.test.teleport(site.x, site.z); ff(0.4);
+      // out by the door, and a beat stood beside it: not back in, not paid yet
+      r.exp = { onFoot: !P.inCar, still: !!xc && !xc.gone && Math.abs(xc.pos.y - y0) < 0.5, noBackIn: !GAME.enterCar(xc), unpaid: P.cash === cashX };
+      // then the crane, in a scene: Nacho on it, the car up on the hook …
+      ff(1.2);
+      r.exp.scene = !!GAME.scenes.active;
+      var said = '', maxY = 0, nearBox = 1e9, B = site.box;
+      for (var xs = 0; xs < 60 * 25 && GAME.scenes.active; xs++) {
+        ff(1 / 60);
+        var ln = GAME.scenes.line;
+        if (ln && ln.who === 'docker' && said.indexOf(ln.text) < 0) said += ln.text + ' | ';
+        if (!xc.gone) { maxY = Math.max(maxY, xc.pos.y - y0); nearBox = Math.min(nearBox, Math.hypot(xc.pos.x - B.x, xc.pos.z - B.z) + Math.abs(xc.pos.y - B.y)); }
+      }
+      r.exp.up = maxY > 8; r.exp.nacho = /Hook it up/.test(said) && /\$/.test(said);
+      // … round, and down into the container on the quay
+      r.exp.inBox = nearBox < 1.5;
       r.exp.gone = !!xc && !!xc.gone;
+      r.exp.paid = P.cash - cashX; r.exp.card = !!GAME.shareOpen;
+      if (GAME.shareOpen) GAME.share.hide();
     } finally {
       Sc.enabled = false;
       settle();
@@ -13565,7 +13590,10 @@ function withTimeout(p, ms) {
   check('strangers: Mrs. Albescu walks off with Biscuit at her heel', nv.rosa && nv.rosa.leavers === 1 && nv.rosa.dogUp && nv.rosa.walking && nv.rosa.near < 4, JSON.stringify(nv.rosa));
   check('strangers: Dani is nowhere near — she rings, no one stood in the street', nv.dani && nv.dani.scene && nv.dani.cast === '' && nv.dani.speaks === 'dani' && nv.dani.over, JSON.stringify(nv.dani));
   check('races: when it is over the field drives off with the traffic, not out of the world', nv.race && nv.race.n > 0 && nv.race.stay === nv.race.n && nv.race.traffic === nv.race.n, JSON.stringify(nv.race));
-  check('export: a car that ships goes up on the hook, then it is gone', nv.exp && nv.exp.up && nv.exp.onFoot && nv.exp.gone, JSON.stringify(nv.exp));
+  check('export: you step out and stand a beat — the car stays put, it is not yours to get back into, and nothing is paid yet',
+    nv.exp && nv.exp.onFoot && nv.exp.still && nv.exp.noBackIn && nv.exp.unpaid, JSON.stringify(nv.exp));
+  check('export: then a scene — Nacho on the crane, the car up on the hook, round and down into the container', nv.exp && nv.exp.scene && nv.exp.nacho && nv.exp.up && nv.exp.inBox && nv.exp.gone, JSON.stringify(nv.exp));
+  check('export: and at the end of it the money, and the result card', nv.exp && nv.exp.paid > 0 && nv.exp.card, JSON.stringify(nv.exp));
 
   // ---------- 31: one job at a time ----------
   var oj = await page.evaluate(function () {
@@ -13866,6 +13894,77 @@ function withTimeout(p, ms) {
   check('plane: Q rolls it left (the left wing goes down) and E rolls it right', pl.qLeftWing < -0.5 && pl.eLeftWing > 0.5, JSON.stringify(pl));
   check('plane: flown at the closed channel it is told and turned back short of the line — no wall, no stars, no sea',
     pl.channel && pl.channel.maxX < 555 && pl.channel.alive && pl.channel.headingWest && pl.channel.stars === 0 && pl.channel.told, JSON.stringify(pl.channel));
+
+  // ---------- 39: the strangers' looks, and getting in ----------
+  var gi = await page.evaluate(function () {
+    var r = {}, P = GAME.player, SG = GAME.strangers, ff = function (t) { GAME.test.fastForward(t); };
+    function hx(c) { return typeof c === 'string' ? parseInt(c.replace('#', ''), 16) : c; }
+    var ids = SG.people().map(function (q) { return q.def.id; });
+    r.looks = ids.filter(function (id) {
+      var f = GAME.cast.face(id), L = SG.look(id);
+      return !f || !L || L.skin !== hx(f.skin) || L.hairCol !== hx(f.hairCol) || L.shirt !== hx(f.col);
+    });
+    r.n = ids.length;
+    // you, as you are: a skin tone from the barber shows in your portrait
+    var o = GAME.prefs.outfit || (GAME.prefs.outfit = {}), keep = JSON.stringify(o);
+    o.skin = 0x6a4c34; o.skinPicked = true; if (GAME.shops.applyOutfit) GAME.shops.applyOutfit();
+    r.youSkin = GAME.cast.portrait('you').indexOf('#6a4c34') >= 0;
+    GAME.prefs.outfit = JSON.parse(keep); if (GAME.shops.applyOutfit) GAME.shops.applyOutfit();
+    var sg0 = SG.enabled, done0 = JSON.stringify(GAME.prefs.strangers || {});
+    var spawned = [];
+    try {
+      GAME.prefs.strangers = {}; SG.enabled = true;
+      GAME.police.clearWanted();
+      if (P.inCar) GAME.exitCar();
+      // Gina: a drive from the casino, and she walks over and gets in
+      var marco = SG.people().filter(function (q) { return q.def.id === 'marco'; })[0];
+      GAME.test.teleport(marco.at.x + 3, marco.at.z); ff(1);
+      SG.ask('marco'); ff(0.2);
+      var j = SG.job;
+      r.ginaFromCasino = j && j.her ? Math.round(Math.hypot(j.her.x - 346, j.her.z - 250)) : -1;
+      var g = j && j.gina;
+      if (g) {
+        var rp = GAME.city.nearestRoadPoint(g.pos.x + 12, g.pos.z);
+        var car = GAME.vehicles.spawnCar('sports', rp.x, rp.z, 0, {}); spawned.push(car);
+        GAME.test.teleport(rp.x + 2.5, rp.z); ff(0.2);
+        GAME.test.enterNearestCar(car); ff(1.2);
+        car.speed = 0;
+        var d0 = Math.hypot(g.pos.x - car.pos.x, g.pos.z - car.pos.z);
+        ff(0.8);
+        r.gina = { d0: Math.round(d0), walking: !g.gone && Math.hypot(g.pos.x - car.pos.x, g.pos.z - car.pos.z) < d0 - 1, phase0: j.phase };
+        for (var i = 0; i < 60 * 12 && SG.job && SG.job.phase !== 'drive'; i++) { car.speed = 0; ff(1 / 60); }
+        r.gina.inCar = g.gone && !!SG.job && SG.job.phase === 'drive';
+      }
+      if (SG.busy) SG.abandon(); ff(0.3);
+      if (P.inCar) GAME.exitCar(); ff(0.3);
+      // Ray: asked from a car, he walks to it rather than vanishing
+      var ray = SG.people().filter(function (q) { return q.def.id === 'ray'; })[0];
+      GAME.test.teleport(ray.at.x + 30, ray.at.z); ff(1.5);
+      var rrp = GAME.city.nearestRoadPoint(ray.at.x + 10, ray.at.z);
+      var car2 = GAME.vehicles.spawnCar('sedan', rrp.x, rrp.z, 0, {}); spawned.push(car2);
+      GAME.test.teleport(rrp.x + 2.5, rrp.z); ff(0.2);
+      GAME.test.enterNearestCar(car2); ff(1.2); car2.speed = 0;
+      var rayPed = ray.ped;
+      SG.ask('ray'); ff(0.5);
+      r.ray = { stood: !!rayPed && !rayPed.gone, boarding: !!(SG.job && SG.job.boarding) };
+      for (var k = 0; k < 60 * 12 && SG.job && SG.job.phase === 'car'; k++) { car2.speed = 0; ff(1 / 60); }
+      r.ray.inCar = !!rayPed && rayPed.gone && !!SG.job && SG.job.phase === 'drive';
+    } finally {
+      if (SG.busy) SG.abandon();
+      if (P.inCar) GAME.exitCar();
+      spawned.forEach(function (c) { if (!c.gone) GAME.vehicles.removeCar(c); });
+      GAME.prefs.strangers = JSON.parse(done0);
+      SG.reset(); SG.enabled = sg0;
+      GAME.police.clearWanted();
+      GAME.test.teleport(-60, 40); ff(0.5);
+    }
+    return r;
+  });
+  check('strangers: every body wears its portrait\'s skin, hair colour and shirt', gi.n >= 6 && gi.looks.length === 0, JSON.stringify(gi.looks));
+  check('strangers: and YOU are drawn in the skin you chose at the barber', gi.youSkin, JSON.stringify(gi));
+  check('strangers: Gina waits a proper drive from the casino', gi.ginaFromCasino >= 380, 'metres from the casino: ' + gi.ginaFromCasino);
+  check('strangers: pull up and Gina walks over, then gets in', gi.gina && gi.gina.walking && gi.gina.inCar, JSON.stringify(gi.gina));
+  check('strangers: asked from a car, Ray walks to it and gets in — he does not vanish off the pavement', gi.ray && gi.ray.stood && gi.ray.boarding && gi.ray.inCar, JSON.stringify(gi.ray));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

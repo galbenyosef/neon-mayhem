@@ -99,6 +99,26 @@ GAME.strangers = (function () {
     lupe: { shirt: 0xe86a8a, pants: 0x2a2a34, skin: 0xc89878, hair: 'ponytail', hairCol: 0x1c1a18 },
     walt: { shirt: 0x9fe8d8, pants: 0x684a3a, skin: 0xf0d8c0, hair: 'flattop', hairCol: 0x8a8a90 }
   };
+  // The body is the portrait. Each stranger was drawn twice — a portrait for
+  // the talking-head card (cast.js) and a body for the street and the scenes
+  // (above) — and the two had drifted: Marco and Nina, Cookie and Gus wore
+  // each other's skin, and a stranger asked you a favour in one tone and
+  // thanked you on the phone in another. Skin, hair colour and shirt now come
+  // from the portrait; the style is the nearest the street has.
+  var HAIR3D = { short: 'crew', slick: 'crew', pomp: 'pompadour', bob: 'ponytail', cap: 'afro', bun: 'pompadour',
+    mullet: 'mullet', curly: 'afro', bald: 'buzz', paper: 'crew', beanie: 'crew', long: 'ponytail', big: 'afro' };
+  function hexOf(c) { return typeof c === 'string' ? parseInt(c.replace('#', ''), 16) : c; }
+  (function matchPortraits() {
+    if (!GAME.cast || !GAME.cast.face) return;
+    for (var id in LOOK) {
+      var f = GAME.cast.face(id), L = LOOK[id];
+      if (!f) continue;
+      L.skin = hexOf(f.skin);
+      if (f.hairCol) L.hairCol = hexOf(f.hairCol);
+      if (f.col) L.shirt = hexOf(f.col);
+      if (HAIR3D[f.hair]) L.hair = HAIR3D[f.hair];
+    }
+  })();
   var DEFS = [
     { id: 'ray', who: 'RAY', title: 'AIRPORT RUSH', pay: 400, where: [262, -40],
       ask: 'My flight leaves in a couple of minutes and the cab never came. The airport — please! It\'s worth your while.',
@@ -431,8 +451,7 @@ GAME.strangers = (function () {
   function ferryBegin(j, o) {
     j.ferry = o;
     j.phase = 'car';
-    if (inLand()) ferryAboard(j);
-    else objective(o.needCar);
+    objective(inLand() ? o.needCar.replace(/^Get a car — /, '') : o.needCar);
   }
   function ferryAboard(j) {
     var o = j.ferry, to = o.to();
@@ -448,7 +467,8 @@ GAME.strangers = (function () {
   function ferryStep(j, dt) {
     var car = inLand(), o = j.ferry;
     if (j.phase === 'car') {
-      if (car && dist(car.pos, j.who.at.x, j.who.at.z) < 30) ferryAboard(j);
+      if (boardNear(car, j.who.ped)) boardStart(j, [j.who.ped], car, o.walk || 3.6, ferryAboard);
+      else if (car && !j.who.ped && dist(car.pos, j.who.at.x, j.who.at.z) < 30) ferryAboard(j);   // (nobody there to walk)
       else target(j.who.at.x, j.who.at.z);
       return;
     }
@@ -659,12 +679,28 @@ GAME.strangers = (function () {
     if (!bank || !lock) return fail('The job is off.');
     j.bank = bank; j.lock = lock;
     j.phase = 'car';
-    if (vinceCar()) vinceGo(j); else objective('Get a car — four doors, nothing on two wheels.');
+    objective(vinceCar() ? 'Pull up by Vince and let them in.' : 'Get a car — four doors, nothing on two wheels.');
+  }
+  // his two friends were only ever words — "Vince and two friends climb in"
+  // — with nobody there: they step out from behind him to get in
+  function vinceCrew(j) {
+    var w = j.who.ped, out = [w];
+    if (!w) return out;
+    // (pull up a second time and it is the same two, not two more)
+    if (j.crew) return out.concat(j.crew.filter(function (q) { return !q.gone; }));
+    j.crew = [];
+    for (var i = 0; i < 2; i++) {
+      var a = w.heading + Math.PI + (i ? 0.6 : -0.6);
+      var r = GAME.resolveCircle(w.pos.x + Math.sin(a) * 1.3, w.pos.z + Math.cos(a) * 1.3, 0.35);
+      var m = GAME.peds.spawnPed(r.x, r.z, { look: CREW[i] });
+      if (m) { m.jobPed = true; m.state = 'wait'; j.bits.push({ kind: 'ped', o: m }); j.crew.push(m); out.push(m); }
+    }
+    return out;
   }
   function vinceCar() { var c = inLand(); return c && !c.spec.bike ? c : null; }
   function vinceGo(j) {
     takeIn(j.who); j.away = true;
-    say('Vince and two friends climb in with a holdall. "The bank. Nice and easy."', 3);
+    say('In they get, holdall and all. "The bank. Nice and easy."', 3);
     j.phase = 'bank';
     objective('Drive to the bank and stop outside.');
     target(j.bank.x, j.bank.z);
@@ -672,7 +708,8 @@ GAME.strangers = (function () {
   function vinceStep(j, dt) {
     var car = vinceCar();
     if (j.phase === 'car') {
-      if (car && dist(car.pos, j.who.at.x, j.who.at.z) < 30) vinceGo(j);
+      if (boardNear(car, j.who.ped)) boardStart(j, vinceCrew(j), car, 3.4, vinceGo, 'The job is off — somebody is down.');
+      else if (car && !j.who.ped && dist(car.pos, j.who.at.x, j.who.at.z) < 30) vinceGo(j);
       else target(j.who.at.x, j.who.at.z);
       return;
     }
@@ -715,7 +752,10 @@ GAME.strangers = (function () {
   var CASINO = { x: 346, z: 250 };   // the kerb at the foot of the casino pier
   function marcoCar() { var c = inLand(); return c && CLASSY[c.type] ? c : null; }
   function marcoBegin(j) {
-    var her = roadAway(j.who.at, 150, 240);
+    // a drive worth the name: she is picked from round the CASINO, not round
+    // Marco — he stands ninety metres from it, and a spot a couple of hundred
+    // metres from him could be a minute's walk from the door
+    var her = roadAway(CASINO, 520, 700);
     if (!her) return fail('She cancelled.');
     j.her = pavement(her.x, her.z);
     var gina = GAME.peds.spawnPed(j.her.x, j.her.z, { look: GINA });
@@ -736,14 +776,17 @@ GAME.strangers = (function () {
       var was = j.phase;
       j.phase = car ? 'pick' : 'car';
       if (j.phase !== was) marcoNext(j);
-      if (car && dist(car.pos, j.her.x, j.her.z) < 9 && Math.abs(car.speed) < 2) {
-        if (j.gina && !j.gina.gone) GAME.peds.removePed(j.gina);
+      var aboard = function () {
         j.gina = null;
         j.phase = 'drive'; j.hp0 = car.hp; j.car = car; j.heat0 = GAME.police.wanted;
         say('Gina slides in. "Marco sent a car? Classy."', 3);
         objective('Get Gina to the casino — smoothly.');
         target(CASINO.x, CASINO.z);
-      }
+      };
+      // she walks over, in those heels, and gets in
+      if (j.gina && boardNear(car, j.gina)) {
+        if (j.phase === 'pick') { boardStart(j, [j.gina], car, 2.6, aboard, 'Gina is not coming. Not ever.'); objective('Gina is coming over.'); }
+      } else if (!j.gina && car && dist(car.pos, j.her.x, j.her.z) < 9 && Math.abs(car.speed) < 2) aboard();
       return;
     }
     var c = P().inCar ? P().car : null;
@@ -821,8 +864,7 @@ GAME.strangers = (function () {
   // enough and he has lost you; let him sit beside you and he has his shot.
   function lupeBegin(j) {
     j.phase = 'car';
-    if (inLand()) lupeGo(j);
-    else objective('Get a car — Lupe is coming with you.');
+    objective(inLand() ? 'Lupe is coming with you.' : 'Get a car — Lupe is coming with you.');
   }
   function lupeGo(j) {
     var car = inLand(), C = GAME.city;
@@ -841,7 +883,8 @@ GAME.strangers = (function () {
   function lupeStep(j, dt) {
     var car = inLand();
     if (j.phase === 'car') {
-      if (car && dist(car.pos, j.who.at.x, j.who.at.z) < 30) lupeGo(j);
+      if (boardNear(car, j.who.ped)) boardStart(j, [j.who.ped], car, 3.2, lupeGo, 'Lupe is down. That picture will be in every paper.');
+      else if (car && !j.who.ped && dist(car.pos, j.who.at.x, j.who.at.z) < 30) lupeGo(j);
       else target(j.who.at.x, j.who.at.z);
       return;
     }
@@ -961,6 +1004,63 @@ GAME.strangers = (function () {
     if (ped) { ped.heading = car.heading; ped.mesh.rotation.y = ped.heading; }
     return ped;
   }
+  // ---------- getting in ----------
+  // Whoever you pick up walks to the car and gets in at a door on your side,
+  // rather than being lifted out of the street the moment you pull up within
+  // thirty metres (and the instant they asked, if you were sat in a car).
+  // Stop near enough, and stay stopped: drive off and they wait where they
+  // are. A second and third take the back doors.
+  var BOARD_R = 24;
+  function doorOf(car, from, n) {
+    var h = car.heading, fx = Math.sin(h), fz = Math.cos(h), px = Math.cos(h), pz = -Math.sin(h);
+    var side = ((from.x - car.pos.x) * px + (from.z - car.pos.z) * pz) >= 0 ? 1 : -1;
+    if (n === 2) side = -side;                       // the third goes round
+    var off = (car.spec.w || 1.8) / 2 + 0.45, back = n ? -0.9 : 0.5;
+    return { x: car.pos.x + px * side * off + fx * back, z: car.pos.z + pz * side * off + fz * back };
+  }
+  function boardNear(car, ped) {
+    return !!car && !!ped && !ped.gone && !ped.dead && dist(car.pos, ped.pos.x, ped.pos.z) < BOARD_R && Math.abs(car.speed) < 2;
+  }
+  function boardStart(j, peds, car, pace, then, dead) {
+    var on = peds.filter(function (q) { return q && !q.gone && !q.dead; });
+    if (!on.length) { then(j); return; }
+    on.forEach(function (q) { q.jobPed = true; q.state = 'wait'; q.speed = 0; });
+    j.boarding = { peds: on, car: car, pace: pace || 3.4, then: then, dead: dead || 'Nobody is getting in now.', t: 0, back: j.obj };
+  }
+  function boardStep(j, dt) {
+    var b = j.boarding, car = inLand();
+    for (var k = 0; k < b.peds.length; k++) if (b.peds[k].dead) { j.boarding = null; fail(b.dead); return; }
+    // drove off before they were in: they stop and wait where they are
+    if (car !== b.car || Math.abs(car.speed) > 3 || dist(car.pos, b.peds[0].pos.x, b.peds[0].pos.z) > BOARD_R * 1.6) {
+      b.peds.forEach(function (q) { if (!q.gone) { q.speed = 0; var jt = q.mesh.userData.joints; jt.legL.rotation.x = jt.legR.rotation.x = 0; } });
+      j.boarding = null;
+      if (b.back) objective(b.back);
+      return;
+    }
+    b.t += dt;
+    var waiting = 0;
+    for (var i = 0; i < b.peds.length; i++) {
+      var q = b.peds[i];
+      if (q.gone) continue;
+      var d = doorOf(car, q.pos, i), dx = d.x - q.pos.x, dz = d.z - q.pos.z, dd = Math.sqrt(dx * dx + dz * dz);
+      // at the door (or stuck short of it for longer than any walk takes)
+      if (dd < 0.55 || b.t > 14) { GAME.peds.removePed(q); continue; }
+      waiting++;
+      q.heading = Math.atan2(dx, dz);
+      var step = Math.min(dd, b.pace * dt);
+      q.pos.x += dx / dd * step; q.pos.z += dz / dd * step;
+      var rp = GAME.resolveCircle(q.pos.x, q.pos.z, 0.35);
+      // (the car itself is solid: right at the door they may brush it)
+      if (dd > 1.2) { q.pos.x = rp.x; q.pos.z = rp.z; }
+      q.pos.y = GAME.city.groundY(q.pos.x, q.pos.z);
+      q.mesh.rotation.y = q.heading;
+      q.walkPhase = (q.walkPhase || 0) + b.pace * dt * 2.4;
+      var jn = q.mesh.userData.joints, sw = Math.sin(q.walkPhase) * 0.7;
+      jn.legL.rotation.x = sw; jn.legR.rotation.x = -sw;
+      jn.armL.rotation.x = -sw * 0.8; jn.armR.rotation.set(sw * 0.8, 0, 0);
+    }
+    if (!waiting) { var then = b.then; j.boarding = null; GAME.audio.pickup(); then(j); }
+  }
   // back to being somebody in the street: walking, and gone by the usual
   // way of things once you are well off
   function walkOff(ped) {
@@ -1027,7 +1127,9 @@ GAME.strangers = (function () {
       abandonAsk = GAME.time + 3;
       say((GAME.controls ? GAME.controls.label('KeyX') : 'X') + ' again to walk away from ' + job.def.title, 3);
     }
-    job.def.step(job, dt);
+    // somebody walking over to get in: the favour waits for them
+    if (job.boarding) boardStep(job, dt);
+    else job.def.step(job, dt);
     if (!job) return;
     stepRoute(dt);
     if (ring && ring.visible) ring.material.opacity = 0.25 + 0.12 * Math.sin(GAME.time * 4);

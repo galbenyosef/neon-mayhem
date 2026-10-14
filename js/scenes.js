@@ -16,6 +16,12 @@
 // each shot is a cut to somewhere else. A set nobody can stand on (the island
 // still shut, a lot not built) plays its lines over the frozen game instead,
 // and so does a shot with no set at all: somebody on the phone.
+//
+// A shot can also have something happening in it — `act(dt, t)`, called each
+// tick it plays (the world being frozen, it moves what it moves itself) — a
+// camera of its own, `view(t)` → { pos, look, fov }, in place of the two-
+// shot, and `minT`: the seconds its last line stays up for, so what is
+// happening has time to happen (export.js: the crane loading a car).
 GAME.scenes = (function () {
   var enabled = true;
   var cur = null;           // the scene playing
@@ -180,7 +186,7 @@ GAME.scenes = (function () {
   function cutTo(n) {
     var c = cur, sh = c.s.shots[n];
     clearStage();
-    c.shot = n; c.line = -1;
+    c.shot = n; c.line = -1; c.shotT0 = c.t;
     c.at = sh.set ? stage(sh.set) : null;
     if (c.at) {
       var at = c.at, rx = at.nz, rz = -at.nx;      // the camera's right, along the ground
@@ -279,6 +285,8 @@ GAME.scenes = (function () {
     c.t += dt;
     if (c.shot < 0) { if (c.t >= OPEN) cutTo(0); return; }
     c.lineT += dt;
+    var shN = c.s.shots[c.shot];
+    if (shN.act) shN.act(dt, c.t - c.shotT0);
     var v = GAME.cast.voice(c.who) || { cps: 34 };
     // the typewriter, a letter at a time, catching its breath at stops
     if (c.typed < c.text.length) {
@@ -299,7 +307,10 @@ GAME.scenes = (function () {
       }
     } else {
       c.after -= dt;
-      if (c.after <= 0) { nextLine(); if (!cur) return; }
+      // (the last line of a shot that has something still happening in it
+      // stays up until it has happened)
+      var held = shN.minT && c.line === shN.lines.length - 1 && c.t - c.shotT0 < shN.minT;
+      if (c.after <= 0 && !held) { nextLine(); if (!cur) return; }
     }
     c.mouth -= dt;
     var face = $('scene-face');
@@ -323,7 +334,15 @@ GAME.scenes = (function () {
 
   // the camera: the two-shot creeping in, or over a shoulder
   function shoot() {
-    var c = cur, at = c.at;
+    var c = cur, at = c.at, sh = c.s.shots[c.shot];
+    if (sh.view) {
+      var v = sh.view(c.t - c.shotT0), vc = GAME.cameraObj;
+      vc.position.set(v.pos.x, v.pos.y, v.pos.z);
+      vc.lookAt(v.look.x, v.look.y, v.look.z);
+      var vf = v.fov || 45;
+      if (vc.fov !== vf) { vc.fov = vf; vc.updateProjectionMatrix(); }
+      return;
+    }
     if (!at) return;
     var cam = GAME.cameraObj, k = Math.min(1, c.lineT / 6), y = at.y;
     var fov = 38;
