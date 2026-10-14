@@ -1649,10 +1649,17 @@ GAME.hud = (function () {
     message: function (text, dur) { pushMessage(String(text), dur || 2.5); },
     // Letterbox for a moment that plays itself (the glass lift): black bars
     // in, the HUD and the thumbs out, and a tap anywhere to skip it.
-    cine: function (on, onSkip) {
+    cine: function (on, onSkip, opts) {
       document.body.classList.toggle('cine', !!on);
-      var c = $('cine'), sk = $('cine-skip');
-      if (sk) sk.textContent = GAME.isTouch ? 'TAP TO SKIP' : 'SPACE OR CLICK TO SKIP';
+      var c = $('cine'), sk = $('cine-skip'), ph = $('cine-photo');
+      // a ride (the lift, the wheel) keeps the camera: a button of its own on
+      // the bars, since the thumbs are put away and a tap anywhere else skips
+      var photo = !!(on && opts && opts.photo);
+      if (sk) sk.textContent = (photo && !GAME.isTouch ? 'C · PHOTO     ' : '') + (GAME.isTouch ? 'TAP TO SKIP' : 'SPACE OR CLICK TO SKIP');
+      if (ph) {
+        ph.style.display = photo ? 'block' : 'none';
+        ph.onpointerdown = photo ? function (e) { e.preventDefault(); e.stopPropagation(); if (GAME.photo) GAME.photo.snap(); } : null;
+      }
       if (c) c.onpointerdown = on && onSkip ? function (e) { e.preventDefault(); onSkip(); } : null;
     },
     pager: pager,

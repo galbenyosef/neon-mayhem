@@ -345,6 +345,9 @@
 //      portrait's skin, hair and shirt, and YOU are drawn as you are dressed;
 //      whoever you pick up walks to the car and gets in, and Gina waits a
 //      proper drive from the casino.
+//  40. A TURN OF THE WHEEL — a ticket at the booth by the ferris wheel, once
+//      round in a cab and off at the booth; and the camera works on the
+//      wheel and in the glass lift.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -1428,9 +1431,14 @@ function withTimeout(p, ms) {
     GAME.test.enterNearestCar(bike);
     GAME.test.fastForward(1);
     r.riding = P.inCar && P.onBike;
+    // (nobody at its wheel, held at 20 m/s down the bike's line: a traffic
+    // driver goes round something stopped in its lane, and now and then did)
     var ram = GAME.vehicles.spawnCar('sedan', bike.pos.x, bike.pos.z - 14, 0, {});
-    ram.speed = 20;
-    for (var b2 = 0; b2 < 90 && P.inCar; b2++) GAME.test.fastForward(1 / 60);
+    ram.ai = null; ram.occupied = null;
+    for (var b2 = 0; b2 < 90 && P.inCar; b2++) {
+      if (!ram.dead) { ram.speed = 20; ram.heading = 0; ram.pos.x = bike.pos.x; }
+      GAME.test.fastForward(1 / 60);
+    }
     r.thrown = !P.inCar;
     if (P.inCar) GAME.exitCar();
     GAME.vehicles.removeCar(ram); GAME.vehicles.removeCar(bike);
@@ -3153,8 +3161,18 @@ function withTimeout(p, ms) {
   check('boats: step off beside a pier and you are on the pier', boat.offPier && !boat.offPier.inCar && boat.offPier.onPier && !boat.offPier.swimming, JSON.stringify(boat.offPier));
   check('boats: step off in open water and you are over the side, swimming', boat.over && !boat.over.inCar && boat.over.swimming, JSON.stringify(boat.over));
   check('boats: and you can climb back in from the water', boat.backIn === true);
+  // (circling at two stars, the launch can come alongside and take you — it
+  // is the harbour patrol doing its job, not what this asks about; and a
+  // life ended here is ended before the next group, not carried into it)
   check('water: wanted out on the water — no cruiser follows you in; the harbour patrol does, and no helicopter at two stars',
-    boat.cops && boat.cops.wet === 0 && boat.cops.launch && !boat.cops.heli && boat.cops.aboard && boat.cops.state === 'alive', JSON.stringify(boat.cops));
+    boat.cops && boat.cops.wet === 0 && boat.cops.launch && !boat.cops.heli && (boat.cops.aboard || boat.cops.state === 'busted'), JSON.stringify(boat.cops));
+  if (boat.cops && boat.cops.state !== 'alive') {
+    try {
+      await page.evaluate(function () { GAME.input.keys['KeyR'] = true; GAME.test.fastForward(1.2); GAME.input.keys['KeyR'] = false; });
+      await page.waitForFunction(function () { return GAME.player.state === 'alive'; }, null, { timeout: 10000 });
+      await page.evaluate(function () { GAME.police.clearWanted(); GAME.test.teleport(400, 0); GAME.test.fastForward(0.5); });
+    } catch (e) { }
+  }
 
   // ---------- 5c: more to do ----------
   var con = await page.evaluate(function () {
@@ -9839,7 +9857,21 @@ function withTimeout(p, ms) {
       var ped = a.foot;
       r.foot = { phase: a.phase, armed: !!(ped && ped.carrying && ped.missionArmed), state: ped && ped.state, passed: !!(GAME.bests && GAME.bests.hit1 !== undefined), marked: !!ped && JSON.stringify(M.getObjectivePoint()) === JSON.stringify([ped.pos.x, ped.pos.z]) };
       GAME.exitCar(); ff(0.3);
-      if (ped) GAME.test.teleport(ped.pos.x + 14, ped.pos.z);
+      // in his sight: a spot fourteen metres off on open street with nothing
+      // between you. A fixed "east of him" was wherever the chase ended —
+      // now and then behind a block or up on its roof, where a man who
+      // cannot see you rightly holds his fire.
+      if (ped) {
+        var Cq = GAME.city, spot = null;
+        for (var dk = 0; dk < 16 && !spot; dk++) {
+          var ang = dk / 16 * Math.PI * 2, sx = ped.pos.x + Math.cos(ang) * 14, sz = ped.pos.z + Math.sin(ang) * 14;
+          if (Cq.isInWater(sx, sz) || Cq.surfaceY(sx, sz) > Cq.groundY(sx, sz) + 0.3) continue;
+          if (Cq.hash.segmentClear(ped.pos.x, ped.pos.z, sx, sz)) spot = { x: sx, z: sz };
+        }
+        if (!spot) spot = { x: ped.pos.x + 14, z: ped.pos.z };
+        GAME.test.teleport(spot.x, spot.z);
+        r.foot.clear = Cq.hash.segmentClear(ped.pos.x, ped.pos.z, P.pos.x, P.pos.z);
+      }
       var s1 = shots.length;
       ff(5);
       r.foot.fights = ped && ped.state;
@@ -13965,6 +13997,58 @@ function withTimeout(p, ms) {
   check('strangers: Gina waits a proper drive from the casino', gi.ginaFromCasino >= 380, 'metres from the casino: ' + gi.ginaFromCasino);
   check('strangers: pull up and Gina walks over, then gets in', gi.gina && gi.gina.walking && gi.gina.inCar, JSON.stringify(gi.gina));
   check('strangers: asked from a car, Ray walks to it and gets in — he does not vanish off the pavement', gi.ray && gi.ray.stood && gi.ray.boarding && gi.ray.inCar, JSON.stringify(gi.ray));
+
+  // ---------- 40: the ferris wheel, and the camera on rides ----------
+  var fw2 = await page.evaluate(function () {
+    var r = {}, I = GAME.interiors, P = GAME.player, ff = function (t) { GAME.test.fastForward(t); };
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    // (nothing left open by the groups before: a result card up holds the
+    // camera, as it does in the game)
+    if (GAME.shareOpen) GAME.share.hide();
+    if (GAME.lolaOpen) GAME.lola.close();
+    r.overlays0 = { share: !!GAME.shareOpen, pending: GAME.photo.pending };
+    var s = I.wheelStop();
+    r.stop = !!s;
+    if (!s) return r;
+    function stepOn() { GAME.test.teleport(s.x - 4, s.z); ff(0.4); P.pos.set(s.x, s.y, s.z); ff(0.2); }
+    // with the law on you, no ticket
+    GAME.police.setWanted(1);
+    stepOn();
+    r.refusedHot = !GAME.hud.dialogOpen() && !I.onWheel;
+    GAME.police.clearWanted();
+    // a ticket, and on
+    GAME.test.addCash(100);
+    var cash = P.cash;
+    stepOn();
+    r.asked = GAME.hud.dialogOpen();
+    GAME.onKeyDown('Enter'); ff(0.1);
+    r.paid = cash - P.cash; r.on = I.onWheel && I.riding();
+    r.photoBtn = getComputedStyle(document.getElementById('cine-photo')).display !== 'none';
+    // up and over, out of everyone's reach, with the camera working
+    var top = 0, hp = P.health;
+    GAME.playerDamage(30, 'test');
+    r.safe = P.health === hp;
+    ff(2);
+    GAME.test.pressKey('KeyC', true); ff(1 / 60); GAME.test.pressKey('KeyC', false);
+    r.snapped = GAME.photo.pending || GAME.photo.lastSnap > GAME.time - 0.5;
+    for (var i = 0; i < 60 * 30 && I.onWheel; i++) { ff(1 / 60); top = Math.max(top, GAME.cameraObj.position.y); }
+    r.top = Math.round(top);
+    r.off = !I.onWheel && P.mesh.visible && Math.hypot(P.pos.x - s.out.x, P.pos.z - s.out.z) < 1;
+    r.photoGone = getComputedStyle(document.getElementById('cine-photo')).display === 'none';
+    // and the glass lift keeps the camera too
+    var lf = I.lift()[0];
+    GAME.test.teleport(lf.at.x + 3, lf.at.z); ff(0.5);
+    P.pos.set(lf.at.x, lf.at.y, lf.at.z); ff(0.3);
+    r.liftPhoto = I.riding() && getComputedStyle(document.getElementById('cine-photo')).display !== 'none';
+    GAME.test.pressKey('Space', true); ff(1 / 60); GAME.test.pressKey('Space', false); ff(0.8);
+    GAME.test.teleport(-60, 40); ff(0.5);
+    return r;
+  });
+  check('ferris wheel: a booth and a ring at its foot, and no ticket with the law on you', fw2.stop && fw2.refusedHot, JSON.stringify(fw2));
+  check('ferris wheel: step on, buy a ticket ($' + 20 + ') and you are in a cab', fw2.asked && fw2.paid === 20 && fw2.on, JSON.stringify(fw2));
+  check('ferris wheel: once round — over the top, out of harm\'s way — and off at the booth', fw2.safe && fw2.top > 28 && fw2.off, JSON.stringify(fw2));
+  check('camera: works on the wheel, with a button on the bars, and in the glass lift', fw2.photoBtn && fw2.snapped && fw2.photoGone && fw2.liftPhoto, JSON.stringify(fw2));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

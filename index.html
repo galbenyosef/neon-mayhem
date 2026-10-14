@@ -402,6 +402,11 @@
   #scene-name { font-size:13px; font-weight:900; letter-spacing:3px; }
   #scene-text { font-size:18px; color:#f4ecff; line-height:1.4; margin-top:4px; min-height:3.1em; text-shadow:0 1px 2px #000; }
   #cine-skip { pointer-events:auto; cursor:pointer; padding:8px 0; white-space:pre; }
+  /* a ride's camera button, on the bottom bar's left (hud.cine) */
+  #cine-photo { display:none; position:absolute; left:calc(18px + env(safe-area-inset-left,0px)); top:50%; transform:translateY(-50%);
+    width:46px; height:46px; line-height:46px; text-align:center; font-size:22px; border-radius:50%; cursor:pointer; pointer-events:auto;
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.35); opacity:0; transition:opacity .5s .9s; }
+  body.cine #cine-photo { opacity:.9; }
   .talk .face .mo { display:inline !important; }
   .talk .face .mc { display:none; }
   @media (max-height:520px) { #scene-sub { bottom:calc(11vh + 6px); padding:7px 10px 8px; gap:10px; } #scene-face { flex-basis:56px; width:56px; height:56px; }
@@ -675,7 +680,7 @@
   <input id="cheat-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32">
   <div id="cheat-said"></div>
   <div id="cheat-btns"><span class="mbtn" id="cheat-ok">ENTER</span><span class="mbtn" id="cheat-close">CLOSE</span></div></div></div>
-<div id="cine"><div class="cine-bar cine-top"></div><div class="cine-bar cine-bot"><span id="cine-skip"></span></div><div id="scene-sub"><div id="scene-face"></div><div id="scene-words"><div id="scene-name"></div><div id="scene-text"></div></div></div></div>
+<div id="cine"><div class="cine-bar cine-top"></div><div class="cine-bar cine-bot"><span id="cine-photo">📷</span><span id="cine-skip"></span></div><div id="scene-sub"><div id="scene-face"></div><div id="scene-words"><div id="scene-name"></div><div id="scene-text"></div></div></div></div>
 <div id="photo-toast"><img id="photo-toast-img" alt=""><div id="photo-toast-text"></div></div>
 <div id="photo-view">
   <img id="photo-view-img" alt="">

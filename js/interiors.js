@@ -738,6 +738,7 @@ GAME.interiors = (function () {
     packStatic(mesh);
     releaseStatic(mesh);
     buildLift();
+    buildWheel();
   }
 
   // ---------- the tower lift ----------
@@ -833,7 +834,7 @@ GAME.interiors = (function () {
     P.mesh.visible = false;
     P.velY = 0; P.airborne = false; P.moveSpeed = 0; P.mantle = null; P.roofCar = null;
     GAME.hud.setPoiHint('');
-    if (GAME.hud.cine) GAME.hud.cine(true, function () { skipRide = true; });
+    if (GAME.hud.cine) GAME.hud.cine(true, function () { skipRide = true; }, { photo: true });
     GAME.track('lift-ride-' + s.toId);
   }
   function stepRide(dt) {
@@ -885,6 +886,132 @@ GAME.interiors = (function () {
     if (GAME.audio.ding) GAME.audio.ding();
     GAME.hud.message(up ? 'HELIPAD — seventy metres up. Mind the edge.' : 'Street level.', 2.5);
     GAME.track('lift-' + R.s.toId);
+  }
+
+  // ---------- the ferris wheel ----------
+  // The wheel at the end of the pier only ever turned for the skyline. Now
+  // there is a booth at its foot: step on the ring, buy a ticket, and you
+  // ride a cab once round — first person, like the glass lift, looking back
+  // over the pier at the strip and the city as it climbs over the top and
+  // comes down again. The camera (C) works up there, as it does in the lift.
+  var WHEEL_PRICE = 20, WHEEL_SPIN = 0.36, WHEEL_ON = 1.0, WHEEL_REARM = 1.7, WHEEL_HINT = 8;
+  var wheelStop = null, wheelRide = null, skipWheel = false;
+  function buildWheel() {
+    var C = GAME.city, W = C.wheel;
+    if (!W || !C.wheelSpin) return;
+    var wx = W.position.x, wz = W.position.z;
+    // just inland of the legs, in the middle of the deck; the booth on its
+    // south edge, its window to the ring
+    var rx = wx - 6, rz = wz, ry = C.groundY(rx, rz);
+    var m = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.0, 32), new THREE.MeshBasicMaterial({
+      color: 0xffe14f, transparent: true, opacity: 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(rx, ry + 0.09, rz);
+    GAME.scene.add(m);
+    var bx = wx - 8.5, bz = wz - 4.6, by = C.groundY(bx, bz), g = new THREE.Group();
+    function box(x, y, z, w, h, d, col) { var b = new THREE.Mesh(sharedBoxGeo(w, h, d), sharedLambert(col)); b.position.set(x, y, z); g.add(b); }
+    box(bx, by + 1.2, bz, 2.2, 2.4, 2.2, 0xffe14f);           // the booth
+    box(bx, by + 2.55, bz, 2.7, 0.3, 2.7, 0xff4fa3);         // its roof
+    box(bx, by + 1.45, bz + 1.11, 1.3, 0.8, 0.04, 0x141824);  // the window, to the ring
+    box(bx, by + 0.95, bz + 1.25, 1.5, 0.08, 0.3, 0xf4f1e8);  // the counter
+    // TICKETS, painted on a board over the window
+    var cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 64;
+    var c = cv.getContext('2d');
+    c.fillStyle = '#ff4fa3'; c.fillRect(0, 0, 256, 64);
+    c.fillStyle = '#fff4c0'; c.font = '900 30px "Segoe UI", Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('TICKETS  $' + WHEEL_PRICE, 128, 33);
+    var sign = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.55), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv) }));
+    sign.position.set(bx, by + 2.15, bz + 1.12);
+    g.add(sign);
+    GAME.scene.add(g);
+    C.addSolid(bx, bz, 2.2, 2.2, by + 2.6, 'prop');
+    wheelStop = { x: rx, y: ry, z: rz, mesh: m, armed: true, out: { x: rx - 1.5, z: rz }, heading: -Math.PI / 2 };
+  }
+  function stepWheel(dt) {
+    if (!wheelStop) return;
+    if (wheelRide) { stepWheelRide(dt || 1 / 60); return; }
+    var P = GAME.player, s = wheelStop;
+    s.mesh.material.opacity = 0.5 + 0.25 * Math.sin(GAME.time * 3 + 2);
+    if (P.state !== 'alive' || P.inCar || P.swimming || P.parachuting || P.mantle || ridingNow) return;
+    var d2 = Math.abs(P.pos.y - s.y) < 2.5 ? U.dist2(P.pos.x, P.pos.z, s.x, s.z) : 1e9;
+    if (d2 > WHEEL_REARM * WHEEL_REARM) s.armed = true;
+    if (d2 < WHEEL_HINT * WHEEL_HINT) GAME.hud.setPoiHint('FERRIS WHEEL — $' + WHEEL_PRICE + ' a ride: step on the ring for a ticket');
+    if (s.armed && d2 < WHEEL_ON * WHEEL_ON && !P.airborne && !GAME.shopOpen && !GAME.hud.dialogOpen()) {
+      s.armed = false;
+      if (GAME.police.wanted > 0) { GAME.hud.message('The attendant takes one look at you — not with the law on your tail.', 3); return; }
+      if (GAME.onJob && GAME.onJob()) { GAME.hud.message('Not now — you are on a job.', 2.2); return; }
+      if (P.cash < WHEEL_PRICE) { GAME.hud.message('A ticket is $' + WHEEL_PRICE + '. You are short.', 2.5); return; }
+      GAME.hud.dialog({
+        title: 'FERRIS WHEEL',
+        body: 'Once round the wheel, over the pier and the bay — $' + WHEEL_PRICE + '.\nYour camera works up there: ' + (GAME.isTouch ? '📷' : 'C') + ' to take a picture.',
+        ok: 'BUY A TICKET',
+        onOk: buyTicket
+      });
+    }
+  }
+  function buyTicket() {
+    var P = GAME.player;
+    if (wheelRide || P.state !== 'alive' || P.inCar || P.cash < WHEEL_PRICE) return;
+    GAME.addCash(-WHEEL_PRICE);
+    GAME.audio.cashTick();
+    var C = GAME.city, spin = C.wheelSpin, best = 0, bd = 1e9;
+    // the cab nearest the bottom, brought round to it under cover of the cut
+    for (var c = 0; c < 8; c++) {
+      var d = Math.abs(U.wrapPI(c / 8 * Math.PI * 2 + spin.rotation.z + Math.PI / 2));
+      if (d < bd) { bd = d; best = c; }
+    }
+    spin.rotation.z = -Math.PI / 2 - best / 8 * Math.PI * 2;
+    wheelRide = { t: 0, cab: best, z0: spin.rotation.z, yaw0: Math.random() < 0.5 ? -1 : 1 };
+    skipWheel = false;
+    P.mesh.visible = false;
+    P.velY = 0; P.airborne = false; P.moveSpeed = 0; P.mantle = null; P.roofCar = null;
+    GAME.hud.setPoiHint('');
+    if (GAME.hud.cine) GAME.hud.cine(true, function () { skipWheel = true; }, { photo: true });
+    if (GAME.track) GAME.track('ferris-ride');
+  }
+  var wheelV = null;
+  function stepWheelRide(dt) {
+    var R = wheelRide, P = GAME.player, C = GAME.city, spin = C.wheelSpin;
+    R.t += dt;
+    var T = GAME.input.touch;
+    if (R.t > 0.5 && (skipWheel || GAME.keyPressed('Space') || GAME.keyPressed('KeyF') || GAME.keyPressed('Enter') || T.jump || T.enter)) { endWheel(); return; }
+    if (P.state !== 'alive') { endWheel(); return; }
+    // a moment at the bottom to sit down, then round (the city turns the
+    // wheel 0.15 a second on its own; this is the rest of the ride's pace)
+    var pace = WHEEL_SPIN * U.clamp((R.t - 1.2) / 2, 0, 1);
+    spin.rotation.z += Math.max(0, pace - 0.15) * dt;
+    var gone = spin.rotation.z - R.z0;
+    if (gone >= Math.PI * 2) { spin.rotation.z = R.z0 + Math.PI * 2; endWheel(); return; }
+    if (R.t < 1.2) spin.rotation.z = R.z0;   // (held at the bottom while you sit)
+    // the cab, where it is now
+    var a = R.cab / 8 * Math.PI * 2;
+    if (!wheelV) wheelV = new THREE.Vector3();
+    spin.updateMatrixWorld(true);
+    wheelV.set(Math.cos(a) * 15, Math.sin(a) * 15, 0);
+    spin.localToWorld(wheelV);
+    // through the cab's window, back toward the shore: the view drifts along
+    // the strip, and tips down to the pier from the top
+    var up = U.clamp((wheelV.y - 2.5) / 30, 0, 1);
+    var yaw = -Math.PI / 2 + R.yaw0 * 0.5 * Math.sin(Math.min(1, gone / (Math.PI * 2)) * Math.PI);
+    var pitch = 0.04 + 0.32 * up;
+    var ex = wheelV.x - 0.5, ey = wheelV.y + 0.35 + Math.sin(R.t * 1.3) * 0.02, ez = wheelV.z;
+    var cam = GAME.cameraObj;
+    cam.position.set(ex, ey, ez);
+    cam.lookAt(ex + Math.sin(yaw) * Math.cos(pitch) * 10, ey - Math.sin(pitch) * 10, ez + Math.cos(yaw) * Math.cos(pitch) * 10);
+  }
+  function endWheel() {
+    var P = GAME.player, s = wheelStop, done = wheelRide && (GAME.city.wheelSpin.rotation.z - wheelRide.z0) >= Math.PI * 2 - 0.01;
+    wheelRide = null;
+    if (GAME.hud.cine) GAME.hud.cine(false);
+    P.mesh.visible = true;
+    if (P.state !== 'alive') return;
+    P.pos.set(s.out.x, GAME.city.groundY(s.out.x, s.out.z), s.out.z);
+    P.heading = s.heading; P.velY = 0; P.airborne = false; P.moveSpeed = 0;
+    GAME.cam.yaw = P.heading; GAME.cam.pitch = 0.25; GAME.cam.x = GAME.cam.y = GAME.cam.z = 0;
+    s.armed = false;
+    if (GAME.audio.ding) GAME.audio.ding();
+    GAME.hud.message(done ? 'Once round the wheel. Thanks for riding!' : 'Off the wheel.', 2.5);
   }
 
   // ---------- going in and out ----------
@@ -949,9 +1076,10 @@ GAME.interiors = (function () {
   // out without ceremony: a respawn, a teleport, a reload
   function reset() {
     pending = null;
-    if (ridingNow) {
-      // (out of the lift without ceremony too: a teleport mid-ride)
-      ridingNow = null;
+    if (ridingNow || wheelRide) {
+      // (out of the lift, or off the wheel, without ceremony too: a teleport
+      // mid-ride)
+      ridingNow = null; wheelRide = null;
       if (GAME.hud.cine) GAME.hud.cine(false);
       GAME.player.mesh.visible = true;
     }
@@ -982,7 +1110,7 @@ GAME.interiors = (function () {
       }
       return;
     }
-    if (!cur) { stepLift(dt); return; }
+    if (!cur) { if (!wheelRide) stepLift(dt); stepWheel(dt); return; }
     if (P.state !== 'alive') return;
     var room = cur.room, hint = '', hd = 1e9;
     for (var i = 0; i < room.rings.length; i++) {
@@ -1099,8 +1227,12 @@ GAME.interiors = (function () {
     get current() { return cur ? cur.room : null; },
     get door() { return cur ? cur.door : null; },
     get loc() { return cur ? cur.loc : null; },
-    get busy() { return !!pending || !!ridingNow; },
-    riding: function () { return !!ridingNow; },
+    get busy() { return !!pending || !!ridingNow || !!wheelRide; },
+    riding: function () { return !!ridingNow || !!wheelRide; },
+    // headless: the wheel's boarding ring, whether you are on it, a ticket
+    wheelStop: function () { return wheelStop; },
+    get onWheel() { return !!wheelRide; },
+    WHEEL_PRICE: WHEEL_PRICE,
     leave: exitRoom,
     // headless: the two lift stops
     lift: function () { return lift; },
