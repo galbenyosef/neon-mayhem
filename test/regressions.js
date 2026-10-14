@@ -348,6 +348,10 @@
 //  40. A TURN OF THE WHEEL — a ticket at the booth by the ferris wheel, once
 //      round in a cab and off at the booth; and the camera works on the
 //      wheel and in the glass lift.
+//  41. WHERE AM I — on a first run Lola says who she is and where you are
+//      (the year, the town, the neighbourhoods, Rico's colours, the law)
+//      before she offers to show you around; and it is all to read again
+//      under TELL ME ABOUT COSTA ROSA, following the story.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -13543,9 +13547,13 @@ function withTimeout(p, ms) {
         GAME.test.teleport(b.pos.x + 1.5, b.pos.z); ff(0.2); GAME.enterCar(b); ff(1.5);
         b.pos.set(tito.at.x + 4, C.groundY(tito.at.x + 4, tito.at.z), tito.at.z); b.speed = 0; ff(0.6);
         r.tito = { scene: Sc.active, cast: Sc.on.join() };
-        through(); ff(2);
+        through(); ff(1);
         r.tito.onFoot = !P.inCar; r.tito.rides = b.occupied === 'ai' && !!b.riderMesh && !b.mission && !b.gone;
+        // (pulling out into a busy street he may wait a beat for a gap — four
+        // seconds, not two, to be on his way; and what held him, if it did)
+        ff(3);
         r.tito.off = Math.round(Math.hypot(b.pos.x - (tito.at.x + 4), b.pos.z - tito.at.z));
+        r.tito.ai = b.ai && b.ai.mode; r.tito.speed = Math.round(b.speed || 0);
       }
       settle();
       // --- Biscuit home: Mrs. Albescu walks off with him at her heel ---
@@ -14053,6 +14061,60 @@ function withTimeout(p, ms) {
   check('ferris wheel: step on, buy a ticket ($' + 20 + ') and you are in a cab', fw2.asked && fw2.paid === 20 && fw2.on, JSON.stringify(fw2));
   check('ferris wheel: once round — over the top, out of harm\'s way — and off at the booth', fw2.safe && fw2.top > 28 && fw2.off, JSON.stringify(fw2));
   check('camera: works on the wheel, with a button on the bars, and in the glass lift', fw2.photoBtn && fw2.snapped && fw2.photoGone && fw2.liftPhoto, JSON.stringify(fw2));
+
+  // ---------- 41: Lola's briefing on Costa Rosa ----------
+  var wb = await page.evaluate(function () {
+    var r = {}, L = GAME.lola, ff = function (t) { GAME.test.fastForward(t); };
+    var guide0 = GAME.prefs.guide, bests0 = JSON.stringify(GAME.bests || {}), sc0 = GAME.scenes.enabled;
+    try {
+      if (GAME.player.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      if (L.isOpen) L.close();
+      // a first run: the briefing first, face to face, then her offer
+      delete GAME.prefs.guide; GAME.bests = {};
+      GAME.scenes.enabled = true;
+      r.offered = GAME.guide.offer();
+      ff(0.6);
+      r.scene = !!GAME.scenes.active && !L.isOpen;
+      var said = '';
+      for (var i = 0; i < 80 && GAME.scenes.active; i++) {
+        ff(0.5);
+        var ln = GAME.scenes.line;
+        if (ln && said.indexOf(ln.text) < 0) said += ln.who + ': ' + ln.text + ' | ';
+        GAME.scenes.advance(); ff(0.1); GAME.scenes.advance();
+      }
+      r.told = { lola: /I'm Lola/.test(said), year: /1986/.test(said), hoods: /Centro Alto/.test(said) && /Puerto Viejo/.test(said) && /Las Colinas/.test(said),
+        island: /Isla Verde/.test(said), gangs: /Rico Salazar/.test(said) && /plum and black/.test(said), law: /police/.test(said), askAgain: /COSTA ROSA/.test(said) };
+      r.thenOffer = L.isOpen && L.options().some(function (o) { return /SHOW ME AROUND/.test(o); });
+      if (L.isOpen) L.choose(/OWN WAY/);
+      ff(0.3);
+      // and any time after, to read: every part, following the story
+      L.open();
+      r.menu = L.options().some(function (o) { return /COSTA ROSA/.test(o); });
+      L.choose(/COSTA ROSA/);
+      r.parts = L.options().filter(function (o) { return !/SOMETHING ELSE|THANKS/.test(o); }).length;
+      L.choose(/THE GANGS/);
+      r.gangs = /salazar/i.test(L.says) && /pink/.test(L.says);
+      r.back = L.options().some(function (o) { return /MORE ABOUT COSTA ROSA/.test(o); });
+      L.close();
+      GAME.bests = { hit2: 100 };
+      r.after = /went down/.test(L.world().filter(function (w) { return /GANGS/.test(w.label); })[0].say);
+    } finally {
+      if (L.isOpen) L.close();
+      if (GAME.scenes.active) GAME.scenes.skip();
+      GAME.scenes.enabled = sc0;
+      if (guide0 === undefined) delete GAME.prefs.guide; else GAME.prefs.guide = guide0;
+      GAME.bests = JSON.parse(bests0);
+      ff(0.3);
+    }
+    return r;
+  });
+  check('briefing: on a first run Lola tells you where you are before she offers to show you around',
+    wb.offered && wb.scene && wb.thenOffer, JSON.stringify(wb));
+  check('briefing: who she is, 1986, the four neighbourhoods, Isla Verde, Rico and his colours, the law — and to ask again',
+    wb.told && wb.told.lola && wb.told.year && wb.told.hoods && wb.told.island && wb.told.gangs && wb.told.law && wb.told.askAgain, JSON.stringify(wb.told));
+  check('briefing: TELL ME ABOUT COSTA ROSA has it all to read, part by part, and it follows the story',
+    wb.menu && wb.parts === 6 && wb.gangs && wb.back && wb.after, JSON.stringify(wb));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

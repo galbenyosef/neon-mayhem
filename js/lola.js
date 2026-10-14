@@ -193,6 +193,69 @@ GAME.lola = (function () {
     }) };
   }
   function lineOf(k) { var l = TIPS[k]; return typeof l === 'function' ? l() : l; }
+
+  // ---------- Costa Rosa, as she tells it ----------
+  // Where and when you are, whose streets these are, who else is in town:
+  // on a first run she tells it face to face before she offers to show you
+  // around (introScene, guide.js), and TELL ME ABOUT COSTA ROSA has it to
+  // read any time after. Each part says where the story has got to.
+  function beat(id) { return !!(GAME.bests && GAME.bests[id] !== undefined); }
+  var WORLD = [
+    ['🙋 WHO ARE YOU, LOLA?', function () {
+      return 'Lola. I came to this town with one suitcase in \'79, and now the Ocean Strip is mine — the bars, the clubs, the boardwalk, and the fast cars that run up and down it. ' +
+        'Anybody who wants something done on the strip comes to me sooner or later. You want work, I have work: the rings on your map are my jobs. My people wear pink.';
+    }],
+    ['🌴 COSTA ROSA, 1986', function () {
+      return 'Costa Rosa, 1986. Neon, palm trees, and money nobody asks too many questions about. Two islands: Isla Rosa, where you\'re stood — the beach, the city, the harbour — ' +
+        'and Isla Verde, across the channel. The days are hot, the nights are hotter, the radio never stops, and everybody here is working an angle. Including me.';
+    }],
+    ['🏙 THE NEIGHBOURHOODS', function () {
+      return 'Four of them on Isla Rosa. The OCEAN STRIP, on the beach: the boardwalk, the piers, the Lucky Gull casino, the ferris wheel, the Neon Tide club. ' +
+        'CENTRO ALTO, downtown: the towers, the Savings & Loan, Rosa Pictures, and the helipad tower. PUERTO VIEJO, the harbour: the docks, the cranes, the warehouses, the export crane, and the airport out past them. ' +
+        'And LAS COLINAS, up the hill: the hospital, the barber, the stadium, the nice houses — and Villa Salazar, right at the top.';
+    }],
+    ['🌉 ISLA VERDE', function () {
+      var dorado = beat('hit2') ? 'ours now' : 'Rico\'s back yard';
+      if (!islaOpen()) return 'Over the water. The two bridges are shut, and the air over the channel with them — Rico has friends at City Hall. ' +
+        'Finish four of my jobs, or find every stunt jump on this island, and they open. Over there it\'s hills and hairpins: PUERTO DORADO, the island\'s port and ' + dorado + '; ' +
+        'ALTA VERDE, high on the hill; and MIRADOR, with the lighthouse, the observatory and the marina.';
+      return 'The bridges are open. PUERTO DORADO is the island\'s port — ' + dorado + '. ALTA VERDE is up on the hill, all switchbacks; MIRADOR has the lighthouse, the observatory and the marina. ' +
+        'Ten more stunt jumps over there, and a few people who could use a hand.';
+    }],
+    ['🎨 THE GANGS', function () {
+      if (beat('hit2')) return 'There were two sides in this town. Rico Salazar\'s crew — plum and black, black sedans — and mine, in pink and white. Rico went down on his own marina, and his crew went with him. ' +
+        'Both islands are ours now. My people are on your side: leave them be and they\'ll leave you be.';
+      var harbour = beat('hit1') ? 'He had the harbour, Puerto Viejo, until his bookkeeper lost the ledger — that\'s ours now' : 'He holds the harbour, Puerto Viejo';
+      return 'Two sides in this town. Rico SALAZAR\'s crew: plum and black, black sedans, a lot of guns. ' + harbour + ', and Puerto Dorado on the island — and he wants the strip. ' +
+        'My people wear pink and white and drive pink sports cars; they\'re on your side. Cross Rico ' + (beat('rampage1') ? '— and you have — ' : 'enough ') + 'and his boys shoot on sight in his streets. Learn the colours.';
+    }],
+    ['🚓 THE LAW', function () {
+      return 'The Costa Rosa PD. Do something stupid where people can see it and you get stars — and the more stars, the more they send: cruisers, then roadblocks and spikes, then a helicopter, and at the very top the army. ' +
+        'Lose them: get out of sight and let it cool off, drive through a paint shop, or slip the desk sergeant at a station something. Get busted, or wasted, and you wake up without your guns. Not the bat, though.';
+    }]
+  ];
+  function costaRosa() {
+    return { say: 'Pull up a chair. What do you want to know?', list: WORLD.map(function (w) {
+      return { label: w[0], fn: function () { answer({ say: w[1](), list: [{ label: '↩ MORE ABOUT COSTA ROSA', fn: function () { answer(costaRosa()); } }] }); } };
+    }) };
+  }
+  // the first run: hers, face to face, where you stand — then `then` (her
+  // offer to show you around). False when there is no scene to be had.
+  function introScene(then) {
+    if (!GAME.scenes) return false;
+    var lines = [
+      ['lola', 'Welcome to Costa Rosa, kid. I\'m Lola — the Ocean Strip is mine. The bars, the clubs, and the fast cars that run up and down it.'],
+      ['you', 'Just got off the bus. Where am I, exactly?'],
+      ['lola', 'Costa Rosa, 1986. Neon, palm trees, and money nobody asks questions about. Two islands — this one, Isla Rosa, and Isla Verde over the water.'],
+      ['lola', 'Four neighbourhoods on this one. The Ocean Strip, here on the beach. Centro Alto downtown, the towers. Puerto Viejo, the harbour. And Las Colinas, up the hill.'],
+      ['lola', 'The bridges to Isla Verde are shut, and that\'s Rico Salazar\'s doing. The island\'s his. So is the harbour — for now.'],
+      ['you', 'Who\'s Rico Salazar?'],
+      ['lola', 'The other side of this town. His crew wears plum and black and drives black sedans. My people wear pink. Learn the colours.'],
+      ['lola', 'And the police: stars on you, and they come. Lose them, drive through a paint shop, or pay off the desk sergeant at a station.'],
+      ['lola', 'Any of that again, any time — ask me. It\'s under COSTA ROSA.']
+    ];
+    return GAME.scenes.play({ id: 'lola-intro', shots: [{ set: 'here', cast: ['lola', 'you'], lines: lines }] }, function () { if (then) then(); });
+  }
   function howAmI() {
     var bests = GAME.bests || {}, M = GAME.missions, ST = GAME.stunts, T = GAME.tapes, P = GAME.player, done = 0;
     if (M) M.DEFS.forEach(function (d) { if (bests[d.id] !== undefined) done++; });
@@ -236,6 +299,7 @@ GAME.lola = (function () {
       { label: '💰 WHERE\'S THE MONEY?', fn: function () { answer(money()); } },
       { label: '📍 TAKE ME SOMEWHERE', fn: function () { answer(takeMe()); } },
       { label: '📖 TELL ME ABOUT…', fn: function () { answer(explain()); } },
+      { label: '🌴 TELL ME ABOUT COSTA ROSA', fn: function () { answer(costaRosa()); } },
       { label: '📊 HOW AM I DOING?', fn: function () { answer(howAmI()); } },
       { label: '🎮 REMIND ME OF THE CONTROLS', fn: function () { answer(controlsHelp()); } },
       { label: '👋 NOTHING, THANKS', fn: close }
@@ -338,6 +402,9 @@ GAME.lola = (function () {
   return {
     first: first,
     setTips: setTips,
+    introScene: introScene,
+    // headless: the world as she tells it, part by part
+    world: function () { return WORLD.map(function (w) { return { label: w[0], say: w[1]() }; }); },
     open: open,
     offer: offer,
     close: close,

@@ -224,21 +224,29 @@ GAME.guide = (function () {
   }
 
   // ---------- her question ----------
+  // Before the offer, she says who she is and where you are — the year, the
+  // town, its neighbourhoods, Rico and his colours, the law (lola.js
+  // introScene) — face to face. Without a scene to be had, the card says
+  // the short of it itself.
   function offer() {
     var pr = prefs();
     if (pr.guide || !fresh() || !GAME.lola || !GAME.lola.offer) return false;
-    var ok = GAME.lola.offer({
-      say: 'Welcome to Costa Rosa, kid. I\'m Lola — I run the strip. You look new. I can put you to work and show you how things go round here, or you can find your own feet. Your call.',
-      top: true,
-      escSays: 'to find your own way',
-      list: [
-        { label: '🧭 SHOW ME AROUND', fn: function () { GAME.lola.close(); begin(); } },
-        { label: '🗺 I\'LL FIND MY OWN WAY', fn: function () { GAME.lola.close(); skip(); } }
-      ],
-      // closing her without an answer is finding your own way
-      onClose: function () { skip(); }
-    });
-    if (!ok) return false;
+    function card(after) {
+      return GAME.lola.offer({
+        say: after ? 'So, kid — I can put you to work and show you how things go round here, or you can find your own feet. Your call.'
+          : 'Welcome to Costa Rosa, kid. I\'m Lola — I run the strip. You look new. I can put you to work and show you how things go round here, or you can find your own feet. Your call.',
+        top: true,
+        escSays: 'to find your own way',
+        list: [
+          { label: '🧭 SHOW ME AROUND', fn: function () { GAME.lola.close(); begin(); } },
+          { label: '🗺 I\'LL FIND MY OWN WAY', fn: function () { GAME.lola.close(); skip(); } }
+        ],
+        // closing her without an answer is finding your own way
+        onClose: function () { skip(); }
+      });
+    }
+    var scene = !!(GAME.lola.introScene && GAME.lola.introScene(function () { if (!card(true)) skip(); }));
+    if (!scene && !card(false)) return false;
     pr.guide = 'offered';
     save();
     if (GAME.track) GAME.track('guide-offered');
