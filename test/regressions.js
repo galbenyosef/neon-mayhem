@@ -3871,9 +3871,13 @@ function withTimeout(p, ms) {
     r.shift = !!(A && A.def.id === 'ambulance');
     if (r.shift) {
       var t0 = A.targets[0];
-      amb.pos.set(t0.x + 3, C.groundY(t0.x + 3, t0.z), t0.z); amb.speed = 0;
-      for (var k = 0; k < 600 && A.aboard === 0; k++) GAME.test.fastForward(1 / 60);
+      // on the pickup's own road point, beside the kerb they wait at: three
+      // metres along x from it was off the road wherever that road runs
+      // north-south, now and then against a wall the patient had to get round
+      amb.pos.set(t0.x, C.groundY(t0.x, t0.z), t0.z); amb.speed = 0;
+      for (var k = 0; k < 900 && A.aboard === 0; k++) GAME.test.fastForward(1 / 60);
       r.aboard = A.aboard;
+      if (!A.aboard && t0.ped) r.patientAt = Math.round(Math.hypot(t0.ped.pos.x - amb.pos.x, t0.ped.pos.z - amb.pos.z));
       // run them to the first hospital, at its own drop-off
       A.hospital = H; A.dropoff = [H.x + 30, H.spawn.z]; A.phase = 'dropoff';
       amb.pos.set(A.dropoff[0], C.groundY(A.dropoff[0], A.dropoff[1]), A.dropoff[1]); amb.speed = 0;
@@ -3933,7 +3937,7 @@ function withTimeout(p, ms) {
   check('play: each on the island\'s own ground, inside the district it names',
     play.labels.length > 0 && play.labels.every(function (l) { return l.land && l.right; }), JSON.stringify(play.labels));
   check('play: a paramedic shift delivers a patient (anchor sanity)', play.shift && play.aboard === 1 && play.walking,
-    JSON.stringify({ shift: play.shift, aboard: play.aboard, walking: play.walking }));
+    JSON.stringify({ shift: play.shift, aboard: play.aboard, walking: play.walking, patientAt: play.patientAt }));
   check('play: the delivered patient makes for the hospital\'s front doors', play.doorAtFront);
   check('play: and goes in — gone at the door, not wandering the town',
     play.inside && play.inside.gone && play.inside.took < 30 && play.inside.fromDoor < 2.5, JSON.stringify(play.inside));
