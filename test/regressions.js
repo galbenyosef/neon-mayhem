@@ -5788,6 +5788,10 @@ function withTimeout(p, ms) {
       var ped = GAME.test.spawnPed(10, off);
       if (!ped) { GAME.vehicles.removeCar(car); return; }
       ped.state = 'walk';
+      // one who freezes (peds.js): a quick one dives clear of the bonnet,
+      // and a dive is never run over — whether he saw it in time was a coin
+      // the "still gets you run over" anchor lost now and then
+      ped.dodgeSkill = 0;
       var died = false;
       for (var t = 0; t < 60 * 4; t++) {
         ped.pos.x = f.x + 10; ped.pos.z = f.z + off; ped.speed = 0;
