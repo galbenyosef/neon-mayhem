@@ -12562,7 +12562,12 @@ function withTimeout(p, ms) {
       r.h2 = walkIn(def('hit2'));
       stopTarget();
       r.h2act = M.act && M.act.kind;
-      r.h2streetFree = !GAME.world.peds.some(function (p) { return p.missionFoe && !p.dead && !p.boss; });
+      // (his crew on the marina is not the street: where the chase ends
+      // within 150 m of it, they are already stood there waiting)
+      var crew = (M.active && M.active.stage && M.active.stage.men) || [];
+      var loose = GAME.world.peds.filter(function (p) { return p.missionFoe && !p.dead && !p.boss && crew.indexOf(p) < 0; });
+      r.h2streetFree = loose.length === 0;
+      if (loose.length) r.h2loose = loose.map(function (p) { return { state: p.state, d: Math.round(Math.hypot(p.pos.x - P.pos.x, p.pos.z - P.pos.z)) }; });
       var q = M.getObjectivePoint();
       var Mq = GAME.isla.pois().marina;
       r.h2marina = q ? Math.round(Math.hypot(q[0] - Mq.x, q[1] - Mq.z)) : -1;
@@ -13975,11 +13980,18 @@ function withTimeout(p, ms) {
         var rp = GAME.city.nearestRoadPoint(g.pos.x + 12, g.pos.z);
         var car = GAME.vehicles.spawnCar('sports', rp.x, rp.z, 0, {}); spawned.push(car);
         GAME.test.teleport(rp.x + 2.5, rp.z); ff(0.2);
-        GAME.test.enterNearestCar(car); ff(1.2);
-        car.speed = 0;
-        var d0 = Math.hypot(g.pos.x - car.pos.x, g.pos.z - car.pos.z);
-        ff(0.8);
-        r.gina = { d0: Math.round(d0), walking: !g.gone && Math.hypot(g.pos.x - car.pos.x, g.pos.z - car.pos.z) < d0 - 1, phase0: j.phase };
+        // watched from the moment you pull up, the car held still: she starts
+        // over (boarding) and leaves the spot she waited on
+        var g0 = { x: g.pos.x, z: g.pos.z }, sawBoard = false, moved = 0;
+        GAME.test.enterNearestCar(car);
+        for (var gw = 0; gw < 120; gw++) {
+          car.speed = 0; car.vx = car.vz = 0;
+          ff(1 / 60);
+          if (SG.job && SG.job.boarding) sawBoard = true;
+          if (!g.gone) moved = Math.max(moved, Math.hypot(g.pos.x - g0.x, g.pos.z - g0.z));
+        }
+        r.gina = { d0: Math.round(Math.hypot(g0.x - car.pos.x, g0.z - car.pos.z)), boarding: sawBoard, moved: +moved.toFixed(1), phase0: j.phase };
+        r.gina.walking = sawBoard && (moved > 1 || g.gone);
         for (var i = 0; i < 60 * 12 && SG.job && SG.job.phase !== 'drive'; i++) { car.speed = 0; ff(1 / 60); }
         r.gina.inCar = g.gone && !!SG.job && SG.job.phase === 'drive';
       }
