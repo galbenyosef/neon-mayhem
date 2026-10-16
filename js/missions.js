@@ -53,10 +53,12 @@ GAME.stunts = (function () {
   }
 
   // called when a jump that started on ramp `idx` lands successfully
-  function credit(idx, airT, dist) {
+  // `air` is what the jump itself just paid (vehicles.js landStunt), and
+  // `stats` its line: a first find says both in one message, with the total
+  function credit(idx, airT, dist, air, stats) {
     if (idx === undefined || idx === null) return 0;
     var ramp = ramps()[idx];
-    if (ramp && ramp.idx === idx && ramp.isla) return creditIsla(ramp.islaN);
+    if (ramp && ramp.idx === idx && ramp.isla) return creditIsla(ramp.islaN, air, stats);
     total = mainTotal();
     if (found[idx]) return 0;
     found[idx] = true;
@@ -66,7 +68,7 @@ GAME.stunts = (function () {
     GAME.audio.sting('win');
     GAME.haptics.win();
     var left = total - n;
-    GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   +$' + bonus +
+    GAME.hud.message('UNIQUE STUNT JUMP  ' + n + ' / ' + total + '   ·   ' + paidLine(bonus, air, stats) +
       (left > 0 ? '   —   ' + left + ' more for a special reward' : ''), 4.5);
     GAME.track('stunt-jump-found');
     if (GAME.lola) GAME.lola.first('stunt');
@@ -75,7 +77,11 @@ GAME.stunts = (function () {
     return bonus;
   }
   // keyed by the island ramp's own number, not its place in the whole list
-  function creditIsla(k) {
+  function paidLine(bonus, air, stats) {
+    if (!air) return '+$' + bonus;
+    return '+$' + (bonus + air) + '  (' + (stats ? stats.split('   ')[0].replace(/!$/, '') : 'JUMP') + ' $' + air + ' + FIND $' + bonus + ')';
+  }
+  function creditIsla(k, air, stats) {
     if (k === undefined || k < 0 || islaFound[k]) return 0;
     islaFound[k] = true;
     var n = islaCount(), all = islaTotal();
@@ -84,7 +90,7 @@ GAME.stunts = (function () {
     GAME.audio.sting('win');
     GAME.haptics.win();
     var left = all - n;
-    GAME.hud.message('ISLA VERDE STUNT JUMP  ' + n + ' / ' + all + '   ·   +$' + bonus +
+    GAME.hud.message('ISLA VERDE STUNT JUMP  ' + n + ' / ' + all + '   ·   ' + paidLine(bonus, air, stats) +
       (left > 0 ? '   —   ' + left + ' more on the island' : ''), 4.5);
     GAME.track('isla-stunt-jump-found');
     if (GAME.lola) GAME.lola.first('islaJump');
@@ -585,6 +591,7 @@ GAME.missions = (function () {
     // respray markers
     GAME.city.pois.resprays.forEach(function (g) {
       var rm = makeMarkerMesh(0xc86bff, 3.0);
+      rm.userData.respray = true;   // (a service, not a job: it stays out while you are on one)
       rm.position.set(g.door.x - 4, 1.7, g.door.z);
       GAME.scene.add(rm);
     });
@@ -1174,8 +1181,42 @@ GAME.missions = (function () {
     active.acts = d.then; active.actIndex = -1; active.stage = null;
     GAME.audio.sting('win');
     GAME.haptics.checkpoint();
+    // The job's own part was won without a word: the race ended, a pager
+    // line about a black sedan arrived, and the win card only came after
+    // that — nobody could tell what had happened. Now whoever is behind
+    // what comes next rings first: you won, and here is what is coming.
+    // (a run whose next part is a scene of its own says it there)
+    var first = d.then[0];
+    if (first && first.kind !== 'scene') {
+      var script = actIntro(d, first), ran = active;
+      active.introSaid = true;
+      var go = function () { if (active === ran && !active.stage) nextAct(); };
+      if (GAME.scenes && GAME.scenes.play(script, go)) return true;
+      sceneOnPager(script);
+    }
     nextAct();
     return true;
+  }
+  // what was won, then what is coming, as a call
+  var WON = {
+    race: 'First across the line! Nice driving, kid.',
+    courier: 'That\'s every drop made. Nice work.',
+    rampage: 'Now that\'s a mess. Good.',
+    takedown: 'He\'s down. Good.'
+  };
+  function actIntro(d, a) {
+    var lines = [['lola', WON[d.type] || 'Job done, kid.']];
+    if (a.say) lines.push(['lola', a.say]);
+    if (a.lola) lines.push(['lola', a.lola]);
+    if (a.rico) lines.push(['rico', a.rico]);
+    return { id: 'act-' + d.id, shots: [{ set: null, lines: lines }] };
+  }
+  // a part after the job's own, on the mission's title: so the second half
+  // reads as the same job going on, not something new out of nowhere
+  function partTitle() {
+    var n = 1;
+    for (var i = 0; i <= active.actIndex; i++) if (active.acts[i].kind !== 'scene') n++;
+    return active.def.name + '  ·  PART ' + n;
   }
   function nextAct() {
     if (!active) return;
@@ -1187,9 +1228,12 @@ GAME.missions = (function () {
     var s = active.stage = { kind: a.kind, a: a, t: 0 };
     active.courierRoute = null; active.routeT = 0;
     if (a.time) active.timeLeft = a.time;
-    if (a.say) GAME.hud.message(a.say, 3.5);
-    if (a.lola) lola(a.lola, 7);
-    if (a.rico) rico(a.rico, 7);
+    // (said already, in the call that opened the first of them)
+    var said = active.introSaid && active.actIndex === 0;
+    if (a.say && !said) GAME.hud.message(a.say, 3.5);
+    if (a.lola && !said) lola(a.lola, 7);
+    if (a.rico && !said) rico(a.rico, 7);
+    if (a.kind !== 'scene') GAME.hud.missionStart(partTitle(), '');
     if (a.kind === 'grab') {
       var at = a.at ? place(a.at) : active.lastAt;
       s.item = dropItem(at.x, at.z, a.color || 0x5a3a22);
@@ -2680,7 +2724,8 @@ GAME.missions = (function () {
       // a stranger's favour under way is finished (or walked away from)
       // before anything else starts (strangers.js)
       // (and so is a part of Lola's big score: heist.js)
-      if ((GAME.strangers && GAME.strangers.busy) || (GAME.heist && GAME.heist.busy)) { GAME.jobAvailable = null; GAME.retryAvailable = false; GAME.hud.setPoiHint(''); return; }
+      // (and the rings for the others are out of the street meanwhile)
+      if (GAME.onJob()) { setMarkersVisible(false); GAME.jobAvailable = null; GAME.retryAvailable = false; GAME.hud.setPoiHint(''); return; }
       // taxi / ambulance jobs start from within the vehicle
       var jobKind = null;
       if (P.inCar && P.car) {
@@ -3150,7 +3195,9 @@ GAME.missions = (function () {
       var rs = GAME.city.pois.resprays;
       for (var r = 0; r < rs.length; r++) putBlip(rs[r].door.x, rs[r].door.z, '#c86bff', 4, 'respray');
       if (!active) {
-        for (var i = 0; i < markers.length; i++) {
+        // (and not while a favour, a part of the big score or the toy race
+        // is on: the other jobs keep off the radar as off the street)
+        for (var i = 0; i < markers.length && !GAME.onJob(); i++) {
           var d = markers[i].def;
           if (!defAvailable(d)) continue;
           var kind = d.type === 'race' ? 'race' : d.type === 'courier' ? 'courier' : d.type === 'takedown' ? 'takedown' : 'rampage';

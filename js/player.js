@@ -3,7 +3,7 @@ GAME.player = {
   inCar: false, car: null,
   health: 100, armor: 0, cash: 250,
   state: 'alive', stateT: 0,
-  weapons: { fist: { have: true, ammo: Infinity } },
+  weapons: null,     // GAME.starterKit(), below
   currentWeapon: 'fist',
   moveSpeed: 0,
   // run-over cooldown. It has to start as a number: left undefined, the
@@ -26,6 +26,14 @@ GAME.focus = function () {
   // in a room, the world carries on round its front door (interiors.js)
   if (P.interior && GAME.interiors && GAME.interiors.door) return GAME.interiors.door;
   return P.inCar && P.car ? P.car.pos : P.pos;
+};
+
+// On a job of some kind: a mission, a stranger's favour, a part of the big
+// score, the toy race. While one is on, the rings and marks for the others
+// keep out of the street (they used to stand there lit up through the job).
+GAME.onJob = function () {
+  return !!((GAME.missions && GAME.missions.active) || (GAME.strangers && GAME.strangers.busy) ||
+    (GAME.heist && GAME.heist.busy) || (GAME.rc && GAME.rc.running));
 };
 
 GAME.initPlayer = function () {
@@ -72,6 +80,8 @@ function loadSave() {
       for (var w in s.loadout) {
         if (typeof s.loadout[w] === 'number') P.weapons[w] = { have: true, ammo: s.loadout[w] };
       }
+      // a blade you were carrying holds the melee slot, not the starter bat
+      if (P.weapons.bat && ['knife', 'katana', 'chainsaw'].some(function (m) { return P.weapons[m]; })) delete P.weapons.bat;
       if (s.currentWeapon && P.weapons[s.currentWeapon]) P.currentWeapon = s.currentWeapon;
     }
     if (GAME.prefs.timeMode && GAME.setTimeMode) GAME.setTimeMode(GAME.prefs.timeMode);
@@ -80,6 +90,14 @@ function loadSave() {
     if (GAME.isla) GAME.isla.syncUnlock();
   } catch (e) { GAME.bests = {}; GAME.prefs = {}; }
 }
+// What you always have: fists, and a bat in the melee slot — that slot sat
+// empty on the wheel until you found or bought a blade. A hospital or cell
+// visit takes your gear and leaves you this. A knife, katana or chainsaw
+// still takes the bat's place: one weapon a slot.
+GAME.starterKit = function () {
+  return { fist: { have: true, ammo: Infinity }, bat: { have: true, ammo: 1 } };
+};
+GAME.player.weapons = GAME.starterKit();
 GAME.save = function () {
   try {
     var P = GAME.player;
@@ -195,9 +213,9 @@ GAME.playerWasted = function (cause) {
   var ownsElsewhere = !home && GAME.shops && GAME.shops.ownsAny();
   var kept = GAME.jumpArsenal || GAME.unlimitedAmmo;   // the arsenal goes where you go
   var body = home
-    ? 'You wake up at your place. Cash and weapons intact.'
+    ? 'You wake up at the hospital. Your place kept your weapons safe — cash and weapons intact.'
     : ownsElsewhere
-      ? 'You wake up at the local hospital — your bed is on the other island. ' + (kept ? 'Cash and weapons intact.' : 'Weapons gone, cash intact.')
+      ? 'You wake up at the local hospital — your place is on the other island. ' + (kept ? 'Cash and weapons intact.' : 'Weapons gone, cash intact.')
       : 'You wake up at the hospital. ' + (kept ? 'Cash and weapons intact.' : 'Weapons gone, cash intact.');
   // An explosion death gets its beat: the banner used to slam on in the very
   // frame the blast spawned, so dying in a burning car read as "I suddenly
@@ -282,20 +300,12 @@ function respawnAfterScreen() {
       P.pos.set(sp.x, GAME.city.groundY(sp.x, sp.z), sp.z);
     } else {
       P.armor = 0;
-      // Property changes everything: own a safehouse and you wake up in your
-      // own bed with your arsenal untouched. Otherwise it's the nearest
-      // hospital YOU CAN BE IN — crash at the channel's edge and the island
-      // hospital is closest by distance, but a hospital behind a locked
-      // bridge cannot be where you wake up.
-      var home = GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z);
-      if (home) {
-        P.pos.set(home.x, GAME.city.groundY(home.x, home.z), home.z);
-        // out of your own door the way a session starts there, not still
-        // facing however you fell — which could put the camera in the awning
-        P.heading = home.heading;
-        GAME.cam.yaw = P.heading; GAME.cam.pitch = 0.32;
-        GAME.cam.x = GAME.cam.y = GAME.cam.z = null;
-      } else {
+      // You wake at the nearest hospital YOU CAN BE IN — crash at the
+      // channel's edge and the island hospital is closest by distance, but a
+      // hospital behind a locked bridge cannot be where you wake up. (Owning
+      // a home used to mean waking at its front gate, which read as a respawn
+      // at a door; it still means your arsenal comes through untouched.)
+      {
         // the hospital on the island you went down on — an ambulance does
         // not carry you across the channel. Off-island beds only come into
         // it if this island somehow has none you can be in.
@@ -316,7 +326,7 @@ function respawnAfterScreen() {
     // every stunt jump found: the arsenal survives a hospital or cell visit
     var keepGear = GAME.jumpArsenal || (kind === 'wasted' && GAME.shops && GAME.shops.homeSpawn(P.pos.x, P.pos.z));
     if (!keepGear) {
-      P.weapons = { fist: { have: true, ammo: Infinity } };
+      P.weapons = GAME.starterKit();
       P.currentWeapon = 'fist';
     }
     // everything finished: and it never runs dry
@@ -348,6 +358,8 @@ GAME.enterCar = function (car) {
   // nor is one that has gone into the sea (vehicles.js is taking it down),
   // or one still in the air off a ramp
   if (car.sinking || (car.air || 0) > 0.05) return false;
+  // nor one going up on the export crane, or already on its way to the boat
+  if (car.shipping || car.stow) return false;
   // boarding is a same-level act everywhere it can be asked for — a rooftop
   // helicopter is not takeable from the pavement under it
   if (Math.abs(car.pos.y - P.pos.y) > 3) return false;

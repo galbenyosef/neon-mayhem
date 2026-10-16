@@ -21,7 +21,7 @@ GAME.guide = (function () {
   var step = null;                    // what she is waiting for, or null
   var car = null, arrow = null, hudText = '', hudTitle = '';
   var waitT = 0, stepT = 0, saidHeat = false, saidGo = false, saidWrongRide = false;
-  var shopCash = null, shopLook = null, ringAt = null, barberAt = null;
+  var shopLook = null, ringAt = null, barberAt = null;
   // how far off the step's goal you were when it began: a job can end a
   // kilometre from the barber, and a failed run far from its ring, and only
   // heading further away than that is walking off
@@ -218,27 +218,35 @@ GAME.guide = (function () {
     if (barberAt) unroute(barberAt.x, barberAt.z);
     clearHud();
     dropArrow();
-    step = null; car = null; shopCash = null; shopLook = null;
+    step = null; car = null; shopLook = null;
     prefs().guide = state;
     save();
   }
 
   // ---------- her question ----------
+  // Before the offer, she says who she is and where you are — the year, the
+  // town, its neighbourhoods, Rico and his colours, the law (lola.js
+  // introScene) — face to face. Without a scene to be had, the card says
+  // the short of it itself.
   function offer() {
     var pr = prefs();
     if (pr.guide || !fresh() || !GAME.lola || !GAME.lola.offer) return false;
-    var ok = GAME.lola.offer({
-      say: 'Welcome to Costa Rosa, kid. I\'m Lola — I run the strip. You look new. I can put you to work and show you how things go round here, or you can find your own feet. Your call.',
-      top: true,
-      escSays: 'to find your own way',
-      list: [
-        { label: '🧭 SHOW ME AROUND', fn: function () { GAME.lola.close(); begin(); } },
-        { label: '🗺 I\'LL FIND MY OWN WAY', fn: function () { GAME.lola.close(); skip(); } }
-      ],
-      // closing her without an answer is finding your own way
-      onClose: function () { skip(); }
-    });
-    if (!ok) return false;
+    function card(after) {
+      return GAME.lola.offer({
+        say: after ? 'So, kid — I can put you to work and show you how things go round here, or you can find your own feet. Your call.'
+          : 'Welcome to Costa Rosa, kid. I\'m Lola — I run the strip. You look new. I can put you to work and show you how things go round here, or you can find your own feet. Your call.',
+        top: true,
+        escSays: 'to find your own way',
+        list: [
+          { label: '🧭 SHOW ME AROUND', fn: function () { GAME.lola.close(); begin(); } },
+          { label: '🗺 I\'LL FIND MY OWN WAY', fn: function () { GAME.lola.close(); skip(); } }
+        ],
+        // closing her without an answer is finding your own way
+        onClose: function () { skip(); }
+      });
+    }
+    var scene = !!(GAME.lola.introScene && GAME.lola.introScene(function () { if (!card(true)) skip(); }));
+    if (!scene && !card(false)) return false;
     pr.guide = 'offered';
     save();
     if (GAME.track) GAME.track('guide-offered');
@@ -353,6 +361,10 @@ GAME.guide = (function () {
     if (step === 'barber') {
       if (P.interior && P.interior.shop === 'barber') {
         go('counter');
+        // the look you walked in with. The chair is a menu and the world (this
+        // tick with it) holds still while it is open, so nothing here ever
+        // saw you sit down: a cut came out as "Not today?"
+        shopLook = JSON.stringify(prefs().outfit || {});
         say('Take a seat. A cut, a colour — your money, your look.', 5);
         return;
       }
@@ -363,19 +375,15 @@ GAME.guide = (function () {
     }
 
     if (step === 'counter') {
-      var S = GAME.shops, inShop = GAME.shopOpen && S.current && S.current.kind === 'barber';
-      if (inShop) {
-        if (shopCash === null) { shopCash = P.cash; shopLook = JSON.stringify(prefs().outfit || {}); clearHud(); }
-        return;
-      }
+      var changed = shopLook !== null && shopLook !== JSON.stringify(prefs().outfit || {});
       // out of the chair: she waits for you on the pavement
       if (P.interior || (GAME.interiors && GAME.interiors.busy)) {
-        if (shopCash === null) objective('A NEW LOOK', 'Step up to the counter at the back');
+        if (!changed) objective('A NEW LOOK', 'Step up to the counter at the back');
         else clearHud();
         return;
       }
       // (a new look, paid for or on the house in a shop that is yours)
-      outro(shopCash === null ? null : shopLook !== JSON.stringify(prefs().outfit || {}));
+      outro(changed ? true : null);
       return;
     }
   }

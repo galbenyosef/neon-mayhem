@@ -1992,7 +1992,8 @@ GAME.city = (function () {
   city.monsterSpot = null;
   city.unlockMonsterTruck = function () {
     if (city.monsterSpot) return;
-    city.monsterSpot = { x: city.airport.apron.x + 14, z: city.airport.apron.z + 16, heading: 0, vtype: 'monster' };
+    // nose east down the runway, the same way as the plane parked beside it
+    city.monsterSpot = { x: city.airport.apron.x + 14, z: city.airport.apron.z + 16, heading: Math.PI / 2, vtype: 'monster' };
     city.parkedSpots.push(city.monsterSpot);
   };
 
@@ -2386,6 +2387,48 @@ GAME.city = (function () {
     // rooftop run and an open landing. Capped at 26 m/s on an (h+0.4)-high
     // deck, touchdown falls ~2.17*(h+0.4) past the lip; the gap is sized to
     // put that five metres onto the roof.
+    // The roof across the street, if the chain's rooftop lip can throw you
+    // onto it: the next block along the jump, its roof within a metre and a
+    // half of this one, at least 30 m deep, spanning the line of flight, and
+    // nothing in between that stands above the roofline. Returns the pace
+    // that lands mid-roof, or 0. Measured off the (h 4.6, len 16) lip: a car
+    // leaving it at v m/s touches down about 2.6v - 60 metres past it, any
+    // make alike (the pace is capped, and the air is the same air).
+    function roofHop(HB, axisX, across, far, sgn, roofY) {
+      var B2 = null, n0 = 0, n1 = 0;
+      for (var t = 2; t <= 120 && !B2; t += 2) {
+        var x = axisX ? far + sgn * t : across, z = axisX ? across : far + sgn * t;
+        if (city.isInWater(x, z)) return 0;
+        var q = city.hash.query(x, z, 3);
+        for (var i = 0; i < q.length; i++) {
+          var b = q[i];
+          if (b === HB || b.h === undefined || b.h <= 4) continue;
+          if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+          if (Math.min(b.maxX - b.minX, b.maxZ - b.minZ) < 3) continue;   // a post
+          if (b.tag !== 'building' || Math.abs(b.h - roofY) > 1.5) return 0;   // a wall in the way
+          B2 = b; break;
+        }
+      }
+      if (!B2) return 0;
+      // its depth along the jump, and room either side of the line of flight
+      var lo2 = axisX ? B2.minX : B2.minZ, hi2 = axisX ? B2.maxX : B2.maxZ;
+      n0 = sgn > 0 ? lo2 - far : far - hi2; n1 = sgn > 0 ? hi2 - far : far - lo2;
+      var aLo = axisX ? B2.minZ : B2.minX, aHi = axisX ? B2.maxZ : B2.maxX;
+      if (n1 - n0 < 30 || across < aLo + 6 || across > aHi - 6) return 0;
+      // and nothing on its roof in the way where it lands
+      var mid = (n0 + n1) / 2;
+      for (var u = n0 + 6; u <= n1 - 4; u += 4) {
+        var ux = axisX ? far + sgn * u : across, uz = axisX ? across : far + sgn * u;
+        var qq = city.hash.query(ux, uz, 3);
+        for (var k = 0; k < qq.length; k++) {
+          var bb = qq[k];
+          if (bb === B2 || bb.h === undefined) continue;
+          if (ux > bb.minX && ux < bb.maxX && uz > bb.minZ && uz < bb.maxZ && bb.h > roofY + 0.6) return 0;
+        }
+      }
+      var v = (mid + 60) / 2.6;
+      return v >= 40 && v <= 64 ? Math.round(v) : 0;
+    }
     function placeChain() {
       var hosts = [];
       var all = city.hash.all;
@@ -2473,22 +2516,40 @@ GAME.city = (function () {
           // next block. The corridor check covers that plus margin; thin
           // posts (lamps) don't count — only real massing closes a landing
           // zone.
-          for (var t3 = 4; t3 <= 40 && ok2; t3 += 4) {
-            var lx2 = (axisX ? far + sgn * t3 : across), lz2 = (axisX ? across : far + sgn * t3);
-            if (lx2 < -466 || lx2 > 392 || Math.abs(lz2) > 472 || city.isInWater(lx2, lz2)) { ok2 = false; break; }
-            var lb = city.hash.query(lx2, lz2, 7);
-            for (var li = 0; li < lb.length; li++) {
-              var lbb = lb[li];
-              if (lbb === HB || lbb.h === undefined || lbb.h <= 4) continue;
-              if (Math.min(lbb.maxX - lbb.minX, lbb.maxZ - lbb.minZ) < 3) continue;   // a post, not a wall
-              ok2 = false; break;
+          var landClear = function (upTo) {
+            for (var t3 = 4; t3 <= upTo; t3 += 4) {
+              var lx2 = (axisX ? far + sgn * t3 : across), lz2 = (axisX ? across : far + sgn * t3);
+              if (lx2 < -466 || lx2 > 392 || Math.abs(lz2) > 472 || city.isInWater(lx2, lz2)) return false;
+              var lb = city.hash.query(lx2, lz2, 7);
+              for (var li = 0; li < lb.length; li++) {
+                var lbb = lb[li];
+                if (lbb === HB || lbb.h === undefined || lbb.h <= 4) continue;
+                if (Math.min(lbb.maxX - lbb.minX, lbb.maxZ - lbb.minZ) < 3) continue;   // a post, not a wall
+                return false;
+              }
+            }
+            return true;
+          };
+          if (!landClear(40)) continue;
+          // The rooftop lip is a booster too: off the end of a roof, with only
+          // the roof for a run-up, a plain ramp's drop was a dud. It hauls you
+          // to its pace (and reins in anything quicker). Where the next block
+          // is a deep roof at much the same height, the pace throws you
+          // across the street onto it — roof to roof; otherwise it is the
+          // fastest whose landing on the street is open (at 22 m/s a car
+          // comes down ~32 m past the parapet, further in proportion).
+          var cap3 = roofHop(HB, axisX, across, far, sgn, roofY2) || 0;
+          if (!cap3) {
+            cap3 = 22;
+            var DROPS = [30, 27, 24];
+            for (var dc = 0; dc < DROPS.length; dc++) {
+              if (landClear(Math.ceil(32 * DROPS[dc] / 22 * 1.25 / 4) * 4)) { cap3 = DROPS[dc]; break; }
             }
           }
-          if (!ok2) continue;
           // launcher over the roofline, and the second lip at the far edge
           out.push({ x: lx, z: lz, rot: rot, w: 12, len: 26, h: hL, boost: true, cap: cap2 });
           var c2a = far - sgn * (0.5 + 8);               // ramp2 centre (len 16), lip at the edge
-          out.push({ x: axisX ? c2a : across, z: axisX ? across : c2a, rot: rot, w: 12, len: 16, h: 4.6, base: roofY2, cap: 22 });
+          out.push({ x: axisX ? c2a : across, z: axisX ? across : c2a, rot: rot, w: 12, len: 16, h: 4.6, base: roofY2, boost: true, cap: cap3, roofDrop: true });
           return true;
         }
         }

@@ -52,6 +52,12 @@ GAME.cast = (function () {
         eyes: 'glasses', eyeCol: '#4a4a3a', brows: 'arch', outfit: 'cardigan', col: '#6a5a8a', col2: '#f0e8d0' },
       voice: { base: 150, wave: 'triangle', cps: 27, spread: 10, formant: 980, q: 1.4 }
     },
+    // on the export crane at the docks (export.js): hi-vis and a hard hat
+    docker: { name: 'NACHO', full: 'Nacho, on the crane', color: '#ffb35a',
+      face: { bg: ['#ffb35a', '#1a2a48'], sun: '#fff0a0', rim: '#ffd8a0', skin: '#b98260', hair: 'cap', hairCol: '#1c1a18', col3: '#ffd23a',
+        eyes: 'plain', eyeCol: '#2a1a10', brows: 'flat', outfit: 'tee', col: '#ff8a2a', col2: '#ff8a2a', extras: ['stubble'] },
+      voice: { base: 112, wave: 'sawtooth', cps: 34, spread: 6, formant: 760, q: 2.1 },
+      fig: { shirt: 0xff8a2a, pants: 0x2a3a5a, skin: 0xb98260, hair: 'crew', hairCol: 0x1c1a18 } },
     // the strangers with a favour to ask (strangers.js), keyed by their id
     ray: { name: 'RAY', color: '#8fd0f0',
       face: { bg: ['#8fd0f0', '#24204a'], sun: '#ffe08a', rim: '#c8f0ff', skin: '#eac8a8', hair: 'short', hairCol: '#6a5040',
@@ -279,9 +285,27 @@ GAME.cast = (function () {
   }
   // A face, as a string of SVG; '' for somebody nobody drew. Drawn fresh each
   // time — it is a few hundred bytes of text and nobody asks often.
+  // YOU are drawn as you are dressed today: the portrait was a fixed face, so
+  // after the barber (a cut, a colour, a skin tone) or THREADS the talking
+  // head was somebody else
+  var HAIR2D = { crew: 'short', flattop: 'short', flat: 'short', mohawk: 'short', pompadour: 'pomp', mullet: 'mullet',
+    afro: 'big', ponytail: 'long', buzz: 'bald' };
+  function css(hex) { return '#' + ('000000' + hex.toString(16)).slice(-6); }
+  function youFace(base) {
+    var P = GAME.player, j = P && P.mesh && P.mesh.userData.joints;
+    if (!j) return base;
+    var f = {}, k;
+    for (k in base) f[k] = base[k];
+    f.skin = css(j.head.material.color.getHex());
+    f.col = css(j.torso.material.color.getHex());
+    var hm = P.hairMesh && P.hairMesh.children[0], o = (GAME.prefs && GAME.prefs.outfit) || {};
+    if (hm) f.hairCol = css(hm.material.color.getHex());
+    if (HAIR2D[o.hairStyle]) f.hair = HAIR2D[o.hairStyle];
+    return f;
+  }
   function portrait(id) {
     var c = CAST[id];
-    return c ? draw(c.face) : '';
+    return c ? draw(id === 'you' ? youFace(c.face) : c.face) : '';
   }
 
   // ---------- the voice ----------
@@ -312,6 +336,8 @@ GAME.cast = (function () {
     hush: stopTalking,
     idFor: idFor,
     has: function (id) { return !!CAST[id]; },
+    // the portrait's own colours, for a body that has to match it (strangers.js)
+    face: function (id) { return CAST[id] ? CAST[id].face : null; },
     name: function (id) { return CAST[id] ? CAST[id].name : ''; },
     color: function (id) { return CAST[id] ? CAST[id].color : '#ffffff'; },
     // (a stranger stands in a scene as they stand in the street: strangers.js)

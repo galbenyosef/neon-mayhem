@@ -1051,6 +1051,22 @@ GAME.peds = (function () {
   }
 
   // Turn and run from wherever the trouble came from.
+  // Caught in a Molotov's flames: they burn for a while whatever they were
+  // doing — running blind and flailing, hurt as they go (arsenal.js keeps
+  // them burning). An officer on fire has no hands for you: police.js lets
+  // a burning one neither shoot nor cuff. The ground fire alone used to take
+  // a nick out of whoever stood in it, and an officer just walked out of it
+  // and arrested you.
+  var BURN_T = 5;
+  function ignite(ped, fromX, fromZ, byPlayer) {
+    if (ped.dead || ped.gone || ped.state === 'inside') return;
+    if (!(ped.burnT > 0)) ped.burnHurt = 0;
+    ped.burnT = BURN_T;
+    ped.burnBy = !!byPlayer;
+    ped.burnH = Math.atan2(ped.pos.x - fromX, ped.pos.z - fromZ);
+    ped.grabbing = false;
+    if (!ped.isCop && !ped.jobPed) startFlee(ped, fromX, fromZ, BURN_T + 1);
+  }
   function startFlee(ped, fromX, fromZ, secs) {
     if (ped.state === 'inside') return;   // already through the door
     ped.state = 'flee';
@@ -1075,6 +1091,8 @@ GAME.peds = (function () {
     // only the ped loop acted on — walking them off at once while the round
     // walked them in.
     if (ped.jobPed) return;
+    // on fire there is no fight in anybody: they keep running (ignite)
+    if (ped.burnT > 0) return;
     // Not everyone runs — and whoever DOES turn to fight, fights. The old
     // hp floor made every brawler quit after two punches, which read as
     // no fight at all. Once committed, they go the distance; only someone
@@ -1102,7 +1120,7 @@ GAME.peds = (function () {
     startFlee(ped, fromX, fromZ, 6);
   }
 
-  return { spawnPed: spawnPed, removePed: removePed, walkInto: walkInto, kill: kill, panic: panic, damage: damage, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair,
+  return { spawnPed: spawnPed, removePed: removePed, walkInto: walkInto, kill: kill, panic: panic, damage: damage, ignite: ignite, update: update, buildPedMesh: buildPedMesh, makeHair: makeHair,
     // so a crash in vehicles.js can put somebody's back up without knowing
     // anything about how a fight is represented
     startFight: startFight, startFlee: startFlee, fightCount: fightCount };

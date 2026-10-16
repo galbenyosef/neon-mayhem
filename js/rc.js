@@ -83,6 +83,16 @@ GAME.rc = (function () {
       GAME.audio.sting('win');
       GAME.hud.message('RC RACE WON  ·  ' + t.toFixed(1) + 's  ·  +$' + pay + (best ? '  ·  NEW BEST' : ''), 4.5);
       if (GAME.save) GAME.save();
+      // the result card every other race won gets (it only ever had a line)
+      if (GAME.share) GAME.share.show({
+        slug: 'rc-race',
+        eyebrow: 'MINI MAYHEM · 1986',
+        title: 'RACE WON',
+        subtitle: 'Two laps round the cones, first past the last gate',
+        accent: '#ffd24a',
+        stats: [{ label: 'Time', value: t.toFixed(1) + 's' }, { label: 'Best', value: pr.best.toFixed(1) + 's' + (best ? ' ★' : '') },
+          { label: 'Paid', value: '$' + pay.toLocaleString() }]
+      });
     } else {
       GAME.audio.sting('wasted');
       GAME.hud.message('RC RACE LOST — ' + why, 3.5);
@@ -146,6 +156,7 @@ GAME.rc = (function () {
     if (run) { hint = ''; step(dt); return; }
     var P = GAME.player, s = site;
     ring.material.opacity = 0.5 + 0.2 * Math.sin(GAME.time * 3);
+    ring.visible = !GAME.onJob();
     var d2 = U.dist2(P.pos.x, P.pos.z, s.ring.x, s.ring.z);
     hint = '';
     if (d2 > (RING_R + 1.5) * (RING_R + 1.5)) armed = true;

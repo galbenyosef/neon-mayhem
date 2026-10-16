@@ -972,16 +972,18 @@ GAME.police = (function () {
       GAME.peds.removePed(cop);
       return;
     }
-    var th = Math.atan2(hx, hz);
+    // on fire (peds.ignite): running blind, no shot and no cuffs in him
+    var burning = cop.burnT > 0;
+    var th = burning ? cop.burnH + Math.sin(GAME.time * 5 + cop.walkPhase) * 0.9 : Math.atan2(hx, hz);
     cop.heading = U.angleLerp(cop.heading, th, Math.min(1, dt * 6));
     // fire at the player on foot, or at a slow/stopped car
     var playerSlow = !P.inCar || (P.car && Math.abs(P.car.speed) < 9);
     // line of sight last: it walks the grid, and every officer asked it
     // every tick even when the stars, the range or your speed had already
     // ruled a shot out
-    var wantShoot = s >= 2 && dist < 28 && playerSlow && !P.interior
+    var wantShoot = !burning && s >= 2 && dist < 28 && playerSlow && !P.interior
       && eyesOn(cop.pos.x, cop.pos.y, cop.pos.z, f.x, f.y, f.z, true);   // up at a roof edge too
-    var chaseSpeed = 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
+    var chaseSpeed = burning ? 5 : 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
     cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
     var cx0 = cop.pos.x, cz0 = cop.pos.z;
     cop.pos.x += Math.sin(cop.heading) * cop.speed * dt;
@@ -1007,11 +1009,13 @@ GAME.police = (function () {
         GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, 0.3 + s * 0.06, (5 + s) * (cop.army ? 1.4 : 1), cop);
         cop.shootT = U.randRange(Math.random, 0.9, 1.8);
       }
+    } else if (burning) {
+      j.armL.rotation.x = -2.4 + Math.sin(GAME.time * 14) * 0.6; j.armR.rotation.x = -2.4 - Math.sin(GAME.time * 14) * 0.6;
     } else {
       j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
     }
     // a cop can only cuff you if you're on foot and not sprinting away
-    if (!P.inCar && !P.swimming && !P.interior && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
+    if (!burning && !P.inCar && !P.swimming && !P.interior && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
   }
 
   function placeRoadblock(s) {

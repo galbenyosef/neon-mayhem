@@ -878,13 +878,20 @@ GAME.vehicles = (function () {
       car.onRampIdx = ramp ? ramp.idx : null;
       car.deckCap = ramp && ramp.cap ? ramp.cap : 0;
       if (ramp && ramp.boost) {
-        if (!car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
+        // (a capped one only announces itself when it is hauling you UP: the
+        // chain's rooftop lip reins a fast car in, and a boost ping and a
+        // kick on the way to being slowed read as a lie)
+        var hauls = !ramp.cap || car.speed < ramp.cap - 1;
+        if (hauls && !car.boostT && !car.capPing && car === GAME.player.car && GAME.player.inCar) {
           GAME.audio.pickup();
           GAME.cameraShake = 0.35;
         }
         if (ramp.cap) {
           // the chain launcher: it accelerates you TO its speed, never past
-          // it — the landing is a rooftop, and the rooftop is only so deep
+          // it — the landing is a rooftop, and the rooftop is only so deep.
+          // The rooftop lip at the far end is one too (city.js placeChain):
+          // a roof is no run-up, and its pace is the fastest the street
+          // beyond has room to land
           car.capPing = true;
           car.boostT = 0;
           // (an island booster only ever hauls you UP to its pace: arriving
@@ -1008,18 +1015,21 @@ GAME.vehicles = (function () {
       // missions put together.
       var key = jumpKey(car), last = jumpPaidAt[key];
       var wait = last === undefined ? 0 : JUMP_COOLDOWN - (GAME.time - last);
-      if (wait > 0) {
-        GAME.hud.message(stats + ' · paid out — again in ' + clockText(wait), 3);
-      } else {
+      var paid = 0;
+      if (wait <= 0) {
         jumpPaidAt[key] = GAME.time;
+        paid = cash;
         GAME.addCash(cash);
         GAME.audio.sting('win');
         GAME.haptics.stunt();
-        GAME.hud.message(stats + ' · +$' + cash, 3);
       }
       GAME.missions.notifyChaos(60);
-      // a jump launched off one of the city's ramps also logs it as found
-      if (car.jumpRamp !== undefined && car.jumpRamp !== null) GAME.stunts.credit(car.jumpRamp, airT, dist);
+      // A jump launched off one of the city's ramps also logs it as found —
+      // and the first time, that is one line with the whole of what it paid.
+      // The air bonus used to land as its own message under the find's, so
+      // the cash went up by more than the line you read said.
+      var found = earned ? GAME.stunts.credit(car.jumpRamp, airT, dist, paid, stats) : 0;
+      if (!found) GAME.hud.message(paid ? stats + ' · +$' + paid : stats + ' · paid out — again in ' + clockText(wait), 3);
     }
     car.jumpSpin = 0; car.jumpRamp = null;
     // hard landings still hurt

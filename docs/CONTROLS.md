@@ -39,7 +39,7 @@ Every action, on all three: keyboard and mouse, a controller (standard layout �
 | Plane: throttle | `W` / `S` | RT / LT | THR+ / THR− |
 | Plane: climb / dive | `Space` / `Shift` | stick back / forward (or A / B) | stick back / forward |
 | Plane: turn | `A` / `D` | left stick | stick |
-| Plane: barrel roll | `Q` / `E` | LB / RB | ⟲ / ⟳ |
+| Plane: barrel roll (left / right) | `Q` / `E` | LB / RB | ⟲ / ⟳ |
 | Get out · bail out (a chute, up high) | `F` | Y | EXIT |
 | Steer the parachute | `W A S D` | left stick | stick |
 

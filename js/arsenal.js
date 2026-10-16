@@ -247,6 +247,7 @@ GAME.arsenal = (function () {
           var q = peds[j];
           if (q.dead || U.dist2(q.pos.x, q.pos.z, F.x, F.z) > FIRE_R * FIRE_R || Math.abs(q.pos.y - F.y) > 2) continue;
           GAME.peds.damage(q, 16, true);
+          if (!q.dead) GAME.peds.ignite(q, F.x, F.z, true);
         }
         var cars = GAME.world.cars;
         for (var k = 0; k < cars.length; k++) {
@@ -258,7 +259,21 @@ GAME.arsenal = (function () {
       }
       if (F.t >= FIRE_LIFE) { GAME.scene.remove(F.mesh); fires.splice(i, 1); }
     }
+    // whoever caught it burns on, wherever they run (peds.ignite)
+    var wp = GAME.world.peds;
+    for (var b = 0; b < wp.length; b++) {
+      var q2 = wp[b];
+      if (!(q2.burnT > 0)) continue;
+      if (q2.dead || q2.gone) { q2.burnT = 0; continue; }
+      q2.burnT -= dt;
+      GAME.fx.spawn(q2.pos.x, q2.pos.y + 1.1, q2.pos.z, FX_BODY_FLAME);
+      q2.burnHurt += dt;
+      if (q2.burnHurt >= 0.5) { q2.burnHurt -= 0.5; GAME.peds.damage(q2, BURN_HURT, q2.burnBy); }
+      if (q2.burnT <= 0) q2.burnT = 0;
+    }
   }
+  var FX_BODY_FLAME = { count: 1, color: 0xff7a1a, spread: 0.35, vy: 2.2, life: 0.4, grav: -1 };
+  var BURN_HURT = 6;   // a half-second: about a civilian's life in two and a half seconds, an officer's in five
 
   // ---------- the scope ----------
   // The sniper rifle, aimed on foot, is your eye down the glass: the view
@@ -421,6 +436,8 @@ GAME.arsenal = (function () {
     closeWheel: closeWheel,
     get shots() { return shots.length; },
     get fires() { return fires.length; },
+    // headless: a Molotov broken here
+    testLight: function (x, z) { light(x, GAME.city.groundY(x, z), z); },
     SLOTS: SLOTS,
     inSlot: function (id) { for (var i = 0; i < SLOTS.length; i++) if (SLOTS[i].id === id) return inSlot(SLOTS[i]); return null; }
   };

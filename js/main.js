@@ -85,6 +85,15 @@
       if (GAME.cheatOpen) return;
       // an open dialog owns the keys — Esc must cancel it, not unpause
       if (GAME.hud.dialogOpen()) { GAME.hud.dialogKey(code); return; }
+      // the result card is drawn over every menu (a car bought in the
+      // showroom puts it over the shop), so it has the keys first: it closes
+      // on any a hand is likely to be on, and the list under it hears none —
+      // Enter there was a second purchase behind the card. The sound and the
+      // screen's own switches still answer, as they do over a scene
+      if (GAME.shareOpen) {
+        if (code === 'Escape' || code === 'Enter' || code === 'Space') { GAME.share.hide(); return; }
+        if (code !== 'KeyM' && code !== 'KeyT') return;
+      }
       // and so does Lola, while you are talking to her
       if (GAME.lolaOpen) { GAME.lola.key(code); return; }
       // and a scene, all but the sound and the screen's own switches
@@ -97,12 +106,6 @@
       if (GAME.mapOpen && code === 'Enter' && GAME.hud.mapPick()) return;
       // and the arrows step its legend's solo (one kind of marker at a time)
       if (GAME.mapOpen && (code === 'ArrowLeft' || code === 'ArrowRight')) { GAME.hud.mapSoloStep(code === 'ArrowRight' ? 1 : -1); return; }
-      // the result card closes on any of the keys a hand is likely to be on —
-      // it never needed the mouse
-      if (GAME.shareOpen && (code === 'Escape' || code === 'Enter' || code === 'Space')) {
-        GAME.share.hide();
-        return;
-      }
       // the pause screen's buttons answer the arrows, Enter and Space
       if (GAME.paused && !GAME.mapOpen && !GAME.shopOpen && GAME.hud.pauseKey(code)) return;
       if (code === 'Escape') {
@@ -372,14 +375,19 @@
     GAME.hud.message(home ? 'Back at ' + home.name + '.' : 'Welcome to Costa Rosa. Steal a ride and see the strip.', 4);
   };
 
-  // attract mode: the live city plays behind the title with spectator cuts
+  // attract mode: the live city plays behind the title with spectator cuts.
+  // Each drifts for 13s, and the whole path must stay out of the buildings
+  // with nothing solid close in front of the lens — the city has grown
+  // around the old shots twice (the opener slid sideways into a block, and
+  // the downtown one sat inside a tower); regressions.js holds them to it
   var ATTRACT_CUTS = [
-    { pos: [330, 10, -80], look: [351, 1, -10], drift: [0.3, 0.05, 2.0] },
+    { pos: [350, 9, -62], look: [352, 2, 10], drift: [0.1, 0.05, 2.0] },  // down the strip
     { pos: [400, 8, 205], look: [490, 14, 150], drift: [-0.8, 0.1, -1.2] },
-    { pos: [-30, 46, -30], look: [-100, 52, -100], drift: [1.6, 0.3, 1.6] },
+    { pos: [90, 95, 90], look: [-60, 30, -60], drift: [-1.4, 0.2, -1.4] }, // over the towers
     { pos: [55, 12, -165], look: [50, 2, -95], drift: [-1.5, 0.1, 0.5] },
     { pos: [393, 7, 35], look: [364, 2, 110], drift: [0.2, 0.05, 2.2] }
   ];
+  GAME.attractCuts = ATTRACT_CUTS;
   var attractIdx = -1, attractT = 1e9;
   function tickAttractCam(dt) {
     attractT += dt;
