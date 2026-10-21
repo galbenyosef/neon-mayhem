@@ -69,17 +69,48 @@
   .wslot.cur { border-color:rgba(141,255,216,.7); }
   .wslot.sel { border-color:#ff4fa3; background:rgba(255,79,163,.3); transform:scale(1.15); box-shadow:0 0 18px rgba(255,79,163,.6); }
   #wheel-name { position:relative; font:900 18px 'Segoe UI', Arial, sans-serif; letter-spacing:3px; color:#ffe8f6; text-shadow:0 0 10px rgba(255,79,163,.9); }
-  /* the cheat box (cheats.js), over the pause screen */
-  #cheat-box { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:16px; background:rgba(6,2,14,.6);
+  /* the cheat list (cheats.js): every code as a card to pick, over a still game */
+  #cheat-box { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:16px; background:rgba(6,2,14,.72);
     font-family:'Segoe UI', Arial, Helvetica, sans-serif; }
-  #cheat-card { width:min(420px,100%); background:rgba(10,4,20,.96); border:1px solid rgba(255,79,163,.85); border-radius:10px; padding:16px; text-align:center;
-    box-shadow:0 0 26px rgba(255,79,163,.4); }
-  #cheat-title { color:#ffe8f6; font-weight:900; letter-spacing:3px; font-size:18px; }
-  #cheat-sub { color:#9fd8ff; font-size:12.5px; margin:6px 0 10px; }
-  #cheat-input { width:100%; box-sizing:border-box; padding:10px 12px; font:800 18px 'Segoe UI', Arial, sans-serif; letter-spacing:3px; text-transform:uppercase;
-    background:#14081f; color:#8dffd8; border:1px solid rgba(141,255,216,.6); border-radius:6px; outline:none; }
-  #cheat-said { min-height:20px; margin:8px 0 4px; color:#ffe14f; font-weight:700; font-size:13px; }
-  #cheat-btns { display:flex; gap:8px; justify-content:center; }
+  #cheat-card { width:min(1000px,100%); max-height:calc(100vh - 32px); display:flex; flex-direction:column; box-sizing:border-box; background:rgba(10,4,20,.97);
+    border:1px solid rgba(255,79,163,.85); border-radius:10px; padding:14px 14px 10px; box-shadow:0 0 26px rgba(255,79,163,.4); }
+  #cheat-head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:0 4px 8px; border-bottom:1px solid rgba(255,79,163,.25); }
+  #cheat-title { color:#ffe8f6; font-weight:900; font-style:italic; letter-spacing:3px; font-size:20px; text-shadow:0 0 10px rgba(255,79,163,.7); }
+  #cheat-sub { color:#9fd8ff; font-size:12.5px; flex:1; min-width:200px; }
+  #cheat-find { color:#8dffd8; font:800 13px 'Segoe UI', Arial, sans-serif; letter-spacing:2px; min-height:16px; }
+  #cheat-list { overflow-y:auto; flex:1; padding:4px 4px 6px; -webkit-overflow-scrolling:touch; }
+  .cgroup h4 { margin:12px 2px 6px; color:#ff8fc8; font-size:11.5px; letter-spacing:3px; font-weight:900; }
+  .cgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:8px; }
+  .ccard { position:relative; display:flex; gap:10px; align-items:flex-start; padding:9px 10px; border-radius:8px; cursor:pointer; user-select:none;
+    background:rgba(24,10,40,.92); border:1px solid rgba(255,79,163,.28); color:#ffe8f6; -webkit-tap-highlight-color:transparent; }
+  .ccard:hover { border-color:rgba(255,79,163,.7); }
+  .ccard.sel { border-color:#ff4fa3; background:rgba(255,79,163,.2); box-shadow:0 0 14px rgba(255,79,163,.55); }
+  .ccard.on { border-color:rgba(141,255,216,.75); }
+  .ccard.grim .cn { color:#ff9a9a; }
+  .ccard .ci { font-size:22px; line-height:1; flex:0 0 26px; text-align:center; padding-top:2px; }
+  .ccard .cb { min-width:0; flex:1; }
+  .ccard .cn { font-weight:800; font-size:13.5px; letter-spacing:.5px; }
+  .ccard.on .cn { padding-right:30px; }
+  .ccard .cw { color:#b9c6e0; font-size:11.5px; margin-top:2px; line-height:1.3; }
+  .ccard .cc { color:#8dffd8; font:700 10.5px Consolas, 'Courier New', monospace; letter-spacing:1px; margin-top:5px; word-break:break-all; }
+  .ccard .cp { color:#ffd36a; font-size:10.5px; margin-top:2px; letter-spacing:.5px; }
+  .ccard .con { position:absolute; top:7px; right:8px; font:900 10px 'Segoe UI', Arial, sans-serif; letter-spacing:1px; padding:1px 5px; border-radius:4px;
+    background:#8dffd8; color:#0a1a14; display:none; }
+  .ccard.on .con { display:block; }
+  .ccard.hide, .cgroup.hide { display:none; }
+  #cheat-foot { display:flex; align-items:center; gap:10px; padding-top:8px; border-top:1px solid rgba(255,79,163,.25); }
+  #cheat-keys { flex:1; color:#9fb0d0; font-size:11.5px; }
+  @media (max-width:520px) { .cgrid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); } .ccard .cp { display:none; }
+    .ccard .cc { font-size:9.5px; letter-spacing:.5px; } .ccard .ci { font-size:19px; flex-basis:22px; } #cheat-card { padding:10px 8px 8px; } }
+  @media (max-height:520px) { .ccard .cw { display:none; } #cheat-card { max-height:calc(100vh - 16px); } #cheat-box { padding:8px; } }
+  /* the way in from play: a button off the radar's corner (on a touchscreen,
+     in the row beside the radar: touch.js) */
+  #cheat-btn { position:fixed; left:calc(176px + env(safe-area-inset-left,0px)); bottom:calc(176px + env(safe-area-inset-bottom,0px)); z-index:16; width:36px; height:36px;
+    border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:18px;
+    background:rgba(8,4,20,.55); border:1px solid rgba(255,79,163,.45); text-shadow:0 0 8px rgba(255,79,163,.7); -webkit-tap-highlight-color:transparent; }
+  #cheat-btn:active { background:rgba(255,79,163,.3); }
+  /* while the list is up the pause screen under it keeps out of sight */
+  body.cheats-up #pause-screen { visibility:hidden; }
   /* down the sniper's scope */
   #scope { position:fixed; inset:0; z-index:9; display:none; pointer-events:none;
     background:radial-gradient(circle at 50% 50%, transparent 0, transparent min(36vh,36vw), #000 calc(min(36vh,36vw) + 2px)); }
@@ -411,7 +442,7 @@
   .talk .face .mc { display:none; }
   @media (max-height:520px) { #scene-sub { bottom:calc(11vh + 6px); padding:7px 10px 8px; gap:10px; } #scene-face { flex-basis:56px; width:56px; height:56px; }
     #scene-text { font-size:15px; min-height:2.8em; } }
-  body.cine #hud, body.cine #controls-bar, body.cine #touch-layer, body.cine #fs-btn, body.cine #pager, body.cine #herald, body.cine #derby-tv {
+  body.cine #hud, body.cine #controls-bar, body.cine #touch-layer, body.cine #fs-btn, body.cine #cheat-btn, body.cine #pager, body.cine #herald, body.cine #derby-tv {
     opacity:0 !important; pointer-events:none !important; transition:opacity .4s; }
   /* your race at Gull Downs (derby.js), on a set of your own while it runs */
   #derby-tv { position:fixed; left:50%; top:calc(64px + env(safe-area-inset-top,0px)); transform:translateX(-50%); z-index:16; display:none;
@@ -675,11 +706,11 @@
 <div id="lola-screen"><div id="lola-card"><div id="lola-head"><div id="lola-face"></div><div id="lola-words"><div id="lola-from">📟 LOLA</div><div id="lola-say"></div></div></div><div id="lola-opts"></div><div id="lola-hint"></div></div></div>
 <div id="weapon-wheel"><div id="wheel-ring"></div><div id="wheel-name"></div></div>
 <div id="scope"><div class="scope-x"></div><div class="scope-y"></div></div>
-<div id="cheat-box"><div id="cheat-card"><div id="cheat-title">🕹 CHEATS</div>
-  <div id="cheat-sub">Type a code and press Enter.</div>
-  <input id="cheat-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32">
-  <div id="cheat-said"></div>
-  <div id="cheat-btns"><span class="mbtn" id="cheat-ok">ENTER</span><span class="mbtn" id="cheat-close">CLOSE</span></div></div></div>
+<div id="cheat-box"><div id="cheat-card">
+  <div id="cheat-head"><div id="cheat-title">🕹 CHEATS</div><div id="cheat-sub"></div><div id="cheat-find"></div></div>
+  <div id="cheat-list"></div>
+  <div id="cheat-foot"><div id="cheat-keys"></div><span class="mbtn" id="cheat-close">CLOSE</span></div></div></div>
+<div id="cheat-btn" title="Cheats">🕹</div>
 <div id="cine"><div class="cine-bar cine-top"></div><div class="cine-bar cine-bot"><span id="cine-photo">📷</span><span id="cine-skip"></span></div><div id="scene-sub"><div id="scene-face"></div><div id="scene-words"><div id="scene-name"></div><div id="scene-text"></div></div></div></div>
 <div id="photo-toast"><img id="photo-toast-img" alt=""><div id="photo-toast-text"></div></div>
 <div id="photo-view">

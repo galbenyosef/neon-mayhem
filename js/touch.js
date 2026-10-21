@@ -115,13 +115,16 @@ GAME.touch = (function () {
     }
     // the radar moves to the top-left on touch: the bottom-left corner is the
     // virtual stick's zone, and the two were fighting for the same thumb.
-    // PAUSE sits just right of it, then the camera, and fullscreen keeps its
+    // PAUSE sits just right of it, then the camera, then the cheats
+    // (cheats.js), and fullscreen keeps its
     // own control after those (shown only while not full screen, see
     // hud.refreshFsBtn) — last in the row, so hiding it leaves no gap, and
     // never on top of the camera, which it covered when the two shared a slot
     moveCorner(document.getElementById('minimap-wrap'), { bottom: 'auto', left: '10px', top: '10px', width: '132px', height: '132px', pointerEvents: 'auto' });
+    moveCorner(document.getElementById('cheat-btn'), { bottom: 'auto', left: 'calc(260px + env(safe-area-inset-left, 0px))',
+      top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
     lolaShown = null;   // (and her button decides the fullscreen slot again)
-    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(260px + env(safe-area-inset-left, 0px))',
+    moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(314px + env(safe-area-inset-left, 0px))',
       top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
     if (enabled) {
       if (layer) layer.style.display = '';
@@ -149,6 +152,7 @@ GAME.touch = (function () {
     GAME.isPortrait = false;
     if (saved) applySettings(saved.vals, saved.fogFar);
     restoreCorner(document.getElementById('minimap-wrap'));
+    restoreCorner(document.getElementById('cheat-btn'));
     restoreCorner(document.getElementById('fs-btn'));
     if (!GAME.started) {
       var pe = document.getElementById('press-enter');
@@ -226,7 +230,7 @@ GAME.touch = (function () {
     // only way a touchscreen could reach her (lola.js)
     btns.lola = mkBtn('📟', 0, 0, 46, { press: function () { if (GAME.lola) GAME.lola.open(); } });
     btns.lola.style.right = ''; btns.lola.style.bottom = '';
-    btns.lola.style.left = '260px'; btns.lola.style.top = '12px';
+    btns.lola.style.left = '314px'; btns.lola.style.top = '12px';
     btns.lola.style.fontSize = '18px';
 
     // virtual stick
@@ -385,7 +389,7 @@ GAME.touch = (function () {
     lolaShown = on;
     show(btns.lola, on);
     var fsb = document.getElementById('fs-btn');
-    if (fsb) fsb.style.left = 'calc(' + (on ? 314 : 260) + 'px + env(safe-area-inset-left, 0px))';
+    if (fsb) fsb.style.left = 'calc(' + (on ? 368 : 314) + 'px + env(safe-area-inset-left, 0px))';
   }
 
   function update() {

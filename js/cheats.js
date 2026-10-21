@@ -1,11 +1,16 @@
-// Cheats: words, typed in. Typed straight off the keyboard mid-game they
-// would trip over the controls — half the alphabet already does
-// something (P is the map, N the night, M the sound), so they are typed into
-// CHEATS on the pause screen instead — which a touchscreen's keyboard can
-// reach too. A code that is not one is just "nothing happens".
+// Cheats: every code the game knows, in a list to pick from.
+//
+// Typed straight into the game they would trip over the controls — half the
+// alphabet already does something (P is the map, N the night, M the sound) —
+// so they are a list of cards instead: on the pause screen, behind the `
+// key, and on the 🕹 by the radar. Picking one is the whole of it, with a
+// mouse, a finger or a pad, and the list closes and the game carries on. On
+// a keyboard, typing narrows the list, so the code words still work. And on
+// a pad each one has a combo of eight presses that works in the middle of
+// play, without opening anything.
 //
 // Most of them do a thing once. The rest switch a way the town works on,
-// and the same code typed again switches it back off: what they switch is
+// and picking one again switches it back off: what they switch is
 // GAME.cheatOn (utils.js), read where each one bites — the cars' flight,
 // paint and wheels and the traffic's manners in vehicles.js, the crowd's
 // guns and tempers in peds.js and below. None of it is saved: a new visit
@@ -311,41 +316,216 @@ GAME.cheats = (function () {
     if (on.hopIn || hop) stepHop(dt);
   }
 
-  // ---------- the box on the pause screen ----------
+  // ---------- the list ----------
+  // Every code as a card: what it is, what it does, its word and its combo
+  // on a pad. `on` says whether a switch is on (or the sky is that sky).
+  // A pad combo is eight presses of LB, RB, A, B and the D-pad's ↑ ← →
+  // (the buttons that do least in play — never the triggers, X, Y or ↓),
+  // no button three times running, each one different from the rest.
+  function sw(key) { return function () { return !!GAME.cheatOn[key]; }; }
+  function sky(m) { return function () { return GAME.weather.mode === m; }; }
+  var GROUPS = [['you', 'YOU'], ['arms', 'WEAPONS'], ['law', 'THE LAW'], ['ride', 'SOMETHING TO DRIVE'],
+    ['cars', 'CARS AND BOATS'], ['crowd', 'THE CROWD'], ['sky', 'THE SKY AND THE CLOCK']];
+  var CATALOG = [
+    { code: 'ASPIRINE', g: 'you', icon: '❤️', name: 'Health', what: 'Back to full health.', pad: 'UP LEFT B A A RB UP RIGHT' },
+    { code: 'PRECIOUSPROTECTION', g: 'you', icon: '🛡️', name: 'Armour', what: 'A full vest.', pad: 'LEFT B UP RIGHT LEFT B UP LB' },
+    { code: 'STILLLIKEDRESSINGUP', g: 'you', icon: '👕', name: 'New look', what: 'A random outfit and cut off the racks, kept.', pad: 'UP LEFT RIGHT UP RIGHT B RIGHT B' },
+    { code: 'DEEPFRIEDMARSBARS', g: 'you', icon: '🍔', name: 'Fat', what: 'You put on weight. Again for your old self.', pad: 'A A UP UP RIGHT LB RB LEFT', on: function () { return build === 'fat'; } },
+    { code: 'PROGRAMMER', g: 'you', icon: '💻', name: 'Skinny', what: 'Thin as a rake. Again for your old self.', pad: 'A UP UP RIGHT UP A LEFT RB', on: function () { return build === 'thin'; } },
+    { code: 'ICANTTAKEITANYMORE', g: 'you', icon: '💀', name: 'Wasted', what: 'Ends it, here and now.', pad: 'RIGHT RIGHT LB B UP A RIGHT RB', grim: true },
+    { code: 'THUGSTOOLS', g: 'arms', icon: '🏏', name: 'The thug\'s set', what: 'Bat, Molotovs, pistol, shotgun, SMG and rifle.', pad: 'LEFT B UP A UP B UP B' },
+    { code: 'PROFESSIONALTOOLS', g: 'arms', icon: '🔪', name: 'The professional\'s set', what: 'Knife, grenades, pistol, shotgun, SMG, rifle and sniper.', pad: 'B A LB LB UP B UP LEFT' },
+    { code: 'NUTTERTOOLS', g: 'arms', icon: '🚀', name: 'The nutter\'s set', what: 'Chainsaw, grenades, pistol, shotgun, SMG, sniper and rockets.', pad: 'B RB B UP B RIGHT RIGHT LB' },
+    { code: 'LEAVEMEALONE', g: 'law', icon: '😇', name: 'Lose the stars', what: 'Wanted level cleared.', pad: 'LB A LEFT RIGHT A A LB RB' },
+    { code: 'YOUWONTTAKEMEALIVE', g: 'law', icon: '🚨', name: 'Two more stars', what: 'Wanted level up by two.', pad: 'LB A UP B A B LEFT RB' },
+    { code: 'PANZER', g: 'ride', icon: '💣', name: 'Tank', what: 'A tank beside you.', pad: 'B LEFT B RIGHT RIGHT RB UP UP' },
+    { code: 'GETTHEREFAST', g: 'ride', icon: '🏎️', name: 'Fast car', what: 'A sports car beside you.', pad: 'RIGHT LEFT LB LB RB B LEFT A' },
+    { code: 'GETTHEREAMAZINGLYFAST', g: 'ride', icon: '🏍️', name: 'Very fast bike', what: 'A superbike beside you.', pad: 'LEFT UP RIGHT LEFT UP LB RIGHT RIGHT' },
+    { code: 'ROCKANDROLLCAR', g: 'ride', icon: '🎸', name: 'Limousine', what: 'A limo beside you.', pad: 'LEFT LB B UP UP RIGHT LEFT UP' },
+    { code: 'RUBBISHCAR', g: 'ride', icon: '🚐', name: 'Van', what: 'A van beside you.', pad: 'B UP LB LEFT LEFT UP A RB' },
+    { code: 'BETTERTHANWALKING', g: 'ride', icon: '🏖️', name: 'Buggy', what: 'A dune buggy beside you.', pad: 'LEFT RIGHT RB RB A LEFT RB LB' },
+    { code: 'COMEFLYWITHME', g: 'cars', icon: '🛫', name: 'Flying cars', what: 'Floor it past 70 km/h and take off: throttle climbs, brake dives.', pad: 'RIGHT UP RIGHT B A RB A RB', on: sw('flyCars') },
+    { code: 'SEAWAYS', g: 'cars', icon: '🌊', name: 'Cars on water', what: 'Drive out on the sea instead of sinking.', pad: 'LEFT B RIGHT A LB UP LEFT LB', on: sw('seaWays') },
+    { code: 'AIRSHIP', g: 'cars', icon: '🚤', name: 'Flying boats', what: 'Flat out on the water and a boat takes off.', pad: 'LB LB RB LEFT LB LB RIGHT LEFT', on: sw('flyBoats') },
+    { code: 'WHEELSAREALLINEED', g: 'cars', icon: '⭕', name: 'Wheels only', what: 'Every car down to its wheels.', pad: 'UP B B RIGHT RB RB B A', on: sw('wheelsOnly') },
+    { code: 'LOADSOFLITTLETHINGS', g: 'cars', icon: '🚙', name: 'Big wheels', what: 'Wheels nearly twice the size.', pad: 'LB UP LB LEFT RB B RB RB', on: sw('bigWheels') },
+    { code: 'AHAIRDRESSERSCAR', g: 'cars', icon: '💗', name: 'Pink traffic', what: 'Every car pink.', pad: 'LB A RIGHT LB LB RIGHT A UP', on: function () { return GAME.cheatOn.paint === PINK; } },
+    { code: 'IWANTITPAINTEDBLACK', g: 'cars', icon: '🖤', name: 'Black traffic', what: 'Every car black.', pad: 'LEFT B UP B UP RIGHT RB UP', on: function () { return GAME.cheatOn.paint === BLACK; } },
+    { code: 'MIAMITRAFFIC', also: 'MAYHEMTRAFFIC', g: 'cars', icon: '😤', name: 'Aggressive traffic', what: 'Faster, on the horn, round anything, braking for nobody.', pad: 'B LB RB B RB UP LB LB', on: sw('madTraffic') },
+    { code: 'BIGBANG', g: 'cars', icon: '💥', name: 'Big bang', what: 'Every car nearby goes up.', pad: 'B RIGHT RIGHT A B LB LEFT RIGHT' },
+    { code: 'NOBODYLIKESME', g: 'crowd', icon: '😠', name: 'Everybody hates you', what: 'Everybody near comes for you.', pad: 'A RB RIGHT LB LB LEFT A B', on: sw('hateYou') },
+    { code: 'OURGODGIVENRIGHTTOBEARARMS', g: 'crowd', icon: '🔫', name: 'Everybody armed', what: 'A pistol in every hand.', pad: 'LEFT LB A RIGHT RIGHT LEFT B B', on: sw('armed') },
+    { code: 'FIGHTFIGHTFIGHT', g: 'crowd', icon: '👊', name: 'Riot', what: 'Everybody squares up to whoever is nearest.', pad: 'RIGHT B RB UP LEFT LEFT LB UP', on: sw('riot') },
+    { code: 'HOPINGIRL', g: 'crowd', icon: '🚕', name: 'Hitchhikers', what: 'Stop, and somebody walks over and gets in.', pad: 'A LEFT RIGHT LB LEFT A B UP', on: sw('hopIn') },
+    { code: 'ALOVELYDAY', g: 'sky', icon: '☀️', name: 'Sunny', what: 'Clear sky.', pad: 'RIGHT UP UP A RB RIGHT B RIGHT', on: sky('clear') },
+    { code: 'APLEASANTDAY', g: 'sky', icon: '🌤️', name: 'Fine weather', what: 'Clear sky.', pad: 'RIGHT LEFT RB B UP RB RB UP', on: sky('clear') },
+    { code: 'ABITDRIEG', g: 'sky', icon: '☁️', name: 'Overcast', what: 'A grey lid of cloud, and no rain.', pad: 'UP LB B A A RIGHT LB LB', on: sky('overcast') },
+    { code: 'CATSANDDOGS', g: 'sky', icon: '🌧️', name: 'Rain', what: 'A downpour.', pad: 'A UP LEFT A LEFT A A RB', on: sky('rain') },
+    { code: 'CANTSEEATHING', g: 'sky', icon: '🌫️', name: 'Fog', what: 'A fog bank rolls in off the sea.', pad: 'UP RIGHT UP LB A RB A LB', on: sky('fog') },
+    { code: 'LIFEISPASSINGMEBY', g: 'sky', icon: '🕒', name: 'Six hours on', what: 'The clock jumps a quarter of a day.', pad: 'RIGHT LB RIGHT RB LEFT B A B' },
+    { code: 'ONSPEED', g: 'sky', icon: '⏩', name: 'Fast game', what: 'Everything half as fast again.', pad: 'LEFT RIGHT UP A RB LEFT UP A', on: function () { return GAME.gameSpeed === 1.5; } },
+    { code: 'BOOOOOORING', g: 'sky', icon: '🐢', name: 'Slow motion', what: 'Everything at half speed.', pad: 'RIGHT RB RB LB RIGHT UP LEFT RIGHT', on: function () { return GAME.gameSpeed === 0.5; } }
+  ];
+  var PAD_GLYPH = { A: 'Ⓐ', B: 'Ⓑ', LB: 'LB', RB: 'RB', UP: '↑', LEFT: '←', RIGHT: '→' };
+  function padText(combo) { return combo.split(' ').map(function (t) { return PAD_GLYPH[t]; }).join(' '); }
+
+  // ---------- combos on a pad, in play ----------
+  // controls.js hands over every button pressed while no menu is up; the
+  // last eight, close enough together, are looked up. Anything else pressed
+  // in between (a trigger, X, Y) neither counts nor breaks the run.
+  var PAD_TOKEN = { 0: 'A', 1: 'B', 4: 'LB', 5: 'RB', 12: 'UP', 14: 'LEFT', 15: 'RIGHT' };
+  var BY_COMBO = {}, presses = [], lastPress = -1e9, COMBO_GAP = 1.5;
+  CATALOG.forEach(function (c) { BY_COMBO[c.pad] = c.code; });
+  function padPress(b) {
+    var t = PAD_TOKEN[b];
+    if (!t) return null;
+    var now = performance.now() / 1000;
+    if (now - lastPress > COMBO_GAP) presses.length = 0;
+    lastPress = now;
+    presses.push(t);
+    if (presses.length > 8) presses.shift();
+    var code = presses.length === 8 ? BY_COMBO[presses.join(' ')] : null;
+    if (!code) return null;
+    presses.length = 0;
+    return enter(code);
+  }
+
+  // ---------- the box ----------
   function $(id) { return document.getElementById(id); }
+  var cards = [], shown = [], sel = 0, find = '', fromPause = false;
+  function makeList() {
+    var list = $('cheat-list');
+    if (!list || cards.length) return;
+    GROUPS.forEach(function (gr) {
+      var sec = document.createElement('div');
+      sec.className = 'cgroup';
+      sec.innerHTML = '<h4>' + gr[1] + '</h4><div class="cgrid"></div>';
+      var grid = sec.lastChild;
+      CATALOG.forEach(function (c) {
+        if (c.g !== gr[0]) return;
+        var el = document.createElement('div');
+        el.className = 'ccard' + (c.grim ? ' grim' : '');
+        el.innerHTML = '<div class="ci">' + c.icon + '</div><div class="cb"><div class="cn">' + c.name + '</div>' +
+          '<div class="cw">' + c.what + '</div><div class="cc">' + c.code + (c.also ? ' · ' + c.also : '') + '</div>' +
+          '<div class="cp">🎮 ' + padText(c.pad) + '</div></div><div class="con">' + (c.g === 'sky' ? 'NOW' : 'ON') + '</div>';
+        el.addEventListener('click', function (e) { e.stopPropagation(); pick(c.code); });
+        grid.appendChild(el);
+        cards.push({ c: c, el: el, sec: sec });
+      });
+      list.appendChild(sec);
+    });
+  }
+  function words(c) { return c.code + ' ' + (c.also || '') + ' ' + c.name.toUpperCase().replace(/[^A-Z]/g, ''); }
+  function refilter() {
+    shown = [];
+    cards.forEach(function (k) {
+      var hit = !find || words(k.c).indexOf(find) >= 0;
+      k.el.classList.toggle('hide', !hit);
+      if (hit) shown.push(k);
+    });
+    Array.prototype.forEach.call($('cheat-list').querySelectorAll('.cgroup'), function (sec) {
+      sec.classList.toggle('hide', !shown.some(function (k) { return k.sec === sec; }));
+    });
+    $('cheat-find').textContent = find ? 'SEARCH: ' + find + (shown.length ? '' : ' — no code like that') : '';
+    sel = 0;
+    paintSel();
+  }
+  function paintSel() {
+    cards.forEach(function (k) { k.el.classList.remove('sel'); });
+    var k = shown[sel];
+    if (!k) return;
+    k.el.classList.add('sel');
+    if (k.el.scrollIntoView) k.el.scrollIntoView({ block: 'nearest' });
+  }
+  function paintOn() { cards.forEach(function (k) { k.el.classList.toggle('on', !!(k.c.on && k.c.on())); }); }
+  // round the cards by where they stand: left and right through the list,
+  // up and down to the card nearest above or below
+  function move(dir) {
+    if (!shown.length) return;
+    if (dir === 'ArrowLeft') sel = Math.max(0, sel - 1);
+    else if (dir === 'ArrowRight') sel = Math.min(shown.length - 1, sel + 1);
+    else {
+      var down = dir === 'ArrowDown', cur = shown[sel].el.getBoundingClientRect(), best = -1, bd = Infinity;
+      for (var i = 0; i < shown.length; i++) {
+        var r = shown[i].el.getBoundingClientRect(), dy = down ? r.top - cur.top : cur.top - r.top;
+        if (dy < 4) continue;
+        var score = dy * 1000 + Math.abs(r.left - cur.left);
+        if (score < bd) { bd = score; best = i; }
+      }
+      if (best >= 0) sel = best;
+    }
+    paintSel();
+  }
+  function onPad() { return !!(GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad()); }
+  function keyLabel() { return GAME.controls ? GAME.controls.label('Backquote') : '`'; }
   function open() {
-    var box = $('cheat-box'), inp = $('cheat-input');
-    if (!box) return;
+    if (GAME.cheatOpen || !GAME.started || P().state !== 'alive') return false;
+    if (GAME.mapOpen || GAME.shopOpen || GAME.shareOpen || GAME.lolaOpen || GAME.sceneOpen) return false;
+    if (GAME.hud.dialogOpen && GAME.hud.dialogOpen()) return false;
+    var box = $('cheat-box');
+    if (!box) return false;
+    makeList();
+    // the game holds still under it: it is the pause screen, out of sight
+    fromPause = !!GAME.paused;
+    if (!GAME.paused) GAME.togglePause();
+    document.body.classList.add('cheats-up');
     GAME.cheatOpen = true;
     box.style.display = 'flex';
-    $('cheat-said').textContent = '';
-    inp.value = '';
-    setTimeout(function () { try { inp.focus(); } catch (e) { } }, 30);
+    $('cheat-sub').textContent = 'Pick one and it works at once. A switch shows ON: pick it again to turn it off.';
+    $('cheat-keys').textContent = GAME.isTouch ? 'Tap one to use it.'
+      : onPad() ? 'D-pad to choose · Ⓐ use it · Ⓑ back. In play, a cheat\'s 🎮 combo works on its own.'
+        : 'Click one, or arrows and Enter · type to search · Esc closes · ' + keyLabel() + ' opens this in play';
+    find = '';
+    paintOn();
+    refilter();
+    $('cheat-list').scrollTop = 0;
+    if (GAME.track) GAME.track('cheats-opened');
+    return true;
   }
-  function close() {
-    var box = $('cheat-box');
-    if (box) box.style.display = 'none';
+  // Away, and back to the game — or, opened from the pause screen and left
+  // without picking anything, back to the pause screen
+  function close(resume) {
+    if (!GAME.cheatOpen) return;
     GAME.cheatOpen = false;
-    try { $('cheat-input').blur(); } catch (e) { }
+    $('cheat-box').style.display = 'none';
+    document.body.classList.remove('cheats-up');
+    if ((resume || !fromPause) && GAME.paused) GAME.togglePause();
   }
-  function submit() {
-    var inp = $('cheat-input'), said = enter(inp.value);
-    $('cheat-said').textContent = said ? '✓ ' + said : 'Nothing happens.';
-    inp.value = '';
-    if (said) setTimeout(function () { close(); if (GAME.paused) GAME.togglePause(); }, 700);
+  function pick(code) {
+    if (!GAME.cheatOpen) return null;
+    var said = enter(code);
+    close(true);
+    if (!said) msg('Not right now.');
+    return said;
+  }
+  // the keyboard, straight from the keys (utils.js): typed letters narrow
+  // the list, the arrows walk it, Enter picks
+  function keyEvent(e) {
+    var c = e.code;
+    if (c === 'Escape') { if (find) { find = ''; refilter(); } else close(false); return; }
+    if (GAME.controls && GAME.controls.map(c) === 'Backquote') { close(false); return; }
+    if (c === 'Enter' || c === 'NumpadEnter' || c === 'Space') { if (shown[sel]) pick(shown[sel].c.code); return; }
+    if (c === 'Backspace') { find = find.slice(0, -1); refilter(); return; }
+    if (/^Arrow/.test(c)) { move(c); return; }
+    if (/^Key[A-Z]$/.test(c) && !e.ctrlKey && !e.metaKey && !e.altKey && find.length < 32) { find += c.slice(3); refilter(); }
+  }
+  // a pad's buttons, as the menu keys they stand for (controls.js)
+  function padKey(code) {
+    if (code === 'Escape') close(false);
+    else if (code === 'Enter') { if (shown[sel]) pick(shown[sel].c.code); }
+    else if (/^Arrow/.test(code)) move(code);
   }
   function init() {
-    var inp = $('cheat-input');
-    if (!inp) return;
-    inp.addEventListener('keydown', function (e) {
-      e.stopPropagation();
-      if (e.key === 'Enter') { e.preventDefault(); submit(); }
-      else if (e.key === 'Escape') { e.preventDefault(); close(); }
-    });
-    ['keyup', 'keypress'].forEach(function (ev) { inp.addEventListener(ev, function (e) { e.stopPropagation(); }); });
-    $('cheat-ok').addEventListener('click', function (e) { e.stopPropagation(); submit(); });
-    $('cheat-close').addEventListener('click', function (e) { e.stopPropagation(); close(); });
-    $('cheat-box').addEventListener('click', function (e) { e.stopPropagation(); });
+    var box = $('cheat-box');
+    if (!box) return;
+    // a click on the dark round the card is a way out, as Esc is
+    box.addEventListener('click', function (e) { if (e.target === box) close(false); });
+    $('cheat-card').addEventListener('click', function (e) { e.stopPropagation(); });
+    $('cheat-close').addEventListener('click', function (e) { e.stopPropagation(); close(false); });
+    // the button by the radar: straight in from play
+    var btn = $('cheat-btn');
+    btn.addEventListener('touchend', function (e) { e.preventDefault(); e.stopPropagation(); open(); }, { passive: false });
+    btn.addEventListener('click', function (e) { e.stopPropagation(); open(); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
@@ -354,6 +534,17 @@ GAME.cheats = (function () {
     open: open,
     close: close,
     update: update,
+    keyEvent: keyEvent,
+    padKey: padKey,
+    padPress: padPress,
+    get isOpen() { return !!GAME.cheatOpen; },
+    // the list as it stands: every card's code, and which are showing,
+    // picked out and on
+    catalog: function () { return CATALOG.map(function (c) { return { code: c.code, also: c.also || null, name: c.name, group: c.g, pad: c.pad }; }); },
+    shown: function () { return shown.map(function (k) { return k.c.code; }); },
+    get selected() { return shown[sel] ? shown[sel].c.code : null; },
+    onCodes: function () { return cards.filter(function (k) { return k.el.classList.contains('on'); }).map(function (k) { return k.c.code; }); },
+    pick: pick,
     get used() { return used; },
     codes: function () { return Object.keys(CODES); },
     // what is switched on, by name (and the build and the clock)
@@ -375,6 +566,7 @@ GAME.cheats = (function () {
       GAME.gameSpeed = 1;
       if (hop && hop.ped && !hop.ped.gone) { hop.ped.enterX = NaN; hop.ped.state = 'walk'; }
       hop = null; hopCd = 0;
+      presses.length = 0;
     }
   };
 })();

@@ -106,7 +106,8 @@ Everything in the game, in detail. The [README](../README.md) has the short vers
 
 ## Cheats
 
-- **Cheat codes, typed in.** Pause, pick **🕹 CHEATS** and type a code. Half the alphabet already does something in play, so they have a box of their own, which a touchscreen's keyboard reaches too. A code that changes how the town works is a switch: type it again and it's off. None of them are saved, so a new visit starts with the town as it was.
+- **Cheats, from a list.** `` ` `` (or the 🕹 just off the radar, or **🕹 CHEATS** on the pause screen) brings up every code as a card: what it does, its code word, and its combo on a controller, grouped under YOU, WEAPONS, THE LAW, SOMETHING TO DRIVE, CARS AND BOATS, THE CROWD and THE SKY AND THE CLOCK. Click or tap one, or walk the list with the arrows or the D-pad and pick with Enter or A: it works at once, the list closes and the game carries on. Nothing needs typing, but on a keyboard typing narrows the list, so the code words still work. A code that changes how the town works is a switch, marked ON in the list; pick it again and it's off. None of them are saved, so a new visit starts with the town as it was.
+  - **On a controller, in play:** every cheat also has its own combo of eight presses (LB, RB, A, B and the D-pad's ↑ ← →, shown on its card). Enter it, no more than a second and a half between presses, and it works without opening anything.
   - **You:** `ASPIRINE` (health), `PRECIOUSPROTECTION` (armour), `STILLLIKEDRESSINGUP` (a random outfit and cut off the shops' racks, kept as if bought), `DEEPFRIEDMARSBARS` (fat), `PROGRAMMER` (skinny), and `ICANTTAKEITANYMORE`.
   - **Weapons:** `THUGSTOOLS`, `PROFESSIONALTOOLS` and `NUTTERTOOLS` (the three sets).
   - **The law:** `LEAVEMEALONE` (the stars off) and `YOUWONTTAKEMEALIVE` (two more).

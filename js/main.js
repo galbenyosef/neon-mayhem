@@ -81,8 +81,9 @@
     GAME.onKeyDown = function (code) {
       if (code === 'Enter' && !GAME.started) { GAME.startGame(); return; }
       if (!GAME.started) return;
-      // the cheat box has the keyboard while it is open (cheats.js)
-      if (GAME.cheatOpen) return;
+      // the cheat list has the keys while it is open (cheats.js): the
+      // keyboard goes straight to it (utils.js), a pad's buttons come here
+      if (GAME.cheatOpen) { GAME.cheats.padKey(code); return; }
       // an open dialog owns the keys — Esc must cancel it, not unpause
       if (GAME.hud.dialogOpen()) { GAME.hud.dialogKey(code); return; }
       // the result card is drawn over every menu (a car bought in the
@@ -106,6 +107,8 @@
       if (GAME.mapOpen && code === 'Enter' && GAME.hud.mapPick()) return;
       // and the arrows step its legend's solo (one kind of marker at a time)
       if (GAME.mapOpen && (code === 'ArrowLeft' || code === 'ArrowRight')) { GAME.hud.mapSoloStep(code === 'ArrowRight' ? 1 : -1); return; }
+      // ` puts the cheat list up, from play or over the pause screen
+      if (code === 'Backquote' && !GAME.mapOpen && !GAME.shopOpen) { GAME.cheats.open(); return; }
       // the pause screen's buttons answer the arrows, Enter and Space
       if (GAME.paused && !GAME.mapOpen && !GAME.shopOpen && GAME.hud.pauseKey(code)) return;
       if (code === 'Escape') {

@@ -50,7 +50,7 @@ Want the details? **[Read the full tour →](docs/FEATURES.md)**
 - 📻 **Radio with personality** — a frequency, a jingle and a DJ for every station, with talk and 1986 ads between the songs.
 - 🔧 **Damage you can see** — bumpers that come off, bonnets that spring, tyres that burst and spark.
 - 🏛 **Landmarks** — the Neon Tide on the strip, a stadium, a film lot and Rico's villa in the hills.
-- 🕹 **Cheats** — PANZER, ASPIRINE, the weapon sets and the rest of Vice City's words, typed into CHEATS on the pause screen.
+- 🕹 **Cheats** — PANZER, ASPIRINE, the weapon sets and the rest of Vice City's words, picked from a list (`` ` ``, the 🕹 by the radar, or the pause screen) or entered as button combos on a controller.
 - 🪖 **Six stars** — the army, its soldiers and a tank you can take; and cruisers that ram, PIT and box you in.
 - 💵 **Store robberies** — a gun on the clerk empties the till while you keep it there, and the law is waiting outside.
 - 🔪 **The arsenal** — bat, knife, katana, chainsaw, grenades, Molotovs, a scoped sniper rifle and a rocket launcher, and a weapon wheel to pick them from.

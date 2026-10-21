@@ -612,6 +612,13 @@ GAME.initInput = function (canvas) {
       e.preventDefault();
       return;
     }
+    // and so does the cheat list: the letters narrow it, the arrows walk it
+    // (cheats.js) — none of them is a key for the game behind it
+    if (GAME.cheatOpen && GAME.cheats) {
+      GAME.cheats.keyEvent(e);
+      e.preventDefault();
+      return;
+    }
     // rebinding: the key as the game should hear it (controls.js)
     var code = GAME.controls ? GAME.controls.map(e.code) : e.code;
     if (code === null) return;

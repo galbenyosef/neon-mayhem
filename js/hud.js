@@ -857,7 +857,7 @@ GAME.hud = (function () {
     '(in a vehicle <b>RT / LT</b> are throttle and brake)<br>' +
     '<b>LB / RB</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>A</b> jump · climb / handbrake &nbsp;·&nbsp; <b>Y</b> enter / exit car &nbsp;·&nbsp; <b>B</b> sprint<br>' +
     '<b>D-pad ↓</b> weapons &nbsp;·&nbsp; <b>D-pad ← / →</b> radio &nbsp;·&nbsp; <b>R3</b> horn / siren &nbsp;·&nbsp; <b>X</b> job &nbsp;·&nbsp; <b>D-pad ↑</b> retry &nbsp;·&nbsp; ' +
-    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound, full screen and the rest are there';
+    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound, full screen, the cheats and the rest are there';
   var PAD_BAR = {
     car: '<b>RT / LT</b> drive · <b>stick</b> steer · <b>A</b> handbrake · <b>LB / RB</b> drive-by · <b>Y</b> exit · <b>R3</b> horn · <b>D-pad ← →</b> radio · <b>BACK</b> map',
     foot: '<b>stick</b> move · <b>B</b> sprint · <b>A</b> jump · <b>LT</b> aim · <b>RT</b> fire · <b>D-pad ↓</b> weapons · <b>Y</b> enter car · <b>BACK</b> map',
@@ -876,7 +876,7 @@ GAME.hud = (function () {
     }
     var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
       '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
-      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo · <b>' + K('KeyV') + '</b> see it &nbsp;·&nbsp; <b>' + K('KeyL') + '</b> Lola &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
+      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo · <b>' + K('KeyV') + '</b> see it &nbsp;·&nbsp; <b>' + K('KeyL') + '</b> Lola &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('Backquote') + '</b> cheats &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
     var card = document.getElementById('controls-card');
     if (card) card.innerHTML = h;
     if (el['pause-controls']) el['pause-controls'].innerHTML = h;
@@ -894,8 +894,8 @@ GAME.hud = (function () {
     ctlMode = mode;
     var wasd = K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD');
     var txt = {
-      car: '<b>' + wasd + '</b> drive · <b>' + K('Space') + '</b> handbrake · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> drive-by · <b>' + K('KeyF') + '</b> exit · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
-      foot: '<b>' + wasd + '</b> move · <b>' + K('ShiftLeft') + '</b> sprint · <b>' + K('Space') + '</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-9</b> · <b>' + K('KeyZ') + '</b> (hold) weapons · <b>' + K('KeyF') + '</b> enter car · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
+      car: '<b>' + wasd + '</b> drive · <b>' + K('Space') + '</b> handbrake · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> drive-by · <b>' + K('KeyF') + '</b> exit · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map · <b>' + K('Backquote') + '</b> cheats · <b>' + K('KeyH') + '</b> hide',
+      foot: '<b>' + wasd + '</b> move · <b>' + K('ShiftLeft') + '</b> sprint · <b>' + K('Space') + '</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-9</b> · <b>' + K('KeyZ') + '</b> (hold) weapons · <b>' + K('KeyF') + '</b> enter car · <b>' + K('KeyP') + '</b> map · <b>' + K('Backquote') + '</b> cheats · <b>' + K('KeyH') + '</b> hide',
       heli: '<b>' + K('Space') + '</b> up · <b>' + K('ShiftLeft') + '</b> down · <b>' + K('KeyW') + '/' + K('KeyS') + '</b> forward · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> yaw · <b>' + K('KeyF') + '</b> exit / bail out · <b>' + K('KeyP') + '</b> map',
       plane: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('Space') + '</b> climb · <b>' + K('ShiftLeft') + '</b> dive · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> turn · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> barrel roll · <b>' + K('KeyF') + '</b> bail out',
       chute: '<b>' + wasd + '</b> steer your descent · glide down to land',

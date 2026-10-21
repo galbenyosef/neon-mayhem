@@ -56,6 +56,7 @@ A plane rolls down the runway on throttle and climbs once it's fast; airborne, t
 | Resume | `Esc` · RESUME · a click anywhere off the buttons | START · RESUME | RESUME · a tap anywhere off the buttons |
 | Map | `P` | BACK | tap the radar |
 | Photo | `C` | L3 | 📷 |
+| Cheats (the list) | `` ` `` · the 🕹 by the radar | START → GAME → CHEATS · a cheat's combo in play | 🕹 (beside the radar) |
 | See a photo full size | `V` (the last one) · click it in PHOTOS | START → PHOTOS → A | tap the print · tap it in PHOTOS |
 | Call Lola | `L` | START → 📟 ASK LOLA | 📟 beside the camera (while her tips are on) · ❚❚ → 📟 ASK LOLA |
 | Retry a failed run | `Y` | D-pad ↑ | RETRY |

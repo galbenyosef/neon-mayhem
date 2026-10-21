@@ -298,8 +298,10 @@
 //      dropping it brings the stars; a day to restock; never your own.
 //  20. THE TOP END    — a sixth star and the army; a tank you can take,
 //      whose cannon and tracks work for you; cruisers that ram, PIT, box.
-//  21. CHEATS         — the codes, typed into CHEATS on the pause
-//      screen; a word that is not one does nothing.
+//  21. CHEATS         — every code a card in the CHEATS list, off the
+//      pause screen, the ` key or the 🕹 by the radar: picked, it runs and
+//      the game goes on; typing narrows it; a pad walks it, and in play a
+//      code's eight-press combo works on its own.
 //  22. LANDMARKS      — a club, a stadium, a film lot and a villa, solid,
 //      signed, open at the gate, with nothing buried in them.
 //  23. WEAR           — bumpers off at the end that took it, a sprung bonnet,
@@ -11937,6 +11939,38 @@ function withTimeout(p, ms) {
   });
   check('touch: Lola has a button beside the camera that calls her, while her tips are on',
     lolaRow.found && lolaRow.shown && lolaRow.apart && lolaRow.calls && lolaRow.hiddenWithTipsOff && lolaRow.fsSteppedBack, JSON.stringify(lolaRow));
+  // and the cheats in the same row, after the camera: a tap and the list
+  var cheatRow = await tpage.evaluate(function () {
+    var all = document.querySelectorAll('.tbtn'), cam = null, lb = null;
+    for (var i = 0; i < all.length; i++) { if (all[i].textContent === '📷') cam = all[i]; if (all[i].textContent === '📟') lb = all[i]; }
+    var cb = document.getElementById('cheat-btn'), fsb = document.getElementById('fs-btn'), mm = document.getElementById('minimap-wrap');
+    if (!cam || !lb || !cb || !fsb) return { found: false };
+    var tips0 = GAME.lola.tips, was = fsb.style.display, r = { found: true };
+    function overlap(a, b) { return !(a.left >= b.right || a.right <= b.left || a.top >= b.bottom || a.bottom <= b.top); }
+    try {
+      GAME.lola.setTips(true); GAME.test.fastForward(0.1);
+      fsb.style.display = 'flex';
+      var k = cb.getBoundingClientRect(), c = cam.getBoundingClientRect(), l = lb.getBoundingClientRect(), f = fsb.getBoundingClientRect(), m = mm.getBoundingClientRect();
+      r.inRow = Math.abs(k.top - c.top) < 4 && k.left > c.left && k.top < m.bottom;
+      r.apart = !overlap(k, c) && !overlap(k, l) && !overlap(k, f);
+      r.hit = document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2) === cb;
+      var t = new Touch({ identifier: 44, target: cb, clientX: k.left + 5, clientY: k.top + 5 });
+      cb.dispatchEvent(new TouchEvent('touchstart', { touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true }));
+      cb.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t], targetTouches: [], bubbles: true, cancelable: true }));
+      r.opens = GAME.cheats.isOpen;
+      r.hint = /Tap one/.test(document.getElementById('cheat-keys').textContent);
+      GAME.cheats.close(false);
+      r.back = !GAME.cheats.isOpen && !GAME.paused;
+    } finally {
+      if (GAME.cheats.isOpen) GAME.cheats.close(false);
+      if (GAME.paused) GAME.togglePause();
+      fsb.style.display = was;
+      GAME.lola.setTips(tips0); GAME.test.fastForward(0.1);
+    }
+    return r;
+  });
+  check('touch: the cheats have a button in the row beside the radar, and a tap brings up the list',
+    cheatRow.found && cheatRow.inRow && cheatRow.apart && cheatRow.hit && cheatRow.opens && cheatRow.hint && cheatRow.back, JSON.stringify(cheatRow));
   // IMPORT SAVE on a touchscreen picks the file on a page with no city
   // behind it: the phone's picker sends the tab to the background, where a
   // game this size is what Android reclaims first — the import crashed.
@@ -12990,59 +13024,158 @@ function withTimeout(p, ms) {
   check('law: with the tactics off they only follow', law.politeOff, JSON.stringify(law));
 
   // ---------- 21: cheats ----------
-  // The codes, typed into CHEATS on the pause screen: health,
-  // armour, the three weapon sets, the stars off and on, a tank, cars, the
-  // weather. A word that is not one does nothing.
+  // Every code, a card in the CHEATS list to pick — off the pause screen,
+  // the ` key, or the 🕹 by the radar. Picking one runs it, closes the list
+  // and carries on with the game. On a keyboard typing narrows the list (the
+  // code words still work); on a pad the D-pad walks it and A picks, and in
+  // play each code has an eight-press combo of its own.
   var cheat = await page.evaluate(function () {
     var P = GAME.player, C = GAME.cheats, r = {};
     var weapons0 = JSON.parse(JSON.stringify(P.weapons, function (k, v) { return v === Infinity ? 'INF' : v; }));
-    var cur0 = P.currentWeapon, spawned = [];
+    var cur0 = P.currentWeapon;
+    window.__cheatSpawned = [];
     try {
       if (P.inCar) GAME.exitCar();
       GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
-      // the box, off the pause screen, typed into
+      // off the pause screen: the list, over a game held still, the pause
+      // screen out of sight under it
       GAME.togglePause();
       document.getElementById('pause-cheats').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      r.open = !!GAME.cheatOpen && document.getElementById('cheat-box').style.display === 'flex';
-      var inp = document.getElementById('cheat-input');
+      var ps = document.getElementById('pause-screen');
+      r.open = C.isOpen && document.getElementById('cheat-box').style.display === 'flex' && GAME.paused && getComputedStyle(ps).visibility === 'hidden';
+      // every code is on it, in its groups, each with a pad combo
+      var cards = document.querySelectorAll('#cheat-list .ccard');
+      r.cards = cards.length;
+      r.catalog = C.catalog().length;
+      r.allCodes = C.codes().every(function (code) { return C.catalog().some(function (c) { return c.code === code || c.also === code; }); });
+      r.groups = document.querySelectorAll('#cheat-list .cgroup').length;
+      r.combos = C.catalog().every(function (c) { return c.pad.split(' ').length === 8; }) &&
+        new Set(C.catalog().map(function (c) { return c.pad; })).size === C.catalog().length;
+      // Esc there, picking nothing: back to the pause screen
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true }));
+      r.backToPause = !C.isOpen && GAME.paused && getComputedStyle(ps).visibility !== 'hidden';
+      // a card clicked: it runs, the list closes, and the game is back on
+      document.getElementById('pause-cheats').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       P.health = 30;
-      inp.value = 'aspirine';
-      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      r.health = P.health === 100 && /Health/.test(document.getElementById('cheat-said').textContent);
-      inp.value = 'NOTACHEAT';
-      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      r.nothing = /Nothing/.test(document.getElementById('cheat-said').textContent);
-      C.close();
-      if (GAME.paused) GAME.togglePause();
-      GAME.test.fastForward(0.2);
-      r.closed = !GAME.cheatOpen;
-      // the rest straight through the same door
+      var asp = null;
+      document.querySelectorAll('#cheat-list .ccard').forEach(function (el) { if (/ASPIRINE/.test(el.textContent)) asp = el; });
+      asp.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.health = P.health === 100 && !C.isOpen && !GAME.paused && /Health/.test(window.__msgs.slice(-1)[0]);
+      // the same codes straight through enter()
       r.armour = !!C.enter('PRECIOUSPROTECTION') && P.armor === 100;
-      r.nutter = !!C.enter('NUTTERTOOLS') && P.weapons.chainsaw.have && P.weapons.rocket.have && P.weapons.sniper.have;
-      var cars0 = GAME.world.cars.length;
-      r.panzer = !!C.enter('panzer') && GAME.world.cars.some(function (c) { if (c.spec.tank && c.occupied !== 'ai') { spawned.push(c); return true; } return false; });
+      r.panzer = !!C.enter('panzer') && GAME.world.cars.some(function (c) { if (c.spec.tank && c.occupied !== 'ai') { window.__cheatSpawned.push(c); return true; } return false; });
       r.up = !!C.enter('YOUWONTTAKEMEALIVE') && GAME.police.wanted === 2;
       r.clear = !!C.enter('LEAVEMEALONE') && GAME.police.wanted === 0;
       r.rain = !!C.enter('CATSANDDOGS') && GAME.weather.mode === 'rain';
       C.enter('ALOVELYDAY');
+      r.notACode = C.enter('NOTACHEAT') === null;
       r.count = C.codes().length;
+      // a switch shows ON in the list, and picked again it is off
+      C.enter('COMEFLYWITHME');
+      C.open();
+      r.onShown = C.onCodes().indexOf('COMEFLYWITHME') >= 0;
+      C.close(false);
+      C.enter('COMEFLYWITHME');
     } finally {
-      C.close();
+      if (C.isOpen) C.close(false);
       if (GAME.paused) GAME.togglePause();
       GAME.weather.setMode('clear', true);
-      spawned.forEach(function (c) { if (!c.gone) GAME.vehicles.removeCar(c); });
       P.weapons = JSON.parse(JSON.stringify(weapons0), function (k, v) { return v === 'INF' ? Infinity : v; });
       P.currentWeapon = cur0; GAME.combat.refreshWeaponHud();
+      GAME.test.fastForward(0.3);
+    }
+    return r;
+  });
+  // the ` key, from play: the list; typing narrows it, Enter picks
+  await page.keyboard.press('Backquote');
+  var typed = await page.evaluate(function () {
+    var C = GAME.cheats, r = { open: C.isOpen && GAME.paused };
+    r.hint = /cheats/.test(document.getElementById('controls-bar').textContent);
+    return r;
+  });
+  await page.keyboard.type('NUTTER');
+  typed.shown = await page.evaluate(function () { return GAME.cheats.shown(); });
+  await page.keyboard.press('Enter');
+  Object.assign(typed, await page.evaluate(function () {
+    var P = GAME.player, C = GAME.cheats;
+    return { nutter: P.weapons.chainsaw.have && P.weapons.rocket.have && P.weapons.sniper.have, closed: !C.isOpen && !GAME.paused };
+  }));
+  // ` again with it up puts it away
+  await page.keyboard.press('Backquote');
+  await page.keyboard.press('Backquote');
+  typed.toggles = await page.evaluate(function () { return !GAME.cheats.isOpen && !GAME.paused; });
+  var padc = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.cheats, r = {};
+    try {
+      // a pad on the list, through the pad itself (controls.js): the D-pad
+      // walks it, A picks, B backs out
+      var Cs = GAME.controls, gp0 = navigator.getGamepads;
+      var fake = { connected: true, axes: [0, 0, 0, 0], buttons: [] };
+      for (var bi = 0; bi < 17; bi++) fake.buttons.push({ pressed: false, value: 0 });
+      function tap(b) { fake.buttons[b].pressed = true; Cs.poll(1 / 60); fake.buttons[b].pressed = false; Cs.poll(1 / 60); }
+      navigator.getGamepads = function () { return [fake]; };
+      try {
+        Cs.poll(1 / 60);
+        C.open();
+        var first = C.selected;
+        tap(15);
+        r.walks = C.selected !== first && C.selected === C.shown()[1];
+        tap(14);
+        P.health = 40;
+        tap(0);
+        r.aPicks = first === 'ASPIRINE' && P.health === 100 && !C.isOpen && !GAME.paused;
+        C.open();
+        tap(13);
+        r.down = C.shown().indexOf(C.selected) > 1;
+        tap(1);
+        r.backOut = !C.isOpen && !GAME.paused;
+        // and in play, a code's combo: eight presses, nothing opened (a
+        // trigger pressed in the middle of it is no matter)
+        GAME.police.setWanted(2);
+        var BTN = { A: 0, B: 1, LB: 4, RB: 5, UP: 12, LEFT: 14, RIGHT: 15 };
+        var combo = C.catalog().filter(function (c) { return c.code === 'LEAVEMEALONE'; })[0].pad.split(' ');
+        combo.forEach(function (t, i) { if (i === 3) tap(7); tap(BTN[t]); });
+        r.combo = GAME.police.wanted === 0 && !C.isOpen;
+      } finally {
+        navigator.getGamepads = gp0;
+        Cs.poll(1 / 60);
+      }
+      // seven of the eight is nothing
+      GAME.police.setWanted(2);
+      combo.slice(1).forEach(function (t) { C.padPress(BTN[t]); });
+      r.sevenNothing = GAME.police.wanted === 2;
+      GAME.police.clearWanted();
+      // the 🕹 by the radar, in play
+      var btn = document.getElementById('cheat-btn'), b = btn.getBoundingClientRect(), mm = document.getElementById('minimap-wrap').getBoundingClientRect();
+      r.btnShown = getComputedStyle(btn).display !== 'none' && b.width > 20 && b.bottom <= mm.top + 20 && b.left >= mm.left && b.right <= mm.right + 40 &&
+        document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === btn;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.btnOpens = C.isOpen;
+      C.close(false);
+      r.btnBack = !C.isOpen && !GAME.paused;
+    } finally {
+      if (C.isOpen) C.close(false);
+      if (GAME.paused) GAME.togglePause();
+      (window.__cheatSpawned || []).forEach(function (c) { if (!c.gone) GAME.vehicles.removeCar(c); });
       P.armor = 0; P.health = 100;
       GAME.police.clearWanted();
       GAME.test.fastForward(0.3);
     }
     return r;
   });
-  check('cheats: CHEATS on the pause screen opens a box to type a code in', cheat.open && cheat.closed, JSON.stringify(cheat));
-  check('cheats: ASPIRINE heals; a word that is not a code does nothing', cheat.health && cheat.nothing, JSON.stringify(cheat));
-  check('cheats: armour, the nutter\'s weapons, and a tank beside you', cheat.armour && cheat.nutter && cheat.panzer, JSON.stringify(cheat));
-  check('cheats: the stars up and off, and the weather', cheat.up && cheat.clear && cheat.rain && cheat.count >= 15, JSON.stringify(cheat));
+  check('cheats: CHEATS on the pause screen is a list of every code, in groups, each with a pad combo of its own',
+    cheat.open && cheat.cards === cheat.catalog && cheat.catalog >= 38 && cheat.allCodes && cheat.groups >= 6 && cheat.combos, JSON.stringify(cheat));
+  check('cheats: Esc there goes back to the pause screen', cheat.backToPause, JSON.stringify(cheat));
+  check('cheats: pick a card and it works, the list closes and the game goes on', cheat.health, JSON.stringify(cheat));
+  check('cheats: armour, a tank beside you, the stars up and off, the weather; a word that is not a code does nothing',
+    cheat.armour && cheat.panzer && cheat.up && cheat.clear && cheat.rain && cheat.notACode && cheat.count >= 39, JSON.stringify(cheat));
+  check('cheats: a switch that is on shows ON in the list', cheat.onShown, JSON.stringify(cheat));
+  check('cheats: ` puts the list up from play, and the hint bar says so', typed.open && typed.hint, JSON.stringify(typed));
+  check('cheats: typing narrows the list, Enter picks — the code words still work', typed.shown.length === 1 && typed.shown[0] === 'NUTTERTOOLS' && typed.nutter && typed.closed, JSON.stringify(typed));
+  check('cheats: ` again puts it away', typed.toggles, JSON.stringify(typed));
+  check('cheats: on a pad the D-pad walks the list, A picks, B backs out', padc.walks && padc.aPicks && padc.down && padc.backOut, JSON.stringify(padc));
+  check('cheats: in play, a code\'s eight-press combo on the pad works on its own (and seven do not)', padc.combo && padc.sevenNothing, JSON.stringify(padc));
+  check('cheats: the 🕹 off the radar\'s corner opens the list', padc.btnShown && padc.btnOpens && padc.btnBack, JSON.stringify(padc));
 
   // ---------- 22: landmarks ----------
   // One a district, on a lot the blocks left empty: THE NEON TIDE on the strip,
