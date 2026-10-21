@@ -529,7 +529,9 @@ GAME.peds = (function () {
         // escape hatch wants the brawl in front of them to stop. Fights with
         // the PLAYER are not chaos's to call off, and neither is a man taking
         // his own car back: both predate all of this and stand at OFF.
-        var calledOff = !GAME.chaos.on && !chaseCar && F.kind !== 'player';
+        // (FIGHTFIGHTFIGHT, from the cheat box, is a riot the knob does not
+        // get to call off)
+        var calledOff = !GAME.chaos.on && !GAME.cheatOn.riot && !chaseCar && F.kind !== 'player';
         if (ped.attackT <= 0 || !F.valid || ad2 > 55 * 55 || calledOff ||
           Math.abs(ty - ped.pos.y) > 3 || tSpeed > 10) {
           ped.state = 'flee';
@@ -568,7 +570,8 @@ GAME.peds = (function () {
           // street, because he only ever draws on someone he is already in the
           // attack state against, which for the player means they provoked it.
           // (a job's armed man — missions.js — carries whatever the city is set to)
-          var canShoot = ped.carrying && (GAME.chaos.armedChance > 0 || ped.missionArmed) &&
+          // (and anybody at all, once the cheat box has armed the town)
+          var canShoot = ped.carrying && (GAME.chaos.armedChance > 0 || ped.missionArmed || GAME.cheatOn.armed) &&
             (F.kind === 'ped' ? !!F.ped : F.kind === 'player') &&
             ad2 > 36 && ad2 < 30 * 30 &&
             Math.abs(ty - ped.pos.y) < 3 &&
@@ -1030,7 +1033,8 @@ GAME.peds = (function () {
     // against it meant that at CITY: OFF (a ceiling of nothing) a hot-tempered
     // man you punched simply ran away — which the setting promises not to touch.
     var vsPlayer = !foe || foe.kind === 'player';
-    if (!answering && !vsPlayer && ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
+    // (and a riot — FIGHTFIGHTFIGHT, cheats.js — has no ceiling at all)
+    if (!answering && !vsPlayer && ped.state !== 'attack' && !GAME.cheatOn.riot && fightCount() >= GAME.chaos.maxFights) return false;
     ped.state = 'attack';
     ped.attackT = secs || 9;
     ped.foe = foe || null;

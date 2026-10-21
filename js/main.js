@@ -260,6 +260,9 @@
   var TOD_DAY = { fog: 0xbcd0e8, near: 150, hemi: 0xcfe0ff, ground: 0x9a8a70, hemiI: 1.05, dir: 0xfff2d0, dirI: 1.0, amb: 0x6a6674, ambI: 0.5, clear: 0x9fbce0 };
   var _cN = new THREE.Color(), _cD = new THREE.Color(), _cT = new THREE.Color(), _cR = new THREE.Color();
   var RAIN_NIGHT = 0x231c2e, RAIN_DAY = 0x7c8394;   // what the fog turns to under rain
+  var CLOUD_NIGHT = 0x2a2532, CLOUD_DAY = 0x9aa2ae;  // ...under a grey lid of cloud
+  var MIST_NIGHT = 0x37323f, MIST_DAY = 0xc3c8cd;    // ...and in a fog bank
+  var MIST_NEAR = 6, MIST_FAR = 110;                // a fog bank: the city ends here
   function lerpHex(a, b, t, target) { _cN.setHex(a); _cD.setHex(b); target.copy(_cN).lerp(_cD, t); return target; }
 
   GAME.timeOfDay = 0.4;
@@ -267,12 +270,21 @@
     GAME.timeOfDay = df;
     GAME.city.applyTimeOfDay(df);
     var scene = GAME.scene, L = GAME.lights, farBase = GAME.isTouch ? 320 : 430;
-    // rain greys and closes in the fog and dims the light; lightning lifts it
-    var wet = GAME.weather ? GAME.weather.rain : 0, bolt = GAME.weather ? GAME.weather.flash : 0;
+    // rain greys and closes in the fog and dims the light; lightning lifts it.
+    // Cloud greys it and flattens the light without the rain; a fog bank
+    // pulls it in to a hundred metres and turns the sky the same colour.
+    var W = GAME.weather;
+    var wet = W ? W.rain : 0, bolt = W ? W.flash : 0, cloud = W ? W.cloud : 0, mist = W ? W.mist : 0;
     lerpHex(TOD_NIGHT.fog, TOD_DAY.fog, df, scene.fog.color);
+    if (cloud > 0) scene.fog.color.lerp(lerpHex(CLOUD_NIGHT, CLOUD_DAY, df, _cR), cloud * 0.75);
     if (wet > 0) scene.fog.color.lerp(lerpHex(RAIN_NIGHT, RAIN_DAY, df, _cR), wet * 0.7);
-    scene.fog.near = U.lerp(TOD_NIGHT.near, TOD_DAY.near, df) * (1 - 0.55 * wet);
-    scene.fog.far = (farBase + df * 90) * QUALITY[GAME.quality].fog * (1 - 0.4 * wet);   // GFX draws it in
+    if (mist > 0) scene.fog.color.lerp(lerpHex(MIST_NIGHT, MIST_DAY, df, _cR), mist * 0.9);
+    scene.fog.near = U.lerp(TOD_NIGHT.near, TOD_DAY.near, df) * (1 - 0.55 * wet) * (1 - 0.2 * cloud);
+    scene.fog.far = (farBase + df * 90) * QUALITY[GAME.quality].fog * (1 - 0.4 * wet) * (1 - 0.12 * cloud);   // GFX draws it in
+    if (mist > 0) {
+      scene.fog.near = U.lerp(scene.fog.near, MIST_NEAR, mist);
+      scene.fog.far = U.lerp(scene.fog.far, MIST_FAR, mist);
+    }
     lerpHex(TOD_NIGHT.hemi, TOD_DAY.hemi, df, L.hemi.color);
     lerpHex(TOD_NIGHT.ground, TOD_DAY.ground, df, L.hemi.groundColor);
     L.hemi.intensity = U.lerp(TOD_NIGHT.hemiI, TOD_DAY.hemiI, df);
@@ -284,6 +296,9 @@
       L.hemi.intensity = L.hemi.intensity * (1 - 0.3 * wet) + bolt * 1.4;
       L.dir.intensity *= 1 - 0.55 * wet;
     }
+    // no sun through the cloud or the fog: the light comes from all round
+    if (cloud > 0) { L.dir.intensity *= 1 - 0.45 * cloud; L.hemi.intensity *= 1 - 0.1 * cloud; }
+    if (mist > 0) L.dir.intensity *= 1 - 0.5 * mist;
     // indoors (interiors.js): the room's own light whatever the hour, and no
     // fog across a room — the people in it were lit by the night outside
     if (GAME.player && GAME.player.interior) {
@@ -292,7 +307,18 @@
       scene.fog.near = 400; scene.fog.far = 900;
     }
     lerpHex(TOD_NIGHT.clear, TOD_DAY.clear, df, _cT);
+    if (cloud > 0) _cT.lerp(scene.fog.color, cloud * 0.8);
     if (wet > 0) _cT.lerp(scene.fog.color, wet * 0.8);
+    if (mist > 0) _cT.lerp(scene.fog.color, mist);
+    // a veil over the sky domes in the fog's colour: the cloud's lid, or
+    // the fog bank all the way up (city.js buildSky)
+    var veil = GAME.city.skyVeil;
+    if (veil) {
+      var cover = Math.max(mist, cloud * 0.85);
+      veil.material.color.copy(scene.fog.color);
+      veil.material.opacity = cover;
+      veil.visible = cover > 0.01;
+    }
     if (bolt > 0) _cT.lerp(_cR.setHex(0xdfe6ff), bolt * 0.5);
     renderer.setClearColor(_cT, 1);
   };
@@ -569,6 +595,7 @@
     GAME.robbery.update(dt);
     GAME.derby.update(dt);
     GAME.photo.update(dt);
+    GAME.cheats.update(dt);
     // slow autosave heartbeat: health and ammo drift without touching cash,
     // and the save should never be more than ten seconds behind the life
     if (GAME.frame % 600 === 599 && GAME.player.state === 'alive') GAME.save();
@@ -691,6 +718,21 @@
   // sim realtime all the way down to 30 fps and sheds work below that
   // (fractionally slower motion) instead of digging the hole deeper.
   var STEP = 1 / 60, MAX_TICKS = 2;
+  // The sim's share of a drawn frame `real` seconds long: as many fixed ticks
+  // as that buys at the game's speed. (The cheat box's ONSPEED runs the
+  // whole game faster, and is allowed the extra ticks a frame it takes;
+  // BOOOOOORING runs it slower.)
+  function runSim(real) {
+    accumulator += real * GAME.timeScale * GAME.gameSpeed;
+    var guard = 0, most = GAME.gameSpeed > 1 ? Math.ceil(MAX_TICKS * GAME.gameSpeed) : MAX_TICKS;
+    while (accumulator >= STEP && guard < most) {
+      GAME.tick(STEP);
+      accumulator -= STEP;
+      guard++;
+    }
+    if (guard === most) accumulator = 0;
+    return guard;
+  }
   function loop(now) {
     requestAnimationFrame(loop);
     var rawMs = now - lastT;
@@ -712,14 +754,7 @@
       // draws a still city and says nothing about what the crowd costs
       GAME.perf.sample(rawMs);
       GAME.perf.update(real);
-      accumulator += real * GAME.timeScale;
-      var guard = 0;
-      while (accumulator >= STEP && guard < MAX_TICKS) {
-        GAME.tick(STEP);
-        accumulator -= STEP;
-        guard++;
-      }
-      if (guard === MAX_TICKS) accumulator = 0;
+      runSim(real);
     } else {
       // behind pause, the map, a shop or a result card nothing ticks, so
       // nothing would drain the buffer: keystrokes on an overlay are not
@@ -799,6 +834,13 @@
     },
     exitCar: function () { GAME.exitCar(); },
     autopilotDrive: function (on) { GAME.autopilot = !!on; },
+    // `n` drawn frames of `real` seconds each, as the frame loop runs them
+    // (game speed and slow motion included); the game seconds that went by
+    frames: function (real, n) {
+      var t0 = GAME.time;
+      for (var i = 0; i < n; i++) runSim(real);
+      return GAME.time - t0;
+    },
     fastForward: function (seconds) {
       if (!GAME.started) GAME.startGame();
       var steps = Math.floor(seconds / STEP);

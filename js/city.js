@@ -1920,6 +1920,13 @@ GAME.city = (function () {
     skyDay.renderOrder = -9;
     celestial.add(skyDay);
     city.skyDay = skyDay;
+    // overcast and fog (weather.js): a plain dome in the fog's colour drawn
+    // over both, as thick as the weather is (main.js applyTimeOfDay)
+    var skyVeil = new THREE.Mesh(new THREE.SphereGeometry(1380, 20, 14), new THREE.MeshBasicMaterial({ color: 0x9aa2ae, side: THREE.BackSide, fog: false, depthWrite: false, transparent: true, opacity: 0 }));
+    skyVeil.renderOrder = -8;
+    skyVeil.visible = false;
+    celestial.add(skyVeil);
+    city.skyVeil = skyVeil;
 
     var starPos = [];
     for (var i = 0; i < 420; i++) {
@@ -1948,8 +1955,9 @@ GAME.city = (function () {
   // df in [0,1]: 0 = deep night, ~0.4 = dusk/sunset, 1 = full day
   city.applyTimeOfDay = function (df) {
     // under rain the sky clouds over: the blue day dome fades toward the grey
-    // the fog has turned, and the stars and the moon go in
-    var wet = GAME.weather ? GAME.weather.rain : 0, clear = 1 - wet;
+    // the fog has turned, and the stars and the moon go in. Cloud with no
+    // rain in it does the same, and so does a fog bank (weather.js)
+    var wet = GAME.weather ? GAME.weather.grey : 0, clear = 1 - wet;
     if (city.sky) city.sky.material.color.setScalar(U.clamp(0.32 + df * 1.1, 0.32, 1) * (1 - 0.45 * wet));
     if (city.skyDay) {
       city.skyDay.material.opacity = U.clamp((df - 0.6) / 0.32, 0, 1);

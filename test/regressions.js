@@ -352,6 +352,11 @@
 //      (the year, the town, the neighbourhoods, Rico's colours, the law)
 //      before she offers to show you around; and it is all to read again
 //      under TELL ME ABOUT COSTA ROSA, following the story.
+//  42. THE REST OF THE CODES — OVERCAST and FOG, as weathers and on the
+//      WEATHER setting; cars that fly and drive on the sea, boats that fly,
+//      only wheels, big wheels, every car pink or black, mad traffic; a town
+//      that hates you, that is armed, that riots, that hops in; you fat,
+//      skinny or in a new outfit; and the whole game faster or slower.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -14131,6 +14136,359 @@ function withTimeout(p, ms) {
     wb.told && wb.told.lola && wb.told.year && wb.told.hoods && wb.told.island && wb.told.gangs && wb.told.law && wb.told.askAgain, JSON.stringify(wb.told));
   check('briefing: TELL ME ABOUT COSTA ROSA has it all to read, part by part, and it follows the story',
     wb.menu && wb.parts === 6 && wb.gangs && wb.back && wb.after, JSON.stringify(wb));
+
+  // ---------- 42: the rest of the cheats, and two more skies ----------
+  // Nineteen more codes for the CHEATS box. Most of them switch a way the
+  // town works and are switched back off by typing them again: cars that
+  // fly, cars on the sea, boats that fly, only the wheels showing, big
+  // wheels, every car pink or black, traffic gone mad, a town that hates
+  // you, a town that is armed, a riot, people who hop into your car, you
+  // fat or skinny, the whole game faster or slower. Two of them are
+  // weathers the game did not have: OVERCAST and FOG, which the WEATHER
+  // setting goes round now too.
+  var sky = await page.evaluate(function () {
+    var r = {}, W = GAME.weather, C = GAME.cheats, ff = function (t) { GAME.test.fastForward(t); };
+    var time0 = GAME.timeMode, pref0 = GAME.prefs.weather;
+    function sat(c) { var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b); return mx ? (mx - mn) / mx : 0; }
+    try {
+      if (GAME.player.inCar) GAME.exitCar();
+      GAME.setTimeMode('day');
+      W.setMode('clear', true); W.testSet(0); W.testSky(0, 0); ff(0.2);
+      var L = GAME.lights, fog = GAME.scene.fog, veil = GAME.city.skyVeil;
+      var base = { dir: L.dir.intensity, far: fog.far, vis: W.visibility(), sat: sat(fog.color) };
+      // overcast: grey, flat, dry
+      r.overcastCode = C.enter('ABITDRIEG');
+      r.overcastMode = W.mode;
+      W.testSky(1, 0); ff(0.2);
+      r.overcast = { dir: +(L.dir.intensity / base.dir).toFixed(2), sat: +sat(fog.color).toFixed(2), sat0: +base.sat.toFixed(2),
+        veil: veil && veil.visible ? +veil.material.opacity.toFixed(2) : 0, rain: W.rain, streaks: W.rain > 0.02 };
+      // fog: it rolls in rather than snapping, then the city ends close by
+      r.fogCode = C.enter('CANTSEEATHING');
+      r.fogMode = W.mode;
+      W.testSky(0, 0); ff(6);
+      r.rolling = +W.mist.toFixed(2);
+      W.testSky(0, 1); ff(0.2);
+      r.fog = { far: Math.round(fog.far), veil: veil && veil.visible ? +veil.material.opacity.toFixed(2) : 0,
+        vis: +(W.visibility() / base.vis).toFixed(2), dir: +(L.dir.intensity / base.dir).toFixed(2) };
+      // the WEATHER setting goes round all five
+      var seen = [];
+      W.setMode('auto', true);
+      for (var i = 0; i < 5; i++) seen.push(W.cycle());
+      r.cycle = seen.join(',');
+      W.setMode('clear', true); W.testSky(0, 0); ff(0.2);
+      r.clearAgain = !(veil && veil.visible) && Math.abs(fog.far - base.far) < 1;
+    } finally {
+      W.setMode('clear', true); W.testSet(0); W.testSky(0, 0);
+      if (pref0 === undefined) delete GAME.prefs.weather; else GAME.prefs.weather = pref0;
+      GAME.setTimeMode(time0);
+      ff(0.2);
+    }
+    return r;
+  });
+  check('weather: ABITDRIEG is OVERCAST — a grey lid and no rain: flat light, a greyer fog, the sky veiled',
+    !!sky.overcastCode && sky.overcastMode === 'overcast' && sky.overcast.dir < 0.7 && sky.overcast.sat < sky.overcast.sat0 &&
+    sky.overcast.veil > 0.4 && sky.overcast.rain === 0, JSON.stringify(sky));
+  check('weather: CANTSEEATHING is FOG — it rolls in, the city ends at about a hundred metres, and people see half as far',
+    !!sky.fogCode && sky.fogMode === 'fog' && sky.rolling > 0.1 && sky.rolling < 0.9 && sky.fog.far <= 120 && sky.fog.veil > 0.9 && sky.fog.vis < 0.6, JSON.stringify(sky));
+  check('weather: the WEATHER setting goes round AUTO, CLEAR, OVERCAST, RAIN and FOG, and back to clear sky',
+    sky.cycle === 'clear,overcast,rain,fog,auto' && sky.clearAgain, JSON.stringify(sky));
+
+  var flyc = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, Cy = GAME.city, A = Cy.airport;
+    var ff = function (t) { GAME.test.fastForward(t); }, key = function (k, d) { GAME.test.pressKey(k, d); };
+    var made = [], cash0 = P.cash;
+    function out() { key('KeyW', false); key('KeyS', false); if (P.inCar) { GAME.test.teleport(-60, 40); GAME.exitCar(); } ff(0.2); }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      // --- COMEFLYWITHME: down the runway with the throttle open, and up
+      r.flyCode = C.enter('COMEFLYWITHME');
+      GAME.test.teleport(A.minX + 40, A.cz); ff(0.2);
+      var car = V.spawnCar('sports', A.minX + 40, A.cz, Math.PI / 2, {}); made.push(car);
+      GAME.seatInCar(car); car.heading = Math.PI / 2; car.speed = 30;
+      key('KeyW');
+      var top = 0;
+      for (var i = 0; i < 180; i++) { ff(1 / 60); top = Math.max(top, car.pos.y); }
+      r.climbed = +top.toFixed(1);
+      r.flying = car.cheatFlight;
+      // off the throttle it glides; on the brake it comes down — and a
+      // flight is not a stunt jump
+      key('KeyW', false); ff(1.5);
+      r.glide = +car.vy.toFixed(1);
+      key('KeyS');
+      for (var j = 0; j < 60 * 12 && car.air; j++) ff(1 / 60);
+      key('KeyS', false); ff(0.3);
+      r.landed = !car.air && !car.cheatFlight && !car.dead;
+      r.unpaid = P.cash === cash0;
+      // typed again, the wings come off: the same run stays on the ground
+      r.flyOff = C.enter('COMEFLYWITHME') && /CHEAT OFF/.test(window.__msgs.slice(-1)[0]);
+      GAME.test.teleport(A.minX + 40, A.cz); car.heading = Math.PI / 2; car.speed = 30;
+      key('KeyW'); ff(1.5); key('KeyW', false);
+      r.groundedOff = car.pos.y < 1 && !car.cheatFlight;
+      out();
+
+      // --- SEAWAYS: out on the open sea in a car, and it drives
+      var sx = 380;
+      while (sx < 700 && !Cy.isOpenWater(sx, 0)) sx += 5;
+      sx += 40;
+      r.seaCode = C.enter('SEAWAYS');
+      var sea = V.spawnCar('sedan', sx, 0, 0, {}); made.push(sea);
+      GAME.seatInCar(sea); sea.heading = 0; sea.speed = 12;
+      key('KeyW');
+      var z0 = sea.pos.z, low = 99;
+      for (var k = 0; k < 180; k++) { ff(1 / 60); low = Math.min(low, sea.pos.y); }
+      key('KeyW', false);
+      r.onSea = !sea.sinking && Cy.isOpenWater(sea.pos.x, sea.pos.z) && sea.pos.z - z0 > 25 && low > -0.6;
+      r.seaRun = { moved: Math.round(sea.pos.z - z0), low: +low.toFixed(2), sinking: sea.sinking };
+      out();
+      // switched off, a car on the water goes under as it always did
+      C.enter('SEAWAYS');
+      var sunk = V.spawnCar('sedan', sx + 20, 30, 0, {}); made.push(sunk);
+      sunk.speed = 5; ff(0.3);
+      r.sinksOff = sunk.sinking;
+
+      // --- AIRSHIP: a boat flat out lifts off; off again, it falls back in.
+      // Out on the open sea south of the airport: the strait off the beach
+      // is the closed channel's edge, where anything flying is turned back
+      var bz = 500;
+      while (bz < 700 && !Cy.isOpenWater(-100, bz)) bz += 5;
+      bz += 40;
+      r.boatCode = C.enter('AIRSHIP');
+      var boat = V.spawnCar('boat', -100, bz, Math.PI / 2, {}); made.push(boat);
+      boat.pos.y = Cy.seaY(-100, bz);
+      GAME.seatInCar(boat); boat.heading = Math.PI / 2; boat.speed = 26;
+      key('KeyW');
+      var btop = 0;
+      for (var b = 0; b < 180; b++) { ff(1 / 60); btop = Math.max(btop, boat.pos.y); }
+      key('KeyW', false);
+      r.boatUp = boat.aloft && btop > 4;
+      r.boatTop = +btop.toFixed(1);
+      C.enter('AIRSHIP');
+      for (var d = 0; d < 60 * 8 && boat.aloft; d++) ff(1 / 60);
+      r.boatDown = !boat.aloft && !boat.dead && Math.abs(boat.pos.y - Cy.seaY(boat.pos.x, boat.pos.z)) < 0.6;
+      out();
+    } finally {
+      key('KeyW', false); key('KeyS', false);
+      if (P.inCar) { GAME.test.teleport(-60, 40); GAME.exitCar(); }
+      if (GAME.stopSwim) GAME.stopSwim();
+      C.testReset();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.test.teleport(-60, 40);
+      P.health = 100; GAME.police.clearWanted();
+      ff(0.3);
+    }
+    return r;
+  });
+  check('cheats: COMEFLYWITHME — floor it and the car takes off; off the throttle it glides, on the brake it lands, and it pays no stunt',
+    !!flyc.flyCode && flyc.climbed > 5 && flyc.flying && flyc.glide < 0 && flyc.glide > -6 && flyc.landed && flyc.unpaid, JSON.stringify(flyc));
+  check('cheats: COMEFLYWITHME typed again puts the cars back on the ground', flyc.flyOff && flyc.groundedOff, JSON.stringify(flyc));
+  check('cheats: SEAWAYS — a car drives out on the sea instead of going under, and does again once it is off',
+    !!flyc.seaCode && flyc.onSea && flyc.sinksOff, JSON.stringify(flyc));
+  check('cheats: AIRSHIP — a boat flat out lifts off the water and flies; switched off, it comes back down onto the sea',
+    !!flyc.boatCode && flyc.boatUp && flyc.boatDown, JSON.stringify(flyc));
+
+  var looks = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); };
+    var made = [];
+    function body(c) { return c.mesh.userData.bodyMesh; }
+    function wheelH(c) {
+      var w = c.mesh.userData.wheels;
+      if (!w) return 0;
+      w.geometry.computeBoundingBox();
+      return +(w.geometry.boundingBox.max.y - w.geometry.boundingBox.min.y).toFixed(2);
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.test.teleport(-60, 40); ff(0.2);
+      var a = V.spawnCar('sedan', -55, 50, 0, {}); made.push(a);
+      // --- WHEELSAREALLINEED: on every car there is, and every one made after
+      r.wheelsCode = C.enter('WHEELSAREALLINEED');
+      var b = V.spawnCar('taxi', -50, 50, 0, {}); made.push(b);
+      var bike = V.spawnCar('motorcycle', -45, 50, 0, {}); made.push(bike);
+      r.only = [a, b, bike].every(function (c) { var w = c.mesh.userData.wheels; return !!w && w.visible && !body(c).visible; });
+      C.enter('WHEELSAREALLINEED');
+      r.back = [a, b].every(function (c) { return body(c).visible && !c.mesh.userData.wheels; }) && body(bike).visible;
+      // --- LOADSOFLITTLETHINGS: wheels near twice the height, the car up on them
+      r.h0 = (C.enter('WHEELSAREALLINEED'), wheelH(a)); C.enter('WHEELSAREALLINEED');
+      r.bigCode = C.enter('LOADSOFLITTLETHINGS');
+      r.h1 = wheelH(a);
+      r.lift = +body(a).position.y.toFixed(2);
+      r.bikeK = +bike.mesh.userData.wheels.scale.y.toFixed(2);
+      C.enter('LOADSOFLITTLETHINGS');
+      r.small = !a.mesh.userData.wheels && body(a).position.y === 0 && bike.mesh.userData.wheels.scale.y === 1;
+      // --- AHAIRDRESSERSCAR / IWANTITPAINTEDBLACK: every car, and every new one;
+      // a colour that means something is kept
+      var own = V.spawnCar('sedan', -40, 50, 0, { color: 0x7a3ad8 }); made.push(own);
+      r.pinkCode = C.enter('AHAIRDRESSERSCAR');
+      var c2 = V.spawnCar('van', -35, 50, 0, {}); made.push(c2);
+      var PINK = 0xff5fae, BLACK = 0x141418;
+      r.pink = [a, b, bike, c2].every(function (c) { return c.color === PINK; }) && own.color === 0x7a3ad8;
+      r.pinkAll = GAME.world.cars.every(function (c) { return c.dead || c.ownPaint || c.spec.plane || c.spec.heli || c.spec.tank || c.color === PINK; });
+      r.blackCode = C.enter('IWANTITPAINTEDBLACK');
+      r.black = [a, b, c2].every(function (c) { return c.color === BLACK; });
+      C.enter('IWANTITPAINTEDBLACK');
+      r.own = [a, b, c2].every(function (c) { return c.color === c.factoryColor && c.color !== BLACK; });
+    } finally {
+      C.testReset();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      ff(0.2);
+    }
+    return r;
+  });
+  check('cheats: WHEELSAREALLINEED — only the wheels show, on every car and on every one made after; typed again, the bodywork is back',
+    !!looks.wheelsCode && looks.only && looks.back, JSON.stringify(looks));
+  check('cheats: LOADSOFLITTLETHINGS — wheels near twice the size with the car up on them, and back to size',
+    !!looks.bigCode && looks.h1 > looks.h0 * 1.6 && looks.lift > 0.15 && looks.bikeK > 1.3 && looks.small, JSON.stringify(looks));
+  check('cheats: AHAIRDRESSERSCAR and IWANTITPAINTEDBLACK paint every car pink or black — a side\'s or a job\'s colour kept — and back',
+    !!looks.pinkCode && looks.pink && looks.pinkAll && !!looks.blackCode && looks.black && looks.own, JSON.stringify(looks));
+
+  var mad = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); };
+    var made = [];
+    function clear(x, z, rad) {
+      GAME.world.cars.slice().forEach(function (c) { if (c !== P.car && Math.hypot(c.pos.x - x, c.pos.z - z) < rad) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - x, p.pos.z - z) < rad) GAME.peds.removePed(p); });
+    }
+    function run() {
+      clear(-150, -150, 160);
+      var car = V.spawnCar('sedan', -150 + 3.1, -230, 0, { occupied: 'ai', ai: { mode: 'traffic', desired: 11, laneX: 0, laneZ: 0 } });
+      made.push(car);
+      var top = 0;
+      for (var i = 0; i < 60 * 6; i++) { ff(1 / 60); top = Math.max(top, car.speed); }
+      V.removeCar(car);
+      return +top.toFixed(1);
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.test.teleport(-150 + 9, -150); ff(0.2);
+      r.calm = run();
+      r.code = C.enter('MIAMITRAFFIC');
+      r.mad = run();
+      C.enter('MIAMITRAFFIC');
+      r.alias = !!C.enter('MAYHEMTRAFFIC') && GAME.cheatOn.madTraffic;
+    } finally {
+      C.testReset();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.test.teleport(-60, 40); ff(0.2);
+    }
+    return r;
+  });
+  check('cheats: MIAMITRAFFIC (or MAYHEMTRAFFIC) — the traffic drives like it is late for something',
+    !!mad.code && mad.mad > mad.calm * 1.35 && mad.alias, JSON.stringify(mad));
+
+  var crowd = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); };
+    var made = [], peds = [];
+    function clear(x, z, rad) {
+      GAME.world.cars.slice().forEach(function (c) { if (c !== P.car && Math.hypot(c.pos.x - x, c.pos.z - z) < rad) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - x, p.pos.z - z) < rad) GAME.peds.removePed(p); });
+    }
+    function put(dx, dz) {
+      var p = GAME.peds.spawnPed(P.pos.x + dx, P.pos.z + dz);
+      p.state = 'walk'; p.wpX = p.pos.x; p.wpZ = p.pos.z; p.wpT = 30;
+      peds.push(p);
+      return p;
+    }
+    function done() { peds.forEach(function (p) { if (!p.gone) GAME.peds.removePed(p); }); peds = []; }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.godMode = true;
+      GAME.test.teleport(-60, 40); ff(0.2);
+      clear(-60, 40, 120);
+      // --- NOBODYLIKESME: everybody near comes for you
+      r.hateCode = C.enter('NOBODYLIKESME');
+      var h = [put(9, 0), put(-8, 4), put(0, 11)];
+      ff(1.2);
+      r.hate = h.filter(function (p) { return p.state === 'attack' && (!p.foe || p.foe.kind === 'player'); }).length;
+      C.enter('NOBODYLIKESME'); done(); ff(0.2);
+      // --- OURGODGIVENRIGHTTOBEARARMS: everybody carrying, a pistol in hand
+      r.armedCode = C.enter('OURGODGIVENRIGHTTOBEARARMS');
+      var g = [put(14, 0), put(-14, 3)];
+      ff(0.7);
+      r.armed = g.filter(function (p) { var gun = p.mesh.userData.cheatGun; return p.carrying && gun && gun.parent === p.mesh.userData.joints.armR; }).length;
+      C.enter('OURGODGIVENRIGHTTOBEARARMS');
+      r.disarmed = g.every(function (p) { return !p.mesh.userData.cheatGun && !p.carrying; });
+      done(); ff(0.2);
+      // --- FIGHTFIGHTFIGHT: a riot, with the city's own knob at OFF
+      r.chaos = GAME.chaos.level;
+      r.riotCode = C.enter('FIGHTFIGHTFIGHT');
+      var f = [put(30, 0), put(32, 1), put(30, 3), put(33, 3)];
+      ff(1.2);
+      r.riot = f.filter(function (p) { return p.state === 'attack' && p.foe && p.foe.kind === 'ped'; }).length;
+      // and it is not called off: with the city at OFF a fight between two
+      // strangers is ended before a punch lands; here they land
+      ff(3);
+      r.riotHurt = f.filter(function (p) { return p.dead || p.hp < 30; }).length;
+      C.enter('FIGHTFIGHTFIGHT'); done(); ff(0.2);
+      // --- HOPINGIRL: stop, and somebody walks over and gets in; they get
+      // out at your next stop
+      var car = V.spawnCar('sedan', P.pos.x + 3, P.pos.z, 0, {}); made.push(car);
+      GAME.seatInCar(car); car.speed = 0;
+      r.hopCode = C.enter('HOPINGIRL');
+      var walker = put(10, 6), look = walker.look;
+      for (var i = 0; i < 60 * 12 && !(C.passenger && C.passenger.aboard); i++) ff(1 / 60);
+      r.aboard = !!(C.passenger && C.passenger.aboard) && walker.gone && C.passenger.look === look;
+      for (var j = 0; j < 60 * 12 && C.passenger; j++) ff(1 / 60);
+      r.outAgain = !C.passenger && GAME.world.peds.some(function (p) {
+        return !p.dead && p.look && p.look.shirt === look.shirt && p.look.skin === look.skin && Math.hypot(p.pos.x - car.pos.x, p.pos.z - car.pos.z) < 5;
+      });
+      C.enter('HOPINGIRL');
+    } finally {
+      C.testReset();
+      done();
+      if (P.inCar) GAME.exitCar();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop && Math.hypot(p.pos.x + 60, p.pos.z - 40) < 40) GAME.peds.removePed(p); });
+      GAME.godMode = false; P.health = 100; GAME.police.clearWanted();
+      ff(0.3);
+    }
+    return r;
+  });
+  check('cheats: NOBODYLIKESME — everybody near comes for you', !!crowd.hateCode && crowd.hate === 3, JSON.stringify(crowd));
+  check('cheats: OURGODGIVENRIGHTTOBEARARMS — everybody carries, a pistol in the hand; typed again, guns away',
+    !!crowd.armedCode && crowd.armed === 2 && crowd.disarmed, JSON.stringify(crowd));
+  check('cheats: FIGHTFIGHTFIGHT — a riot, people squaring up to each other even with the city switched OFF',
+    !!crowd.riotCode && crowd.chaos === 0 && crowd.riot >= 3 && crowd.riotHurt >= 2, JSON.stringify(crowd));
+  check('cheats: HOPINGIRL — stop, somebody walks over and gets in, and gets out again at your next stop',
+    !!crowd.hopCode && crowd.aboard && crowd.outAgain, JSON.stringify(crowd));
+
+  var you = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, j = P.mesh.userData.joints;
+    var o0 = JSON.stringify(GAME.prefs.outfit || {});
+    try {
+      if (P.inCar) GAME.exitCar();
+      // --- STILLLIKEDRESSINGUP: a new look off the racks
+      var shirt0 = j.torso.material.color.getHex();
+      r.dressCode = C.enter('STILLLIKEDRESSINGUP');
+      r.dressed = JSON.stringify(GAME.prefs.outfit) !== o0 && j.torso.material.color.getHex() !== shirt0;
+      // --- DEEPFRIEDMARSBARS / PROGRAMMER
+      r.fatCode = C.enter('DEEPFRIEDMARSBARS');
+      r.fat = { torso: +j.torso.scale.x.toFixed(2), leg: +j.legL.scale.x.toFixed(2) };
+      r.thinCode = C.enter('PROGRAMMER');
+      r.thin = { torso: +j.torso.scale.x.toFixed(2), arm: +j.armR.scale.x.toFixed(2) };
+      C.enter('PROGRAMMER');
+      r.normal = j.torso.scale.x === 1 && j.armR.scale.x === 1 && j.armR.position.x === 0.3;
+      // --- ONSPEED / BOOOOOORING: a second of frames, the game seconds it ran
+      r.base = +GAME.test.frames(1 / 60, 60).toFixed(2);
+      r.fastCode = C.enter('ONSPEED');
+      r.fast = +GAME.test.frames(1 / 60, 60).toFixed(2);
+      r.slowCode = C.enter('BOOOOOORING');
+      r.slow = +GAME.test.frames(1 / 60, 60).toFixed(2);
+      C.enter('BOOOOOORING');
+      r.again = +GAME.test.frames(1 / 60, 60).toFixed(2);
+    } finally {
+      C.testReset();
+      GAME.prefs.outfit = JSON.parse(o0);
+      GAME.shops.applyOutfit();
+      GAME.test.fastForward(0.2);
+    }
+    return r;
+  });
+  check('cheats: STILLLIKEDRESSINGUP — a new look off the racks', !!you.dressCode && you.dressed, JSON.stringify(you));
+  check('cheats: DEEPFRIEDMARSBARS and PROGRAMMER — heavier, slighter, and typed again your old self',
+    !!you.fatCode && you.fat.torso > 1.3 && you.fat.leg > 1.3 && !!you.thinCode && you.thin.torso < 0.8 && you.thin.arm < 0.7 && you.normal, JSON.stringify(you));
+  check('cheats: ONSPEED runs the whole game faster, BOOOOOORING slower, and typed again it is back to time',
+    !!you.fastCode && !!you.slowCode && Math.abs(you.base - 1) < 0.05 && Math.abs(you.fast - 1.5) < 0.05 && Math.abs(you.slow - 0.5) < 0.05 && Math.abs(you.again - 1) < 0.05, JSON.stringify(you));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

@@ -42,6 +42,7 @@ Every action, on all three: keyboard and mouse, a controller (standard layout �
 | Plane: barrel roll (left / right) | `Q` / `E` | LB / RB | ⟲ / ⟳ |
 | Get out · bail out (a chute, up high) | `F` | Y | EXIT |
 | Steer the parachute | `W A S D` | left stick | stick |
+| A car or boat with wings (the `COMEFLYWITHME` and `AIRSHIP` cheats): climb · glide · dive | hold `W` · let go · `S` | RT · let go · LT | GAS · let go · BRAKE |
 
 A plane rolls down the runway on throttle and climbs once it's fast; airborne, the elevator is unrestricted — pull hard enough and it loops.
 

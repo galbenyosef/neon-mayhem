@@ -398,7 +398,7 @@ GAME.arsenal = (function () {
     if (P.inCar || P.state !== 'alive' || P.swimming || P.interior) { if (wheelOpen) closeWheel(false); held = false; return; }
     if (down) {
       if (!held) { held = true; holdT = 0; }
-      holdT += dt / Math.max(0.05, GAME.timeScale);
+      holdT += dt / Math.max(0.05, GAME.timeScale * GAME.gameSpeed);
       if (!wheelOpen && holdT > HOLD) openWheel();
     } else if (held) {
       held = false;

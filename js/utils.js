@@ -1,6 +1,15 @@
 window.GAME = {
   time: 0,
   timeScale: 1,
+  // how fast the whole game runs, on top of any slow motion: the cheat box's
+  // ONSPEED and BOOOOOORING (cheats.js), read by the frame loop (main.js)
+  gameSpeed: 1,
+  // what the cheat box has switched on, read where each one bites
+  cheatOn: {
+    flyCars: false, seaWays: false, flyBoats: false,     // vehicles.js
+    wheelsOnly: false, bigWheels: false, paint: null, madTraffic: false,
+    hateYou: false, armed: false, riot: false, hopIn: false   // peds.js, cheats.js
+  },
   started: false,
   paused: false,
   isTouch: false,
