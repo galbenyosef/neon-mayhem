@@ -1921,8 +1921,12 @@ GAME.city = (function () {
     celestial.add(skyDay);
     city.skyDay = skyDay;
     // overcast and fog (weather.js): a plain dome in the fog's colour drawn
-    // over both, as thick as the weather is (main.js applyTimeOfDay)
-    var skyVeil = new THREE.Mesh(new THREE.SphereGeometry(1380, 20, 14), new THREE.MeshBasicMaterial({ color: 0x9aa2ae, side: THREE.BackSide, fog: false, depthWrite: false, transparent: true, opacity: 0 }));
+    // over both, as thick as the weather is (main.js applyTimeOfDay). It is
+    // the day dome's own sphere a little smaller: hidden in fine weather, a
+    // sphere of its own would never reach the GPU and so never let go of
+    // its vertices (releaseStatic)
+    var skyVeil = new THREE.Mesh(skyDay.geometry, new THREE.MeshBasicMaterial({ color: 0x9aa2ae, side: THREE.BackSide, fog: false, depthWrite: false, transparent: true, opacity: 0 }));
+    skyVeil.scale.setScalar(1380 / 1390);
     skyVeil.renderOrder = -8;
     skyVeil.visible = false;
     celestial.add(skyVeil);

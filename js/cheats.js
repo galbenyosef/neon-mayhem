@@ -179,7 +179,7 @@ GAME.cheats = (function () {
   // comes for you (NOBODYLIKESME), and who squares up to whoever is nearest
   // (FIGHTFIGHTFIGHT). Not the law, and not anybody a job has a part for.
   var scanT = 0;
-  function arm(p) {
+  function armPed(p) {
     var ud = p.mesh.userData;
     if (ud.cheatGun) return;
     if (!p.carrying) { p.carrying = true; ud.cheatCarry = true; }
@@ -207,7 +207,7 @@ GAME.cheats = (function () {
     for (var i = 0; i < peds.length; i++) {
       var p = peds[i];
       if (!about(p)) continue;
-      if (on.armed) arm(p);
+      if (on.armed) armPed(p);
       if (hop && hop.ped === p) continue;
       var calm = p.state === 'walk' || p.state === 'idle' || p.state === 'flee';
       var d2 = U.dist2(p.pos.x, p.pos.z, f.x, f.z);
