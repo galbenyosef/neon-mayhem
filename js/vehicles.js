@@ -1413,6 +1413,7 @@ GAME.vehicles = (function () {
   // rammed by the player: the share of drivers who get out to have it out
   // with you rather than getting away from you
   var RAM_CONFRONT = 0.35;
+  var TANK_POP = 4;            // closing speed, m/s, past which a tank pops what it meets (collideCars)
   var PLAYER_BIKE_KNOCK = 9;   // what a wall takes to throw you (collideStatic)
   function knockOffRider(bike, other, rel) {
     var d = throwRider(bike);
@@ -1584,6 +1585,28 @@ GAME.vehicles = (function () {
         b.pos.x += nx * overlap / 2; b.pos.z += nz * overlap / 2;
         var avx = a.vx || 0, avz = a.vz || 0, bvx = b.vx || 0, bvz = b.vz || 0;
         var rel = (avx - bvx) * nx + (avz - bvz) * nz;
+        // A tank is not a thing to crash into. Whatever meets one at more than
+        // a crawl — driven into it, or driven over by it — goes up there and
+        // then, yours included (army.js grinds down what it only leans on).
+        // A dent and a bounce off sixty tonnes read as a toy.
+        // The closing speed is the struck vehicle's own way on, and the tank's
+        // only while somebody is driving it: a tank shoved about by the wreck
+        // in front of it is not ramming anything, and a vehicle standing still
+        // is not stepped, so it keeps whatever velocity it last had.
+        var tank = a.spec.tank ? a : b.spec.tank ? b : null, struck = tank === a ? b : a;
+        var closing = 0;
+        if (tank && !struck.spec.tank && !struck.dead) {
+          var sGo = Math.abs(struck.speed) > 0.3 || struck.air ? 1 : 0;
+          var tGo = Math.abs(tank.speed) > 0.3 && (tank.occupied === 'ai' || tank === GAME.player.car) ? 1 : 0;
+          var toward = struck === a ? 1 : -1;   // (n points from a to b)
+          closing = (((struck.vx || 0) * sGo - (tank.vx || 0) * tGo) * nx + ((struck.vz || 0) * sGo - (tank.vz || 0) * tGo) * nz) * toward;
+        }
+        if (closing > TANK_POP) {
+          var pt = GAME.player;
+          explodeCar(struck, 'tank', pt.inCar && (pt.car === tank || pt.car === struck));
+          if (pt.inCar && (pt.car === tank || pt.car === struck)) GAME.cameraShake = 1;
+          continue;
+        }
         // a rider takes the hit in person, whichever side of it they were on
         // — before the damage below, which can blow the bike up under them
         // (on a bike: a boat's helmsman is braced at the wheel, and two

@@ -299,7 +299,7 @@
 //  20. THE TOP END    — a sixth star and the army; a tank you can take,
 //      whose cannon and tracks work for you; cruisers that ram, PIT, box.
 //  21. CHEATS         — every code a card in the CHEATS list, off the
-//      pause screen, the ` key or the 🕹 by the radar: picked, it runs and
+//      pause screen, the ` key or the CHEATS button by the radar: picked, it runs and
 //      the game goes on; typing narrows it; a pad walks it, and in play a
 //      code's eight-press combo works on its own.
 //  22. LANDMARKS      — a club, a stadium, a film lot and a villa, solid,
@@ -359,6 +359,9 @@
 //      only wheels, big wheels, every car pink or black, mad traffic; a town
 //      that hates you, that is armed, that riots, that hops in; you fat,
 //      skinny or in a new outfit; and the whole game faster or slower.
+//  43. A TANK, AN EMPTY ALBUM, A BUTTON — what meets a tank at more than a
+//      crawl goes up on the spot; an empty PHOTOS album says so big; the
+//      cheats button is drawn, and says CHEATS and its key.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -4636,8 +4639,8 @@ function withTimeout(p, ms) {
   // in view of the door: the flat still is, but the condo's bedroom is
   // through a door at the back, and the villa is two storeys — a hall under
   // a double-height ceiling, the kitchen under the gallery, and stairs up to
-  // the bedroom. And the ice cream truck's horn is its chimes, as in Vice
-  // City: nobody comes to the hatch who has not heard them.
+  // the bedroom. And the ice cream truck's horn is its chimes: nobody comes
+  // to the hatch who has not heard them.
   var homes5k = await page.evaluate(function () {
     var P = GAME.player, I = GAME.interiors, S = GAME.shops, r = {};
     var owned0 = (GAME.prefs.safehouses || []).slice(), last0 = GAME.prefs.lastHome, cash0 = P.cash;
@@ -11953,7 +11956,7 @@ function withTimeout(p, ms) {
       var k = cb.getBoundingClientRect(), c = cam.getBoundingClientRect(), l = lb.getBoundingClientRect(), f = fsb.getBoundingClientRect(), m = mm.getBoundingClientRect();
       r.inRow = Math.abs(k.top - c.top) < 4 && k.left > c.left && k.top < m.bottom;
       r.apart = !overlap(k, c) && !overlap(k, l) && !overlap(k, f);
-      r.hit = document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2) === cb;
+      r.hit = cb.contains(document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2));
       var t = new Touch({ identifier: 44, target: cb, clientX: k.left + 5, clientY: k.top + 5 });
       cb.dispatchEvent(new TouchEvent('touchstart', { touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true }));
       cb.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t], targetTouches: [], bubbles: true, cancelable: true }));
@@ -13025,7 +13028,7 @@ function withTimeout(p, ms) {
 
   // ---------- 21: cheats ----------
   // Every code, a card in the CHEATS list to pick — off the pause screen,
-  // the ` key, or the 🕹 by the radar. Picking one runs it, closes the list
+  // the ` key, or the CHEATS button by the radar. Picking one runs it, closes the list
   // and carries on with the game. On a keyboard typing narrows the list (the
   // code words still work); on a pad the D-pad walks it and A picks, and in
   // play each code has an eight-press combo of its own.
@@ -13067,6 +13070,8 @@ function withTimeout(p, ms) {
       r.up = !!C.enter('YOUWONTTAKEMEALIVE') && GAME.police.wanted === 2;
       r.clear = !!C.enter('LEAVEMEALONE') && GAME.police.wanted === 0;
       r.rain = !!C.enter('CATSANDDOGS') && GAME.weather.mode === 'rain';
+      // a sky is a switch too: picked again it goes back to AUTO
+      r.rainOff = !!C.enter('CATSANDDOGS') && GAME.weather.mode === 'auto' && /CHEAT OFF/.test(window.__msgs.slice(-1)[0]);
       C.enter('ALOVELYDAY');
       r.notACode = C.enter('NOTACHEAT') === null;
       r.count = C.codes().length;
@@ -13145,10 +13150,10 @@ function withTimeout(p, ms) {
       combo.slice(1).forEach(function (t) { C.padPress(BTN[t]); });
       r.sevenNothing = GAME.police.wanted === 2;
       GAME.police.clearWanted();
-      // the 🕹 by the radar, in play
+      // the CHEATS button over the radar, in play
       var btn = document.getElementById('cheat-btn'), b = btn.getBoundingClientRect(), mm = document.getElementById('minimap-wrap').getBoundingClientRect();
-      r.btnShown = getComputedStyle(btn).display !== 'none' && b.width > 20 && b.bottom <= mm.top + 20 && b.left >= mm.left && b.right <= mm.right + 40 &&
-        document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === btn;
+      r.btnShown = getComputedStyle(btn).display !== 'none' && b.width > 20 && b.bottom <= mm.top + 20 && b.left >= mm.left - 2 && b.right <= mm.right + 40 &&
+        btn.contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2));
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       r.btnOpens = C.isOpen;
       C.close(false);
@@ -13170,12 +13175,13 @@ function withTimeout(p, ms) {
   check('cheats: armour, a tank beside you, the stars up and off, the weather; a word that is not a code does nothing',
     cheat.armour && cheat.panzer && cheat.up && cheat.clear && cheat.rain && cheat.notACode && cheat.count >= 39, JSON.stringify(cheat));
   check('cheats: a switch that is on shows ON in the list', cheat.onShown, JSON.stringify(cheat));
+  check('cheats: a weather picked again goes back to AUTO', cheat.rainOff, JSON.stringify(cheat));
   check('cheats: ` puts the list up from play, and the hint bar says so', typed.open && typed.hint, JSON.stringify(typed));
   check('cheats: typing narrows the list, Enter picks — the code words still work', typed.shown.length === 1 && typed.shown[0] === 'NUTTERTOOLS' && typed.nutter && typed.closed, JSON.stringify(typed));
   check('cheats: ` again puts it away', typed.toggles, JSON.stringify(typed));
   check('cheats: on a pad the D-pad walks the list, A picks, B backs out', padc.walks && padc.aPicks && padc.down && padc.backOut, JSON.stringify(padc));
   check('cheats: in play, a code\'s eight-press combo on the pad works on its own (and seven do not)', padc.combo && padc.sevenNothing, JSON.stringify(padc));
-  check('cheats: the 🕹 off the radar\'s corner opens the list', padc.btnShown && padc.btnOpens && padc.btnBack, JSON.stringify(padc));
+  check('cheats: the CHEATS button over the radar opens the list', padc.btnShown && padc.btnOpens && padc.btnBack, JSON.stringify(padc));
 
   // ---------- 22: landmarks ----------
   // One a district, on a lot the blocks left empty: THE NEON TIDE on the strip,
@@ -14622,6 +14628,81 @@ function withTimeout(p, ms) {
     !!you.fatCode && you.fat.torso > 1.3 && you.fat.leg > 1.3 && !!you.thinCode && you.thin.torso < 0.8 && you.thin.arm < 0.7 && you.normal, JSON.stringify(you));
   check('cheats: ONSPEED runs the whole game faster, BOOOOOORING slower, and typed again it is back to time',
     !!you.fastCode && !!you.slowCode && Math.abs(you.base - 1) < 0.05 && Math.abs(you.fast - 1.5) < 0.05 && Math.abs(you.slow - 0.5) < 0.05 && Math.abs(you.again - 1) < 0.05, JSON.stringify(you));
+
+  // ---------- 43: a tank, an empty album, and the cheats button ----------
+  // Driven into a tank, a car only dented itself and bounced off sixty
+  // tonnes; now anything that meets one at more than a crawl goes up on the
+  // spot, whichever of the two was moving. An empty PHOTOS album said so in
+  // the small print. And the cheats button over the radar was an emoji that
+  // came out a dark smudge without a colour emoji font: now it is drawn, and
+  // says CHEATS and its key.
+  var tk = await page.evaluate(function () {
+    var r = {}, P = GAME.player, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); }, made = [];
+    function clear(x, z, rad) {
+      GAME.world.cars.slice().forEach(function (c) { if (c !== P.car && Math.hypot(c.pos.x - x, c.pos.z - z) < rad) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - x, p.pos.z - z) < rad) GAME.peds.removePed(p); });
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.godMode = true;
+      var x = -150 + 3.1, z = -260;
+      GAME.test.teleport(x + 25, z); ff(0.2);
+      clear(x, z, 80);
+      // --- a car driven into a standing tank goes up there and then
+      var tank = V.spawnCar('tank', x, z, 0, {}); made.push(tank);
+      var car = V.spawnCar('sedan', x, z - 14, 0, { occupied: 'ai' }); made.push(car);
+      car.ai = null; car.speed = 12; car.heading = 0;
+      var hp0 = car.hp, frames = 0;
+      for (var i = 0; i < 90 && !car.dead; i++) { car.speed = Math.max(car.speed, 12); ff(1 / 60); frames++; }
+      r.rammed = { dead: car.dead, frames: frames, hp0: Math.round(hp0), tankHp: Math.round(tank.hp / tank.spec.hp * 100) };
+      // --- and one a moving tank drives into
+      var parked = V.spawnCar('van', x, z + 12, 0, {}); made.push(parked);
+      tank.heading = 0; tank.speed = 8;
+      GAME.seatInCar(tank);
+      var tf = 0;
+      for (var k = 0; k < 120 && !parked.dead; k++) { tank.speed = 8; ff(1 / 60); tf++; }
+      r.driven = { dead: parked.dead, frames: tf };
+      GAME.exitCar(); tank.speed = 0; ff(0.3);
+      // --- a nudge at walking pace is only a nudge (the wrecks cleared away)
+      [car, parked].forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      var nudge = V.spawnCar('sedan', x, tank.pos.z - 9, 0, {}); made.push(nudge);
+      nudge.speed = 2.5;
+      for (var n = 0; n < 120; n++) { nudge.speed = Math.max(nudge.speed, 2.5); ff(1 / 60); }
+      r.nudge = { dead: nudge.dead, hp: Math.round(nudge.hp / nudge.spec.hp * 100) };
+    } finally {
+      if (P.inCar) GAME.exitCar();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.godMode = false; P.health = 100; GAME.police.clearWanted();
+      GAME.test.teleport(-60, 40); ff(0.5);
+    }
+    return r;
+  });
+  check('tank: a car driven into a tank goes up on the spot', tk.rammed.dead && tk.rammed.frames < 75, JSON.stringify(tk));
+  check('tank: and so does one a moving tank drives into', tk.driven.dead && tk.driven.frames < 100, JSON.stringify(tk));
+  check('tank: a nudge at walking pace is only a nudge', !tk.nudge.dead, JSON.stringify(tk));
+
+  var ui43 = await page.evaluate(function () {
+    var r = {}, Ph = GAME.photo;
+    // --- the empty album says so, big
+    var kept = Ph.album().splice(0);
+    try {
+      Ph.open();
+      var em = document.getElementById('photo-empty'), big = em.querySelector('.pe-big'), sub = em.querySelector('.pe-sub');
+      r.album = { shown: getComputedStyle(em).display !== 'none', big: parseFloat(getComputedStyle(big).fontSize), sub: parseFloat(getComputedStyle(sub).fontSize),
+        says: big.textContent + ' | ' + sub.textContent };
+      Ph.close();
+    } finally {
+      Array.prototype.push.apply(Ph.album(), kept);
+      Ph.open(); Ph.close();
+    }
+    // --- the cheats button: drawn, labelled, its key on it
+    var b = document.getElementById('cheat-btn'), rc = b.getBoundingClientRect(), mm = document.getElementById('minimap-wrap').getBoundingClientRect();
+    r.btn = { svg: !!b.querySelector('svg'), label: b.textContent.replace(/\s+/g, ' ').trim(), above: rc.bottom <= mm.top + 2 && rc.left >= mm.left - 2 && rc.right <= mm.right,
+      hit: document.elementFromPoint(rc.left + rc.width / 2, rc.top + rc.height / 2) === b || b.contains(document.elementFromPoint(rc.left + rc.width / 2, rc.top + rc.height / 2)) };
+    return r;
+  });
+  check('photos: an empty album says so in big type, and how to take one', ui43.album.shown && ui43.album.big >= 26 && ui43.album.sub >= 16 && /No photos yet/.test(ui43.album.says) && /Press C/.test(ui43.album.says), JSON.stringify(ui43.album));
+  check('cheats: the button over the radar is drawn, and says CHEATS and its key', ui43.btn.svg && /CHEATS/.test(ui43.btn.label) && /`/.test(ui43.btn.label) && ui43.btn.above && ui43.btn.hit, JSON.stringify(ui43.btn));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

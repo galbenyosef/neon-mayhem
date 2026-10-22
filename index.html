@@ -103,12 +103,22 @@
   @media (max-width:520px) { .cgrid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); } .ccard .cp { display:none; }
     .ccard .cc { font-size:9.5px; letter-spacing:.5px; } .ccard .ci { font-size:19px; flex-basis:22px; } #cheat-card { padding:10px 8px 8px; } }
   @media (max-height:520px) { .ccard .cw { display:none; } #cheat-card { max-height:calc(100vh - 16px); } #cheat-box { padding:8px; } }
-  /* the way in from play: a button off the radar's corner (on a touchscreen,
-     in the row beside the radar: touch.js) */
-  #cheat-btn { position:fixed; left:calc(176px + env(safe-area-inset-left,0px)); bottom:calc(176px + env(safe-area-inset-bottom,0px)); z-index:16; width:36px; height:36px;
-    border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:18px;
-    background:rgba(8,4,20,.55); border:1px solid rgba(255,79,163,.45); text-shadow:0 0 8px rgba(255,79,163,.7); -webkit-tap-highlight-color:transparent; }
+  /* the way in from play: a labelled button over the radar, saying what it is
+     and its key (on a touchscreen, the joystick alone in the row beside the
+     radar: touch.js). The joystick is drawn, not an emoji: as a font's glyph
+     it came out a dark smudge where there is no colour emoji to draw it */
+  #cheat-btn { position:fixed; left:calc(14px + env(safe-area-inset-left,0px)); bottom:calc(202px + env(safe-area-inset-bottom,0px)); z-index:16; height:30px;
+    box-sizing:border-box; padding:0 10px 0 7px; gap:7px; border-radius:15px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:rgba(8,4,20,.72); border:1px solid rgba(255,79,163,.7); box-shadow:0 0 10px rgba(255,79,163,.35);
+    font:900 11.5px 'Segoe UI', Arial, sans-serif; letter-spacing:2px; color:#ffe8f6; -webkit-tap-highlight-color:transparent; user-select:none; }
+  #cheat-btn:hover { border-color:#ff4fa3; box-shadow:0 0 14px rgba(255,79,163,.6); }
   #cheat-btn:active { background:rgba(255,79,163,.3); }
+  #cheat-btn svg { width:20px; height:20px; flex:0 0 auto; }
+  #cheat-btn .cb-key { font:800 10.5px Consolas, 'Courier New', monospace; letter-spacing:0; color:#8dffd8; border:1px solid rgba(141,255,216,.55);
+    border-radius:4px; padding:0 5px; line-height:15px; }
+  #cheat-btn.icon { padding:0; border-radius:10px; }
+  #cheat-btn.icon .cb-label, #cheat-btn.icon .cb-key { display:none; }
+  #cheat-btn.icon svg { width:26px; height:26px; }
   /* while the list is up the pause screen under it keeps out of sight */
   body.cheats-up #pause-screen { visibility:hidden; }
   /* down the sniper's scope */
@@ -471,7 +481,10 @@
   #photo-album { position:fixed; inset:0; z-index:38; display:none; align-items:center; justify-content:safe center;
     flex-direction:column; background:#08040f; overflow-y:auto; padding:14px 10px; color:#cfe6ff; }
   #photo-album h2 { margin:4px 0 4px; color:#ffd27a; letter-spacing:4px; font-style:italic; }
-  #photo-empty { font-size:14px; color:#9fb0c8; margin:18px 0; }
+  /* an empty album says so big, not in the small print */
+  #photo-empty { margin:40px 0 34px; text-align:center; }
+  #photo-empty .pe-big { font-size:30px; font-weight:900; font-style:italic; letter-spacing:2px; color:#ffd27a; text-shadow:0 0 14px rgba(255,180,80,.45); }
+  #photo-empty .pe-sub { font-size:17px; color:#cfe6ff; margin-top:10px; }
   #photo-grid { display:flex; flex-wrap:wrap; justify-content:center; gap:14px; width:min(94vw,900px); margin:10px 0; }
   .ph-card { position:relative; width:190px; background:#f4efe4; padding:6px 6px 8px; border-radius:3px; box-shadow:0 4px 14px rgba(0,0,0,.5); cursor:pointer; }
   .ph-card img { display:block; width:100%; height:auto; }
@@ -710,7 +723,7 @@
   <div id="cheat-head"><div id="cheat-title">🕹 CHEATS</div><div id="cheat-sub"></div><div id="cheat-find"></div></div>
   <div id="cheat-list"></div>
   <div id="cheat-foot"><div id="cheat-keys"></div><span class="mbtn" id="cheat-close">CLOSE</span></div></div></div>
-<div id="cheat-btn" title="Cheats">🕹</div>
+<div id="cheat-btn" title="Cheats"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="15" width="19" height="6.5" rx="3.2" fill="#ff4fa3"/><rect x="5" y="17" width="3.2" height="2.4" rx="1.2" fill="#ffe8f6"/><rect x="10.9" y="7.5" width="2.6" height="9" rx="1.2" fill="#9df3ff"/><circle cx="12.2" cy="6.2" r="3.9" fill="#ffe14f"/><circle cx="11" cy="5" r="1.2" fill="#fff7c8"/></svg><span class="cb-label">CHEATS</span><span class="cb-key">`</span></div>
 <div id="cine"><div class="cine-bar cine-top"></div><div class="cine-bar cine-bot"><span id="cine-photo">📷</span><span id="cine-skip"></span></div><div id="scene-sub"><div id="scene-face"></div><div id="scene-words"><div id="scene-name"></div><div id="scene-text"></div></div></div></div>
 <div id="photo-toast"><img id="photo-toast-img" alt=""><div id="photo-toast-text"></div></div>
 <div id="photo-view">
@@ -721,7 +734,7 @@
 <div id="photo-album">
   <h2>📷 PHOTOS</h2>
   <div style="font-size:12.5px;color:#9fb0c8;max-width:560px;text-align:center">Every shot you take with the camera. Click or tap one to see it full size. Save the ones you want to keep — they are kept here for you between visits, up to the last thirty-six.</div>
-  <div id="photo-empty">No photos yet — press the camera key (or 📷) while you play.</div>
+  <div id="photo-empty"><div class="pe-big">No photos yet</div><div class="pe-sub">Press the camera key (or 📷) while you play.</div></div>
   <div id="photo-grid"></div>
   <div><span class="mbtn" id="photo-auto">AUTO-DOWNLOAD: OFF</span><span class="mbtn" id="photo-all">⤓ SAVE ALL</span><span class="mbtn" id="photo-close">DONE</span></div>
 </div>

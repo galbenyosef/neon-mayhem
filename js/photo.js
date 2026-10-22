@@ -272,6 +272,12 @@ GAME.photo = (function () {
     if (!el.grid) return;
     el.grid.innerHTML = '';
     el.empty.style.display = album.length ? 'none' : '';
+    // and how to take one, in whatever you are playing with
+    var how = el.empty.querySelector('.pe-sub');
+    if (how && !album.length) {
+      how.textContent = GAME.isTouch ? 'Tap 📷 while you play.'
+        : 'Press ' + (GAME.controls ? GAME.controls.label('KeyC') : 'C') + ' while you play' + (GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad() ? '.' : ' — or 📷 on a touchscreen.');
+    }
     for (var i = album.length - 1; i >= 0; i--) (function (shot) {
       var card = document.createElement('div');
       card.className = 'ph-card';

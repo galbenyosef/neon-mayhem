@@ -1,8 +1,8 @@
-// The top of the ladder: at six stars the army comes, the way it did in Vice
-// City — trucks of soldiers in with the cruisers (police.js sends those), and
-// a tank. The tank is slow, all but indestructible, and flattens whatever it
-// drives into; its turret swings to you and the gun goes off every few
-// seconds. Get its crew out and it is yours: the turret follows your aim and
+// The top of the ladder: at six stars the army comes — trucks of soldiers in
+// with the cruisers (police.js sends those), and a tank. The tank is slow, all
+// but indestructible, and flattens whatever it drives into (and whatever is
+// driven into it at any pace goes up on the spot: vehicles.js collideCars);
+// its turret swings to you and the gun goes off every few seconds. Get its crew out and it is yours: the turret follows your aim and
 // LMB (FIRE) is the cannon.
 GAME.army = (function () {
   var SPAWN_EVERY = 14, SHOT_R = 80, CRUSH = 900;

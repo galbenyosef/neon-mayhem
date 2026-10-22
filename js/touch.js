@@ -121,8 +121,10 @@ GAME.touch = (function () {
     // hud.refreshFsBtn) — last in the row, so hiding it leaves no gap, and
     // never on top of the camera, which it covered when the two shared a slot
     moveCorner(document.getElementById('minimap-wrap'), { bottom: 'auto', left: '10px', top: '10px', width: '132px', height: '132px', pointerEvents: 'auto' });
-    moveCorner(document.getElementById('cheat-btn'), { bottom: 'auto', left: 'calc(260px + env(safe-area-inset-left, 0px))',
+    var cbtn = document.getElementById('cheat-btn');
+    moveCorner(cbtn, { bottom: 'auto', left: 'calc(260px + env(safe-area-inset-left, 0px))',
       top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
+    if (cbtn) cbtn.classList.add('icon');   // the joystick alone, like its neighbours
     lolaShown = null;   // (and her button decides the fullscreen slot again)
     moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(314px + env(safe-area-inset-left, 0px))',
       top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
@@ -153,6 +155,8 @@ GAME.touch = (function () {
     if (saved) applySettings(saved.vals, saved.fogFar);
     restoreCorner(document.getElementById('minimap-wrap'));
     restoreCorner(document.getElementById('cheat-btn'));
+    var cbtn2 = document.getElementById('cheat-btn');
+    if (cbtn2) cbtn2.classList.remove('icon');
     restoreCorner(document.getElementById('fs-btn'));
     if (!GAME.started) {
       var pe = document.getElementById('press-enter');

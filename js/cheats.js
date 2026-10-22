@@ -3,7 +3,7 @@
 // Typed straight into the game they would trip over the controls — half the
 // alphabet already does something (P is the map, N the night, M the sound) —
 // so they are a list of cards instead: on the pause screen, behind the `
-// key, and on the 🕹 by the radar. Picking one is the whole of it, with a
+// key, and on the CHEATS button by the radar. Picking one is the whole of it, with a
 // mouse, a finger or a pad, and the list closes and the game carries on. On
 // a keyboard, typing narrows the list, so the code words still work. And on
 // a pad each one has a combo of eight presses that works in the middle of
@@ -46,6 +46,16 @@ GAME.cheats = (function () {
       GAME.gameSpeed = on ? k : 1;
       off = !on;
       return on ? said : 'Normal speed';
+    };
+  }
+  // a sky, pinned — or, picked again with that sky already pinned, the
+  // weather left to come and go on its own again (AUTO)
+  function weather(mode, said) {
+    return function () {
+      var on = GAME.weather.mode !== mode;
+      GAME.weather.setMode(on ? mode : 'auto');
+      off = !on;
+      return on ? said : 'The weather comes and goes again';
     };
   }
   // your build, or (typed again) your own
@@ -92,11 +102,11 @@ GAME.cheats = (function () {
       return n ? 'Everything nearby goes up' : 'Nothing nearby to go up';
     },
     ICANTTAKEITANYMORE: function () { if (GAME.godMode) return null; P().health = 0; GAME.playerWasted('cheat'); return 'Goodbye, cruel world'; },
-    ALOVELYDAY: function () { GAME.weather.setMode('clear'); return 'Sunny'; },
-    APLEASANTDAY: function () { GAME.weather.setMode('clear'); return 'Fine weather'; },
-    ABITDRIEG: function () { GAME.weather.setMode('overcast'); return 'Overcast'; },
-    CATSANDDOGS: function () { GAME.weather.setMode('rain'); return 'Rain'; },
-    CANTSEEATHING: function () { GAME.weather.setMode('fog'); return 'Fog'; },
+    ALOVELYDAY: weather('clear', 'Sunny'),
+    APLEASANTDAY: weather('clear', 'Fine weather'),
+    ABITDRIEG: weather('overcast', 'Overcast'),
+    CATSANDDOGS: weather('rain', 'Rain'),
+    CANTSEEATHING: weather('fog', 'Fog'),
     LIFEISPASSINGMEBY: function () { GAME.dayPhase = (GAME.dayPhase + 0.25) % 1; return 'Six hours later'; },
     // ---- switches: typed again, each one is off ----
     COMEFLYWITHME: toggle('flyCars', 'Cars fly — floor it to take off', 'Cars stay on the ground'),
@@ -318,7 +328,8 @@ GAME.cheats = (function () {
 
   // ---------- the list ----------
   // Every code as a card: what it is, what it does, its word and its combo
-  // on a pad. `on` says whether a switch is on (or the sky is that sky).
+  // on a pad. `on` says whether a switch is on (a sky is one too: picked
+  // again it goes back to AUTO).
   // A pad combo is eight presses of LB, RB, A, B and the D-pad's ↑ ← →
   // (the buttons that do least in play — never the triggers, X, Y or ↓),
   // no button three times running, each one different from the rest.
@@ -407,7 +418,7 @@ GAME.cheats = (function () {
         el.className = 'ccard' + (c.grim ? ' grim' : '');
         el.innerHTML = '<div class="ci">' + c.icon + '</div><div class="cb"><div class="cn">' + c.name + '</div>' +
           '<div class="cw">' + c.what + '</div><div class="cc">' + c.code + (c.also ? ' · ' + c.also : '') + '</div>' +
-          '<div class="cp">🎮 ' + padText(c.pad) + '</div></div><div class="con">' + (c.g === 'sky' ? 'NOW' : 'ON') + '</div>';
+          '<div class="cp">🎮 ' + padText(c.pad) + '</div></div><div class="con">ON</div>';
         el.addEventListener('click', function (e) { e.stopPropagation(); pick(c.code); });
         grid.appendChild(el);
         cards.push({ c: c, el: el, sec: sec });
@@ -515,9 +526,18 @@ GAME.cheats = (function () {
     else if (code === 'Enter') { if (shown[sel]) pick(shown[sel].c.code); }
     else if (/^Arrow/.test(code)) move(code);
   }
+  // the button says its key, whatever that is now (a pad has START for it)
+  function paintButton() {
+    var k = document.querySelector('#cheat-btn .cb-key');
+    if (!k) return;
+    var pad = onPad();
+    k.style.display = pad ? 'none' : '';
+    if (!pad) k.textContent = keyLabel();
+  }
   function init() {
     var box = $('cheat-box');
     if (!box) return;
+    paintButton();
     // a click on the dark round the card is a way out, as Esc is
     box.addEventListener('click', function (e) { if (e.target === box) close(false); });
     $('cheat-card').addEventListener('click', function (e) { e.stopPropagation(); });
@@ -535,6 +555,7 @@ GAME.cheats = (function () {
     close: close,
     update: update,
     keyEvent: keyEvent,
+    paintButton: paintButton,
     padKey: padKey,
     padPress: padPress,
     get isOpen() { return !!GAME.cheatOpen; },
