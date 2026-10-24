@@ -14377,6 +14377,27 @@ function withTimeout(p, ms) {
       key('KeyS', false); ff(0.3);
       r.landed = !car.air && !car.cheatFlight && !car.dead;
       r.unpaid = P.cash === cash0;
+      // --- on a stick (a touchscreen's here), as the plane is: GAS keeps the
+      // speed, pulled back it climbs, left alone it flies level, pushed
+      // forward it dives
+      var T = GAME.input.touch;
+      try {
+        GAME.test.teleport(A.minX + 40, A.cz); car.heading = Math.PI / 2; car.speed = 30;
+        T.active = true; T.gas = true; T.stickY = 0;
+        ff(0.5);
+        r.stickOff = car.cheatFlight;
+        T.stickY = 1; ff(1.5);
+        r.pullUp = +car.vy.toFixed(1);
+        T.stickY = 0; ff(1);
+        r.level = +car.vy.toFixed(1);
+        T.stickY = -1; ff(0.6);
+        r.pushDown = +car.vy.toFixed(1);
+        T.stickY = 0; T.gas = false; T.brake = true;
+        for (var tl = 0; tl < 60 * 10 && car.air; tl++) ff(1 / 60);
+        r.stickLanded = !car.air && !car.dead;
+      } finally {
+        T.active = false; T.gas = false; T.brake = false; T.stickY = 0;
+      }
       // typed again, the wings come off: the same run stays on the ground
       r.flyOff = C.enter('COMEFLYWITHME') && /CHEAT OFF/.test(window.__msgs.slice(-1)[0]);
       GAME.test.teleport(A.minX + 40, A.cz); car.heading = Math.PI / 2; car.speed = 30;
@@ -14438,6 +14459,8 @@ function withTimeout(p, ms) {
   });
   check('cheats: COMEFLYWITHME — floor it and the car takes off; off the throttle it glides, on the brake it lands, and it pays no stunt',
     !!flyc.flyCode && flyc.climbed > 5 && flyc.flying && flyc.glide < 0 && flyc.glide > -6 && flyc.landed && flyc.unpaid, JSON.stringify(flyc));
+  check('cheats: COMEFLYWITHME on a stick: pulled back it climbs, left alone with GAS it flies level, pushed forward it dives',
+    flyc.stickOff && flyc.pullUp > 3 && Math.abs(flyc.level) < 1.5 && flyc.pushDown < -4 && flyc.stickLanded, JSON.stringify(flyc));
   check('cheats: COMEFLYWITHME typed again puts the cars back on the ground', flyc.flyOff && flyc.groundedOff, JSON.stringify(flyc));
   check('cheats: SEAWAYS — a car drives out on the sea instead of going under, and does again once it is off',
     !!flyc.seaCode && flyc.onSea && flyc.sinksOff, JSON.stringify(flyc));

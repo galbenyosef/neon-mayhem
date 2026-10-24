@@ -113,7 +113,7 @@ Everything in the game, in detail. The [README](../README.md) has the short vers
   - **The law:** `LEAVEMEALONE` (the stars off) and `YOUWONTTAKEMEALIVE` (two more).
   - **Something to drive:** `PANZER` (a tank beside you), `GETTHEREFAST`, `GETTHEREAMAZINGLYFAST`, `ROCKANDROLLCAR`, `RUBBISHCAR` and `BETTERTHANWALKING`.
   - **Cars and boats:**
-    - `COMEFLYWITHME`: your car flies. Floor it past about 70 km/h and the wheels leave the road. Up there the throttle climbs, easing off glides you down, the brake dives and the wheel steers. A flight pays nothing as a stunt jump.
+    - `COMEFLYWITHME`: your car flies. Floor it past about 70 km/h and the wheels leave the road. Up there you steer as on the road and climb and dive like the plane: pull the stick back to climb and push it forward to dive (on keys, `W` climbs and `S` dives, or `Space` and `Shift`). The throttle keeps your speed up, and with it held and the stick left alone you fly level; let go of everything and you glide down. A flight pays nothing as a stunt jump.
     - `SEAWAYS`: cars drive on the sea instead of going under.
     - `AIRSHIP`: boats fly the same way; one that comes down on land is stranded there.
     - `WHEELSAREALLINEED`: only the wheels show. `LOADSOFLITTLETHINGS`: wheels nearly twice the size, with the car up on them.

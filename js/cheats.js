@@ -356,7 +356,7 @@ GAME.cheats = (function () {
     { code: 'ROCKANDROLLCAR', g: 'ride', icon: '🎸', name: 'Limousine', what: 'A limo beside you.', pad: 'LEFT LB B UP UP RIGHT LEFT UP' },
     { code: 'RUBBISHCAR', g: 'ride', icon: '🚐', name: 'Van', what: 'A van beside you.', pad: 'B UP LB LEFT LEFT UP A RB' },
     { code: 'BETTERTHANWALKING', g: 'ride', icon: '🏖️', name: 'Buggy', what: 'A dune buggy beside you.', pad: 'LEFT RIGHT RB RB A LEFT RB LB' },
-    { code: 'COMEFLYWITHME', g: 'cars', icon: '🛫', name: 'Flying cars', what: 'Floor it past 70 km/h and take off: throttle climbs, brake dives.', pad: 'RIGHT UP RIGHT B A RB A RB', on: sw('flyCars') },
+    { code: 'COMEFLYWITHME', g: 'cars', icon: '🛫', name: 'Flying cars', what: 'Floor it past 70 km/h and take off; pull back to climb, push to dive.', pad: 'RIGHT UP RIGHT B A RB A RB', on: sw('flyCars') },
     { code: 'SEAWAYS', g: 'cars', icon: '🌊', name: 'Cars on water', what: 'Drive out on the sea instead of sinking.', pad: 'LEFT B RIGHT A LB UP LEFT LB', on: sw('seaWays') },
     { code: 'AIRSHIP', g: 'cars', icon: '🚤', name: 'Flying boats', what: 'Flat out on the water and a boat takes off.', pad: 'LB LB RB LEFT LB LB RIGHT LEFT', on: sw('flyBoats') },
     { code: 'WHEELSAREALLINEED', g: 'cars', icon: '⭕', name: 'Wheels only', what: 'Every car down to its wheels.', pad: 'UP B B RIGHT RB RB B A', on: sw('wheelsOnly') },

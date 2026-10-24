@@ -1078,10 +1078,24 @@ GAME.vehicles = (function () {
       !(car.cheatFlight && car.pos.y > 1)) sinkCar(car);
   }
 
-  // A car with wings (COMEFLYWITHME): lift that grows with speed, the
-  // throttle to climb on and the brake to dive with, and the same edges and
-  // the same closed channel any aircraft is held to (aircraft.js).
-  var FLY_LIFTOFF = 20, FLY_CLIMB = 7, FLY_CEIL = 160;
+  // A car with wings (COMEFLYWITHME): lift that grows with speed, and the
+  // same edges and the same closed channel any aircraft is held to
+  // (aircraft.js). Up and down are the plane's: the stick is a yoke — pull
+  // it back to climb, push it forward to dive — and Space and Shift climb
+  // and dive; on a stick the throttle is only speed, and held with the stick
+  // left alone it keeps you level. On keys alone the throttle climbs and the
+  // brake dives. Off the throttle and the stick, it glides down.
+  var FLY_LIFTOFF = 20, FLY_CLIMB = 7, FLY_CEIL = 160, FLY_DEAD = 0.25;
+  function flyPitch() {
+    var T = GAME.input.touch, p = 0, stick = 0;
+    if (GAME.key('Space')) p += 1;
+    if (GAME.key('ShiftLeft') || GAME.key('ShiftRight')) p -= 1;
+    if (T.active) stick += T.stickY;
+    if (GAME.pad && GAME.pad.on) stick += GAME.pad.ly;
+    // (a thumb steering is never quite level: a little of it is not a climb)
+    if (Math.abs(stick) > FLY_DEAD) p += (stick - FLY_DEAD * Math.sign(stick)) / (1 - FLY_DEAD);
+    return U.clamp(p, -1, 1);
+  }
   function fly(car, c, maxSp, accel, dt) {
     var thr = c.throttle;
     if (thr > 0) { if (car.speed < maxSp) car.speed = Math.min(maxSp, car.speed + accel * 0.7 * thr * dt); }
@@ -1089,7 +1103,11 @@ GAME.vehicles = (function () {
     car.speed *= Math.exp(-0.06 * dt);
     // no lift at three-quarters of lift-off speed, all of it by half again
     var lift = U.clamp((car.speed - FLY_LIFTOFF * 0.75) / (FLY_LIFTOFF * 0.5), 0, 1);
-    var want = thr > 0 ? -12 + lift * (12 + FLY_CLIMB) : thr < 0 ? -11 : -12 + lift * 9.5;
+    var T = GAME.input.touch, onStick = T.active || (GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad());
+    var v = flyPitch();   // up (+) or down (-), or nothing asked
+    if (!v) v = thr > 0 ? (onStick ? 0 : 1) : thr < 0 ? -1 : null;
+    var glide = -12 + lift * 9.5;
+    var want = v === null ? glide : v >= 0 ? -12 + lift * (12 + FLY_CLIMB * v) : glide + (-11 - glide) * -v;
     if (car.pos.y > FLY_CEIL) want = Math.min(want, 0);
     car.vy = U.damp(car.vy || 0, want, 2.2, dt);
     car.airVX = Math.sin(car.heading) * car.speed;
