@@ -2102,7 +2102,7 @@ GAME.city = (function () {
       poleMesh.setMatrixAt(L, dummy.matrix);
       headMesh.setMatrixAt(L, dummy.matrix);
       addSolid(ls.x, ls.z, 0.5, 0.5, 6, 'prop', true).knock =
-        { kind: 'pole', mesh: poleMesh, extra: headMesh, i: L, x: ls.x, z: ls.z, rot: ls.rot, down: false, t: 0, m0: null };
+        { kind: 'pole', parts: [[poleMesh, L], [headMesh, L]], x: ls.x, y: 0, z: ls.z, down: false, t: 0, m0: null };
     }
     scene.add(poleMesh); scene.add(headMesh);
     // warm pools of light on the road
@@ -2155,7 +2155,7 @@ GAME.city = (function () {
       benchMesh.setMatrixAt(bb, dummy.matrix);
       // solid, as a bench is — a car went through these as if they were paint
       addSolid(benches[bb].x, benches[bb].z, 0.7, 2.2, 0.9, 'prop', true).knock =
-        { kind: 'flat', mesh: benchMesh, extra: null, i: bb, x: 0, z: 0, rot: 0, down: false, t: 0, m0: null };
+        { kind: 'flat', parts: [[benchMesh, bb]], x: 0, y: 0, z: 0, down: false, t: 0, m0: null };
     }
     scene.add(benchMesh);
 
@@ -3119,25 +3119,33 @@ GAME.city = (function () {
   // something moving takes it
   // down for a little of its pace and a dent (vehicles.js collideStatic), and
   // it is put back up once nobody has been near it for a while.
+  // A prop's `knock.parts` are the instances it is drawn with, [mesh, index]
+  // each — a mainland post is one pole and one head, an island one is its
+  // pole, arm and head in the boxes it shares with the trees (isla.js) — and
+  // they go down as one: tipped about the foot of the post at (x, y, z), or
+  // flattened.
   var knocked = [], knockCheckT = 0, KNOCK_BACK_AFTER = 45, KNOCK_BACK_R = 120;
-  var kq = new THREE.Quaternion(), kq2 = new THREE.Quaternion(), kAxis = new THREE.Vector3();
-  var kPos = new THREE.Vector3(), kScl = new THREE.Vector3(1, 1, 1), kM = new THREE.Matrix4();
-  function setKnock(k, m) {
-    k.mesh.setMatrixAt(k.i, m); k.mesh.instanceMatrix.needsUpdate = true;
-    if (k.extra) { k.extra.setMatrixAt(k.i, m); k.extra.instanceMatrix.needsUpdate = true; }
+  var kq = new THREE.Quaternion(), kAxis = new THREE.Vector3();
+  var kM = new THREE.Matrix4(), kM2 = new THREE.Matrix4();
+  function setKnock(k, tilt) {
+    for (var p = 0; p < k.parts.length; p++) {
+      var mesh = k.parts[p][0];
+      mesh.setMatrixAt(k.parts[p][1], tilt ? kM2.multiplyMatrices(tilt, k.m0[p]) : k.m0[p]);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
   }
   city.knockProp = function (box, heading) {
     var k = box.knock;
     if (!k || k.down) return false;
     k.down = true; k.t = 0;
     city.hash.remove(box);
-    if (!k.m0) { k.m0 = new THREE.Matrix4(); k.mesh.getMatrixAt(k.i, k.m0); }
+    if (!k.m0) k.m0 = k.parts.map(function (p) { var m = new THREE.Matrix4(); p[0].getMatrixAt(p[1], m); return m; });
     if (k.kind === 'pole') {
       // laid over in the direction it was hit, hinged at its foot
       kq.setFromAxisAngle(kAxis.set(Math.cos(heading), 0, -Math.sin(heading)), Math.PI * 0.46);
-      kq2.setFromAxisAngle(kAxis.set(0, 1, 0), k.rot);
-      kq.multiply(kq2);
-      kM.compose(kPos.set(k.x, 0, k.z), kq, kScl.set(1, 1, 1));
+      kM.makeTranslation(-k.x, -k.y, -k.z)
+        .premultiply(kM2.makeRotationFromQuaternion(kq))
+        .premultiply(kM2.makeTranslation(k.x, k.y, k.z));
     } else kM.makeScale(0, 0, 0);
     setKnock(k, kM);
     knocked.push(box);
@@ -3154,7 +3162,7 @@ GAME.city = (function () {
       if (U.dist2(f.x, f.z, (b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2) < KNOCK_BACK_R * KNOCK_BACK_R) continue;
       k.down = false;
       city.hash.insert(b);
-      setKnock(k, k.m0);
+      setKnock(k, null);
       knocked.splice(i, 1);
     }
   }

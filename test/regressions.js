@@ -364,6 +364,8 @@
 //  44. EVERY JUMP, AND A TANK — every stunt jump on both islands parks a
 //      tank at the airport beside the monster truck, whichever tally is
 //      finished last; a save with both done already finds it and is told.
+//  45. ISLAND LAMPS — a car takes an Isla Verde lamp post down and drives on,
+//      as on the mainland, and the bridge decks' too; up again later.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -14826,6 +14828,101 @@ function withTimeout(p, ms) {
   check('jumps: finished on the mainland\'s last instead, the tank is on the 25 jumps\' card', tj.mainLast.spot && tj.mainLast.card && tj.mainLast.said, JSON.stringify(tj));
   check('jumps: a save with both done already finds it there, and is told once; the mainland alone gives none',
     tj.loaded && tj.toldOnce && tj.mainOnly, JSON.stringify(tj));
+
+  // ---------- 45: the island's lamp posts go down too ----------
+  // A car took a mainland lamp post down and drove on; on Isla Verde the same
+  // post stopped it dead, and so did the ones on the bridge decks.
+  var il = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, S = GAME.settings, I = GAME.isla, r = {};
+    var keep = { t: S.maxTraffic, p: S.maxParked, open: I.isOpen() };
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    S.maxTraffic = 0; S.maxParked = 0;
+    I.setOpen(true);   // or a car on the island is put back across the channel
+    var tmp = new THREE.Matrix4(), v = new THREE.Vector3();
+    // the top and the foot of a lamp's pole, and its head, where they are drawn
+    function drawn(k) {
+      function at(part, y) { part[0].getMatrixAt(part[1], tmp); return v.set(0, y, 0).applyMatrix4(tmp).clone(); }
+      var top = at(k.parts[0], 0.5), foot = at(k.parts[0], -0.5), head = at(k.parts[2], 0);
+      return { top: +(top.y - k.y).toFixed(2), foot: +Math.hypot(foot.x - k.x, foot.y - k.y, foot.z - k.z).toFixed(2), head: +(head.y - k.y).toFixed(2) };
+    }
+    var all = C.hash.all.filter(function (b) { return b.tag === 'prop' && b.knock && I.contains((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2); });
+    var deck = C.hash.all.filter(function (b) { return b.tag === 'prop' && b.knock && b.minY !== undefined && !C.islandAt((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2); });
+    r.street = all.filter(function (b) { return b.minY === undefined; }).length;
+    r.deck = deck.length;
+    r.allPoles = all.concat(deck).every(function (b) { return b.knock.kind === 'pole' && b.knock.parts.length === 3; });
+    // --- driven into, at speed, on a clear run up to it
+    var post = null;
+    for (var i = 0; i < all.length && !post; i++) {
+      var b = all[i]; if (b.minY !== undefined) continue;
+      var bx = (b.minX + b.maxX) / 2, bz = (b.minZ + b.maxZ) / 2;
+      if (C.isInWater(bx, bz - 20) || !C.hash.segmentClear(bx, bz - 20, bx, bz - 1)) continue;
+      if (Math.abs(C.groundY(bx, bz - 12) - b.knock.y) > 1.2) continue;   // not up a steep hill
+      post = { b: b, x: bx, z: bz };
+    }
+    r.found = !!post;
+    if (post) {
+      var k = post.b.knock;
+      GAME.test.teleport(post.x - 4, post.z - 14);
+      GAME.world.cars.slice().forEach(function (c) { if (Math.hypot(c.pos.x - post.x, c.pos.z - post.z) < 80) GAME.vehicles.removeCar(c); });
+      var car = GAME.vehicles.spawnCar('sedan', post.x, post.z - 12, 0, {});
+      GAME.test.enterNearestCar(car);
+      for (var w = 0; w < 30 && P.car !== car; w++) GAME.test.fastForward(0.1);   // to the door and in
+      r.driving = P.car === car;
+      r.before = drawn(k);
+      car.pos.set(post.x, C.groundY(post.x, post.z - 12), post.z - 12); car.heading = 0; car.lat = 0; car.vy = 0;
+      car.speed = 24; car.hp = car.spec.hp;
+      var o = { maxDrop: 0 };
+      for (var t = 0; t < 120; t++) {
+        car.controls.throttle = 0;
+        var was = car.speed;
+        GAME.test.fastForward(1 / 60);
+        if (was > 0.5) o.maxDrop = Math.max(o.maxDrop, (was - car.speed) / was);
+        if (car.pos.z > post.z + 4) break;
+      }
+      r.maxDrop = +o.maxDrop.toFixed(2);
+      r.past = car.pos.z > post.z + 2;
+      r.down = k.down;
+      r.inHash = C.hash.all.indexOf(post.b) >= 0;
+      r.after = drawn(k);
+      GAME.exitCar();
+      GAME.vehicles.removeCar(car);
+      // and stood back up once nobody is near it
+      GAME.test.teleport(-60, 40);
+      r.awayFrom = Math.round(Math.hypot(post.x + 60, post.z - 40));
+      GAME.test.fastForward(50);
+      r.backUp = !k.down && C.hash.all.indexOf(post.b) >= 0;
+      r.restored = drawn(k);
+    }
+    // --- a deck lamp goes over on its deck, from its own foot
+    if (deck.length) {
+      var dk = deck[0].knock;
+      r.deckBefore = drawn(dk);
+      r.deckKnocked = C.knockProp(deck[0], 0) && dk.down;
+      r.deckAfter = drawn(dk);
+      r.deckOut = C.hash.all.indexOf(deck[0]) < 0;
+      GAME.test.teleport(-60, 40);
+      r.deckAway = Math.round(Math.hypot((deck[0].minX + deck[0].maxX) / 2 + 60, (deck[0].minZ + deck[0].maxZ) / 2 - 40));
+      GAME.test.fastForward(50);
+      r.deckBack = !dk.down && C.hash.all.indexOf(deck[0]) >= 0 && drawn(dk).top === r.deckBefore.top;
+    }
+    S.maxTraffic = keep.t; S.maxParked = keep.p;
+    GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    I.setOpen(keep.open);
+    P.health = 100;
+    return r;
+  });
+  check('isla lamps: every street and deck lamp on the island can be knocked down, pole, arm and head',
+    il.street > 20 && il.deck > 4 && il.allPoles, JSON.stringify({ street: il.street, deck: il.deck, all: il.allPoles }));
+  check('isla lamps: one at speed goes down, and the car goes on through',
+    il.found && il.driving && il.down && !il.inHash && il.past && il.maxDrop < 0.3, JSON.stringify(il));
+  check('isla lamps: it lies over from its own foot, head and all, on the hillside it stands on',
+    il.found && il.before.top > 5.5 && il.before.foot < 0.05 && il.after.top < 1.5 && il.after.foot < 0.05 && il.after.head < il.before.head - 2.5,
+    JSON.stringify({ before: il.before, after: il.after }));
+  check('isla lamps: and stands back up once nobody is near it', il.backUp && il.restored && il.restored.top === il.before.top,
+    JSON.stringify({ back: il.backUp, restored: il.restored }));
+  check('isla lamps: a bridge deck lamp goes over on its deck, and back up', il.deckKnocked && il.deckOut && il.deckAfter.top < 1.5 &&
+    il.deckAfter.foot < 0.05 && il.deckBack, JSON.stringify({ before: il.deckBefore, after: il.deckAfter, back: il.deckBack }));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

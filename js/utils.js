@@ -396,6 +396,7 @@ BoxSet.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color) {
   // column by column: scale, turn about y (addBox's own sense), then place
   this.m.push(c * sx, 0, -s * sx, 0, 0, sy, 0, 0, s * sz, 0, c * sz, 0, cx, cy, cz, 1);
   this.c.push((color >> 16 & 255) / 255, (color >> 8 & 255) / 255, (color & 255) / 255);
+  return this.c.length / 3 - 1;   // its instance in the built mesh
 };
 // One mesh for the lot, or null if nothing was added. The material colours by
 // instance (see sharedInstanceLambert), not by vertex: the cube has none.

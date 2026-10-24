@@ -1790,6 +1790,15 @@ GAME.isla = (function () {
     }
   }
 
+  // Every post a car can knock down, as the mainland's can (city.knockProp):
+  // its collider, where its foot is, and which boxes are its pole, arm and
+  // head. They are boxes among the trees' (BoxSet), so the meshes to move are
+  // handed over once those are built.
+  var lamps = [];
+  function addLamp(box, x, y, z, pole, arm, head) {
+    lamps.push({ box: box, x: x, y: y, z: z, pole: pole, arm: arm, head: head });
+  }
+
   // lamps down every road, so the island is not a black hole after dark
   function buildLights(b, glow) {
     for (var i = 0; i < NET.length; i++) {
@@ -1807,12 +1816,12 @@ GAME.isla = (function () {
         if (onRoad(ox, oz, 1)) continue;
         if (nearSpan(ox, oz, 7)) continue;
         var y = groundY(ox, oz);
-        b.addBox(ox, y + 3, oz, 0.28, 6, 0.28, 0, 0x3a3a46, 0);
-        b.addBox(ox - Math.cos(ang) * 1.1 * side, y + 6.1, oz + Math.sin(ang) * 1.1 * side,
+        var pole = b.addBox(ox, y + 3, oz, 0.28, 6, 0.28, 0, 0x3a3a46, 0);
+        var arm = b.addBox(ox - Math.cos(ang) * 1.1 * side, y + 6.1, oz + Math.sin(ang) * 1.1 * side,
           2.4, 0.22, 0.22, ang, 0x3a3a46, 0);
-        glow.addBox(ox - Math.cos(ang) * 2.1 * side, y + 5.9, oz + Math.sin(ang) * 2.1 * side,
+        var head = glow.addBox(ox - Math.cos(ang) * 2.1 * side, y + 5.9, oz + Math.sin(ang) * 2.1 * side,
           0.7, 0.2, 0.4, ang, 0xffc88a, 0);
-        city.addSolid(ox, oz, 0.5, 0.5, y + 6, 'prop', true);
+        addLamp(city.addSolid(ox, oz, 0.5, 0.5, y + 6, 'prop', true), ox, y, oz, pole, arm, head);
       }
     }
   }
@@ -1821,7 +1830,7 @@ GAME.isla = (function () {
   // the land under a point, whichever landmass it belongs to
   function groundYAt(x, z) { return contains(x, z) ? groundY(x, z) : 0; }
 
-  function buildSpans(batches, scene) {
+  function buildSpans(batches, scene, props, heads) {
     var b = batches.plain, sg = batches.signs, gateBatch = new GeoBatch();
     SPANS.forEach(function (s) {
       var STEPS = Math.max(40, Math.round(s.len / 6));
@@ -1938,12 +1947,13 @@ GAME.isla = (function () {
         var lside = ((lt * 100) | 0) % 2 ? 1 : -1;
         var lx = lp[0] + lnx * (s.half - 0.5) * lside;
         var lz = lp[1] + lnz * (s.half - 0.5) * lside;
-        b.addBox(lx, ly + 3.4, lz, 0.26, 6, 0.26, 0, 0x3a3a46, 0);
-        b.addBox(lx - lnx * lside * 1.1, ly + 6.5, lz - lnz * lside * 1.1, 2.2, 0.2, 0.2, la, 0x3a3a46, 0);
-        batches.glow.addBox(lx - lnx * lside * 2.0, ly + 6.3, lz - lnz * lside * 2.0, 0.66, 0.2, 0.4, la, 0xffc88a, 0);
+        // in with the street lamps' boxes, and as easily knocked down
+        var dPole = props.addBox(lx, ly + 3.4, lz, 0.26, 6, 0.26, 0, 0x3a3a46, 0);
+        var dArm = props.addBox(lx - lnx * lside * 1.1, ly + 6.5, lz - lnz * lside * 1.1, 2.2, 0.2, 0.2, la, 0x3a3a46, 0);
+        var dHead = heads.addBox(lx - lnx * lside * 2.0, ly + 6.3, lz - lnz * lside * 2.0, 0.66, 0.2, 0.4, la, 0xffc88a, 0);
         // the deck lamps are as solid as their street cousins; minY keeps the
         // water under the span honest for anyone swimming beneath it
-        city.addSolid(lx, lz, 0.6, 0.6, ly + 6, 'prop', true, ly - 1);
+        addLamp(city.addSolid(lx, lz, 0.6, 0.6, ly + 6, 'prop', true, ly - 1), lx, ly + 0.4, lz, dPole, dArm, dHead);
       }
       // gantries where the climb starts and where it sets down, not out in the
       // junction the approach leaves from. Each carries the name of where the
@@ -2157,7 +2167,7 @@ GAME.isla = (function () {
     var props = new BoxSet(), heads = new BoxSet();
     buildPlanting(props, rng);
     buildLights(props, heads);
-    buildSpans(batches, scene);
+    buildSpans(batches, scene, props, heads);
     buildSpots(rng);
     buildCache = null;        // gameplay queries run uncached
 
@@ -2181,9 +2191,15 @@ GAME.isla = (function () {
     city.facadeWalls['isla-tower'] = TB.downtown;
     city.facadeWalls['isla-villa'] = null;       // no window texture: its colour is its colour
     addMesh(batches.glow, new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
-    scene.add(props.build(sharedInstanceLambert()));
+    var propMesh = props.build(sharedInstanceLambert());
     // the heads in the glow's own terms, coloured by instance
-    scene.add(heads.build(new THREE.MeshBasicMaterial({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 })));
+    var headMesh = heads.build(new THREE.MeshBasicMaterial({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
+    scene.add(propMesh); scene.add(headMesh);
+    lamps.forEach(function (l) {
+      l.box.knock = { kind: 'pole', parts: [[propMesh, l.pole], [propMesh, l.arm], [headMesh, l.head]],
+        x: l.x, y: l.y, z: l.z, down: false, t: 0, m0: null };
+    });
+    lamps = [];
     addMesh(batches.signs, new THREE.MeshBasicMaterial({
       map: city.signTex, transparent: true, vertexColors: true, side: THREE.DoubleSide
     }));
