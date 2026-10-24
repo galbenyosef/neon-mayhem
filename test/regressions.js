@@ -370,6 +370,8 @@
 //      every shop that can be held up, not into its front wall.
 //  47. A SOLDIER'S CARBINE — the army fights as an army: bursts from twice
 //      the range, a steadier hand, and a car at speed is a target.
+//  48. THE VAN — the security van is ringed on the radar and on the map,
+//      keeps its rounds to your part of town, and is about for four minutes.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -15070,6 +15072,58 @@ function withTimeout(p, ms) {
     ar.aim.skill * (1.35 - ar.aim.sol) < 0.78 * (1.35 - (ar.aim.cop + 4 * 0.06)), JSON.stringify(ar.aim));
   check('army: a car going flat out is a target to a soldier, not to an officer', ar.inCar && ar.moving.sol >= 3 && ar.moving.cop === 0,
     JSON.stringify(ar.moving) + ' in the car: ' + ar.inCar);
+
+  // ---------- 48: the security van can be found ----------
+  // Lola told you about it often enough; nobody ever found it. A two-pixel
+  // grey dot on the radar while it was in range at all, nothing on the map,
+  // two minutes and gone, driving wherever the junctions took it.
+  var vn = await page.evaluate(function () {
+    var P = GAME.player, S = GAME.streetlife, r = {}, paged = [], pg0 = GAME.hud.pager;
+    var keep = { t: GAME.settings.maxTraffic };
+    GAME.settings.maxTraffic = 0;
+    GAME.hud.pager = function (who, text) { paged.push(String(text)); return pg0.apply(GAME.hud, arguments); };
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      S.reset();
+      var node = GAME.city.nearestNode(60, 40);
+      GAME.test.teleport(node.x, node.z); GAME.test.fastForward(0.5);
+      r.on = S.start('van');
+      var ev = S.event, van = ev && ev.van;
+      if (!van) return r;
+      r.told = paged.some(function (t) { return /radar/.test(t) && /map/.test(t); });
+      var b = S.blips().filter(function (q) { return q.ring; });
+      r.ringed = b.length === 1 && Math.hypot(b[0].x - van.pos.x, b[0].z - van.pos.z) < 0.5;
+      // walk off: once it is a long way from you it turns back your way
+      var f0 = GAME.focus(), far = null;
+      [[260, 0], [-260, 0], [0, 260], [0, -260]].forEach(function (d) {
+        if (far) return;
+        var rp = GAME.city.nearestRoadPoint(van.pos.x + d[0], van.pos.z + d[1]);
+        var dd = Math.hypot(rp.x - van.pos.x, rp.z - van.pos.z);
+        if (dd > 180 && dd < 330 && !GAME.city.isInWater(rp.x, rp.z) && (!GAME.isla || !GAME.isla.contains(rp.x, rp.z))) far = rp;
+      });
+      if (far) {
+        GAME.test.teleport(far.x, far.z);
+        GAME.test.fastForward(7);
+        var tw = van.ai && van.ai.toward;
+        r.turnsBack = !!tw && Math.hypot(tw.x - P.pos.x, tw.z - P.pos.z) < 30;
+      }
+      // still on its rounds well past the two minutes it used to last
+      GAME.test.fastForward(150 - ev.t);
+      r.at150 = S.event === ev && !van.gone;
+      GAME.test.fastForward(95);
+      r.over = S.event !== ev && !van.keep;
+    } finally {
+      GAME.hud.pager = pg0;
+      S.reset();
+      GAME.settings.maxTraffic = keep.t;
+      GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    }
+    return r;
+  });
+  check('van: Lola says where to look, and it is ringed on the radar (and on the map)', vn.on && vn.told && vn.ringed, JSON.stringify(vn));
+  check('van: it keeps its rounds to your part of town', vn.turnsBack, JSON.stringify(vn));
+  check('van: about for four minutes, not two', vn.at150 && vn.over, JSON.stringify(vn));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

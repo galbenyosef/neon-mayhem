@@ -717,6 +717,8 @@ GAME.hud = (function () {
       g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
     });
     if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
+    // the security van on its rounds (streetlife.js), while it is about
+    if (GAME.streetlife) GAME.streetlife.blips().forEach(function (b) { if (b.ring) badge(b.x, b.z, b.color, '$'); });
     if (catVis('shops') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, DEPOT_HEX, '☀');
     // helipads: a ringed cyan disc with an H, one per pad. Both of them —
     // the Alta Verde summit across the channel, and the one on the downtown
@@ -1042,6 +1044,18 @@ GAME.hud = (function () {
     g.arc((x - mmPx) * MAP_S, (z - mmPz) * MAP_S, size, 0, Math.PI * 2);
     g.fill();
   }
+  // Something worth going after (the security van: streetlife.js): a dot in
+  // a red ring, pulsing, and held to the rim while it is further off than
+  // the radar reaches, so it says which way to go.
+  function ringBlip(x, z, color) {
+    var g = mmG, lx = (x - mmPx) * MAP_S, lz = (z - mmPz) * MAP_S;
+    var rim = 80 / mmZoom, l = Math.sqrt(lx * lx + lz * lz);
+    if (l > rim) { lx *= rim / l; lz *= rim / l; }
+    g.fillStyle = color;
+    g.beginPath(); g.arc(lx, lz, 4.2 / mmZoom, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#ff3b3b'; g.lineWidth = 1.8 / mmZoom;
+    g.beginPath(); g.arc(lx, lz, (6.4 + 1.2 * Math.sin(GAME.time * 5)) / mmZoom, 0, Math.PI * 2); g.stroke();
+  }
   // airport + helipad landmarks: a ringed cyan blip so they stand out on the radar
   function landmark(x, z) {
     var g = mmG, lx = (x - mmPx) * MAP_S, lz = (z - mmPz) * MAP_S;
@@ -1136,7 +1150,10 @@ GAME.hud = (function () {
     }
     // whatever is going on in the street near you (streetlife.js)
     var sb = GAME.streetlife ? GAME.streetlife.blips() : [];
-    for (var si = 0; si < sb.length; si++) blip(sb[si].x, sb[si].z, sb[si].color, sb[si].size);
+    for (var si = 0; si < sb.length; si++) {
+      if (sb[si].ring) ringBlip(sb[si].x, sb[si].z, sb[si].color);
+      else blip(sb[si].x, sb[si].z, sb[si].color, sb[si].size);
+    }
     // and the strangers with a favour to ask (strangers.js)
     var kb = GAME.strangers ? GAME.strangers.blips() : [];
     for (var ki = 0; ki < kb.length; ki++) blip(kb[ki].x, kb[ki].z, kb[ki].color, kb[ki].size);

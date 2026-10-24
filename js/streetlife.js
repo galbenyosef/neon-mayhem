@@ -195,6 +195,15 @@ GAME.streetlife = (function () {
   // A security van on its rounds: grey, heavy, three and a half times the
   // hull of a van. Lola mentions it. Get it down far enough and the back
   // doors give — three bags on the road and three stars on you.
+  //
+  // It used to be nowhere to be found: a grey dot of two pixels on a grey
+  // radar, gone off the edge as soon as it turned away, off the map
+  // altogether, and the whole thing over in two minutes while it drove
+  // wherever the junctions took it. Now it is ringed on the radar (held to
+  // the rim while it is out of range, so you know which way to go) and
+  // marked on the map, it keeps its rounds to your part of town, and it is
+  // about for four minutes.
+  var VAN_SECS = 240, VAN_ROUND = 110, VAN_LOST = 400;
   function startVan() {
     var f = GAME.focus();
     var rp = roadSpot(120, 200);
@@ -204,8 +213,8 @@ GAME.streetlife = (function () {
     if (!van) return false;
     van.hp = van.spec.hp * 3.5;
     van.armoured = true; van.keep = true;
-    ev = { kind: 'van', t: 0, van: van, hp0: van.hp };
-    if (GAME.hud.pager) GAME.hud.pager('LOLA', 'There\'s a security van doing its rounds near you — grey, slow, heavy. I\'m not telling you to do anything. I\'m just telling you.');
+    ev = { kind: 'van', t: 0, van: van, hp0: van.hp, aimAt: 0 };
+    if (GAME.hud.pager) GAME.hud.pager('LOLA', 'There\'s a security van doing its rounds near you — grey, slow, heavy. It\'s the ringed dot on your radar, and the $ on your map. I\'m not telling you to do anything. I\'m just telling you.');
     return true;
   }
   function stepVan() {
@@ -224,7 +233,13 @@ GAME.streetlife = (function () {
       end();
       return;
     }
-    if (van.gone || U.dist2(van.pos.x, van.pos.z, f.x, f.z) > 300 * 300 || ev.t > 120) end();
+    var away2 = U.dist2(van.pos.x, van.pos.z, f.x, f.z);
+    if (van.gone || away2 > VAN_LOST * VAN_LOST || ev.t > VAN_SECS) { end(); return; }
+    // its rounds: once it has wandered off, back toward wherever you are
+    if (ev.t >= ev.aimAt && van.ai) {
+      ev.aimAt = ev.t + 6;
+      van.ai.toward = away2 > VAN_ROUND * VAN_ROUND ? { x: f.x, z: f.z } : null;
+    }
   }
 
   // ---------- at the lights ----------
@@ -408,7 +423,7 @@ GAME.streetlife = (function () {
     // whatever was kept for it goes back to being ordinary traffic
     if (ev && ev.perp) ev.perp.keep = false;
     if (ev && ev.cop) ev.cop.keep = false;
-    if (ev && ev.van) ev.van.keep = false;
+    if (ev && ev.van) { ev.van.keep = false; if (ev.van.ai) ev.van.ai.toward = null; }
     if (ev && ev.kind === 'chase' || ev && ev.kind === 'chaseDone') {
       var cop = ev.cop;
       if (cop && !cop.gone && !cop.dead) {
@@ -454,13 +469,14 @@ GAME.streetlife = (function () {
   // what the radar shows of it: the getaway car, the thief, the van, the flag
   function blips() {
     var n = 0;
-    function put(x, z, color, size) {
-      var b = blipBuf[n] || (blipBuf[n] = { x: 0, z: 0, color: '', size: 0 });
-      b.x = x; b.z = z; b.color = color; b.size = size; n++;
+    // (`ring`: ringed and held to the radar's rim, and on the map: the van)
+    function put(x, z, color, size, ring) {
+      var b = blipBuf[n] || (blipBuf[n] = { x: 0, z: 0, color: '', size: 0, ring: false });
+      b.x = x; b.z = z; b.color = color; b.size = size; b.ring = !!ring; n++;
     }
     if (ev && ev.kind === 'chase' && !ev.perp.gone) put(ev.perp.pos.x, ev.perp.pos.z, '#ff3b3b', 3.5);
     if (ev && ev.kind === 'robbery' && !ev.thief.gone) put(ev.thief.pos.x, ev.thief.pos.z, '#ff3b3b', 3);
-    if (ev && ev.kind === 'van' && !ev.van.gone) put(ev.van.pos.x, ev.van.pos.z, '#d8dde6', 3.5);
+    if (ev && ev.kind === 'van' && !ev.van.gone) put(ev.van.pos.x, ev.van.pos.z, '#d8dde6', 3.5, true);
     if (racer && racer.marker) put(racer.fin[0], racer.fin[1], '#ffe14f', 4.5);
     blipBuf.length = n;
     return blipBuf;
