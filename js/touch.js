@@ -115,16 +115,12 @@ GAME.touch = (function () {
     }
     // the radar moves to the top-left on touch: the bottom-left corner is the
     // virtual stick's zone, and the two were fighting for the same thumb.
-    // PAUSE sits just right of it, then the camera, then the cheats
-    // (cheats.js), and fullscreen keeps its
-    // own control after those (shown only while not full screen, see
-    // hud.refreshFsBtn) — last in the row, so hiding it leaves no gap, and
-    // never on top of the camera, which it covered when the two shared a slot
+    // PAUSE sits just right of it, then the camera, then the cheats, and
+    // fullscreen keeps its own control after those (shown only while not
+    // full screen, see hud.refreshFsBtn) — last in the row, so hiding it
+    // leaves no gap, and never on top of the camera, which it covered when
+    // the two shared a slot
     moveCorner(document.getElementById('minimap-wrap'), { bottom: 'auto', left: '10px', top: '10px', width: '132px', height: '132px', pointerEvents: 'auto' });
-    var cbtn = document.getElementById('cheat-btn');
-    moveCorner(cbtn, { bottom: 'auto', left: 'calc(260px + env(safe-area-inset-left, 0px))',
-      top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
-    if (cbtn) cbtn.classList.add('icon');   // the joystick alone, like its neighbours
     lolaShown = null;   // (and her button decides the fullscreen slot again)
     moveCorner(document.getElementById('fs-btn'), { bottom: 'auto', right: 'auto', left: 'calc(314px + env(safe-area-inset-left, 0px))',
       top: 'calc(12px + env(safe-area-inset-top, 0px))', width: '46px', height: '46px' });
@@ -154,9 +150,6 @@ GAME.touch = (function () {
     GAME.isPortrait = false;
     if (saved) applySettings(saved.vals, saved.fogFar);
     restoreCorner(document.getElementById('minimap-wrap'));
-    restoreCorner(document.getElementById('cheat-btn'));
-    var cbtn2 = document.getElementById('cheat-btn');
-    if (cbtn2) cbtn2.classList.remove('icon');
     restoreCorner(document.getElementById('fs-btn'));
     if (!GAME.started) {
       var pe = document.getElementById('press-enter');
@@ -230,6 +223,17 @@ GAME.touch = (function () {
     photoB.style.right = ''; photoB.style.bottom = '';
     photoB.style.left = '206px'; photoB.style.top = '12px';
     photoB.style.fontSize = '18px';
+    // and the cheats beside that (cheats.js), the same kind of button, there
+    // only while the camera is. The joystick is drawn rather than an emoji:
+    // without a colour emoji font a font's glyph came out a dark smudge.
+    btns.cheats = mkBtn('', 0, 0, 46, { press: function () { if (GAME.cheats) GAME.cheats.open(); } });
+    btns.cheats.style.right = ''; btns.cheats.style.bottom = '';
+    btns.cheats.style.left = '260px'; btns.cheats.style.top = '12px';
+    btns.cheats.setAttribute('data-btn', 'cheats');
+    btns.cheats.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" style="display:block">' +
+      '<rect x="2.5" y="15" width="19" height="6.5" rx="3.2" fill="#ff4fa3"/><rect x="5" y="17" width="3.2" height="2.4" rx="1.2" fill="#ffe8f6"/>' +
+      '<rect x="10.9" y="7.5" width="2.6" height="9" rx="1.2" fill="#9df3ff"/><circle cx="12.2" cy="6.2" r="3.9" fill="#ffe14f"/>' +
+      '<circle cx="11" cy="5" r="1.2" fill="#fff7c8"/></svg>';
     // and Lola beside that, while her tips are on: the pause screen was the
     // only way a touchscreen could reach her (lola.js)
     btns.lola = mkBtn('📟', 0, 0, 46, { press: function () { if (GAME.lola) GAME.lola.open(); } });

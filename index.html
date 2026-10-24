@@ -103,22 +103,6 @@
   @media (max-width:520px) { .cgrid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); } .ccard .cp { display:none; }
     .ccard .cc { font-size:9.5px; letter-spacing:.5px; } .ccard .ci { font-size:19px; flex-basis:22px; } #cheat-card { padding:10px 8px 8px; } }
   @media (max-height:520px) { .ccard .cw { display:none; } #cheat-card { max-height:calc(100vh - 16px); } #cheat-box { padding:8px; } }
-  /* the way in from play: a labelled button over the radar, saying what it is
-     and its key (on a touchscreen, the joystick alone in the row beside the
-     radar: touch.js). The joystick is drawn, not an emoji: as a font's glyph
-     it came out a dark smudge where there is no colour emoji to draw it */
-  #cheat-btn { position:fixed; left:calc(14px + env(safe-area-inset-left,0px)); bottom:calc(202px + env(safe-area-inset-bottom,0px)); z-index:16; height:30px;
-    box-sizing:border-box; padding:0 10px 0 7px; gap:7px; border-radius:15px; display:flex; align-items:center; justify-content:center; cursor:pointer;
-    background:rgba(8,4,20,.72); border:1px solid rgba(255,79,163,.7); box-shadow:0 0 10px rgba(255,79,163,.35);
-    font:900 11.5px 'Segoe UI', Arial, sans-serif; letter-spacing:2px; color:#ffe8f6; -webkit-tap-highlight-color:transparent; user-select:none; }
-  #cheat-btn:hover { border-color:#ff4fa3; box-shadow:0 0 14px rgba(255,79,163,.6); }
-  #cheat-btn:active { background:rgba(255,79,163,.3); }
-  #cheat-btn svg { width:20px; height:20px; flex:0 0 auto; }
-  #cheat-btn .cb-key { font:800 10.5px Consolas, 'Courier New', monospace; letter-spacing:0; color:#8dffd8; border:1px solid rgba(141,255,216,.55);
-    border-radius:4px; padding:0 5px; line-height:15px; }
-  #cheat-btn.icon { padding:0; border-radius:10px; }
-  #cheat-btn.icon .cb-label, #cheat-btn.icon .cb-key { display:none; }
-  #cheat-btn.icon svg { width:26px; height:26px; }
   /* while the list is up the pause screen under it keeps out of sight */
   body.cheats-up #pause-screen { visibility:hidden; }
   /* down the sniper's scope */
@@ -452,7 +436,7 @@
   .talk .face .mc { display:none; }
   @media (max-height:520px) { #scene-sub { bottom:calc(11vh + 6px); padding:7px 10px 8px; gap:10px; } #scene-face { flex-basis:56px; width:56px; height:56px; }
     #scene-text { font-size:15px; min-height:2.8em; } }
-  body.cine #hud, body.cine #controls-bar, body.cine #touch-layer, body.cine #fs-btn, body.cine #cheat-btn, body.cine #pager, body.cine #herald, body.cine #derby-tv {
+  body.cine #hud, body.cine #controls-bar, body.cine #touch-layer, body.cine #fs-btn, body.cine #pager, body.cine #herald, body.cine #derby-tv {
     opacity:0 !important; pointer-events:none !important; transition:opacity .4s; }
   /* your race at Gull Downs (derby.js), on a set of your own while it runs */
   #derby-tv { position:fixed; left:50%; top:calc(64px + env(safe-area-inset-top,0px)); transform:translateX(-50%); z-index:16; display:none;
@@ -723,7 +707,6 @@
   <div id="cheat-head"><div id="cheat-title">🕹 CHEATS</div><div id="cheat-sub"></div><div id="cheat-find"></div></div>
   <div id="cheat-list"></div>
   <div id="cheat-foot"><div id="cheat-keys"></div><span class="mbtn" id="cheat-close">CLOSE</span></div></div></div>
-<div id="cheat-btn" title="Cheats"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="15" width="19" height="6.5" rx="3.2" fill="#ff4fa3"/><rect x="5" y="17" width="3.2" height="2.4" rx="1.2" fill="#ffe8f6"/><rect x="10.9" y="7.5" width="2.6" height="9" rx="1.2" fill="#9df3ff"/><circle cx="12.2" cy="6.2" r="3.9" fill="#ffe14f"/><circle cx="11" cy="5" r="1.2" fill="#fff7c8"/></svg><span class="cb-label">CHEATS</span><span class="cb-key">`</span></div>
 <div id="cine"><div class="cine-bar cine-top"></div><div class="cine-bar cine-bot"><span id="cine-photo">📷</span><span id="cine-skip"></span></div><div id="scene-sub"><div id="scene-face"></div><div id="scene-words"><div id="scene-name"></div><div id="scene-text"></div></div></div></div>
 <div id="photo-toast"><img id="photo-toast-img" alt=""><div id="photo-toast-text"></div></div>
 <div id="photo-view">

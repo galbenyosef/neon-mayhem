@@ -299,7 +299,7 @@
 //  20. THE TOP END    — a sixth star and the army; a tank you can take,
 //      whose cannon and tracks work for you; cruisers that ram, PIT, box.
 //  21. CHEATS         — every code a card in the CHEATS list, off the
-//      pause screen, the ` key or the CHEATS button by the radar: picked, it runs and
+//      pause screen, the ` key or (touch) the joystick by the radar: picked, it runs and
 //      the game goes on; typing narrows it; a pad walks it, and in play a
 //      code's eight-press combo works on its own.
 //  22. LANDMARKS      — a club, a stadium, a film lot and a villa, solid,
@@ -359,9 +359,8 @@
 //      only wheels, big wheels, every car pink or black, mad traffic; a town
 //      that hates you, that is armed, that riots, that hops in; you fat,
 //      skinny or in a new outfit; and the whole game faster or slower.
-//  43. A TANK, AN EMPTY ALBUM, A BUTTON — what meets a tank at more than a
-//      crawl goes up on the spot; an empty PHOTOS album says so big; the
-//      cheats button is drawn, and says CHEATS and its key.
+//  43. A TANK, AN EMPTY ALBUM — what meets a tank at more than a crawl goes
+//      up on the spot; an empty PHOTOS album says so big.
 //  44. EVERY JUMP, AND A TANK — every stunt jump on both islands parks a
 //      tank at the airport beside the monster truck, whichever tally is
 //      finished last; a save with both done already finds it and is told.
@@ -11520,6 +11519,15 @@ function withTimeout(p, ms) {
   await tpage.waitForFunction(function () {
     return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
   }, null, { timeout: 90000 });
+  // On the title screen, before the game has started, the row beside the
+  // radar is not there yet — the cheats button included (it stood over the
+  // title's camera flight, alone, while the camera and pause did not)
+  var titleRow = await tpage.evaluate(function () {
+    var cb = document.querySelector('.tbtn[data-btn="cheats"]') || document.getElementById('cheat-btn'), cam = null, all = document.querySelectorAll('.tbtn');
+    for (var i = 0; i < all.length; i++) if (all[i].textContent === '📷') cam = all[i];
+    function seen(el) { if (!el) return false; var b = el.getBoundingClientRect(); return el.offsetParent !== null && b.width > 0; }
+    return { started: GAME.started, touch: GAME.isTouch, built: !!cb, cheats: seen(cb), camera: seen(cam) };
+  });
   var stick = await tpage.evaluate(function () {
     GAME.prefs.guide = 'done';   // her welcome answered, as on the main page
     if (GAME.strangers) GAME.strangers.enabled = false;   // and the strangers stood down, as there
@@ -11949,7 +11957,7 @@ function withTimeout(p, ms) {
   var cheatRow = await tpage.evaluate(function () {
     var all = document.querySelectorAll('.tbtn'), cam = null, lb = null;
     for (var i = 0; i < all.length; i++) { if (all[i].textContent === '📷') cam = all[i]; if (all[i].textContent === '📟') lb = all[i]; }
-    var cb = document.getElementById('cheat-btn'), fsb = document.getElementById('fs-btn'), mm = document.getElementById('minimap-wrap');
+    var cb = document.querySelector('.tbtn[data-btn="cheats"]'), fsb = document.getElementById('fs-btn'), mm = document.getElementById('minimap-wrap');
     if (!cam || !lb || !cb || !fsb) return { found: false };
     var tips0 = GAME.lola.tips, was = fsb.style.display, r = { found: true };
     function overlap(a, b) { return !(a.left >= b.right || a.right <= b.left || a.top >= b.bottom || a.bottom <= b.top); }
@@ -11958,6 +11966,11 @@ function withTimeout(p, ms) {
       fsb.style.display = 'flex';
       var k = cb.getBoundingClientRect(), c = cam.getBoundingClientRect(), l = lb.getBoundingClientRect(), f = fsb.getBoundingClientRect(), m = mm.getBoundingClientRect();
       r.inRow = Math.abs(k.top - c.top) < 4 && k.left > c.left && k.top < m.bottom;
+      // the same kind of button as the camera: the same layer (so hidden
+      // where it is, on the title screen), the same size, the same look
+      var cs = getComputedStyle(cb), ms = getComputedStyle(cam);
+      r.likeCamera = cb.parentElement === cam.parentElement && Math.abs(k.width - c.width) < 1 && Math.abs(k.height - c.height) < 1 &&
+        cs.borderRadius === ms.borderRadius && cs.backgroundColor === ms.backgroundColor && cs.borderTopColor === ms.borderTopColor && !!cb.querySelector('svg');
       r.apart = !overlap(k, c) && !overlap(k, l) && !overlap(k, f);
       r.hit = cb.contains(document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2));
       var t = new Touch({ identifier: 44, target: cb, clientX: k.left + 5, clientY: k.top + 5 });
@@ -11975,8 +11988,9 @@ function withTimeout(p, ms) {
     }
     return r;
   });
-  check('touch: the cheats have a button in the row beside the radar, and a tap brings up the list',
-    cheatRow.found && cheatRow.inRow && cheatRow.apart && cheatRow.hit && cheatRow.opens && cheatRow.hint && cheatRow.back, JSON.stringify(cheatRow));
+  check('touch: on the title screen the cheats button is not up, as the camera is not', !titleRow.started && titleRow.touch && titleRow.built && !titleRow.cheats && !titleRow.camera, JSON.stringify(titleRow));
+  check('touch: the cheats have a button in the row beside the radar, like the camera\'s, and a tap brings up the list',
+    cheatRow.found && cheatRow.inRow && cheatRow.likeCamera && cheatRow.apart && cheatRow.hit && cheatRow.opens && cheatRow.hint && cheatRow.back, JSON.stringify(cheatRow));
   // IMPORT SAVE on a touchscreen picks the file on a page with no city
   // behind it: the phone's picker sends the tab to the background, where a
   // game this size is what Android reclaims first — the import crashed.
@@ -13036,7 +13050,7 @@ function withTimeout(p, ms) {
 
   // ---------- 21: cheats ----------
   // Every code, a card in the CHEATS list to pick — off the pause screen,
-  // the ` key, or the CHEATS button by the radar. Picking one runs it, closes the list
+  // the ` key, or on a touchscreen the joystick by the radar. Picking one runs it, closes the list
   // and carries on with the game. On a keyboard typing narrows the list (the
   // code words still work); on a pad the D-pad walks it and A picks, and in
   // play each code has an eight-press combo of its own.
@@ -13158,14 +13172,10 @@ function withTimeout(p, ms) {
       combo.slice(1).forEach(function (t) { C.padPress(BTN[t]); });
       r.sevenNothing = GAME.police.wanted === 2;
       GAME.police.clearWanted();
-      // the CHEATS button over the radar, in play
-      var btn = document.getElementById('cheat-btn'), b = btn.getBoundingClientRect(), mm = document.getElementById('minimap-wrap').getBoundingClientRect();
-      r.btnShown = getComputedStyle(btn).display !== 'none' && b.width > 20 && b.bottom <= mm.top + 20 && b.left >= mm.left - 2 && b.right <= mm.right + 40 &&
-        btn.contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2));
-      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      r.btnOpens = C.isOpen;
-      C.close(false);
-      r.btnBack = !C.isOpen && !GAME.paused;
+      // on a desktop nothing by the radar: the ` key is the way in (the
+      // joystick button is a touchscreen's, in its row of buttons)
+      var tb = document.querySelector('[data-btn="cheats"]');
+      r.noDesktopBtn = !GAME.isTouch && !document.getElementById('cheat-btn') && (!tb || tb.offsetParent === null);
     } finally {
       if (C.isOpen) C.close(false);
       if (GAME.paused) GAME.togglePause();
@@ -13189,7 +13199,7 @@ function withTimeout(p, ms) {
   check('cheats: ` again puts it away', typed.toggles, JSON.stringify(typed));
   check('cheats: on a pad the D-pad walks the list, A picks, B backs out', padc.walks && padc.aPicks && padc.down && padc.backOut, JSON.stringify(padc));
   check('cheats: in play, a code\'s eight-press combo on the pad works on its own (and seven do not)', padc.combo && padc.sevenNothing, JSON.stringify(padc));
-  check('cheats: the CHEATS button over the radar opens the list', padc.btnShown && padc.btnOpens && padc.btnBack, JSON.stringify(padc));
+  check('cheats: on a desktop there is no cheats button by the radar — the ` key is the way in', padc.noDesktopBtn, JSON.stringify(padc));
 
   // ---------- 22: landmarks ----------
   // One a district, on a lot the blocks left empty: THE NEON TIDE on the strip,
@@ -14637,13 +14647,11 @@ function withTimeout(p, ms) {
   check('cheats: ONSPEED runs the whole game faster, BOOOOOORING slower, and typed again it is back to time',
     !!you.fastCode && !!you.slowCode && Math.abs(you.base - 1) < 0.05 && Math.abs(you.fast - 1.5) < 0.05 && Math.abs(you.slow - 0.5) < 0.05 && Math.abs(you.again - 1) < 0.05, JSON.stringify(you));
 
-  // ---------- 43: a tank, an empty album, and the cheats button ----------
+  // ---------- 43: a tank, and an empty album ----------
   // Driven into a tank, a car only dented itself and bounced off sixty
   // tonnes; now anything that meets one at more than a crawl goes up on the
-  // spot, whichever of the two was moving. An empty PHOTOS album said so in
-  // the small print. And the cheats button over the radar was an emoji that
-  // came out a dark smudge without a colour emoji font: now it is drawn, and
-  // says CHEATS and its key.
+  // spot, whichever of the two was moving. And an empty PHOTOS album said so
+  // in the small print.
   var tk = await page.evaluate(function () {
     var r = {}, P = GAME.player, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); }, made = [];
     function clear(x, z, rad) {
@@ -14703,14 +14711,9 @@ function withTimeout(p, ms) {
       Array.prototype.push.apply(Ph.album(), kept);
       Ph.open(); Ph.close();
     }
-    // --- the cheats button: drawn, labelled, its key on it
-    var b = document.getElementById('cheat-btn'), rc = b.getBoundingClientRect(), mm = document.getElementById('minimap-wrap').getBoundingClientRect();
-    r.btn = { svg: !!b.querySelector('svg'), label: b.textContent.replace(/\s+/g, ' ').trim(), above: rc.bottom <= mm.top + 2 && rc.left >= mm.left - 2 && rc.right <= mm.right,
-      hit: document.elementFromPoint(rc.left + rc.width / 2, rc.top + rc.height / 2) === b || b.contains(document.elementFromPoint(rc.left + rc.width / 2, rc.top + rc.height / 2)) };
     return r;
   });
   check('photos: an empty album says so in big type, and how to take one', ui43.album.shown && ui43.album.big >= 26 && ui43.album.sub >= 16 && /No photos yet/.test(ui43.album.says) && /Press C/.test(ui43.album.says), JSON.stringify(ui43.album));
-  check('cheats: the button over the radar is drawn, and says CHEATS and its key', ui43.btn.svg && /CHEATS/.test(ui43.btn.label) && /`/.test(ui43.btn.label) && ui43.btn.above && ui43.btn.hit, JSON.stringify(ui43.btn));
 
   // ---------- 44: every jump on both islands, and a tank ----------
   // The tank only ever turned up at six stars or by cheat. Finishing every

@@ -3,8 +3,9 @@
 // Typed straight into the game they would trip over the controls — half the
 // alphabet already does something (P is the map, N the night, M the sound) —
 // so they are a list of cards instead: on the pause screen, behind the `
-// key, and on the CHEATS button by the radar. Picking one is the whole of it, with a
-// mouse, a finger or a pad, and the list closes and the game carries on. On
+// key, and on a touchscreen the joystick in the row beside the radar
+// (touch.js). Picking one is the whole of it, with a mouse, a finger or a
+// pad, and the list closes and the game carries on. On
 // a keyboard, typing narrows the list, so the code words still work. And on
 // a pad each one has a combo of eight presses that works in the middle of
 // play, without opening anything.
@@ -526,26 +527,13 @@ GAME.cheats = (function () {
     else if (code === 'Enter') { if (shown[sel]) pick(shown[sel].c.code); }
     else if (/^Arrow/.test(code)) move(code);
   }
-  // the button says its key, whatever that is now (a pad has START for it)
-  function paintButton() {
-    var k = document.querySelector('#cheat-btn .cb-key');
-    if (!k) return;
-    var pad = onPad();
-    k.style.display = pad ? 'none' : '';
-    if (!pad) k.textContent = keyLabel();
-  }
   function init() {
     var box = $('cheat-box');
     if (!box) return;
-    paintButton();
     // a click on the dark round the card is a way out, as Esc is
     box.addEventListener('click', function (e) { if (e.target === box) close(false); });
     $('cheat-card').addEventListener('click', function (e) { e.stopPropagation(); });
     $('cheat-close').addEventListener('click', function (e) { e.stopPropagation(); close(false); });
-    // the button by the radar: straight in from play
-    var btn = $('cheat-btn');
-    btn.addEventListener('touchend', function (e) { e.preventDefault(); e.stopPropagation(); open(); }, { passive: false });
-    btn.addEventListener('click', function (e) { e.stopPropagation(); open(); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
@@ -555,7 +543,6 @@ GAME.cheats = (function () {
     close: close,
     update: update,
     keyEvent: keyEvent,
-    paintButton: paintButton,
     padKey: padKey,
     padPress: padPress,
     get isOpen() { return !!GAME.cheatOpen; },

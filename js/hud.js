@@ -1594,7 +1594,6 @@ GAME.hud = (function () {
     // after a rebind: the bar and both help cards say the new keys
     keysChanged: function () {
       ctlMode = ''; refreshControlsBar(); paintKeyHelp();
-      if (GAME.cheats && GAME.cheats.paintButton) GAME.cheats.paintButton();
       if (api.paintHintBar) api.paintHintBar();
       if (!GAME.started && el['press-enter'] && !el['press-enter'].classList.contains('loading')) titleText();
       if (GAME.mapOpen) {
