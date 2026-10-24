@@ -362,6 +362,9 @@
 //  43. A TANK, AN EMPTY ALBUM, A BUTTON — what meets a tank at more than a
 //      crawl goes up on the spot; an empty PHOTOS album says so big; the
 //      cheats button is drawn, and says CHEATS and its key.
+//  44. EVERY JUMP, AND A TANK — every stunt jump on both islands parks a
+//      tank at the airport beside the monster truck, whichever tally is
+//      finished last; a save with both done already finds it and is told.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -14703,6 +14706,95 @@ function withTimeout(p, ms) {
   });
   check('photos: an empty album says so in big type, and how to take one', ui43.album.shown && ui43.album.big >= 26 && ui43.album.sub >= 16 && /No photos yet/.test(ui43.album.says) && /Press C/.test(ui43.album.says), JSON.stringify(ui43.album));
   check('cheats: the button over the radar is drawn, and says CHEATS and its key', ui43.btn.svg && /CHEATS/.test(ui43.btn.label) && /`/.test(ui43.btn.label) && ui43.btn.above && ui43.btn.hit, JSON.stringify(ui43.btn));
+
+  // ---------- 44: every jump on both islands, and a tank ----------
+  // The tank only ever turned up at six stars or by cheat. Finishing every
+  // stunt jump on both islands now parks one at the airport beside the
+  // monster truck — whichever tally is finished last — and a save that had
+  // done both before there was a tank to win finds it there and is told.
+  var tj = await page.evaluate(function () {
+    var r = {}, St = GAME.stunts, C = GAME.city, P = GAME.player, ff = function (t) { GAME.test.fastForward(t); };
+    var keep = { stunts: JSON.stringify(GAME.prefs.stunts || null), told: GAME.prefs.tankTold, cash: P.cash, weapons: JSON.stringify(P.weapons),
+      cur: P.currentWeapon, arsenal: GAME.jumpArsenal, truck: C.unlockMonsterTruck, unlock: GAME.isla.checkUnlock, grant: GAME.shops.grantVehicle, show: GAME.share.show };
+    var shares = [];
+    C.unlockMonsterTruck = function () {}; GAME.isla.checkUnlock = function () {}; GAME.shops.grantVehicle = function () {};
+    GAME.share.show = function (o) { shares.push(o); };
+    function dropTank() {
+      var sp = C.tankSpot;
+      if (!sp) return;
+      if (sp.live && !sp.live.gone) { if (P.inCar && P.car === sp.live) GAME.exitCar(); GAME.vehicles.removeCar(sp.live); }
+      var i = C.parkedSpots.indexOf(sp);
+      if (i >= 0) C.parkedSpots.splice(i, 1);
+      C.tankSpot = null;
+    }
+    function said(re) { return window.__msgs.slice(-4).some(function (t) { return re.test(t); }); }
+    var main = C.ramps.filter(function (rp) { return !rp.isla; }), isl = C.ramps.filter(function (rp) { return rp.isla; });
+    function set(mainN, islaN, mainDone, islaDone) {
+      var f = {}, fi = {};
+      main.slice(0, mainN).forEach(function (rp) { f[rp.idx] = true; });
+      isl.slice(0, islaN).forEach(function (rp) { fi[rp.islaN] = true; });
+      GAME.prefs.stunts = { found: f, rewarded: mainDone, isla: fi, islaRewarded: islaDone, v: 2 };
+      delete GAME.prefs.tankTold;
+      St.load();
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      dropTank();
+      // --- the island's last jump, with the mainland done: the tank
+      set(main.length, isl.length - 1, true, false);
+      r.notYet = !C.tankSpot && !St.everyJump;
+      var lastI = isl[isl.length - 1];
+      St.credit(lastI.idx, 1.2, 20, 0, 'NICE JUMP!   1.2s · 20m');
+      r.islaLast = { spot: !!C.tankSpot && C.tankSpot.vtype === 'tank' && C.parkedSpots.indexOf(C.tankSpot) >= 0,
+        card: shares.some(function (o) { return /EVERY STUNT JUMP/.test(o.title) && /TANK/.test(JSON.stringify(o.stats)); }),
+        said: said(/TANK waits for you at the airport/), every: St.everyJump };
+      // ...and there it stands, beside the monster truck, yours to drive
+      var sp = C.tankSpot;
+      GAME.test.teleport(sp.x + 25, sp.z); ff(0.6);
+      var tank = GAME.world.cars.filter(function (c) { return c.spec.tank && Math.hypot(c.pos.x - sp.x, c.pos.z - sp.z) < 2; })[0];
+      r.parked = !!tank && tank.occupied !== 'ai' && Math.hypot(sp.x - C.airport.apron.x, sp.z - C.airport.apron.z) < 30;
+      if (tank) { GAME.seatInCar(tank); ff(0.2); r.drives = P.inCar && P.car === tank; GAME.exitCar(); ff(0.2); }
+      dropTank(); shares.length = 0;
+      // --- the mainland's last jump, with the island done: on the same card
+      set(main.length - 1, isl.length, false, true);
+      var lastM = main[main.length - 1];
+      St.credit(lastM.idx, 1.2, 20, 0, 'NICE JUMP!   1.2s · 20m');
+      r.mainLast = { spot: !!C.tankSpot, card: shares.some(function (o) { return /STUNT JUMPS/.test(o.title) && /MONSTER TRUCK · TANK/.test(JSON.stringify(o.stats)); }),
+        said: said(/a TANK beside it/) };
+      dropTank(); shares.length = 0;
+      // --- a save that had done both already: it is there, and you are told, once
+      set(main.length, isl.length, true, true);
+      r.loaded = !!C.tankSpot;
+      var m0 = window.__msgs.length;
+      GAME.missions.checkCompletion();
+      var told = window.__msgs.slice(m0).filter(function (t) { return /TANK waits/.test(t); }).length;
+      GAME.missions.checkCompletion();
+      r.toldOnce = told === 1 && window.__msgs.slice(m0).filter(function (t) { return /TANK waits/.test(t); }).length === 1 && GAME.prefs.tankTold === true;
+      dropTank();
+      // --- the mainland alone is not every jump
+      set(main.length, isl.length - 1, true, false);
+      r.mainOnly = !C.tankSpot;
+    } finally {
+      dropTank();
+      C.unlockMonsterTruck = keep.truck; GAME.isla.checkUnlock = keep.unlock; GAME.shops.grantVehicle = keep.grant; GAME.share.show = keep.show;
+      GAME.prefs.stunts = JSON.parse(keep.stunts);
+      if (keep.told === undefined) delete GAME.prefs.tankTold; else GAME.prefs.tankTold = keep.told;
+      if (GAME.prefs.stunts) St.load();
+      GAME.jumpArsenal = keep.arsenal;
+      P.weapons = JSON.parse(keep.weapons, function (k, v) { return k === 'ammo' && v === null ? Infinity : v; });
+      P.currentWeapon = keep.cur; P.cash = keep.cash;
+      GAME.combat.refreshWeaponHud(); GAME.hud.cashChanged();
+      GAME.test.teleport(-60, 40); ff(0.5);
+    }
+    return r;
+  });
+  check('jumps: the last of every jump on both islands (the island\'s last) parks a tank at the airport, on a card of its own',
+    tj.notYet && tj.islaLast.spot && tj.islaLast.card && tj.islaLast.said && tj.islaLast.every, JSON.stringify(tj));
+  check('jumps: the tank stands beside the monster truck, and is yours to drive', tj.parked && tj.drives, JSON.stringify(tj));
+  check('jumps: finished on the mainland\'s last instead, the tank is on the 25 jumps\' card', tj.mainLast.spot && tj.mainLast.card && tj.mainLast.said, JSON.stringify(tj));
+  check('jumps: a save with both done already finds it there, and is told once; the mainland alone gives none',
+    tj.loaded && tj.toldOnce && tj.mainOnly, JSON.stringify(tj));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

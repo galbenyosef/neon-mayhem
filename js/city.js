@@ -2008,6 +2008,14 @@ GAME.city = (function () {
     city.monsterSpot = { x: city.airport.apron.x + 14, z: city.airport.apron.z + 16, heading: Math.PI / 2, vtype: 'monster' };
     city.parkedSpots.push(city.monsterSpot);
   };
+  // and for every jump on BOTH islands (missions.js): a tank, the army's
+  // own Mastodon, on the grass just south of the apron beside the truck
+  city.tankSpot = null;
+  city.unlockTank = function () {
+    if (city.tankSpot) return;
+    city.tankSpot = { x: city.airport.apron.x - 2, z: city.airport.apron.z + 22, heading: Math.PI / 2, vtype: 'tank' };
+    city.parkedSpots.push(city.tankSpot);
+  };
 
   function buildInstancedProps(scene) {
     var dummy = new THREE.Object3D();

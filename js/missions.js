@@ -1,7 +1,9 @@
 // Unique stunt jumps: 25 ramps hidden around the city. Clear one cleanly and
 // it's logged; find them all and the city opens up. Isla Verde has ten of its
 // own on a separate tally (and a prize of its own), so the mainland's count —
-// and the bridges it can open — is exactly what it always was.
+// and the bridges it can open — is exactly what it always was. And every jump
+// on both islands, whichever tally is finished last, leaves a tank parked at
+// the airport beside the monster truck.
 GAME.stunts = (function () {
   var found = {}, total = 25, rewarded = false;
   var islaFound = {}, islaRewarded = false;
@@ -41,10 +43,28 @@ GAME.stunts = (function () {
       GAME.combat.giveAllWeapons(GAME.combat.FULL_LOAD);
       GAME.city.unlockMonsterTruck();   // the truck stays unlocked between sessions
     }
+    if (both()) GAME.city.unlockTank();   // and so does the tank
     if (GAME.prefs && GAME.prefs.ammoForever) {
       GAME.unlimitedAmmo = true;
       GAME.combat.giveAllWeapons();
     }
+  }
+  // every jump on both islands: the tank's condition
+  function both() { return rewarded && (islaRewarded || islaTotal() === 0); }
+  // The tank, the moment the second tally is done: a word about it, unless
+  // the card it comes on already says so. A save that had finished both
+  // before there was a tank to win is told once, the first time this runs
+  // in play (remind, from missions.checkCompletion).
+  function grantTank(quiet) {
+    GAME.city.unlockTank();
+    if (GAME.prefs) GAME.prefs.tankTold = true;
+    GAME.track('every-stunt-jump');
+    if (!quiet) GAME.hud.message('EVERY STUNT JUMP ON BOTH ISLANDS!  ·  a TANK waits for you at the airport, beside the monster truck', 8);
+  }
+  function remind() {
+    if (!both() || !GAME.prefs || GAME.prefs.tankTold) return;
+    grantTank(false);
+    save();
   }
   function save() {
     if (!GAME.prefs) GAME.prefs = {};
@@ -100,6 +120,23 @@ GAME.stunts = (function () {
       if (GAME.shops && GAME.shops.grantVehicle) GAME.shops.grantVehicle('buggy');
       GAME.hud.message('ALL ' + all + ' ISLA VERDE JUMPS!  +$' + ISLA_PRIZE.toLocaleString() + '  ·  a DUNE HOPPER joins your garage', 8);
       GAME.track('all-isla-stunt-jumps');
+      // the mainland's done already: that is every jump there is
+      if (both()) {
+        grantTank(false);
+        GAME.share.show({
+          slug: 'every-stunt-jump',
+          eyebrow: 'Costa Rosa · 1986',
+          title: 'EVERY STUNT JUMP',
+          subtitle: 'Both islands, every ramp found and cleared',
+          accent: '#9ccf5a',
+          stats: [
+            { label: 'Costa Rosa', value: count() + ' / ' + mainTotal() },
+            { label: 'Isla Verde', value: n + ' / ' + all },
+            { label: 'Unlocked', value: 'MASTODON TANK' },
+            { label: 'Parked', value: 'AT THE AIRPORT' }
+          ]
+        });
+      }
     }
     save();
     return bonus;
@@ -112,7 +149,12 @@ GAME.stunts = (function () {
     GAME.combat.giveAllWeapons(GAME.combat.FULL_LOAD);
     GAME.addCash(50000);
     GAME.city.unlockMonsterTruck();
-    GAME.hud.message('ALL ' + total + ' STUNT JUMPS!  +$50,000  ·  every weapon, yours to keep, with free refills at the hardware counter  ·  MONSTER TRUCK unlocked at the airport', 8);
+    // Isla Verde's done already: that is every jump there is, and the tank
+    // is on this card too
+    var tank = both();
+    if (tank) grantTank(true);
+    GAME.hud.message('ALL ' + total + ' STUNT JUMPS!  +$50,000  ·  every weapon, yours to keep, with free refills at the hardware counter  ·  MONSTER TRUCK unlocked at the airport' +
+      (tank ? '  ·  and with Isla Verde done too, a TANK beside it' : ''), 8);
     GAME.share.show({
       slug: 'all-stunt-jumps',
       eyebrow: 'Costa Rosa · 1986',
@@ -122,7 +164,7 @@ GAME.stunts = (function () {
       stats: [
         { label: 'Jumps', value: total + ' / ' + total },
         { label: 'Payout', value: '$50,000' },
-        { label: 'Unlocked', value: 'MONSTER TRUCK' },
+        { label: 'Unlocked', value: tank ? 'MONSTER TRUCK · TANK' : 'MONSTER TRUCK' },
         { label: 'Arsenal', value: 'KEPT · FREE REFILLS' }
       ]
     });
@@ -138,7 +180,8 @@ GAME.stunts = (function () {
     get islaTotal() { return islaTotal(); },
     // nothing to find over there is nothing left to find
     get islaComplete() { return islaRewarded || islaTotal() === 0; },
-    load: load, credit: credit,
+    get everyJump() { return both(); },
+    load: load, credit: credit, remind: remind,
     isFound: function (i) {
       var r = ramps()[i];
       return r && r.isla ? !!islaFound[r.islaN] : !!found[i];
@@ -3074,6 +3117,9 @@ GAME.missions = (function () {
     }
   }
   function checkCompletion() {
+    // (and a save that had every jump done before the tank was its prize
+    // hears about it now)
+    GAME.stunts.remind();
     if (GAME.prefs && GAME.prefs.gameComplete) { applyComplete(); return true; }
     if (!completionDone()) return false;
     GAME.prefs = GAME.prefs || {};
