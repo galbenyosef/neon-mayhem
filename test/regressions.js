@@ -372,6 +372,8 @@
 //      the range, a steadier hand, and a car at speed is a target.
 //  48. THE VAN — the security van is ringed on the radar and on the map,
 //      keeps its rounds to your part of town, and is about for four minutes.
+//  49. RAIN BEHIND A SCENE — the rain falls and the sea swells while a
+//      scene plays, and the clock still waits.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -15124,6 +15126,48 @@ function withTimeout(p, ms) {
   check('van: Lola says where to look, and it is ringed on the radar (and on the map)', vn.on && vn.told && vn.ringed, JSON.stringify(vn));
   check('van: it keeps its rounds to your part of town', vn.turnsBack, JSON.stringify(vn));
   check('van: about for four minutes, not two', vn.at150 && vn.over, JSON.stringify(vn));
+
+  // ---------- 49: the rain goes on behind a scene ----------
+  // A scene holds the world still. It held the weather too: a car loaded at
+  // the harbour in the rain had every drop hung in the air and the sea set
+  // like glass. The rain falls and the swell runs; the clock still waits.
+  var sw = await page.evaluate(function () {
+    var r = {}, W = GAME.weather, Sc = GAME.scenes;
+    var rain = GAME.scene.getObjectByName('rain'), pos = rain && rain.geometry.attributes.position.array;
+    var keepMode = W.mode, keepOn = Sc.enabled;
+    Sc.enabled = true;   // (off for the rest of the suite)
+    try {
+      W.setMode('rain', true); W.testSet(1);
+      GAME.test.fastForward(0.5);
+      var played = Sc.play({ shots: [{ lines: [['lola', 'Rain or no rain, the boat leaves on the hour, and your car is going on it.']] }] });
+      GAME.test.fastForward(0.6);   // (the bars come in, then the cut)
+      r.open = !!GAME.sceneOpen && played !== false;
+      var t0 = GAME.time, w0 = [GAME.city.oceanWave.x, GAME.city.oceanWave.y];
+      var y0 = pos ? Array.prototype.slice.call(pos, 0, 60) : [];
+      GAME.test.fastForward(0.5);
+      var y1 = pos ? Array.prototype.slice.call(pos, 0, 60) : [];
+      r.clock = GAME.time === t0;
+      r.shown = !!rain && rain.visible;
+      r.falls = y0.some(function (v, i) { return i % 3 === 1 && Math.abs(v - y1[i]) > 0.5; });
+      r.swell = Math.abs(GAME.city.oceanWave.x - w0[0]) > 0.1;
+      Sc.skip();
+      GAME.test.fastForward(0.3);
+      r.closed = !GAME.sceneOpen;
+      // and the sea runs on from where it was, not back to where the clock left it
+      var w1 = GAME.city.oceanWave.x;
+      GAME.test.fastForward(1 / 60);
+      r.noJump = Math.abs(GAME.city.oceanWave.x - w1) < 0.1;
+    } finally {
+      if (GAME.sceneOpen) Sc.skip();
+      Sc.enabled = keepOn;
+      W.setMode(keepMode, true); W.testSet(0);
+      GAME.test.fastForward(0.3);
+    }
+    return r;
+  });
+  check('scenes: behind one the rain still falls and the sea still swells, while the clock waits', sw.open && sw.clock && sw.shown && sw.falls && sw.swell,
+    JSON.stringify(sw));
+  check('scenes: and after it the sea runs on from where it was', sw.closed && sw.noJump, JSON.stringify(sw));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

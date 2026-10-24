@@ -3169,6 +3169,11 @@ GAME.city = (function () {
 
   city.update = function (dt, t) {
     standKnockedBack(dt);
+    city.scenery(dt, t);
+  };
+  // what moves on its own: the sea, the wheel, the signs and the skyline's
+  // turning and blinking things. It goes on behind a scene too (main.js).
+  city.scenery = function (dt, t) {
     // the swell's two phases (see the ocean in buildBeach)
     if (city.oceanWave) city.oceanWave.set((t * 1.1) % (Math.PI * 2), (t * 0.7) % (Math.PI * 2));
     if (city.wheelSpin) {

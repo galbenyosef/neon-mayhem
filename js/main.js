@@ -553,11 +553,20 @@
     h.target.updateMatrixWorld();
   }
 
+  // The scenery's own clock: GAME.time, and the seconds scenes have played
+  // on top of it. The sea and the skyline's moving parts go by this one.
+  var sceneSecs = 0;
   GAME.tick = function (dt) {
     // A scene holds the world still and takes the tick for itself (scenes.js):
     // the clock, the traffic, the law and every mission timer wait it out.
+    // Not the weather or the sea behind it, though: a car loaded at the
+    // harbour in the rain (export.js) had the drops hung in the air and the
+    // swell set like glass for as long as the crane took.
     if (GAME.sceneOpen) {
       GAME.scenes.update(dt);
+      sceneSecs += dt;
+      GAME.weather.drops(dt);
+      GAME.city.scenery(dt, GAME.time + sceneSecs);
       GAME.clearPressed();
       return;
     }
@@ -568,7 +577,7 @@
     GAME.audio.setListener(ears.x, ears.z, GAME.cam.yaw);
     GAME.advanceDayCycle(dt);
     GAME.weather.update(dt);
-    GAME.city.update(dt, GAME.time);
+    GAME.city.update(dt, GAME.time + sceneSecs);
     GAME.vehicles.update(dt);
     GAME.peds.update(dt);
     GAME.updatePlayer(dt);

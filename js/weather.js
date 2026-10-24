@@ -45,6 +45,7 @@ GAME.weather = (function () {
       color: 0xa9bedc, transparent: true, opacity: 0, depthWrite: false
     }));
     lines.frustumCulled = false;   // it is always round the camera
+    lines.name = 'rain';
     lines.visible = false;
     scene.add(lines);
   }
@@ -183,6 +184,9 @@ GAME.weather = (function () {
   return {
     build: build,
     update: update,
+    // the rain alone, falling: behind a scene, which holds the sky's clock
+    // (main.js)
+    drops: stepDrops,
     setMode: setMode,
     pass: pass,
     cycle: function () { return setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); },
