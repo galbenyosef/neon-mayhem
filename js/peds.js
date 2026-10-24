@@ -123,7 +123,15 @@ function buildPedMesh(opts) {
   var head = new THREE.Mesh(sharedBoxGeo(0.26, 0.28, 0.26), mats.skin);
   head.position.y = 1.6;
   g.add(head);
-  if (opts.cop) {
+  if (opts.army) {
+    // a soldier's helmet, not a patrolman's cap: domed, and down over the ears
+    var helm = new THREE.Mesh(sharedBoxGeo(0.34, 0.15, 0.34), mats.pants);
+    helm.position.y = 1.78;
+    g.add(helm);
+    var dome = new THREE.Mesh(sharedBoxGeo(0.26, 0.06, 0.26), mats.pants);
+    dome.position.y = 1.88;
+    g.add(dome);
+  } else if (opts.cop) {
     var cap = new THREE.Mesh(sharedBoxGeo(0.3, 0.1, 0.3), mats.pants);
     cap.position.y = 1.78;
     g.add(cap);
@@ -151,6 +159,23 @@ function buildPedMesh(opts) {
   var legL = limb(0.16, 0.8, mats.pants, -0.13, 0.82);
   var legR = limb(0.16, 0.8, mats.pants, 0.13, 0.82);
   g.userData.joints = { armL: armL, armR: armR, legL: legL, legR: legR, head: head, torso: torso };
+  if (opts.army) {
+    // and a carbine in his hands: down the arm, so it hangs at his side on
+    // the move and comes up level when he fires (police.js)
+    var gunMat = sharedLambert(0x1c1e18);
+    var rifle = new THREE.Group();
+    var body = new THREE.Mesh(sharedBoxGeo(0.08, 0.86, 0.1), gunMat);
+    body.position.set(0, -0.64, 0.02);
+    rifle.add(body);
+    var mag = new THREE.Mesh(sharedBoxGeo(0.06, 0.12, 0.16), gunMat);
+    mag.position.set(0, -0.5, -0.1);
+    rifle.add(mag);
+    var stock = new THREE.Mesh(sharedBoxGeo(0.07, 0.2, 0.14), mats.pants);
+    stock.position.set(0, -0.2, 0.0);
+    rifle.add(stock);
+    armR.add(rifle);
+    g.userData.rifle = rifle;
+  }
   return g;
 }
 
@@ -208,6 +233,7 @@ GAME.peds = (function () {
       gang: null, boss: false,                  // a side's man (gangs.js), a crew's boss (missions.js)
       patrol: false, onCase: null, beatX: 0, beatZ: 0, beatT: 0, grabbing: false,
       aimSkill: NaN, lastShotT: 0,
+      gun: null, burstN: 0,     // what a shooter's rounds sound like, and how many are left in a burst (police.js)
       enterX: NaN, enterZ: NaN, enterT: 0   // a door they are making for (walkInto)
     };
     world.peds.push(ped);

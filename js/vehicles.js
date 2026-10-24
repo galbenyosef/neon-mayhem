@@ -721,7 +721,7 @@ GAME.vehicles = (function () {
       // the parts gone, the tyres burst, the bonnet sprung
       dmgFront: 0, dmgRear: 0, parts: 0, burst: 0, hood: null, sparkT: 0,
       aiSteer: 0, aiTX: NaN, aiTZ: NaN, aiAir: false, airLights: null,
-      copsOut: NaN, shootT: NaN, aimSkill: NaN, deployT: 0, fireT: 0, bailT: 0,
+      copsOut: NaN, shootT: NaN, aimSkill: NaN, deployT: 0, fireT: 0, bailT: 0, gun: null, burstN: 0,
       heliSpeed: 0, rotorSpin: 0, mgT: 0, rkT: 0, pitch: 0, roll: 0, sinkV: 0,
       wakeT: 0,           // a boat's next puff of wake
       cheatFlight: false, // in the air under COMEFLYWITHME or AIRSHIP (cheats.js): no stunt

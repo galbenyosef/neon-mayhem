@@ -854,7 +854,7 @@ GAME.combat = (function () {
     var err = (Math.random() * 2 - 1) * spread;
     var yaw = Math.atan2(tx - fromX, tz - fromZ) + err;
     var dx = Math.sin(yaw), dz = Math.cos(yaw);
-    GAME.audio.gunshot('pistol', fromX, fromZ);
+    GAME.audio.gunshot(shooter && shooter.gun || 'pistol', fromX, fromZ);
     // A car in the line takes the round. Only buildings ever stopped these,
     // so the police shot straight through the van you were crouched behind —
     // a quarter of their rounds at twelve metres — while yours stopped dead on

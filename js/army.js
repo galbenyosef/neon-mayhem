@@ -31,6 +31,7 @@ GAME.army = (function () {
       var car = GAME.vehicles.spawnCar('tank', rp.x, rp.z, Math.atan2(f.x - rp.x, f.z - rp.z), { occupied: 'ai', ai: { mode: 'chase' } });
       if (!car) continue;
       car.isPolice = true; car.armyUnit = true; car.copsOut = 2;
+      GAME.police.enlist(car);   // (the crew's carbines, besides the gun: police.js)
       car.shootT = 2; car.gunT = 3; car.tactic = 'ram';
       return car;
     }

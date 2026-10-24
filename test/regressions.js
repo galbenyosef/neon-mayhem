@@ -368,6 +368,8 @@
 //      as on the mainland, and the bridge decks' too; up again later.
 //  46. OUT OF THE DOOR — a shop's thief runs out of its door and away, at
 //      every shop that can be held up, not into its front wall.
+//  47. A SOLDIER'S CARBINE — the army fights as an army: bursts from twice
+//      the range, a steadier hand, and a car at speed is a target.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -12950,6 +12952,9 @@ function withTimeout(p, ms) {
       r.tank = !!t;
       r.army = GAME.world.cars.some(function (c) { return c.armyUnit && c.type === 'armytruck'; }) ||
         GAME.world.peds.some(function (q) { return q.army && !q.dead; });
+      // and every one of them carries the army's carbine, tank crews too
+      r.armed = GAME.world.cars.filter(function (c) { return c.armyUnit; }).concat(GAME.world.peds.filter(function (q) { return q.army; }))
+        .every(function (o) { return o.gun === 'carbine' && (!o.mesh || o.kind !== 'ped' || !!o.mesh.userData.rifle); });
       // its crew out, and it is yours
       GAME.police.clearWanted();
       GAME.test.fastForward(0.2);
@@ -13046,6 +13051,7 @@ function withTimeout(p, ms) {
   });
   check('law: there is a sixth star, and the HUD has room for it', law.six, JSON.stringify(law));
   check('law: at six the army comes — soldiers, and a tank', law.tank && law.army, JSON.stringify(law));
+  check('law: the army\'s every unit carries a carbine, not a pistol', law.armed, JSON.stringify(law));
   check('law: take the tank and it is yours, cannon and all', law.mine && law.cannon, JSON.stringify(law));
   check('law: a tank flattens what it drives into', law.crush, JSON.stringify(law));
   check('law: from three stars the cruisers ram, PIT and box you in', law.tactics === 'box,pit,ram' || law.tactics === 'box,chase,pit,ram', JSON.stringify(law));
@@ -14973,6 +14979,97 @@ function withTimeout(p, ms) {
   });
   check('robbery: at every shop that can be held up, the thief comes out of the door and away',
     rb.length >= 4 && rb.every(function (o) { return o.running && o.ran > 6 && o.outward > 4; }), JSON.stringify(rb));
+
+  // ---------- 47: a soldier is not a cop in green ----------
+  // At six stars the army's men fought exactly as the police did — a pistol
+  // shot now and then, from no further off, only at somebody on foot or in
+  // a car at a crawl — with a little more damage. A soldier has a carbine:
+  // bursts, twice the range, a steadier hand, and a moving car is a target.
+  var ar = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {}, shots = [], ns0 = GAME.combat.npcShoot;
+    var keep = { t: GAME.settings.maxTraffic, p: GAME.settings.maxParked };
+    GAME.settings.maxTraffic = 0; GAME.settings.maxParked = 0;
+    GAME.combat.npcShoot = function (x, y, z, acc, dmg, sh) { shots.push({ sh: sh, t: GAME.time, acc: acc, dmg: dmg }); return false; };
+    var made = [];
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      // the clear straight street the props checks use
+      var x = -150 + 3.1, z0 = -40;
+      GAME.test.teleport(x, z0); GAME.test.fastForward(0.5);
+      GAME.world.cars.slice().forEach(function (c) { if (Math.hypot(c.pos.x - x, c.pos.z - z0) < 120) GAME.vehicles.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (q) { if (Math.hypot(q.pos.x - x, q.pos.z - z0) < 120) GAME.peds.removePed(q); });
+      GAME.police.setWanted(2);
+      var sol = GAME.police.spawnFootCop(x, z0 + 40, true), cop = GAME.police.spawnFootCop(x, z0 - 40, false);
+      made.push(sol, cop);
+      r.looks = { rifle: !!sol.mesh.userData.rifle, copRifle: !!cop.mesh.userData.rifle, gun: sol.gun, copGun: cop.gun };
+      // held where they were put; anybody else the law sends is not counted
+      function hold(a, b) {
+        sol.pos.set(x, C.groundY(x, z0 + a), z0 + a); cop.pos.set(x, C.groundY(x, z0 - b), z0 - b);
+        sol.state = cop.state = 'chase';
+        // and nobody else the stars send: an officer reaching you cuffs you
+        GAME.world.peds.slice().forEach(function (q) { if (q.isCop && q !== sol && q !== cop) GAME.peds.removePed(q); });
+        GAME.world.cars.slice().forEach(function (c) { if (c.isPolice) GAME.vehicles.removeCar(c); });
+      }
+      function mine(who) { return shots.filter(function (q) { return q.sh === who; }); }
+      // --- on foot, forty metres off: the soldier opens up, the officer cannot reach
+      var arms = 0;
+      for (var t = 0; t < 60 * 5; t++) {
+        hold(40, 40); P.pos.set(x, C.groundY(x, z0), z0);
+        GAME.test.fastForward(1 / 60);
+        if (Math.abs(sol.mesh.userData.joints.armL.rotation.z + 0.32) < 0.01) arms++;
+      }
+      var ss = mine(sol), cs = mine(cop);
+      r.foot = { sol: ss.length, cop: cs.length, twoHands: arms > 0 };
+      // in bursts: rounds a breath apart, then a pause
+      var gaps = [];
+      for (var i = 1; i < ss.length; i++) gaps.push(+(ss[i].t - ss[i - 1].t).toFixed(2));
+      r.gaps = gaps;
+      r.bursts = gaps.filter(function (g) { return g <= 0.15; }).length >= 2 && gaps.filter(function (g) { return g >= 0.8; }).length >= 1;
+      r.aim = { sol: ss.length ? ss[0].acc : null, cop: null, dmg: ss.length ? ss[0].dmg : null, skill: +sol.aimSkill.toFixed(2) };
+      // --- the officer at twenty metres, for his aim and his hand
+      GAME.police.setWanted(2);
+      shots.length = 0;
+      for (var t2 = 0; t2 < 60 * 4; t2++) { hold(40, 20); P.pos.set(x, C.groundY(x, z0), z0); GAME.test.fastForward(1 / 60); }
+      var cs2 = mine(cop);
+      r.aim.cop = cs2.length ? cs2[0].acc : null;
+      r.aim.copSkill = +cop.aimSkill.toFixed(2);
+      // --- in a car doing 20 m/s: the officer holds fire, the soldier does not
+      var car = GAME.vehicles.spawnCar('sedan', x + 3, z0, 0, {});
+      made.push(car);
+      GAME.test.enterNearestCar(car);
+      for (var w = 0; w < 30 && P.car !== car; w++) { hold(35, 20); GAME.test.fastForward(0.1); }
+      r.inCar = P.car === car;
+      GAME.police.setWanted(2);   // (not lapsed while he boarded)
+      shots.length = 0;
+      for (var t3 = 0; t3 < 60 * 4; t3++) {
+        hold(35, 20);
+        car.pos.set(x, C.groundY(x, z0), z0); car.heading = Math.PI / 2; car.speed = 20; car.vx = 20; car.vz = 0;
+        GAME.test.fastForward(1 / 60);
+      }
+      r.moving = { sol: mine(sol).length, cop: mine(cop).length, stars: GAME.police.wanted, here: !sol.gone && !cop.gone };
+    } finally {
+      GAME.combat.npcShoot = ns0;
+      GAME.police.clearWanted();
+      if (P.inCar) GAME.exitCar();
+      made.forEach(function (o) { if (o.kind === 'ped') { if (!o.gone) GAME.peds.removePed(o); } else if (!o.gone) GAME.vehicles.removeCar(o); });
+      GAME.settings.maxTraffic = keep.t; GAME.settings.maxParked = keep.p;
+      GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+      P.health = 100;
+    }
+    return r;
+  });
+  check('army: a soldier carries a carbine (a cop does not), and its crack is its own', ar.looks.rifle && !ar.looks.copRifle && ar.looks.gun === 'carbine' && !ar.looks.copGun,
+    JSON.stringify(ar.looks));
+  check('army: at forty metres a soldier opens up, two hands on it, where an officer cannot reach', ar.foot.sol >= 3 && ar.foot.cop === 0 && ar.foot.twoHands,
+    JSON.stringify(ar.foot));
+  check('army: he fires in bursts', ar.bursts, JSON.stringify(ar.gaps));
+  // (npcShoot's spread scales with skill x (1.35 - accuracy); the best an
+  // officer is born is 0.78, and his accuracy at six stars is 0.3 + 6 x 0.06)
+  check('army: and a steadier hand than the best officer at six stars', ar.aim.sol !== null && ar.aim.cop !== null && ar.aim.sol > ar.aim.cop &&
+    ar.aim.skill * (1.35 - ar.aim.sol) < 0.78 * (1.35 - (ar.aim.cop + 4 * 0.06)), JSON.stringify(ar.aim));
+  check('army: a car going flat out is a target to a soldier, not to an officer', ar.inCar && ar.moving.sol >= 3 && ar.moving.cop === 0,
+    JSON.stringify(ar.moving) + ' in the car: ' + ar.inCar);
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
