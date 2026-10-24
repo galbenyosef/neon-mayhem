@@ -1165,6 +1165,7 @@ GAME.shops = (function () {
       loc.at = { x: placed.mx, z: placed.mz };
       if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
       if (loc.sh) loc.sh.face = { x: dir.x, z: dir.z };   // which way is in (homeHeading)
+      loc.inside = { x: dir.x, z: dir.z };                // and for a shop (a thief runs the other way: streetlife.js)
       var gy = GAME.city.groundY(placed.cx, placed.cz);
       // the door face and its outward normal (-dir); everything on the
       // facade hangs off these

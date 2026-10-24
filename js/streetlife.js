@@ -145,8 +145,19 @@ GAME.streetlife = (function () {
     bag.position.set(0, -0.62, 0);
     thief.mesh.userData.joints.armR.add(bag);
     thief.bag = bag;
-    // running from the door, and on for a good while
-    GAME.peds.startFlee(thief, shop.at.x, shop.at.z, 60);
+    // Out of the door and away from the shop, and on for a good while. He
+    // used to flee from the doormat itself, where he stands: with nothing to
+    // run from he went whichever way he happened to face as he spawned, and
+    // as often as not into the shop's own front wall, and stood there.
+    var inn = shop.inside;
+    if (!inn) {
+      // (a shop with only a mat: in is away from the road it was set off)
+      var rp = GAME.city.nearestRoadPoint(shop.at.x, shop.at.z);
+      var ix = shop.at.x - rp.x, iz = shop.at.z - rp.z, il = Math.sqrt(ix * ix + iz * iz) || 1;
+      inn = { x: ix / il, z: iz / il };
+    }
+    thief.heading = Math.atan2(-inn.x, -inn.z);
+    GAME.peds.startFlee(thief, shop.at.x + inn.x * 4, shop.at.z + inn.z * 4, 60);
     GAME.audio.yelp(shop.at.x, shop.at.z);
     var stolen = B && B.owns(shop.id) ? B.robbed(shop.id) : 0;
     say(B && B.owns(shop.id)

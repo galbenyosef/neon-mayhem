@@ -366,6 +366,8 @@
 //      finished last; a save with both done already finds it and is told.
 //  45. ISLAND LAMPS — a car takes an Isla Verde lamp post down and drives on,
 //      as on the mainland, and the bridge decks' too; up again later.
+//  46. OUT OF THE DOOR — a shop's thief runs out of its door and away, at
+//      every shop that can be held up, not into its front wall.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -14923,6 +14925,54 @@ function withTimeout(p, ms) {
     JSON.stringify({ back: il.backUp, restored: il.restored }));
   check('isla lamps: a bridge deck lamp goes over on its deck, and back up', il.deckKnocked && il.deckOut && il.deckAfter.top < 1.5 &&
     il.deckAfter.foot < 0.05 && il.deckBack, JSON.stringify({ before: il.deckBefore, after: il.deckAfter, back: il.deckBack }));
+
+  // ---------- 46: a thief comes out of the door ----------
+  // The thief fled from the doormat he stood on, so he ran whichever way he
+  // faced as he spawned — into the shop's own front wall as often as not,
+  // where he stood (CI once had him 3 m from the door after 3 s). Every shop
+  // that can be held up, with him spawned facing in: he is out and away.
+  var rb = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, S = GAME.streetlife, out = [];
+    var keepOpen = GAME.isla ? GAME.isla.isOpen() : false;
+    if (GAME.isla) GAME.isla.setOpen(true);   // the island's hardware store too
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    S.reset();
+    GAME.shops.locations().filter(function (l) { return { hardware: 1, dress: 1, barber: 1 }[l.kind]; }).forEach(function (l) {
+      var o = { id: l.id, mat: !l.inside };
+      // stand on a road the right distance off for a hold-up there
+      var spot = null;
+      [[70, 0], [-70, 0], [0, 70], [0, -70]].forEach(function (d) {
+        if (spot) return;
+        var rp = C.nearestRoadPoint(l.at.x + d[0], l.at.z + d[1]), dd = Math.hypot(rp.x - l.at.x, rp.z - l.at.z);
+        if (dd > 50 && dd < 110 && !C.isInWater(rp.x, rp.z) && (!GAME.isla || GAME.isla.contains(rp.x, rp.z) === GAME.isla.contains(l.at.x, l.at.z))) spot = rp;
+      });
+      if (!spot) { o.noSpot = true; out.push(o); return; }
+      GAME.test.teleport(spot.x, spot.z); GAME.test.fastForward(0.5);
+      if (!S.start('robbery') || S.event.shop.id !== l.id) { o.other = S.event && S.event.shop.id; S.reset(); out.push(o); return; }
+      var th = S.event.thief, door = { x: l.at.x, z: l.at.z };
+      // which way is in: the storefront's, or for a shop that is only a mat
+      // (VERDE HARDWARE, against an island block) away from its road
+      var inn = l.inside;
+      if (!inn) {
+        var rq = C.nearestRoadPoint(door.x, door.z), ql = Math.hypot(door.x - rq.x, door.z - rq.z) || 1;
+        inn = { x: (door.x - rq.x) / ql, z: (door.z - rq.z) / ql };
+      }
+      th.heading = Math.atan2(inn.x, inn.z);   // spawned looking into the shop
+      GAME.test.fastForward(3);
+      o.ran = Math.round(Math.hypot(th.pos.x - door.x, th.pos.z - door.z));
+      o.outward = Math.round(-((th.pos.x - door.x) * inn.x + (th.pos.z - door.z) * inn.z));
+      o.running = th.state === 'flee' && !!th.bag;
+      S.reset();
+      if (!th.gone) GAME.peds.removePed(th);
+      out.push(o);
+    });
+    if (GAME.isla) GAME.isla.setOpen(keepOpen);
+    GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    return out;
+  });
+  check('robbery: at every shop that can be held up, the thief comes out of the door and away',
+    rb.length >= 4 && rb.every(function (o) { return o.running && o.ran > 6 && o.outward > 4; }), JSON.stringify(rb));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
