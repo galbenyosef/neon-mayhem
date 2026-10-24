@@ -12976,6 +12976,10 @@ function withTimeout(p, ms) {
         GAME.exitCar(); GAME.test.fastForward(1.5);
       }
       GAME.police.clearWanted();
+      // (the tanks out of the way first: the car below is put four metres
+      // from you and driven at 15 m/s, and anything meeting a tank at that
+      // goes up on the spot — vehicles.js — before the PIT can turn it)
+      GAME.army.tanks().forEach(function (c) { if (c !== P.car) GAME.vehicles.removeCar(c); });
       // the cruisers' tactics, from three stars, in a car
       var ride = GAME.test.spawnCar('sedan', 4, 0); spawned.push(ride);
       GAME.test.fastForward(0.2); GAME.test.enterNearestCar(ride); GAME.test.fastForward(1);
@@ -13003,6 +13007,7 @@ function withTimeout(p, ms) {
         if (!r.pitT) r.pitWhy = { mode: pit.ai && pit.ai.mode, tactic: pit.tactic, dead: pit.dead, cs: +pc.speed.toFixed(1), ps: +pit.speed.toFixed(1) };
         GAME.test.fastForward(0.5);
         r.spun = Math.abs(U.wrapPI(pc.heading - h0)) > 0.5;
+        if (!r.spun) r.spunWhy = { turned: +U.wrapPI(pc.heading - h0).toFixed(2), dead: pc.dead, inCar: P.inCar && P.car === pc };
       }
       // switched off, they only follow
       GAME.police.tactics = false;
