@@ -1753,6 +1753,13 @@ function withTimeout(p, ms) {
     GAME.police.clearWanted();
     GAME.test.fastForward(1);
     GAME.godMode = true;
+    // (this is about where they are sent, not about being taken: stood on
+    // foot at three stars, an officer who came round a corner could cuff
+    // you — god mode does not stop that — and a player in the cells stops
+    // the police thinking, so no cruiser came at all, and the sleep checks
+    // after it woke you from the cells with no stars)
+    var bust0 = GAME.playerBusted;
+    GAME.playerBusted = function () { r.wouldBust = (r.wouldBust || 0) + 1; };
     GAME.test.teleport(-250, -150);
     GAME.test.fastForward(0.5);
     GAME.test.setWanted(3);
@@ -1771,7 +1778,8 @@ function withTimeout(p, ms) {
         if (c.isPolice && c.ai && c.ai.mode === 'chase') near = Math.min(near, U.dist(c.pos.x, c.pos.z, P.pos.x, P.pos.z));
       });
     }
-    r.near = Math.round(near); r.t = +(t / 60).toFixed(1);
+    r.near = Math.round(near); r.t = +(t / 60).toFixed(1); r.state = P.state;
+    GAME.playerBusted = bust0;
     GAME.godMode = false;
     GAME.police.clearWanted();
     GAME.test.fastForward(1);
@@ -1779,9 +1787,11 @@ function withTimeout(p, ms) {
     return r;
   });
   check('law: a new offence brings them to you, not to where the last chase was lost',
-    fresh.near <= 130, 'nearest cruiser ' + fresh.near + ' m after ' + fresh.t + ' s');
+    fresh.near <= 130, 'nearest cruiser ' + fresh.near + ' m after ' + fresh.t + ' s, ' + fresh.state + (fresh.wouldBust ? ', would have been busted' : ''));
 
   // sleeping it off: three stars or fewer is forgotten, a manhunt only cools
+  // (on your feet first: woken from the cells instead, the stars are gone)
+  await comeBack();
   var slept = [];
   for (var sl = 0; sl < 3; sl++) {
     var stars0 = [5, 4, 3][sl];
@@ -1797,7 +1807,7 @@ function withTimeout(p, ms) {
       window.__msgs = [];
       var opened = GAME.shops.open(home);
       var rested = GAME.shops.buy('rest');
-      return { found: true, opened: opened, rested: rested, before: GAME.police.wanted };
+      return { found: true, opened: opened, rested: rested, before: GAME.police.wanted, state: P.state };
     }, stars0);
     // the night passes behind a real fade, so wait for morning rather than a clock
     try {
@@ -1812,13 +1822,13 @@ function withTimeout(p, ms) {
       GAME.police.clearWanted();
       return r;
     });
-    slept.push({ from: stars0, found: asleep.found, rested: asleep.rested, before: asleep.before, after: woke.after });
+    slept.push({ from: stars0, found: asleep.found, rested: asleep.rested, before: asleep.before, after: woke.after, state: asleep.state });
   }
   check('sleep: a safehouse to sleep in (anchor sanity)',
     slept.every(function (s) { return s.found && s.rested && s.before === s.from; }), JSON.stringify(slept));
   check('sleep: five stars wake up as three, four as two, three as none',
     slept[0].after === 3 && slept[1].after === 2 && slept[2].after === 0,
-    slept.map(function (s) { return s.from + '->' + s.after; }).join(' '));
+    slept.map(function (s) { return s.from + '->' + s.after + (s.state !== 'alive' ? ' (' + s.state + ')' : ''); }).join(' '));
 
   // the same jump pays once per cooldown
   var jumps = await page.evaluate(function () {
@@ -13049,11 +13059,15 @@ function withTimeout(p, ms) {
       r.politeOff = !plain || plain.tactic === 'chase';
     } finally {
       GAME.police.tactics = false;
-      GAME.police.clearWanted();
       if (P.inCar) GAME.exitCar();
-      GAME.test.fastForward(1);
+      // the wrecks away before the stars are cleared: one still burning went
+      // up a moment later, took a passer-by with it, and the next group began
+      // with a star for it (the cheats' two-more-stars came out at three)
       spawned.forEach(function (c) { if (!c.gone) GAME.vehicles.removeCar(c); });
       GAME.army.tanks().forEach(function (c) { GAME.vehicles.removeCar(c); });
+      GAME.world.cars.slice().forEach(function (c) { if (c.dead || c.stage >= 2) GAME.vehicles.removeCar(c); });
+      GAME.police.clearWanted();
+      GAME.test.fastForward(1);
       GAME.godMode = false;
       P.health = 100;
       GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
@@ -13083,6 +13097,7 @@ function withTimeout(p, ms) {
     try {
       if (P.inCar) GAME.exitCar();
       GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+      GAME.police.clearWanted();   // (the stars below are counted from none)
       // off the pause screen: the list, over a game held still, the pause
       // screen out of sight under it
       GAME.togglePause();
@@ -13110,7 +13125,9 @@ function withTimeout(p, ms) {
       // the same codes straight through enter()
       r.armour = !!C.enter('PRECIOUSPROTECTION') && P.armor === 100;
       r.panzer = !!C.enter('panzer') && GAME.world.cars.some(function (c) { if (c.spec.tank && c.occupied !== 'ai') { window.__cheatSpawned.push(c); return true; } return false; });
-      r.up = !!C.enter('YOUWONTTAKEMEALIVE') && GAME.police.wanted === 2;
+      var stars0 = GAME.police.wanted;
+      r.up = !!C.enter('YOUWONTTAKEMEALIVE') && GAME.police.wanted === Math.min(GAME.police.MAX_STARS, stars0 + 2);
+      if (!r.up) r.upWhy = { from: stars0, to: GAME.police.wanted };
       r.clear = !!C.enter('LEAVEMEALONE') && GAME.police.wanted === 0;
       r.rain = !!C.enter('CATSANDDOGS') && GAME.weather.mode === 'rain';
       // a sky is a switch too: picked again it goes back to AUTO
