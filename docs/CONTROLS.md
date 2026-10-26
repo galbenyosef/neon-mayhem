@@ -42,6 +42,7 @@ Every action, on all three: keyboard and mouse, a controller (standard layout �
 | Plane: barrel roll (left / right) | `Q` / `E` | LB / RB | ⟲ / ⟳ |
 | Get out · bail out (a chute, up high) | `F` | Y | EXIT |
 | Steer the parachute | `W A S D` | left stick | stick |
+| A car or boat with wings (the `COMEFLYWITHME` and `AIRSHIP` cheats): climb / dive | hold `W` / `S` (or `Space` / `Shift`); let go to glide down | stick back / forward, RT to keep your speed (held, with the stick left alone, it flies level) | stick back / forward, GAS to keep your speed (likewise) |
 
 A plane rolls down the runway on throttle and climbs once it's fast; airborne, the elevator is unrestricted — pull hard enough and it loops.
 
@@ -55,6 +56,7 @@ A plane rolls down the runway on throttle and climbs once it's fast; airborne, t
 | Resume | `Esc` · RESUME · a click anywhere off the buttons | START · RESUME | RESUME · a tap anywhere off the buttons |
 | Map | `P` | BACK | tap the radar |
 | Photo | `C` | L3 | 📷 |
+| Cheats (the list) | `` ` `` | START → GAME → CHEATS · a cheat's combo in play | the joystick beside the radar |
 | See a photo full size | `V` (the last one) · click it in PHOTOS | START → PHOTOS → A | tap the print · tap it in PHOTOS |
 | Call Lola | `L` | START → 📟 ASK LOLA | 📟 beside the camera (while her tips are on) · ❚❚ → 📟 ASK LOLA |
 | Retry a failed run | `Y` | D-pad ↑ | RETRY |

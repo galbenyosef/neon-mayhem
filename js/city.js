@@ -1920,6 +1920,17 @@ GAME.city = (function () {
     skyDay.renderOrder = -9;
     celestial.add(skyDay);
     city.skyDay = skyDay;
+    // overcast and fog (weather.js): a plain dome in the fog's colour drawn
+    // over both, as thick as the weather is (main.js applyTimeOfDay). It is
+    // the day dome's own sphere a little smaller: hidden in fine weather, a
+    // sphere of its own would never reach the GPU and so never let go of
+    // its vertices (releaseStatic)
+    var skyVeil = new THREE.Mesh(skyDay.geometry, new THREE.MeshBasicMaterial({ color: 0x9aa2ae, side: THREE.BackSide, fog: false, depthWrite: false, transparent: true, opacity: 0 }));
+    skyVeil.scale.setScalar(1380 / 1390);
+    skyVeil.renderOrder = -8;
+    skyVeil.visible = false;
+    celestial.add(skyVeil);
+    city.skyVeil = skyVeil;
 
     var starPos = [];
     for (var i = 0; i < 420; i++) {
@@ -1948,8 +1959,9 @@ GAME.city = (function () {
   // df in [0,1]: 0 = deep night, ~0.4 = dusk/sunset, 1 = full day
   city.applyTimeOfDay = function (df) {
     // under rain the sky clouds over: the blue day dome fades toward the grey
-    // the fog has turned, and the stars and the moon go in
-    var wet = GAME.weather ? GAME.weather.rain : 0, clear = 1 - wet;
+    // the fog has turned, and the stars and the moon go in. Cloud with no
+    // rain in it does the same, and so does a fog bank (weather.js)
+    var wet = GAME.weather ? GAME.weather.grey : 0, clear = 1 - wet;
     if (city.sky) city.sky.material.color.setScalar(U.clamp(0.32 + df * 1.1, 0.32, 1) * (1 - 0.45 * wet));
     if (city.skyDay) {
       city.skyDay.material.opacity = U.clamp((df - 0.6) / 0.32, 0, 1);
@@ -1995,6 +2007,14 @@ GAME.city = (function () {
     // nose east down the runway, the same way as the plane parked beside it
     city.monsterSpot = { x: city.airport.apron.x + 14, z: city.airport.apron.z + 16, heading: Math.PI / 2, vtype: 'monster' };
     city.parkedSpots.push(city.monsterSpot);
+  };
+  // and for every jump on BOTH islands (missions.js): a tank, the army's
+  // own Mastodon, on the grass just south of the apron beside the truck
+  city.tankSpot = null;
+  city.unlockTank = function () {
+    if (city.tankSpot) return;
+    city.tankSpot = { x: city.airport.apron.x - 2, z: city.airport.apron.z + 22, heading: Math.PI / 2, vtype: 'tank' };
+    city.parkedSpots.push(city.tankSpot);
   };
 
   function buildInstancedProps(scene) {
@@ -2082,7 +2102,7 @@ GAME.city = (function () {
       poleMesh.setMatrixAt(L, dummy.matrix);
       headMesh.setMatrixAt(L, dummy.matrix);
       addSolid(ls.x, ls.z, 0.5, 0.5, 6, 'prop', true).knock =
-        { kind: 'pole', mesh: poleMesh, extra: headMesh, i: L, x: ls.x, z: ls.z, rot: ls.rot, down: false, t: 0, m0: null };
+        { kind: 'pole', parts: [[poleMesh, L], [headMesh, L]], x: ls.x, y: 0, z: ls.z, down: false, t: 0, m0: null };
     }
     scene.add(poleMesh); scene.add(headMesh);
     // warm pools of light on the road
@@ -2135,7 +2155,7 @@ GAME.city = (function () {
       benchMesh.setMatrixAt(bb, dummy.matrix);
       // solid, as a bench is — a car went through these as if they were paint
       addSolid(benches[bb].x, benches[bb].z, 0.7, 2.2, 0.9, 'prop', true).knock =
-        { kind: 'flat', mesh: benchMesh, extra: null, i: bb, x: 0, z: 0, rot: 0, down: false, t: 0, m0: null };
+        { kind: 'flat', parts: [[benchMesh, bb]], x: 0, y: 0, z: 0, down: false, t: 0, m0: null };
     }
     scene.add(benchMesh);
 
@@ -3099,25 +3119,33 @@ GAME.city = (function () {
   // something moving takes it
   // down for a little of its pace and a dent (vehicles.js collideStatic), and
   // it is put back up once nobody has been near it for a while.
+  // A prop's `knock.parts` are the instances it is drawn with, [mesh, index]
+  // each — a mainland post is one pole and one head, an island one is its
+  // pole, arm and head in the boxes it shares with the trees (isla.js) — and
+  // they go down as one: tipped about the foot of the post at (x, y, z), or
+  // flattened.
   var knocked = [], knockCheckT = 0, KNOCK_BACK_AFTER = 45, KNOCK_BACK_R = 120;
-  var kq = new THREE.Quaternion(), kq2 = new THREE.Quaternion(), kAxis = new THREE.Vector3();
-  var kPos = new THREE.Vector3(), kScl = new THREE.Vector3(1, 1, 1), kM = new THREE.Matrix4();
-  function setKnock(k, m) {
-    k.mesh.setMatrixAt(k.i, m); k.mesh.instanceMatrix.needsUpdate = true;
-    if (k.extra) { k.extra.setMatrixAt(k.i, m); k.extra.instanceMatrix.needsUpdate = true; }
+  var kq = new THREE.Quaternion(), kAxis = new THREE.Vector3();
+  var kM = new THREE.Matrix4(), kM2 = new THREE.Matrix4();
+  function setKnock(k, tilt) {
+    for (var p = 0; p < k.parts.length; p++) {
+      var mesh = k.parts[p][0];
+      mesh.setMatrixAt(k.parts[p][1], tilt ? kM2.multiplyMatrices(tilt, k.m0[p]) : k.m0[p]);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
   }
   city.knockProp = function (box, heading) {
     var k = box.knock;
     if (!k || k.down) return false;
     k.down = true; k.t = 0;
     city.hash.remove(box);
-    if (!k.m0) { k.m0 = new THREE.Matrix4(); k.mesh.getMatrixAt(k.i, k.m0); }
+    if (!k.m0) k.m0 = k.parts.map(function (p) { var m = new THREE.Matrix4(); p[0].getMatrixAt(p[1], m); return m; });
     if (k.kind === 'pole') {
       // laid over in the direction it was hit, hinged at its foot
       kq.setFromAxisAngle(kAxis.set(Math.cos(heading), 0, -Math.sin(heading)), Math.PI * 0.46);
-      kq2.setFromAxisAngle(kAxis.set(0, 1, 0), k.rot);
-      kq.multiply(kq2);
-      kM.compose(kPos.set(k.x, 0, k.z), kq, kScl.set(1, 1, 1));
+      kM.makeTranslation(-k.x, -k.y, -k.z)
+        .premultiply(kM2.makeRotationFromQuaternion(kq))
+        .premultiply(kM2.makeTranslation(k.x, k.y, k.z));
     } else kM.makeScale(0, 0, 0);
     setKnock(k, kM);
     knocked.push(box);
@@ -3134,13 +3162,18 @@ GAME.city = (function () {
       if (U.dist2(f.x, f.z, (b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2) < KNOCK_BACK_R * KNOCK_BACK_R) continue;
       k.down = false;
       city.hash.insert(b);
-      setKnock(k, k.m0);
+      setKnock(k, null);
       knocked.splice(i, 1);
     }
   }
 
   city.update = function (dt, t) {
     standKnockedBack(dt);
+    city.scenery(dt, t);
+  };
+  // what moves on its own: the sea, the wheel, the signs and the skyline's
+  // turning and blinking things. It goes on behind a scene too (main.js).
+  city.scenery = function (dt, t) {
     // the swell's two phases (see the ocean in buildBeach)
     if (city.oceanWave) city.oceanWave.set((t * 1.1) % (Math.PI * 2), (t * 0.7) % (Math.PI * 2));
     if (city.wheelSpin) {

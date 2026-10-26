@@ -298,8 +298,10 @@
 //      dropping it brings the stars; a day to restock; never your own.
 //  20. THE TOP END    — a sixth star and the army; a tank you can take,
 //      whose cannon and tracks work for you; cruisers that ram, PIT, box.
-//  21. CHEATS         — the codes, typed into CHEATS on the pause
-//      screen; a word that is not one does nothing.
+//  21. CHEATS         — every code a card in the CHEATS list, off the
+//      pause screen, the ` key or (touch) the joystick by the radar: picked, it runs and
+//      the game goes on; typing narrows it; a pad walks it, and in play a
+//      code's eight-press combo works on its own.
 //  22. LANDMARKS      — a club, a stadium, a film lot and a villa, solid,
 //      signed, open at the gate, with nothing buried in them.
 //  23. WEAR           — bumpers off at the end that took it, a sprung bonnet,
@@ -352,6 +354,28 @@
 //      (the year, the town, the neighbourhoods, Rico's colours, the law)
 //      before she offers to show you around; and it is all to read again
 //      under TELL ME ABOUT COSTA ROSA, following the story.
+//  42. THE REST OF THE CODES — OVERCAST and FOG, as weathers and on the
+//      WEATHER setting; cars that fly and drive on the sea, boats that fly,
+//      only wheels, big wheels, every car pink or black, mad traffic; a town
+//      that hates you, that is armed, that riots, that hops in; you fat,
+//      skinny or in a new outfit; and the whole game faster or slower.
+//  43. A TANK, AN EMPTY ALBUM — what meets a tank at more than a crawl goes
+//      up on the spot; an empty PHOTOS album says so big.
+//  44. EVERY JUMP, AND A TANK — every stunt jump on both islands parks a
+//      tank at the airport beside the monster truck, whichever tally is
+//      finished last; a save with both done already finds it and is told.
+//  45. ISLAND LAMPS — a car takes an Isla Verde lamp post down and drives on,
+//      as on the mainland, and the bridge decks' too; up again later.
+//  46. OUT OF THE DOOR — a shop's thief runs out of its door and off down
+//      the street, at every shop that can be held up, not into its wall.
+//  47. A SOLDIER'S CARBINE — the army fights as an army: bursts from twice
+//      the range, a steadier hand, and a car at speed is a target.
+//  48. THE VAN — the security van is ringed on the radar and on the map,
+//      keeps its rounds to your part of town, and is about for four minutes.
+//  49. RAIN BEHIND A SCENE — the rain falls and the sea swells while a
+//      scene plays, and the clock still waits.
+//  50. PISTOLS AND A STOREFRONT — an officer's pistol is holstered on the
+//      beat and drawn when he is after you; VERDE HARDWARE has a store.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -4629,8 +4653,8 @@ function withTimeout(p, ms) {
   // in view of the door: the flat still is, but the condo's bedroom is
   // through a door at the back, and the villa is two storeys — a hall under
   // a double-height ceiling, the kitchen under the gallery, and stairs up to
-  // the bedroom. And the ice cream truck's horn is its chimes, as in Vice
-  // City: nobody comes to the hatch who has not heard them.
+  // the bedroom. And the ice cream truck's horn is its chimes: nobody comes
+  // to the hatch who has not heard them.
   var homes5k = await page.evaluate(function () {
     var P = GAME.player, I = GAME.interiors, S = GAME.shops, r = {};
     var owned0 = (GAME.prefs.safehouses || []).slice(), last0 = GAME.prefs.lastHome, cash0 = P.cash;
@@ -11507,6 +11531,15 @@ function withTimeout(p, ms) {
   await tpage.waitForFunction(function () {
     return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
   }, null, { timeout: 90000 });
+  // On the title screen, before the game has started, the row beside the
+  // radar is not there yet — the cheats button included (it stood over the
+  // title's camera flight, alone, while the camera and pause did not)
+  var titleRow = await tpage.evaluate(function () {
+    var cb = document.querySelector('.tbtn[data-btn="cheats"]') || document.getElementById('cheat-btn'), cam = null, all = document.querySelectorAll('.tbtn');
+    for (var i = 0; i < all.length; i++) if (all[i].textContent === '📷') cam = all[i];
+    function seen(el) { if (!el) return false; var b = el.getBoundingClientRect(); return el.offsetParent !== null && b.width > 0; }
+    return { started: GAME.started, touch: GAME.isTouch, built: !!cb, cheats: seen(cb), camera: seen(cam) };
+  });
   var stick = await tpage.evaluate(function () {
     GAME.prefs.guide = 'done';   // her welcome answered, as on the main page
     if (GAME.strangers) GAME.strangers.enabled = false;   // and the strangers stood down, as there
@@ -11932,6 +11965,44 @@ function withTimeout(p, ms) {
   });
   check('touch: Lola has a button beside the camera that calls her, while her tips are on',
     lolaRow.found && lolaRow.shown && lolaRow.apart && lolaRow.calls && lolaRow.hiddenWithTipsOff && lolaRow.fsSteppedBack, JSON.stringify(lolaRow));
+  // and the cheats in the same row, after the camera: a tap and the list
+  var cheatRow = await tpage.evaluate(function () {
+    var all = document.querySelectorAll('.tbtn'), cam = null, lb = null;
+    for (var i = 0; i < all.length; i++) { if (all[i].textContent === '📷') cam = all[i]; if (all[i].textContent === '📟') lb = all[i]; }
+    var cb = document.querySelector('.tbtn[data-btn="cheats"]'), fsb = document.getElementById('fs-btn'), mm = document.getElementById('minimap-wrap');
+    if (!cam || !lb || !cb || !fsb) return { found: false };
+    var tips0 = GAME.lola.tips, was = fsb.style.display, r = { found: true };
+    function overlap(a, b) { return !(a.left >= b.right || a.right <= b.left || a.top >= b.bottom || a.bottom <= b.top); }
+    try {
+      GAME.lola.setTips(true); GAME.test.fastForward(0.1);
+      fsb.style.display = 'flex';
+      var k = cb.getBoundingClientRect(), c = cam.getBoundingClientRect(), l = lb.getBoundingClientRect(), f = fsb.getBoundingClientRect(), m = mm.getBoundingClientRect();
+      r.inRow = Math.abs(k.top - c.top) < 4 && k.left > c.left && k.top < m.bottom;
+      // the same kind of button as the camera: the same layer (so hidden
+      // where it is, on the title screen), the same size, the same look
+      var cs = getComputedStyle(cb), ms = getComputedStyle(cam);
+      r.likeCamera = cb.parentElement === cam.parentElement && Math.abs(k.width - c.width) < 1 && Math.abs(k.height - c.height) < 1 &&
+        cs.borderRadius === ms.borderRadius && cs.backgroundColor === ms.backgroundColor && cs.borderTopColor === ms.borderTopColor && !!cb.querySelector('svg');
+      r.apart = !overlap(k, c) && !overlap(k, l) && !overlap(k, f);
+      r.hit = cb.contains(document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2));
+      var t = new Touch({ identifier: 44, target: cb, clientX: k.left + 5, clientY: k.top + 5 });
+      cb.dispatchEvent(new TouchEvent('touchstart', { touches: [t], changedTouches: [t], targetTouches: [t], bubbles: true, cancelable: true }));
+      cb.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t], targetTouches: [], bubbles: true, cancelable: true }));
+      r.opens = GAME.cheats.isOpen;
+      r.hint = /Tap one/.test(document.getElementById('cheat-keys').textContent);
+      GAME.cheats.close(false);
+      r.back = !GAME.cheats.isOpen && !GAME.paused;
+    } finally {
+      if (GAME.cheats.isOpen) GAME.cheats.close(false);
+      if (GAME.paused) GAME.togglePause();
+      fsb.style.display = was;
+      GAME.lola.setTips(tips0); GAME.test.fastForward(0.1);
+    }
+    return r;
+  });
+  check('touch: on the title screen the cheats button is not up, as the camera is not', !titleRow.started && titleRow.touch && titleRow.built && !titleRow.cheats && !titleRow.camera, JSON.stringify(titleRow));
+  check('touch: the cheats have a button in the row beside the radar, like the camera\'s, and a tap brings up the list',
+    cheatRow.found && cheatRow.inRow && cheatRow.likeCamera && cheatRow.apart && cheatRow.hit && cheatRow.opens && cheatRow.hint && cheatRow.back, JSON.stringify(cheatRow));
   // IMPORT SAVE on a touchscreen picks the file on a page with no city
   // behind it: the phone's picker sends the tab to the background, where a
   // game this size is what Android reclaims first — the import crashed.
@@ -12887,7 +12958,13 @@ function withTimeout(p, ms) {
       r.tank = !!t;
       r.army = GAME.world.cars.some(function (c) { return c.armyUnit && c.type === 'armytruck'; }) ||
         GAME.world.peds.some(function (q) { return q.army && !q.dead; });
+      // and every one of them carries the army's carbine, tank crews too
+      r.armed = GAME.world.cars.filter(function (c) { return c.armyUnit; }).concat(GAME.world.peds.filter(function (q) { return q.army; }))
+        .every(function (o) { return o.gun === 'carbine' && (!o.mesh || o.kind !== 'ped' || !!o.mesh.userData.rifle); });
       // its crew out, and it is yours
+      // (gone to it first: with the stars off it is only traffic, and traffic
+      // past 200 m from you is cleared away — it can come from 230 m off)
+      if (t && !t.gone) { t.speed = 0; GAME.test.teleport(t.pos.x + 3.5, t.pos.z); }
       GAME.police.clearWanted();
       GAME.test.fastForward(0.2);
       if (t && !t.gone) {
@@ -12931,6 +13008,10 @@ function withTimeout(p, ms) {
         GAME.exitCar(); GAME.test.fastForward(1.5);
       }
       GAME.police.clearWanted();
+      // (the tanks out of the way first: the car below is put four metres
+      // from you and driven at 15 m/s, and anything meeting a tank at that
+      // goes up on the spot — vehicles.js — before the PIT can turn it)
+      GAME.army.tanks().forEach(function (c) { if (c !== P.car) GAME.vehicles.removeCar(c); });
       // the cruisers' tactics, from three stars, in a car
       var ride = GAME.test.spawnCar('sedan', 4, 0); spawned.push(ride);
       GAME.test.fastForward(0.2); GAME.test.enterNearestCar(ride); GAME.test.fastForward(1);
@@ -12958,6 +13039,7 @@ function withTimeout(p, ms) {
         if (!r.pitT) r.pitWhy = { mode: pit.ai && pit.ai.mode, tactic: pit.tactic, dead: pit.dead, cs: +pc.speed.toFixed(1), ps: +pit.speed.toFixed(1) };
         GAME.test.fastForward(0.5);
         r.spun = Math.abs(U.wrapPI(pc.heading - h0)) > 0.5;
+        if (!r.spun) r.spunWhy = { turned: +U.wrapPI(pc.heading - h0).toFixed(2), dead: pc.dead, inCar: P.inCar && P.car === pc };
       }
       // switched off, they only follow
       GAME.police.tactics = false;
@@ -12978,6 +13060,7 @@ function withTimeout(p, ms) {
   });
   check('law: there is a sixth star, and the HUD has room for it', law.six, JSON.stringify(law));
   check('law: at six the army comes — soldiers, and a tank', law.tank && law.army, JSON.stringify(law));
+  check('law: the army\'s every unit carries a carbine, not a pistol', law.armed, JSON.stringify(law));
   check('law: take the tank and it is yours, cannon and all', law.mine && law.cannon, JSON.stringify(law));
   check('law: a tank flattens what it drives into', law.crush, JSON.stringify(law));
   check('law: from three stars the cruisers ram, PIT and box you in', law.tactics === 'box,pit,ram' || law.tactics === 'box,chase,pit,ram', JSON.stringify(law));
@@ -12985,59 +13068,157 @@ function withTimeout(p, ms) {
   check('law: with the tactics off they only follow', law.politeOff, JSON.stringify(law));
 
   // ---------- 21: cheats ----------
-  // The codes, typed into CHEATS on the pause screen: health,
-  // armour, the three weapon sets, the stars off and on, a tank, cars, the
-  // weather. A word that is not one does nothing.
+  // Every code, a card in the CHEATS list to pick — off the pause screen,
+  // the ` key, or on a touchscreen the joystick by the radar. Picking one runs it, closes the list
+  // and carries on with the game. On a keyboard typing narrows the list (the
+  // code words still work); on a pad the D-pad walks it and A picks, and in
+  // play each code has an eight-press combo of its own.
   var cheat = await page.evaluate(function () {
     var P = GAME.player, C = GAME.cheats, r = {};
     var weapons0 = JSON.parse(JSON.stringify(P.weapons, function (k, v) { return v === Infinity ? 'INF' : v; }));
-    var cur0 = P.currentWeapon, spawned = [];
+    var cur0 = P.currentWeapon;
+    window.__cheatSpawned = [];
     try {
       if (P.inCar) GAME.exitCar();
       GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
-      // the box, off the pause screen, typed into
+      // off the pause screen: the list, over a game held still, the pause
+      // screen out of sight under it
       GAME.togglePause();
       document.getElementById('pause-cheats').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      r.open = !!GAME.cheatOpen && document.getElementById('cheat-box').style.display === 'flex';
-      var inp = document.getElementById('cheat-input');
+      var ps = document.getElementById('pause-screen');
+      r.open = C.isOpen && document.getElementById('cheat-box').style.display === 'flex' && GAME.paused && getComputedStyle(ps).visibility === 'hidden';
+      // every code is on it, in its groups, each with a pad combo
+      var cards = document.querySelectorAll('#cheat-list .ccard');
+      r.cards = cards.length;
+      r.catalog = C.catalog().length;
+      r.allCodes = C.codes().every(function (code) { return C.catalog().some(function (c) { return c.code === code || c.also === code; }); });
+      r.groups = document.querySelectorAll('#cheat-list .cgroup').length;
+      r.combos = C.catalog().every(function (c) { return c.pad.split(' ').length === 8; }) &&
+        new Set(C.catalog().map(function (c) { return c.pad; })).size === C.catalog().length;
+      // Esc there, picking nothing: back to the pause screen
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true }));
+      r.backToPause = !C.isOpen && GAME.paused && getComputedStyle(ps).visibility !== 'hidden';
+      // a card clicked: it runs, the list closes, and the game is back on
+      document.getElementById('pause-cheats').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       P.health = 30;
-      inp.value = 'aspirine';
-      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      r.health = P.health === 100 && /Health/.test(document.getElementById('cheat-said').textContent);
-      inp.value = 'NOTACHEAT';
-      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      r.nothing = /Nothing/.test(document.getElementById('cheat-said').textContent);
-      C.close();
-      if (GAME.paused) GAME.togglePause();
-      GAME.test.fastForward(0.2);
-      r.closed = !GAME.cheatOpen;
-      // the rest straight through the same door
+      var asp = null;
+      document.querySelectorAll('#cheat-list .ccard').forEach(function (el) { if (/ASPIRINE/.test(el.textContent)) asp = el; });
+      asp.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.health = P.health === 100 && !C.isOpen && !GAME.paused && /Health/.test(window.__msgs.slice(-1)[0]);
+      // the same codes straight through enter()
       r.armour = !!C.enter('PRECIOUSPROTECTION') && P.armor === 100;
-      r.nutter = !!C.enter('NUTTERTOOLS') && P.weapons.chainsaw.have && P.weapons.rocket.have && P.weapons.sniper.have;
-      var cars0 = GAME.world.cars.length;
-      r.panzer = !!C.enter('panzer') && GAME.world.cars.some(function (c) { if (c.spec.tank && c.occupied !== 'ai') { spawned.push(c); return true; } return false; });
+      r.panzer = !!C.enter('panzer') && GAME.world.cars.some(function (c) { if (c.spec.tank && c.occupied !== 'ai') { window.__cheatSpawned.push(c); return true; } return false; });
       r.up = !!C.enter('YOUWONTTAKEMEALIVE') && GAME.police.wanted === 2;
       r.clear = !!C.enter('LEAVEMEALONE') && GAME.police.wanted === 0;
       r.rain = !!C.enter('CATSANDDOGS') && GAME.weather.mode === 'rain';
+      // a sky is a switch too: picked again it goes back to AUTO
+      r.rainOff = !!C.enter('CATSANDDOGS') && GAME.weather.mode === 'auto' && /CHEAT OFF/.test(window.__msgs.slice(-1)[0]);
       C.enter('ALOVELYDAY');
+      r.notACode = C.enter('NOTACHEAT') === null;
       r.count = C.codes().length;
+      // a switch shows ON in the list, and picked again it is off
+      C.enter('COMEFLYWITHME');
+      C.open();
+      r.onShown = C.onCodes().indexOf('COMEFLYWITHME') >= 0;
+      C.close(false);
+      C.enter('COMEFLYWITHME');
     } finally {
-      C.close();
+      if (C.isOpen) C.close(false);
       if (GAME.paused) GAME.togglePause();
       GAME.weather.setMode('clear', true);
-      spawned.forEach(function (c) { if (!c.gone) GAME.vehicles.removeCar(c); });
       P.weapons = JSON.parse(JSON.stringify(weapons0), function (k, v) { return v === 'INF' ? Infinity : v; });
       P.currentWeapon = cur0; GAME.combat.refreshWeaponHud();
+      GAME.test.fastForward(0.3);
+    }
+    return r;
+  });
+  // the ` key, from play: the list; typing narrows it, Enter picks
+  await page.keyboard.press('Backquote');
+  var typed = await page.evaluate(function () {
+    var C = GAME.cheats, r = { open: C.isOpen && GAME.paused };
+    r.hint = /cheats/.test(document.getElementById('controls-bar').textContent);
+    return r;
+  });
+  await page.keyboard.type('NUTTER');
+  typed.shown = await page.evaluate(function () { return GAME.cheats.shown(); });
+  await page.keyboard.press('Enter');
+  Object.assign(typed, await page.evaluate(function () {
+    var P = GAME.player, C = GAME.cheats;
+    return { nutter: P.weapons.chainsaw.have && P.weapons.rocket.have && P.weapons.sniper.have, closed: !C.isOpen && !GAME.paused };
+  }));
+  // ` again with it up puts it away
+  await page.keyboard.press('Backquote');
+  await page.keyboard.press('Backquote');
+  typed.toggles = await page.evaluate(function () { return !GAME.cheats.isOpen && !GAME.paused; });
+  var padc = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.cheats, r = {};
+    try {
+      // a pad on the list, through the pad itself (controls.js): the D-pad
+      // walks it, A picks, B backs out
+      var Cs = GAME.controls, gp0 = navigator.getGamepads;
+      var fake = { connected: true, axes: [0, 0, 0, 0], buttons: [] };
+      for (var bi = 0; bi < 17; bi++) fake.buttons.push({ pressed: false, value: 0 });
+      function tap(b) { fake.buttons[b].pressed = true; Cs.poll(1 / 60); fake.buttons[b].pressed = false; Cs.poll(1 / 60); }
+      navigator.getGamepads = function () { return [fake]; };
+      try {
+        Cs.poll(1 / 60);
+        C.open();
+        var first = C.selected;
+        tap(15);
+        r.walks = C.selected !== first && C.selected === C.shown()[1];
+        tap(14);
+        P.health = 40;
+        tap(0);
+        r.aPicks = first === 'ASPIRINE' && P.health === 100 && !C.isOpen && !GAME.paused;
+        C.open();
+        tap(13);
+        r.down = C.shown().indexOf(C.selected) > 1;
+        tap(1);
+        r.backOut = !C.isOpen && !GAME.paused;
+        // and in play, a code's combo: eight presses, nothing opened (a
+        // trigger pressed in the middle of it is no matter)
+        GAME.police.setWanted(2);
+        var BTN = { A: 0, B: 1, LB: 4, RB: 5, UP: 12, LEFT: 14, RIGHT: 15 };
+        var combo = C.catalog().filter(function (c) { return c.code === 'LEAVEMEALONE'; })[0].pad.split(' ');
+        combo.forEach(function (t, i) { if (i === 3) tap(7); tap(BTN[t]); });
+        r.combo = GAME.police.wanted === 0 && !C.isOpen;
+      } finally {
+        navigator.getGamepads = gp0;
+        Cs.poll(1 / 60);
+      }
+      // seven of the eight is nothing
+      GAME.police.setWanted(2);
+      combo.slice(1).forEach(function (t) { C.padPress(BTN[t]); });
+      r.sevenNothing = GAME.police.wanted === 2;
+      GAME.police.clearWanted();
+      // on a desktop nothing by the radar: the ` key is the way in (the
+      // joystick button is a touchscreen's, in its row of buttons)
+      var tb = document.querySelector('[data-btn="cheats"]');
+      r.noDesktopBtn = !GAME.isTouch && !document.getElementById('cheat-btn') && (!tb || tb.offsetParent === null);
+    } finally {
+      if (C.isOpen) C.close(false);
+      if (GAME.paused) GAME.togglePause();
+      (window.__cheatSpawned || []).forEach(function (c) { if (!c.gone) GAME.vehicles.removeCar(c); });
       P.armor = 0; P.health = 100;
       GAME.police.clearWanted();
       GAME.test.fastForward(0.3);
     }
     return r;
   });
-  check('cheats: CHEATS on the pause screen opens a box to type a code in', cheat.open && cheat.closed, JSON.stringify(cheat));
-  check('cheats: ASPIRINE heals; a word that is not a code does nothing', cheat.health && cheat.nothing, JSON.stringify(cheat));
-  check('cheats: armour, the nutter\'s weapons, and a tank beside you', cheat.armour && cheat.nutter && cheat.panzer, JSON.stringify(cheat));
-  check('cheats: the stars up and off, and the weather', cheat.up && cheat.clear && cheat.rain && cheat.count >= 15, JSON.stringify(cheat));
+  check('cheats: CHEATS on the pause screen is a list of every code, in groups, each with a pad combo of its own',
+    cheat.open && cheat.cards === cheat.catalog && cheat.catalog >= 38 && cheat.allCodes && cheat.groups >= 6 && cheat.combos, JSON.stringify(cheat));
+  check('cheats: Esc there goes back to the pause screen', cheat.backToPause, JSON.stringify(cheat));
+  check('cheats: pick a card and it works, the list closes and the game goes on', cheat.health, JSON.stringify(cheat));
+  check('cheats: armour, a tank beside you, the stars up and off, the weather; a word that is not a code does nothing',
+    cheat.armour && cheat.panzer && cheat.up && cheat.clear && cheat.rain && cheat.notACode && cheat.count >= 39, JSON.stringify(cheat));
+  check('cheats: a switch that is on shows ON in the list', cheat.onShown, JSON.stringify(cheat));
+  check('cheats: a weather picked again goes back to AUTO', cheat.rainOff, JSON.stringify(cheat));
+  check('cheats: ` puts the list up from play, and the hint bar says so', typed.open && typed.hint, JSON.stringify(typed));
+  check('cheats: typing narrows the list, Enter picks — the code words still work', typed.shown.length === 1 && typed.shown[0] === 'NUTTERTOOLS' && typed.nutter && typed.closed, JSON.stringify(typed));
+  check('cheats: ` again puts it away', typed.toggles, JSON.stringify(typed));
+  check('cheats: on a pad the D-pad walks the list, A picks, B backs out', padc.walks && padc.aPicks && padc.down && padc.backOut, JSON.stringify(padc));
+  check('cheats: in play, a code\'s eight-press combo on the pad works on its own (and seven do not)', padc.combo && padc.sevenNothing, JSON.stringify(padc));
+  check('cheats: on a desktop there is no cheats button by the radar — the ` key is the way in', padc.noDesktopBtn, JSON.stringify(padc));
 
   // ---------- 22: landmarks ----------
   // One a district, on a lot the blocks left empty: THE NEON TIDE on the strip,
@@ -14131,6 +14312,944 @@ function withTimeout(p, ms) {
     wb.told && wb.told.lola && wb.told.year && wb.told.hoods && wb.told.island && wb.told.gangs && wb.told.law && wb.told.askAgain, JSON.stringify(wb.told));
   check('briefing: TELL ME ABOUT COSTA ROSA has it all to read, part by part, and it follows the story',
     wb.menu && wb.parts === 6 && wb.gangs && wb.back && wb.after, JSON.stringify(wb));
+
+  // ---------- 42: the rest of the cheats, and two more skies ----------
+  // Nineteen more codes for the CHEATS box. Most of them switch a way the
+  // town works and are switched back off by typing them again: cars that
+  // fly, cars on the sea, boats that fly, only the wheels showing, big
+  // wheels, every car pink or black, traffic gone mad, a town that hates
+  // you, a town that is armed, a riot, people who hop into your car, you
+  // fat or skinny, the whole game faster or slower. Two of them are
+  // weathers the game did not have: OVERCAST and FOG, which the WEATHER
+  // setting goes round now too.
+  var sky = await page.evaluate(function () {
+    var r = {}, W = GAME.weather, C = GAME.cheats, ff = function (t) { GAME.test.fastForward(t); };
+    var time0 = GAME.timeMode, pref0 = GAME.prefs.weather;
+    function sat(c) { var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b); return mx ? (mx - mn) / mx : 0; }
+    try {
+      if (GAME.player.inCar) GAME.exitCar();
+      GAME.setTimeMode('day');
+      W.setMode('clear', true); W.testSet(0); W.testSky(0, 0); ff(0.2);
+      var L = GAME.lights, fog = GAME.scene.fog, veil = GAME.city.skyVeil;
+      var base = { dir: L.dir.intensity, far: fog.far, vis: W.visibility(), sat: sat(fog.color) };
+      // overcast: grey, flat, dry
+      r.overcastCode = C.enter('ABITDRIEG');
+      r.overcastMode = W.mode;
+      W.testSky(1, 0); ff(0.2);
+      r.overcast = { dir: +(L.dir.intensity / base.dir).toFixed(2), sat: +sat(fog.color).toFixed(2), sat0: +base.sat.toFixed(2),
+        veil: veil && veil.visible ? +veil.material.opacity.toFixed(2) : 0, rain: W.rain, streaks: W.rain > 0.02 };
+      // fog: it rolls in rather than snapping, then the city ends close by
+      r.fogCode = C.enter('CANTSEEATHING');
+      r.fogMode = W.mode;
+      W.testSky(0, 0); ff(6);
+      r.rolling = +W.mist.toFixed(2);
+      W.testSky(0, 1); ff(0.2);
+      r.fog = { far: Math.round(fog.far), veil: veil && veil.visible ? +veil.material.opacity.toFixed(2) : 0,
+        vis: +(W.visibility() / base.vis).toFixed(2), dir: +(L.dir.intensity / base.dir).toFixed(2) };
+      // the WEATHER setting goes round all five
+      var seen = [];
+      W.setMode('auto', true);
+      for (var i = 0; i < 5; i++) seen.push(W.cycle());
+      r.cycle = seen.join(',');
+      W.setMode('clear', true); W.testSky(0, 0); ff(0.2);
+      r.clearAgain = !(veil && veil.visible) && Math.abs(fog.far - base.far) < 1;
+    } finally {
+      W.setMode('clear', true); W.testSet(0); W.testSky(0, 0);
+      if (pref0 === undefined) delete GAME.prefs.weather; else GAME.prefs.weather = pref0;
+      GAME.setTimeMode(time0);
+      ff(0.2);
+    }
+    return r;
+  });
+  check('weather: ABITDRIEG is OVERCAST — a grey lid and no rain: flat light, a greyer fog, the sky veiled',
+    !!sky.overcastCode && sky.overcastMode === 'overcast' && sky.overcast.dir < 0.7 && sky.overcast.sat < sky.overcast.sat0 &&
+    sky.overcast.veil > 0.4 && sky.overcast.rain === 0, JSON.stringify(sky));
+  check('weather: CANTSEEATHING is FOG — it rolls in, the city ends at about a hundred metres, and people see half as far',
+    !!sky.fogCode && sky.fogMode === 'fog' && sky.rolling > 0.1 && sky.rolling < 0.9 && sky.fog.far <= 120 && sky.fog.veil > 0.9 && sky.fog.vis < 0.6, JSON.stringify(sky));
+  check('weather: the WEATHER setting goes round AUTO, CLEAR, OVERCAST, RAIN and FOG, and back to clear sky',
+    sky.cycle === 'clear,overcast,rain,fog,auto' && sky.clearAgain, JSON.stringify(sky));
+
+  var flyc = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, Cy = GAME.city, A = Cy.airport;
+    var ff = function (t) { GAME.test.fastForward(t); }, key = function (k, d) { GAME.test.pressKey(k, d); };
+    var made = [], cash0 = P.cash;
+    function out() { key('KeyW', false); key('KeyS', false); if (P.inCar) { GAME.test.teleport(-60, 40); GAME.exitCar(); } ff(0.2); }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      // --- COMEFLYWITHME: down the runway with the throttle open, and up
+      r.flyCode = C.enter('COMEFLYWITHME');
+      GAME.test.teleport(A.minX + 40, A.cz); ff(0.2);
+      var car = V.spawnCar('sports', A.minX + 40, A.cz, Math.PI / 2, {}); made.push(car);
+      GAME.seatInCar(car); car.heading = Math.PI / 2; car.speed = 30;
+      key('KeyW');
+      var top = 0;
+      for (var i = 0; i < 180; i++) { ff(1 / 60); top = Math.max(top, car.pos.y); }
+      r.climbed = +top.toFixed(1);
+      r.flying = car.cheatFlight;
+      // off the throttle it glides; on the brake it comes down — and a
+      // flight is not a stunt jump
+      key('KeyW', false); ff(1.5);
+      r.glide = +car.vy.toFixed(1);
+      key('KeyS');
+      for (var j = 0; j < 60 * 12 && car.air; j++) ff(1 / 60);
+      key('KeyS', false); ff(0.3);
+      r.landed = !car.air && !car.cheatFlight && !car.dead;
+      r.unpaid = P.cash === cash0;
+      // --- on a stick (a touchscreen's here), as the plane is: GAS keeps the
+      // speed, pulled back it climbs, left alone it flies level, pushed
+      // forward it dives
+      var T = GAME.input.touch;
+      try {
+        GAME.test.teleport(A.minX + 40, A.cz); car.heading = Math.PI / 2; car.speed = 30;
+        T.active = true; T.gas = true; T.stickY = 0;
+        ff(0.5);
+        r.stickOff = car.cheatFlight;
+        T.stickY = 1; ff(1.5);
+        r.pullUp = +car.vy.toFixed(1);
+        T.stickY = 0; ff(1);
+        r.level = +car.vy.toFixed(1);
+        T.stickY = -1; ff(0.6);
+        r.pushDown = +car.vy.toFixed(1);
+        T.stickY = 0; T.gas = false; T.brake = true;
+        for (var tl = 0; tl < 60 * 10 && car.air; tl++) ff(1 / 60);
+        r.stickLanded = !car.air && !car.dead;
+      } finally {
+        T.active = false; T.gas = false; T.brake = false; T.stickY = 0;
+      }
+      // typed again, the wings come off: the same run stays on the ground
+      r.flyOff = C.enter('COMEFLYWITHME') && /CHEAT OFF/.test(window.__msgs.slice(-1)[0]);
+      GAME.test.teleport(A.minX + 40, A.cz); car.heading = Math.PI / 2; car.speed = 30;
+      key('KeyW'); ff(1.5); key('KeyW', false);
+      r.groundedOff = car.pos.y < 1 && !car.cheatFlight;
+      out();
+
+      // --- SEAWAYS: out on the open sea in a car, and it drives
+      var sx = 380;
+      while (sx < 700 && !Cy.isOpenWater(sx, 0)) sx += 5;
+      sx += 40;
+      r.seaCode = C.enter('SEAWAYS');
+      var sea = V.spawnCar('sedan', sx, 0, 0, {}); made.push(sea);
+      GAME.seatInCar(sea); sea.heading = 0; sea.speed = 12;
+      key('KeyW');
+      var z0 = sea.pos.z, low = 99;
+      for (var k = 0; k < 180; k++) { ff(1 / 60); low = Math.min(low, sea.pos.y); }
+      key('KeyW', false);
+      r.onSea = !sea.sinking && Cy.isOpenWater(sea.pos.x, sea.pos.z) && sea.pos.z - z0 > 25 && low > -0.6;
+      r.seaRun = { moved: Math.round(sea.pos.z - z0), low: +low.toFixed(2), sinking: sea.sinking };
+      out();
+      // switched off, a car on the water goes under as it always did
+      C.enter('SEAWAYS');
+      var sunk = V.spawnCar('sedan', sx + 20, 30, 0, {}); made.push(sunk);
+      sunk.speed = 5; ff(0.3);
+      r.sinksOff = sunk.sinking;
+
+      // --- AIRSHIP: a boat flat out lifts off; off again, it falls back in.
+      // Out on the open sea south of the airport: the strait off the beach
+      // is the closed channel's edge, where anything flying is turned back
+      var bz = 500;
+      while (bz < 700 && !Cy.isOpenWater(-100, bz)) bz += 5;
+      bz += 40;
+      r.boatCode = C.enter('AIRSHIP');
+      var boat = V.spawnCar('boat', -100, bz, Math.PI / 2, {}); made.push(boat);
+      boat.pos.y = Cy.seaY(-100, bz);
+      GAME.seatInCar(boat); boat.heading = Math.PI / 2; boat.speed = 26;
+      key('KeyW');
+      var btop = 0;
+      for (var b = 0; b < 180; b++) { ff(1 / 60); btop = Math.max(btop, boat.pos.y); }
+      key('KeyW', false);
+      r.boatUp = boat.aloft && btop > 4;
+      r.boatTop = +btop.toFixed(1);
+      C.enter('AIRSHIP');
+      for (var d = 0; d < 60 * 8 && boat.aloft; d++) ff(1 / 60);
+      r.boatDown = !boat.aloft && !boat.dead && Math.abs(boat.pos.y - Cy.seaY(boat.pos.x, boat.pos.z)) < 0.6;
+      out();
+    } finally {
+      key('KeyW', false); key('KeyS', false);
+      if (P.inCar) { GAME.test.teleport(-60, 40); GAME.exitCar(); }
+      if (GAME.stopSwim) GAME.stopSwim();
+      C.testReset();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.test.teleport(-60, 40);
+      P.health = 100; GAME.police.clearWanted();
+      ff(0.3);
+    }
+    return r;
+  });
+  check('cheats: COMEFLYWITHME — floor it and the car takes off; off the throttle it glides, on the brake it lands, and it pays no stunt',
+    !!flyc.flyCode && flyc.climbed > 5 && flyc.flying && flyc.glide < 0 && flyc.glide > -6 && flyc.landed && flyc.unpaid, JSON.stringify(flyc));
+  check('cheats: COMEFLYWITHME on a stick: pulled back it climbs, left alone with GAS it flies level, pushed forward it dives',
+    flyc.stickOff && flyc.pullUp > 3 && Math.abs(flyc.level) < 1.5 && flyc.pushDown < -4 && flyc.stickLanded, JSON.stringify(flyc));
+  check('cheats: COMEFLYWITHME typed again puts the cars back on the ground', flyc.flyOff && flyc.groundedOff, JSON.stringify(flyc));
+  check('cheats: SEAWAYS — a car drives out on the sea instead of going under, and does again once it is off',
+    !!flyc.seaCode && flyc.onSea && flyc.sinksOff, JSON.stringify(flyc));
+  check('cheats: AIRSHIP — a boat flat out lifts off the water and flies; switched off, it comes back down onto the sea',
+    !!flyc.boatCode && flyc.boatUp && flyc.boatDown, JSON.stringify(flyc));
+
+  var looks = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); };
+    var made = [];
+    function body(c) { return c.mesh.userData.bodyMesh; }
+    function wheelH(c) {
+      var w = c.mesh.userData.wheels;
+      if (!w) return 0;
+      w.geometry.computeBoundingBox();
+      return +(w.geometry.boundingBox.max.y - w.geometry.boundingBox.min.y).toFixed(2);
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.test.teleport(-60, 40); ff(0.2);
+      var a = V.spawnCar('sedan', -55, 50, 0, {}); made.push(a);
+      // --- WHEELSAREALLINEED: on every car there is, and every one made after
+      r.wheelsCode = C.enter('WHEELSAREALLINEED');
+      var b = V.spawnCar('taxi', -50, 50, 0, {}); made.push(b);
+      var bike = V.spawnCar('motorcycle', -45, 50, 0, {}); made.push(bike);
+      r.only = [a, b, bike].every(function (c) { var w = c.mesh.userData.wheels; return !!w && w.visible && !body(c).visible; });
+      C.enter('WHEELSAREALLINEED');
+      r.back = [a, b].every(function (c) { return body(c).visible && !c.mesh.userData.wheels; }) && body(bike).visible;
+      // --- LOADSOFLITTLETHINGS: wheels near twice the height, the car up on them
+      r.h0 = (C.enter('WHEELSAREALLINEED'), wheelH(a)); C.enter('WHEELSAREALLINEED');
+      r.bigCode = C.enter('LOADSOFLITTLETHINGS');
+      r.h1 = wheelH(a);
+      r.lift = +body(a).position.y.toFixed(2);
+      r.bikeK = +bike.mesh.userData.wheels.scale.y.toFixed(2);
+      C.enter('LOADSOFLITTLETHINGS');
+      r.small = !a.mesh.userData.wheels && body(a).position.y === 0 && bike.mesh.userData.wheels.scale.y === 1;
+      // --- AHAIRDRESSERSCAR / IWANTITPAINTEDBLACK: every car, and every new one;
+      // a colour that means something is kept
+      var own = V.spawnCar('sedan', -40, 50, 0, { color: 0x7a3ad8 }); made.push(own);
+      r.pinkCode = C.enter('AHAIRDRESSERSCAR');
+      var c2 = V.spawnCar('van', -35, 50, 0, {}); made.push(c2);
+      var PINK = 0xff5fae, BLACK = 0x141418;
+      r.pink = [a, b, bike, c2].every(function (c) { return c.color === PINK; }) && own.color === 0x7a3ad8;
+      r.pinkAll = GAME.world.cars.every(function (c) { return c.dead || c.ownPaint || c.spec.plane || c.spec.heli || c.spec.tank || c.color === PINK; });
+      r.blackCode = C.enter('IWANTITPAINTEDBLACK');
+      r.black = [a, b, c2].every(function (c) { return c.color === BLACK; });
+      C.enter('IWANTITPAINTEDBLACK');
+      r.own = [a, b, c2].every(function (c) { return c.color === c.factoryColor && c.color !== BLACK; });
+    } finally {
+      C.testReset();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      ff(0.2);
+    }
+    return r;
+  });
+  check('cheats: WHEELSAREALLINEED — only the wheels show, on every car and on every one made after; typed again, the bodywork is back',
+    !!looks.wheelsCode && looks.only && looks.back, JSON.stringify(looks));
+  check('cheats: LOADSOFLITTLETHINGS — wheels near twice the size with the car up on them, and back to size',
+    !!looks.bigCode && looks.h1 > looks.h0 * 1.6 && looks.lift > 0.15 && looks.bikeK > 1.3 && looks.small, JSON.stringify(looks));
+  check('cheats: AHAIRDRESSERSCAR and IWANTITPAINTEDBLACK paint every car pink or black — a side\'s or a job\'s colour kept — and back',
+    !!looks.pinkCode && looks.pink && looks.pinkAll && !!looks.blackCode && looks.black && looks.own, JSON.stringify(looks));
+
+  var mad = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); };
+    var made = [];
+    function clear(x, z, rad) {
+      GAME.world.cars.slice().forEach(function (c) { if (c !== P.car && Math.hypot(c.pos.x - x, c.pos.z - z) < rad) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - x, p.pos.z - z) < rad) GAME.peds.removePed(p); });
+    }
+    function run() {
+      clear(-150, -150, 160);
+      var car = V.spawnCar('sedan', -150 + 3.1, -230, 0, { occupied: 'ai', ai: { mode: 'traffic', desired: 11, laneX: 0, laneZ: 0 } });
+      made.push(car);
+      var top = 0;
+      for (var i = 0; i < 60 * 6; i++) { ff(1 / 60); top = Math.max(top, car.speed); }
+      V.removeCar(car);
+      return +top.toFixed(1);
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.test.teleport(-150 + 9, -150); ff(0.2);
+      r.calm = run();
+      r.code = C.enter('MIAMITRAFFIC');
+      r.mad = run();
+      C.enter('MIAMITRAFFIC');
+      r.alias = !!C.enter('MAYHEMTRAFFIC') && GAME.cheatOn.madTraffic;
+    } finally {
+      C.testReset();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.test.teleport(-60, 40); ff(0.2);
+    }
+    return r;
+  });
+  check('cheats: MIAMITRAFFIC (or MAYHEMTRAFFIC) — the traffic drives like it is late for something',
+    !!mad.code && mad.mad > mad.calm * 1.35 && mad.alias, JSON.stringify(mad));
+
+  var crowd = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); };
+    var made = [], peds = [];
+    function clear(x, z, rad) {
+      GAME.world.cars.slice().forEach(function (c) { if (c !== P.car && Math.hypot(c.pos.x - x, c.pos.z - z) < rad) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - x, p.pos.z - z) < rad) GAME.peds.removePed(p); });
+    }
+    function put(dx, dz) {
+      var p = GAME.peds.spawnPed(P.pos.x + dx, P.pos.z + dz);
+      p.state = 'walk'; p.wpX = p.pos.x; p.wpZ = p.pos.z; p.wpT = 30;
+      peds.push(p);
+      return p;
+    }
+    function done() { peds.forEach(function (p) { if (!p.gone) GAME.peds.removePed(p); }); peds = []; }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.godMode = true;
+      GAME.test.teleport(-60, 40); ff(0.2);
+      clear(-60, 40, 120);
+      // --- NOBODYLIKESME: everybody near comes for you
+      r.hateCode = C.enter('NOBODYLIKESME');
+      var h = [put(9, 0), put(-8, 4), put(0, 11)];
+      ff(1.2);
+      r.hate = h.filter(function (p) { return p.state === 'attack' && (!p.foe || p.foe.kind === 'player'); }).length;
+      C.enter('NOBODYLIKESME'); done(); ff(0.2);
+      // --- OURGODGIVENRIGHTTOBEARARMS: everybody carrying, a pistol in hand
+      r.armedCode = C.enter('OURGODGIVENRIGHTTOBEARARMS');
+      var g = [put(14, 0), put(-14, 3)];
+      ff(0.7);
+      r.armed = g.filter(function (p) { var gun = p.mesh.userData.cheatGun; return p.carrying && gun && gun.parent === p.mesh.userData.joints.armR; }).length;
+      C.enter('OURGODGIVENRIGHTTOBEARARMS');
+      r.disarmed = g.every(function (p) { return !p.mesh.userData.cheatGun && !p.carrying; });
+      done(); ff(0.2);
+      // --- FIGHTFIGHTFIGHT: a riot, with the city's own knob at OFF
+      r.chaos = GAME.chaos.level;
+      r.riotCode = C.enter('FIGHTFIGHTFIGHT');
+      var f = [put(30, 0), put(32, 1), put(30, 3), put(33, 3)];
+      ff(1.2);
+      r.riot = f.filter(function (p) { return p.state === 'attack' && p.foe && p.foe.kind === 'ped'; }).length;
+      // and it is not called off: with the city at OFF a fight between two
+      // strangers is ended before a punch lands; here they land
+      ff(3);
+      r.riotHurt = f.filter(function (p) { return p.dead || p.hp < 30; }).length;
+      C.enter('FIGHTFIGHTFIGHT'); done(); ff(0.2);
+      // --- HOPINGIRL: stop, and somebody walks over and gets in; they get
+      // out at your next stop
+      var car = V.spawnCar('sedan', P.pos.x + 3, P.pos.z, 0, {}); made.push(car);
+      GAME.seatInCar(car); car.speed = 0;
+      r.hopCode = C.enter('HOPINGIRL');
+      var walker = put(10, 6), look = walker.look;
+      for (var i = 0; i < 60 * 12 && !(C.passenger && C.passenger.aboard); i++) ff(1 / 60);
+      r.aboard = !!(C.passenger && C.passenger.aboard) && walker.gone && C.passenger.look === look;
+      for (var j = 0; j < 60 * 12 && C.passenger; j++) ff(1 / 60);
+      r.outAgain = !C.passenger && GAME.world.peds.some(function (p) {
+        return !p.dead && p.look && p.look.shirt === look.shirt && p.look.skin === look.skin && Math.hypot(p.pos.x - car.pos.x, p.pos.z - car.pos.z) < 5;
+      });
+      C.enter('HOPINGIRL');
+    } finally {
+      C.testReset();
+      done();
+      if (P.inCar) GAME.exitCar();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (!p.isCop && Math.hypot(p.pos.x + 60, p.pos.z - 40) < 40) GAME.peds.removePed(p); });
+      GAME.godMode = false; P.health = 100; GAME.police.clearWanted();
+      ff(0.3);
+    }
+    return r;
+  });
+  check('cheats: NOBODYLIKESME — everybody near comes for you', !!crowd.hateCode && crowd.hate === 3, JSON.stringify(crowd));
+  check('cheats: OURGODGIVENRIGHTTOBEARARMS — everybody carries, a pistol in the hand; typed again, guns away',
+    !!crowd.armedCode && crowd.armed === 2 && crowd.disarmed, JSON.stringify(crowd));
+  check('cheats: FIGHTFIGHTFIGHT — a riot, people squaring up to each other even with the city switched OFF',
+    !!crowd.riotCode && crowd.chaos === 0 && crowd.riot >= 3 && crowd.riotHurt >= 2, JSON.stringify(crowd));
+  check('cheats: HOPINGIRL — stop, somebody walks over and gets in, and gets out again at your next stop',
+    !!crowd.hopCode && crowd.aboard && crowd.outAgain, JSON.stringify(crowd));
+
+  var you = await page.evaluate(function () {
+    var r = {}, P = GAME.player, C = GAME.cheats, j = P.mesh.userData.joints;
+    var o0 = JSON.stringify(GAME.prefs.outfit || {});
+    try {
+      if (P.inCar) GAME.exitCar();
+      // --- STILLLIKEDRESSINGUP: a new look off the racks
+      var shirt0 = j.torso.material.color.getHex();
+      r.dressCode = C.enter('STILLLIKEDRESSINGUP');
+      r.dressed = JSON.stringify(GAME.prefs.outfit) !== o0 && j.torso.material.color.getHex() !== shirt0;
+      // --- DEEPFRIEDMARSBARS / PROGRAMMER
+      r.fatCode = C.enter('DEEPFRIEDMARSBARS');
+      r.fat = { torso: +j.torso.scale.x.toFixed(2), leg: +j.legL.scale.x.toFixed(2) };
+      r.thinCode = C.enter('PROGRAMMER');
+      r.thin = { torso: +j.torso.scale.x.toFixed(2), arm: +j.armR.scale.x.toFixed(2) };
+      C.enter('PROGRAMMER');
+      r.normal = j.torso.scale.x === 1 && j.armR.scale.x === 1 && j.armR.position.x === 0.3;
+      // --- ONSPEED / BOOOOOORING: a second of frames, the game seconds it ran
+      r.base = +GAME.test.frames(1 / 60, 60).toFixed(2);
+      r.fastCode = C.enter('ONSPEED');
+      r.fast = +GAME.test.frames(1 / 60, 60).toFixed(2);
+      r.slowCode = C.enter('BOOOOOORING');
+      r.slow = +GAME.test.frames(1 / 60, 60).toFixed(2);
+      C.enter('BOOOOOORING');
+      r.again = +GAME.test.frames(1 / 60, 60).toFixed(2);
+    } finally {
+      C.testReset();
+      GAME.prefs.outfit = JSON.parse(o0);
+      GAME.shops.applyOutfit();
+      GAME.test.fastForward(0.2);
+    }
+    return r;
+  });
+  check('cheats: STILLLIKEDRESSINGUP — a new look off the racks', !!you.dressCode && you.dressed, JSON.stringify(you));
+  check('cheats: DEEPFRIEDMARSBARS and PROGRAMMER — heavier, slighter, and typed again your old self',
+    !!you.fatCode && you.fat.torso > 1.3 && you.fat.leg > 1.3 && !!you.thinCode && you.thin.torso < 0.8 && you.thin.arm < 0.7 && you.normal, JSON.stringify(you));
+  check('cheats: ONSPEED runs the whole game faster, BOOOOOORING slower, and typed again it is back to time',
+    !!you.fastCode && !!you.slowCode && Math.abs(you.base - 1) < 0.05 && Math.abs(you.fast - 1.5) < 0.05 && Math.abs(you.slow - 0.5) < 0.05 && Math.abs(you.again - 1) < 0.05, JSON.stringify(you));
+
+  // ---------- 43: a tank, and an empty album ----------
+  // Driven into a tank, a car only dented itself and bounced off sixty
+  // tonnes; now anything that meets one at more than a crawl goes up on the
+  // spot, whichever of the two was moving. And an empty PHOTOS album said so
+  // in the small print.
+  var tk = await page.evaluate(function () {
+    var r = {}, P = GAME.player, V = GAME.vehicles, ff = function (t) { GAME.test.fastForward(t); }, made = [];
+    function clear(x, z, rad) {
+      GAME.world.cars.slice().forEach(function (c) { if (c !== P.car && Math.hypot(c.pos.x - x, c.pos.z - z) < rad) V.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (p) { if (Math.hypot(p.pos.x - x, p.pos.z - z) < rad) GAME.peds.removePed(p); });
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.godMode = true;
+      var x = -150 + 3.1, z = -260;
+      GAME.test.teleport(x + 25, z); ff(0.2);
+      clear(x, z, 80);
+      // --- a car driven into a standing tank goes up there and then
+      var tank = V.spawnCar('tank', x, z, 0, {}); made.push(tank);
+      var car = V.spawnCar('sedan', x, z - 14, 0, { occupied: 'ai' }); made.push(car);
+      car.ai = null; car.speed = 12; car.heading = 0;
+      var hp0 = car.hp, frames = 0;
+      for (var i = 0; i < 90 && !car.dead; i++) { car.speed = Math.max(car.speed, 12); ff(1 / 60); frames++; }
+      r.rammed = { dead: car.dead, frames: frames, hp0: Math.round(hp0), tankHp: Math.round(tank.hp / tank.spec.hp * 100) };
+      // --- and one a moving tank drives into
+      var parked = V.spawnCar('van', x, z + 12, 0, {}); made.push(parked);
+      tank.heading = 0; tank.speed = 8;
+      GAME.seatInCar(tank);
+      var tf = 0;
+      for (var k = 0; k < 120 && !parked.dead; k++) { tank.speed = 8; ff(1 / 60); tf++; }
+      r.driven = { dead: parked.dead, frames: tf };
+      GAME.exitCar(); tank.speed = 0; ff(0.3);
+      // --- a nudge at walking pace is only a nudge (the wrecks cleared away)
+      [car, parked].forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      var nudge = V.spawnCar('sedan', x, tank.pos.z - 9, 0, {}); made.push(nudge);
+      nudge.speed = 2.5;
+      for (var n = 0; n < 120; n++) { nudge.speed = Math.max(nudge.speed, 2.5); ff(1 / 60); }
+      r.nudge = { dead: nudge.dead, hp: Math.round(nudge.hp / nudge.spec.hp * 100) };
+    } finally {
+      if (P.inCar) GAME.exitCar();
+      made.forEach(function (c) { if (!c.gone) V.removeCar(c); });
+      GAME.godMode = false; P.health = 100; GAME.police.clearWanted();
+      GAME.test.teleport(-60, 40); ff(0.5);
+    }
+    return r;
+  });
+  check('tank: a car driven into a tank goes up on the spot', tk.rammed.dead && tk.rammed.frames < 75, JSON.stringify(tk));
+  check('tank: and so does one a moving tank drives into', tk.driven.dead && tk.driven.frames < 100, JSON.stringify(tk));
+  check('tank: a nudge at walking pace is only a nudge', !tk.nudge.dead, JSON.stringify(tk));
+
+  var ui43 = await page.evaluate(function () {
+    var r = {}, Ph = GAME.photo;
+    // --- the empty album says so, big
+    var kept = Ph.album().splice(0);
+    try {
+      Ph.open();
+      var em = document.getElementById('photo-empty'), big = em.querySelector('.pe-big'), sub = em.querySelector('.pe-sub');
+      r.album = { shown: getComputedStyle(em).display !== 'none', big: parseFloat(getComputedStyle(big).fontSize), sub: parseFloat(getComputedStyle(sub).fontSize),
+        says: big.textContent + ' | ' + sub.textContent };
+      Ph.close();
+    } finally {
+      Array.prototype.push.apply(Ph.album(), kept);
+      Ph.open(); Ph.close();
+    }
+    return r;
+  });
+  check('photos: an empty album says so in big type, and how to take one', ui43.album.shown && ui43.album.big >= 26 && ui43.album.sub >= 16 && /No photos yet/.test(ui43.album.says) && /Press C/.test(ui43.album.says), JSON.stringify(ui43.album));
+
+  // ---------- 44: every jump on both islands, and a tank ----------
+  // The tank only ever turned up at six stars or by cheat. Finishing every
+  // stunt jump on both islands now parks one at the airport beside the
+  // monster truck — whichever tally is finished last — and a save that had
+  // done both before there was a tank to win finds it there and is told.
+  var tj = await page.evaluate(function () {
+    var r = {}, St = GAME.stunts, C = GAME.city, P = GAME.player, ff = function (t) { GAME.test.fastForward(t); };
+    var keep = { stunts: JSON.stringify(GAME.prefs.stunts || null), told: GAME.prefs.tankTold, cash: P.cash, weapons: JSON.stringify(P.weapons),
+      cur: P.currentWeapon, arsenal: GAME.jumpArsenal, truck: C.unlockMonsterTruck, unlock: GAME.isla.checkUnlock, grant: GAME.shops.grantVehicle, show: GAME.share.show };
+    var shares = [];
+    C.unlockMonsterTruck = function () {}; GAME.isla.checkUnlock = function () {}; GAME.shops.grantVehicle = function () {};
+    GAME.share.show = function (o) { shares.push(o); };
+    function dropTank() {
+      var sp = C.tankSpot;
+      if (!sp) return;
+      if (sp.live && !sp.live.gone) { if (P.inCar && P.car === sp.live) GAME.exitCar(); GAME.vehicles.removeCar(sp.live); }
+      var i = C.parkedSpots.indexOf(sp);
+      if (i >= 0) C.parkedSpots.splice(i, 1);
+      C.tankSpot = null;
+    }
+    function said(re) { return window.__msgs.slice(-4).some(function (t) { return re.test(t); }); }
+    var main = C.ramps.filter(function (rp) { return !rp.isla; }), isl = C.ramps.filter(function (rp) { return rp.isla; });
+    function set(mainN, islaN, mainDone, islaDone) {
+      var f = {}, fi = {};
+      main.slice(0, mainN).forEach(function (rp) { f[rp.idx] = true; });
+      isl.slice(0, islaN).forEach(function (rp) { fi[rp.islaN] = true; });
+      GAME.prefs.stunts = { found: f, rewarded: mainDone, isla: fi, islaRewarded: islaDone, v: 2 };
+      delete GAME.prefs.tankTold;
+      St.load();
+    }
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      dropTank();
+      // --- the island's last jump, with the mainland done: the tank
+      set(main.length, isl.length - 1, true, false);
+      r.notYet = !C.tankSpot && !St.everyJump;
+      var lastI = isl[isl.length - 1];
+      St.credit(lastI.idx, 1.2, 20, 0, 'NICE JUMP!   1.2s · 20m');
+      r.islaLast = { spot: !!C.tankSpot && C.tankSpot.vtype === 'tank' && C.parkedSpots.indexOf(C.tankSpot) >= 0,
+        card: shares.some(function (o) { return /EVERY STUNT JUMP/.test(o.title) && /TANK/.test(JSON.stringify(o.stats)); }),
+        said: said(/TANK waits for you at the airport/), every: St.everyJump };
+      // ...and there it stands, beside the monster truck, yours to drive
+      var sp = C.tankSpot;
+      GAME.test.teleport(sp.x + 25, sp.z); ff(0.6);
+      var tank = GAME.world.cars.filter(function (c) { return c.spec.tank && Math.hypot(c.pos.x - sp.x, c.pos.z - sp.z) < 2; })[0];
+      r.parked = !!tank && tank.occupied !== 'ai' && Math.hypot(sp.x - C.airport.apron.x, sp.z - C.airport.apron.z) < 30;
+      if (tank) { GAME.seatInCar(tank); ff(0.2); r.drives = P.inCar && P.car === tank; GAME.exitCar(); ff(0.2); }
+      dropTank(); shares.length = 0;
+      // --- the mainland's last jump, with the island done: on the same card
+      set(main.length - 1, isl.length, false, true);
+      var lastM = main[main.length - 1];
+      St.credit(lastM.idx, 1.2, 20, 0, 'NICE JUMP!   1.2s · 20m');
+      r.mainLast = { spot: !!C.tankSpot, card: shares.some(function (o) { return /STUNT JUMPS/.test(o.title) && /MONSTER TRUCK · TANK/.test(JSON.stringify(o.stats)); }),
+        said: said(/a TANK beside it/) };
+      dropTank(); shares.length = 0;
+      // --- a save that had done both already: it is there, and you are told, once
+      set(main.length, isl.length, true, true);
+      r.loaded = !!C.tankSpot;
+      var m0 = window.__msgs.length;
+      GAME.missions.checkCompletion();
+      var told = window.__msgs.slice(m0).filter(function (t) { return /TANK waits/.test(t); }).length;
+      GAME.missions.checkCompletion();
+      r.toldOnce = told === 1 && window.__msgs.slice(m0).filter(function (t) { return /TANK waits/.test(t); }).length === 1 && GAME.prefs.tankTold === true;
+      dropTank();
+      // --- the mainland alone is not every jump
+      set(main.length, isl.length - 1, true, false);
+      r.mainOnly = !C.tankSpot;
+    } finally {
+      dropTank();
+      C.unlockMonsterTruck = keep.truck; GAME.isla.checkUnlock = keep.unlock; GAME.shops.grantVehicle = keep.grant; GAME.share.show = keep.show;
+      GAME.prefs.stunts = JSON.parse(keep.stunts);
+      if (keep.told === undefined) delete GAME.prefs.tankTold; else GAME.prefs.tankTold = keep.told;
+      if (GAME.prefs.stunts) St.load();
+      GAME.jumpArsenal = keep.arsenal;
+      P.weapons = JSON.parse(keep.weapons, function (k, v) { return k === 'ammo' && v === null ? Infinity : v; });
+      P.currentWeapon = keep.cur; P.cash = keep.cash;
+      GAME.combat.refreshWeaponHud(); GAME.hud.cashChanged();
+      GAME.test.teleport(-60, 40); ff(0.5);
+    }
+    return r;
+  });
+  check('jumps: the last of every jump on both islands (the island\'s last) parks a tank at the airport, on a card of its own',
+    tj.notYet && tj.islaLast.spot && tj.islaLast.card && tj.islaLast.said && tj.islaLast.every, JSON.stringify(tj));
+  check('jumps: the tank stands beside the monster truck, and is yours to drive', tj.parked && tj.drives, JSON.stringify(tj));
+  check('jumps: finished on the mainland\'s last instead, the tank is on the 25 jumps\' card', tj.mainLast.spot && tj.mainLast.card && tj.mainLast.said, JSON.stringify(tj));
+  check('jumps: a save with both done already finds it there, and is told once; the mainland alone gives none',
+    tj.loaded && tj.toldOnce && tj.mainOnly, JSON.stringify(tj));
+
+  // ---------- 45: the island's lamp posts go down too ----------
+  // A car took a mainland lamp post down and drove on; on Isla Verde the same
+  // post stopped it dead, and so did the ones on the bridge decks.
+  var il = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, S = GAME.settings, I = GAME.isla, r = {};
+    var keep = { t: S.maxTraffic, p: S.maxParked, open: I.isOpen() };
+    GAME.police.clearWanted();
+    if (P.inCar) GAME.exitCar();
+    S.maxTraffic = 0; S.maxParked = 0;
+    I.setOpen(true);   // or a car on the island is put back across the channel
+    var tmp = new THREE.Matrix4(), v = new THREE.Vector3();
+    // the top and the foot of a lamp's pole, and its head, where they are drawn
+    function drawn(k) {
+      function at(part, y) { part[0].getMatrixAt(part[1], tmp); return v.set(0, y, 0).applyMatrix4(tmp).clone(); }
+      var top = at(k.parts[0], 0.5), foot = at(k.parts[0], -0.5), head = at(k.parts[2], 0);
+      return { top: +(top.y - k.y).toFixed(2), foot: +Math.hypot(foot.x - k.x, foot.y - k.y, foot.z - k.z).toFixed(2), head: +(head.y - k.y).toFixed(2) };
+    }
+    var all = C.hash.all.filter(function (b) { return b.tag === 'prop' && b.knock && I.contains((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2); });
+    var deck = C.hash.all.filter(function (b) { return b.tag === 'prop' && b.knock && b.minY !== undefined && !C.islandAt((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2); });
+    r.street = all.filter(function (b) { return b.minY === undefined; }).length;
+    r.deck = deck.length;
+    r.allPoles = all.concat(deck).every(function (b) { return b.knock.kind === 'pole' && b.knock.parts.length === 3; });
+    // --- driven into, at speed, on a clear run up to it
+    var post = null;
+    for (var i = 0; i < all.length && !post; i++) {
+      var b = all[i]; if (b.minY !== undefined) continue;
+      var bx = (b.minX + b.maxX) / 2, bz = (b.minZ + b.maxZ) / 2;
+      if (C.isInWater(bx, bz - 20) || !C.hash.segmentClear(bx, bz - 20, bx, bz - 1)) continue;
+      if (Math.abs(C.groundY(bx, bz - 12) - b.knock.y) > 1.2) continue;   // not up a steep hill
+      post = { b: b, x: bx, z: bz };
+    }
+    r.found = !!post;
+    if (post) {
+      var k = post.b.knock;
+      GAME.test.teleport(post.x - 4, post.z - 14);
+      GAME.world.cars.slice().forEach(function (c) { if (Math.hypot(c.pos.x - post.x, c.pos.z - post.z) < 80) GAME.vehicles.removeCar(c); });
+      var car = GAME.vehicles.spawnCar('sedan', post.x, post.z - 12, 0, {});
+      GAME.test.enterNearestCar(car);
+      for (var w = 0; w < 30 && P.car !== car; w++) GAME.test.fastForward(0.1);   // to the door and in
+      r.driving = P.car === car;
+      r.before = drawn(k);
+      car.pos.set(post.x, C.groundY(post.x, post.z - 12), post.z - 12); car.heading = 0; car.lat = 0; car.vy = 0;
+      car.speed = 24; car.hp = car.spec.hp;
+      var o = { maxDrop: 0 };
+      for (var t = 0; t < 120; t++) {
+        car.controls.throttle = 0;
+        var was = car.speed;
+        GAME.test.fastForward(1 / 60);
+        if (was > 0.5) o.maxDrop = Math.max(o.maxDrop, (was - car.speed) / was);
+        if (car.pos.z > post.z + 4) break;
+      }
+      r.maxDrop = +o.maxDrop.toFixed(2);
+      r.past = car.pos.z > post.z + 2;
+      r.down = k.down;
+      r.inHash = C.hash.all.indexOf(post.b) >= 0;
+      r.after = drawn(k);
+      GAME.exitCar();
+      GAME.vehicles.removeCar(car);
+      // and stood back up once nobody is near it
+      GAME.test.teleport(-60, 40);
+      r.awayFrom = Math.round(Math.hypot(post.x + 60, post.z - 40));
+      GAME.test.fastForward(50);
+      r.backUp = !k.down && C.hash.all.indexOf(post.b) >= 0;
+      r.restored = drawn(k);
+    }
+    // --- a deck lamp goes over on its deck, from its own foot
+    if (deck.length) {
+      var dk = deck[0].knock;
+      r.deckBefore = drawn(dk);
+      r.deckKnocked = C.knockProp(deck[0], 0) && dk.down;
+      r.deckAfter = drawn(dk);
+      r.deckOut = C.hash.all.indexOf(deck[0]) < 0;
+      GAME.test.teleport(-60, 40);
+      r.deckAway = Math.round(Math.hypot((deck[0].minX + deck[0].maxX) / 2 + 60, (deck[0].minZ + deck[0].maxZ) / 2 - 40));
+      GAME.test.fastForward(50);
+      r.deckBack = !dk.down && C.hash.all.indexOf(deck[0]) >= 0 && drawn(dk).top === r.deckBefore.top;
+    }
+    S.maxTraffic = keep.t; S.maxParked = keep.p;
+    GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    I.setOpen(keep.open);
+    P.health = 100;
+    return r;
+  });
+  check('isla lamps: every street and deck lamp on the island can be knocked down, pole, arm and head',
+    il.street > 20 && il.deck > 4 && il.allPoles, JSON.stringify({ street: il.street, deck: il.deck, all: il.allPoles }));
+  check('isla lamps: one at speed goes down, and the car goes on through',
+    il.found && il.driving && il.down && !il.inHash && il.past && il.maxDrop < 0.3, JSON.stringify(il));
+  check('isla lamps: it lies over from its own foot, head and all, on the hillside it stands on',
+    il.found && il.before.top > 5.5 && il.before.foot < 0.05 && il.after.top < 1.5 && il.after.foot < 0.05 && il.after.head < il.before.head - 2.5,
+    JSON.stringify({ before: il.before, after: il.after }));
+  check('isla lamps: and stands back up once nobody is near it', il.backUp && il.restored && il.restored.top === il.before.top,
+    JSON.stringify({ back: il.backUp, restored: il.restored }));
+  check('isla lamps: a bridge deck lamp goes over on its deck, and back up', il.deckKnocked && il.deckOut && il.deckAfter.top < 1.5 &&
+    il.deckAfter.foot < 0.05 && il.deckBack, JSON.stringify({ before: il.deckBefore, after: il.deckAfter, back: il.deckBack }));
+
+  // ---------- 46: a thief comes out of the door ----------
+  // The thief fled from the doormat he stood on, so he ran whichever way he
+  // faced as he spawned — into the shop's own front wall as often as not,
+  // where he stood (CI once had him 3 m from the door after 3 s). Every shop
+  // that can be held up, with him spawned facing in: he is out and away.
+  var rb = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, S = GAME.streetlife, out = [];
+    var keepOpen = GAME.isla ? GAME.isla.isOpen() : false;
+    // (the street to himself: a car knocking him down drops the bag)
+    var keepT = GAME.settings.maxTraffic;
+    GAME.settings.maxTraffic = 0;
+    if (GAME.isla) GAME.isla.setOpen(true);   // the island's hardware store too
+    if (P.inCar) GAME.exitCar();
+    GAME.police.clearWanted();
+    S.reset();
+    GAME.shops.locations().filter(function (l) { return { hardware: 1, dress: 1, barber: 1 }[l.kind]; }).forEach(function (l) {
+      var o = { id: l.id, mat: !l.inside };
+      // stand on a road the right distance off for a hold-up there
+      var spot = null;
+      [[70, 0], [-70, 0], [0, 70], [0, -70]].forEach(function (d) {
+        if (spot) return;
+        var rp = C.nearestRoadPoint(l.at.x + d[0], l.at.z + d[1]), dd = Math.hypot(rp.x - l.at.x, rp.z - l.at.z);
+        if (dd > 50 && dd < 110 && !C.isInWater(rp.x, rp.z) && (!GAME.isla || GAME.isla.contains(rp.x, rp.z) === GAME.isla.contains(l.at.x, l.at.z))) spot = rp;
+      });
+      if (!spot) { o.noSpot = true; out.push(o); return; }
+      GAME.test.teleport(spot.x, spot.z); GAME.test.fastForward(0.5);
+      GAME.world.cars.slice().forEach(function (c) { if (!c.parkedSpot && Math.hypot(c.pos.x - l.at.x, c.pos.z - l.at.z) < 90) GAME.vehicles.removeCar(c); });
+      if (!S.start('robbery') || S.event.shop.id !== l.id) { o.other = S.event && S.event.shop.id; S.reset(); out.push(o); return; }
+      var th = S.event.thief, door = { x: l.at.x, z: l.at.z };
+      // which way is in: the storefront's, or for a shop that is only a mat
+      // away from its road
+      var inn = l.inside;
+      if (!inn) {
+        var rq = C.nearestRoadPoint(door.x, door.z), ql = Math.hypot(door.x - rq.x, door.z - rq.z) || 1;
+        inn = { x: (door.x - rq.x) / ql, z: (door.z - rq.z) / ql };
+      }
+      th.heading = Math.atan2(inn.x, inn.z);   // spawned looking into the shop
+      GAME.test.fastForward(3);
+      o.ran = Math.round(Math.hypot(th.pos.x - door.x, th.pos.z - door.z));
+      o.outward = Math.round(-((th.pos.x - door.x) * inn.x + (th.pos.z - door.z) * inn.z));
+      o.along = Math.round(Math.abs((th.pos.x - door.x) * -inn.z + (th.pos.z - door.z) * inn.x));
+      o.running = th.state === 'flee' && !!th.bag;
+      S.reset();
+      if (!th.gone) GAME.peds.removePed(th);
+      out.push(o);
+    });
+    if (GAME.isla) GAME.isla.setOpen(keepOpen);
+    GAME.settings.maxTraffic = keepT;
+    GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    return out;
+  });
+  check('robbery: at every shop that can be held up, the thief comes out of the door and off down the street',
+    rb.length >= 4 && rb.every(function (o) { return o.running && o.ran > 6 && o.outward > 3 && o.along > 6; }), JSON.stringify(rb));
+
+  // ---------- 47: a soldier is not a cop in green ----------
+  // At six stars the army's men fought exactly as the police did — a pistol
+  // shot now and then, from no further off, only at somebody on foot or in
+  // a car at a crawl — with a little more damage. A soldier has a carbine:
+  // bursts, twice the range, a steadier hand, and a moving car is a target.
+  var ar = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {}, shots = [], ns0 = GAME.combat.npcShoot;
+    var keep = { t: GAME.settings.maxTraffic, p: GAME.settings.maxParked };
+    GAME.settings.maxTraffic = 0; GAME.settings.maxParked = 0;
+    GAME.combat.npcShoot = function (x, y, z, acc, dmg, sh) { shots.push({ sh: sh, t: GAME.time, acc: acc, dmg: dmg }); return false; };
+    var made = [];
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      // the clear straight street the props checks use
+      var x = -150 + 3.1, z0 = -40;
+      GAME.test.teleport(x, z0); GAME.test.fastForward(0.5);
+      GAME.world.cars.slice().forEach(function (c) { if (Math.hypot(c.pos.x - x, c.pos.z - z0) < 120) GAME.vehicles.removeCar(c); });
+      GAME.world.peds.slice().forEach(function (q) { if (Math.hypot(q.pos.x - x, q.pos.z - z0) < 120) GAME.peds.removePed(q); });
+      GAME.police.setWanted(2);
+      var sol = GAME.police.spawnFootCop(x, z0 + 40, true), cop = GAME.police.spawnFootCop(x, z0 - 40, false);
+      made.push(sol, cop);
+      r.looks = { rifle: !!sol.mesh.userData.rifle, copRifle: !!cop.mesh.userData.rifle, gun: sol.gun, copGun: cop.gun };
+      // held where they were put; anybody else the law sends is not counted
+      function hold(a, b) {
+        sol.pos.set(x, C.groundY(x, z0 + a), z0 + a); cop.pos.set(x, C.groundY(x, z0 - b), z0 - b);
+        sol.state = cop.state = 'chase';
+        // and nobody else the stars send: an officer reaching you cuffs you
+        GAME.world.peds.slice().forEach(function (q) { if (q.isCop && q !== sol && q !== cop) GAME.peds.removePed(q); });
+        GAME.world.cars.slice().forEach(function (c) { if (c.isPolice) GAME.vehicles.removeCar(c); });
+      }
+      function mine(who) { return shots.filter(function (q) { return q.sh === who; }); }
+      // --- on foot, forty metres off: the soldier opens up, the officer cannot reach
+      var arms = 0;
+      for (var t = 0; t < 60 * 5; t++) {
+        hold(40, 40); P.pos.set(x, C.groundY(x, z0), z0);
+        GAME.test.fastForward(1 / 60);
+        if (Math.abs(sol.mesh.userData.joints.armL.rotation.z + 0.32) < 0.01) arms++;
+      }
+      var ss = mine(sol), cs = mine(cop);
+      r.foot = { sol: ss.length, cop: cs.length, twoHands: arms > 0 };
+      // in bursts: rounds a breath apart, then a pause
+      var gaps = [];
+      for (var i = 1; i < ss.length; i++) gaps.push(+(ss[i].t - ss[i - 1].t).toFixed(2));
+      r.gaps = gaps;
+      r.bursts = gaps.filter(function (g) { return g <= 0.15; }).length >= 2 && gaps.filter(function (g) { return g >= 0.8; }).length >= 1;
+      r.aim = { sol: ss.length ? ss[0].acc : null, cop: null, dmg: ss.length ? ss[0].dmg : null, skill: +sol.aimSkill.toFixed(2) };
+      // --- the officer at twenty metres, for his aim and his hand
+      GAME.police.setWanted(2);
+      shots.length = 0;
+      for (var t2 = 0; t2 < 60 * 4; t2++) { hold(40, 20); P.pos.set(x, C.groundY(x, z0), z0); GAME.test.fastForward(1 / 60); }
+      var cs2 = mine(cop);
+      r.aim.cop = cs2.length ? cs2[0].acc : null;
+      r.aim.copSkill = +cop.aimSkill.toFixed(2);
+      // --- in a car doing 20 m/s: the officer holds fire, the soldier does not
+      var car = GAME.vehicles.spawnCar('sedan', x + 3, z0, 0, {});
+      made.push(car);
+      GAME.test.enterNearestCar(car);
+      for (var w = 0; w < 30 && P.car !== car; w++) { hold(35, 20); GAME.test.fastForward(0.1); }
+      r.inCar = P.car === car;
+      GAME.police.setWanted(2);   // (not lapsed while he boarded)
+      shots.length = 0;
+      for (var t3 = 0; t3 < 60 * 4; t3++) {
+        hold(35, 20);
+        car.pos.set(x, C.groundY(x, z0), z0); car.heading = Math.PI / 2; car.speed = 20; car.vx = 20; car.vz = 0;
+        GAME.test.fastForward(1 / 60);
+      }
+      r.moving = { sol: mine(sol).length, cop: mine(cop).length, stars: GAME.police.wanted, here: !sol.gone && !cop.gone };
+    } finally {
+      GAME.combat.npcShoot = ns0;
+      GAME.police.clearWanted();
+      if (P.inCar) GAME.exitCar();
+      made.forEach(function (o) { if (o.kind === 'ped') { if (!o.gone) GAME.peds.removePed(o); } else if (!o.gone) GAME.vehicles.removeCar(o); });
+      GAME.settings.maxTraffic = keep.t; GAME.settings.maxParked = keep.p;
+      GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+      P.health = 100;
+    }
+    return r;
+  });
+  check('army: a soldier carries a carbine (a cop does not), and its crack is its own', ar.looks.rifle && !ar.looks.copRifle && ar.looks.gun === 'carbine' && !ar.looks.copGun,
+    JSON.stringify(ar.looks));
+  check('army: at forty metres a soldier opens up, two hands on it, where an officer cannot reach', ar.foot.sol >= 3 && ar.foot.cop === 0 && ar.foot.twoHands,
+    JSON.stringify(ar.foot));
+  check('army: he fires in bursts', ar.bursts, JSON.stringify(ar.gaps));
+  // (npcShoot's spread scales with skill x (1.35 - accuracy); the best an
+  // officer is born is 0.78, and his accuracy at six stars is 0.3 + 6 x 0.06)
+  check('army: and a steadier hand than the best officer at six stars', ar.aim.sol !== null && ar.aim.cop !== null && ar.aim.sol > ar.aim.cop &&
+    ar.aim.skill * (1.35 - ar.aim.sol) < 0.78 * (1.35 - (ar.aim.cop + 4 * 0.06)), JSON.stringify(ar.aim));
+  check('army: a car going flat out is a target to a soldier, not to an officer', ar.inCar && ar.moving.sol >= 3 && ar.moving.cop === 0,
+    JSON.stringify(ar.moving) + ' in the car: ' + ar.inCar);
+
+  // ---------- 48: the security van can be found ----------
+  // Lola told you about it often enough; nobody ever found it. A two-pixel
+  // grey dot on the radar while it was in range at all, nothing on the map,
+  // two minutes and gone, driving wherever the junctions took it.
+  var vn = await page.evaluate(function () {
+    var P = GAME.player, S = GAME.streetlife, r = {}, paged = [], pg0 = GAME.hud.pager;
+    var keep = { t: GAME.settings.maxTraffic };
+    GAME.settings.maxTraffic = 0;
+    GAME.hud.pager = function (who, text) { paged.push(String(text)); return pg0.apply(GAME.hud, arguments); };
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      S.reset();
+      var node = GAME.city.nearestNode(60, 40);
+      GAME.test.teleport(node.x, node.z); GAME.test.fastForward(0.5);
+      r.on = S.start('van');
+      var ev = S.event, van = ev && ev.van;
+      if (!van) return r;
+      r.told = paged.some(function (t) { return /radar/.test(t) && /map/.test(t); });
+      var b = S.blips().filter(function (q) { return q.ring; });
+      r.ringed = b.length === 1 && Math.hypot(b[0].x - van.pos.x, b[0].z - van.pos.z) < 0.5;
+      // walk off: once it is a long way from you it turns back your way
+      var f0 = GAME.focus(), far = null;
+      [[260, 0], [-260, 0], [0, 260], [0, -260]].forEach(function (d) {
+        if (far) return;
+        var rp = GAME.city.nearestRoadPoint(van.pos.x + d[0], van.pos.z + d[1]);
+        var dd = Math.hypot(rp.x - van.pos.x, rp.z - van.pos.z);
+        if (dd > 180 && dd < 330 && !GAME.city.isInWater(rp.x, rp.z) && (!GAME.isla || !GAME.isla.contains(rp.x, rp.z))) far = rp;
+      });
+      if (far) {
+        GAME.test.teleport(far.x, far.z);
+        GAME.test.fastForward(7);
+        var tw = van.ai && van.ai.toward;
+        r.turnsBack = !!tw && Math.hypot(tw.x - P.pos.x, tw.z - P.pos.z) < 30;
+      }
+      // still on its rounds well past the two minutes it used to last
+      GAME.test.fastForward(150 - ev.t);
+      r.at150 = S.event === ev && !van.gone;
+      GAME.test.fastForward(95);
+      r.over = S.event !== ev && !van.keep;
+    } finally {
+      GAME.hud.pager = pg0;
+      S.reset();
+      GAME.settings.maxTraffic = keep.t;
+      GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    }
+    return r;
+  });
+  check('van: Lola says where to look, and it is ringed on the radar (and on the map)', vn.on && vn.told && vn.ringed, JSON.stringify(vn));
+  check('van: it keeps its rounds to your part of town', vn.turnsBack, JSON.stringify(vn));
+  check('van: about for four minutes, not two', vn.at150 && vn.over, JSON.stringify(vn));
+
+  // ---------- 49: the rain goes on behind a scene ----------
+  // A scene holds the world still. It held the weather too: a car loaded at
+  // the harbour in the rain had every drop hung in the air and the sea set
+  // like glass. The rain falls and the swell runs; the clock still waits.
+  var sw = await page.evaluate(function () {
+    var r = {}, W = GAME.weather, Sc = GAME.scenes;
+    var rain = GAME.scene.getObjectByName('rain'), pos = rain && rain.geometry.attributes.position.array;
+    var keepMode = W.mode, keepOn = Sc.enabled;
+    Sc.enabled = true;   // (off for the rest of the suite)
+    try {
+      W.setMode('rain', true); W.testSet(1);
+      GAME.test.fastForward(0.5);
+      var played = Sc.play({ shots: [{ lines: [['lola', 'Rain or no rain, the boat leaves on the hour, and your car is going on it.']] }] });
+      GAME.test.fastForward(0.6);   // (the bars come in, then the cut)
+      r.open = !!GAME.sceneOpen && played !== false;
+      var t0 = GAME.time, w0 = [GAME.city.oceanWave.x, GAME.city.oceanWave.y];
+      var y0 = pos ? Array.prototype.slice.call(pos, 0, 60) : [];
+      GAME.test.fastForward(0.5);
+      var y1 = pos ? Array.prototype.slice.call(pos, 0, 60) : [];
+      r.clock = GAME.time === t0;
+      r.shown = !!rain && rain.visible;
+      r.falls = y0.some(function (v, i) { return i % 3 === 1 && Math.abs(v - y1[i]) > 0.5; });
+      r.swell = Math.abs(GAME.city.oceanWave.x - w0[0]) > 0.1;
+      Sc.skip();
+      GAME.test.fastForward(0.3);
+      r.closed = !GAME.sceneOpen;
+      // and the sea runs on from where it was, not back to where the clock left it
+      var w1 = GAME.city.oceanWave.x;
+      GAME.test.fastForward(1 / 60);
+      r.noJump = Math.abs(GAME.city.oceanWave.x - w1) < 0.1;
+    } finally {
+      if (GAME.sceneOpen) Sc.skip();
+      Sc.enabled = keepOn;
+      W.setMode(keepMode, true); W.testSet(0);
+      GAME.test.fastForward(0.3);
+    }
+    return r;
+  });
+  check('scenes: behind one the rain still falls and the sea still swells, while the clock waits', sw.open && sw.clock && sw.shown && sw.falls && sw.swell,
+    JSON.stringify(sw));
+  check('scenes: and after it the sea runs on from where it was', sw.closed && sw.noJump, JSON.stringify(sw));
+
+  // ---------- 50: an officer's pistol, and VERDE HARDWARE's store ----------
+  // Officers fired at you from an empty hand, and the island's hardware store
+  // was a doormat against somebody else's wall: mid-grid, no building of its
+  // size fitted, so it never got one.
+  var pv = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {}, made = [];
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      var x = -150 + 3.1, z0 = -40;
+      GAME.test.teleport(x, z0); GAME.test.fastForward(0.5);
+      // on the beat: holstered
+      var beat = GAME.peds.spawnPed(x + 1, z0 + 30, { cop: true });
+      beat.patrol = true; beat.state = 'walk'; beat.armed = true;
+      made.push(beat);
+      GAME.test.fastForward(0.5);
+      var bg = beat.mesh.userData.pistol;
+      r.beat = { has: !!bg, out: !!(bg && bg.visible) };
+      // after you: drawn
+      GAME.police.setWanted(2);
+      var cop = GAME.police.spawnFootCop(x, z0 + 20, false), sol = GAME.police.spawnFootCop(x, z0 - 20, true);
+      made.push(cop, sol);
+      GAME.test.fastForward(0.3);
+      r.chase = { out: !!(cop.mesh.userData.pistol && cop.mesh.userData.pistol.visible), soldierPistol: !!sol.mesh.userData.pistol, soldierRifle: !!sol.mesh.userData.rifle };
+      // down: it is on the pavement, not in his hand
+      var before = GAME.world.pickups.length;
+      GAME.peds.kill(cop, 'gun', false);
+      GAME.test.fastForward(0.1);
+      r.down = { inHand: cop.mesh.userData.pistol.visible, dropped: GAME.world.pickups.slice(before).some(function (q) { return q.type === 'pistol'; }) };
+      // and when the stars clear, the officers walk off as anybody else
+      // would: with it back in the holster
+      var cop2 = GAME.police.spawnFootCop(x + 2, z0 + 20, false);
+      made.push(cop2);
+      GAME.test.fastForward(0.3);
+      r.standDown = { drawn: !!cop2.mesh.userData.pistol.visible };
+      GAME.police.clearWanted();
+      GAME.test.fastForward(0.1);
+      r.standDown.after = !!cop2.mesh.userData.pistol.visible;
+      r.standDown.released = !cop2.isCop;
+      // VERDE HARDWARE: a storefront of its own, on the Puerto Dorado grid
+      var l = GAME.shops.locations().filter(function (q) { return q.id === 'hardware1'; })[0];
+      var inn = l.inside;
+      r.hw = { inside: !!inn, island: GAME.isla.contains(l.at.x, l.at.z), district: GAME.isla.districtName(l.at.x, l.at.z) };
+      if (inn) {
+        // the building stands just behind the mat, in the way in
+        var bx = l.at.x + inn.x * 7, bz = l.at.z + inn.z * 7;
+        var own = C.hash.query(bx, bz, 1).filter(function (q) { return q.tag === 'building' && bx > q.minX && bx < q.maxX && bz > q.minZ && bz < q.maxZ; })[0];
+        r.hw.building = !!own;
+        r.hw.size = own ? [Math.round(own.maxX - own.minX), Math.round(own.maxZ - own.minZ)].sort().join('x') : null;
+        // and the mat is clear: nothing solid on it, the street in front
+        var rp = C.nearestRoadPoint(l.at.x, l.at.z);
+        r.hw.matClear = !C.hash.query(l.at.x, l.at.z, 1.2).some(function (q) { return l.at.x > q.minX - 0.4 && l.at.x < q.maxX + 0.4 && l.at.z > q.minZ - 0.4 && l.at.z < q.maxZ + 0.4; });
+        r.hw.street = Math.round(Math.hypot(rp.x - l.at.x, rp.z - l.at.z));
+        r.hw.faces = ((rp.x - l.at.x) * inn.x + (rp.z - l.at.z) * inn.z) < 0;
+      }
+    } finally {
+      made.forEach(function (q) { if (!q.gone) GAME.peds.removePed(q); });
+      GAME.police.clearWanted();
+      GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    }
+    return r;
+  });
+  check('police: an officer on the beat wears his pistol holstered', pv.beat.has && !pv.beat.out, JSON.stringify(pv.beat));
+  check('police: after you he has it out (a soldier has his carbine, not a pistol)', pv.chase.out && !pv.chase.soldierPistol && pv.chase.soldierRifle,
+    JSON.stringify(pv.chase));
+  check('police: put him down and the pistol is on the pavement, not in his hand', !pv.down.inHand && pv.down.dropped, JSON.stringify(pv.down));
+  check('police: standing down, it goes back in the holster', pv.standDown.drawn && pv.standDown.released && !pv.standDown.after, JSON.stringify(pv.standDown));
+  check('shops: VERDE HARDWARE has a store of its own on the Puerto Dorado grid, facing the street',
+    pv.hw.inside && pv.hw.island && pv.hw.district === 'Puerto Dorado' && pv.hw.building && pv.hw.size === '12x20' && pv.hw.matClear && pv.hw.faces && pv.hw.street <= 15,
+    JSON.stringify(pv.hw));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

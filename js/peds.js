@@ -123,7 +123,15 @@ function buildPedMesh(opts) {
   var head = new THREE.Mesh(sharedBoxGeo(0.26, 0.28, 0.26), mats.skin);
   head.position.y = 1.6;
   g.add(head);
-  if (opts.cop) {
+  if (opts.army) {
+    // a soldier's helmet, not a patrolman's cap: domed, and down over the ears
+    var helm = new THREE.Mesh(sharedBoxGeo(0.34, 0.15, 0.34), mats.pants);
+    helm.position.y = 1.78;
+    g.add(helm);
+    var dome = new THREE.Mesh(sharedBoxGeo(0.26, 0.06, 0.26), mats.pants);
+    dome.position.y = 1.88;
+    g.add(dome);
+  } else if (opts.cop) {
     var cap = new THREE.Mesh(sharedBoxGeo(0.3, 0.1, 0.3), mats.pants);
     cap.position.y = 1.78;
     g.add(cap);
@@ -151,6 +159,35 @@ function buildPedMesh(opts) {
   var legL = limb(0.16, 0.8, mats.pants, -0.13, 0.82);
   var legR = limb(0.16, 0.8, mats.pants, 0.13, 0.82);
   g.userData.joints = { armL: armL, armR: armR, legL: legL, legR: legR, head: head, torso: torso };
+  if (opts.cop && !opts.army) {
+    // an officer's service pistol: in the holster on his hip on the beat,
+    // in his hand when he is after somebody (police.js draws it)
+    var holster = new THREE.Mesh(sharedBoxGeo(0.08, 0.2, 0.14), sharedLambert(0x1a1a20));
+    holster.position.set(0.25, 0.86, -0.04);
+    g.add(holster);
+    var pistol = new THREE.Mesh(sharedBoxGeo(0.07, 0.26, 0.13), sharedLambert(0x1a1a20));
+    pistol.position.set(0, -0.68, 0.03);
+    pistol.visible = false;
+    armR.add(pistol);
+    g.userData.pistol = pistol;
+  }
+  if (opts.army) {
+    // and a carbine in his hands: down the arm, so it hangs at his side on
+    // the move and comes up level when he fires (police.js)
+    var gunMat = sharedLambert(0x1c1e18);
+    var rifle = new THREE.Group();
+    var body = new THREE.Mesh(sharedBoxGeo(0.08, 0.86, 0.1), gunMat);
+    body.position.set(0, -0.64, 0.02);
+    rifle.add(body);
+    var mag = new THREE.Mesh(sharedBoxGeo(0.06, 0.12, 0.16), gunMat);
+    mag.position.set(0, -0.5, -0.1);
+    rifle.add(mag);
+    var stock = new THREE.Mesh(sharedBoxGeo(0.07, 0.2, 0.14), mats.pants);
+    stock.position.set(0, -0.2, 0.0);
+    rifle.add(stock);
+    armR.add(rifle);
+    g.userData.rifle = rifle;
+  }
   return g;
 }
 
@@ -208,6 +245,7 @@ GAME.peds = (function () {
       gang: null, boss: false,                  // a side's man (gangs.js), a crew's boss (missions.js)
       patrol: false, onCase: null, beatX: 0, beatZ: 0, beatT: 0, grabbing: false,
       aimSkill: NaN, lastShotT: 0,
+      gun: null, burstN: 0,     // what a shooter's rounds sound like, and how many are left in a burst (police.js)
       enterX: NaN, enterZ: NaN, enterT: 0   // a door they are making for (walkInto)
     };
     world.peds.push(ped);
@@ -274,7 +312,8 @@ GAME.peds = (function () {
       else if (!ped.outlaw) GAME.police.reportCrime('kill_ped', ped.pos);
       GAME.missions.notifyChaos(ped.isCop ? 400 : 150);
     }
-    // drops
+    // drops (an officer's pistol is the one on the pavement now, not in his hand)
+    if (ped.mesh.userData.pistol) ped.mesh.userData.pistol.visible = false;
     if (ped.isCop) GAME.combat.dropPickup(ped.pos.x, ped.pos.z, 'pistol');
     else if (Math.random() < 0.35) GAME.combat.dropPickup(ped.pos.x, ped.pos.z, 'cash');
     panic(ped.pos.x, ped.pos.z, 26);
@@ -529,7 +568,9 @@ GAME.peds = (function () {
         // escape hatch wants the brawl in front of them to stop. Fights with
         // the PLAYER are not chaos's to call off, and neither is a man taking
         // his own car back: both predate all of this and stand at OFF.
-        var calledOff = !GAME.chaos.on && !chaseCar && F.kind !== 'player';
+        // (FIGHTFIGHTFIGHT, from the cheat box, is a riot the knob does not
+        // get to call off)
+        var calledOff = !GAME.chaos.on && !GAME.cheatOn.riot && !chaseCar && F.kind !== 'player';
         if (ped.attackT <= 0 || !F.valid || ad2 > 55 * 55 || calledOff ||
           Math.abs(ty - ped.pos.y) > 3 || tSpeed > 10) {
           ped.state = 'flee';
@@ -568,7 +609,8 @@ GAME.peds = (function () {
           // street, because he only ever draws on someone he is already in the
           // attack state against, which for the player means they provoked it.
           // (a job's armed man — missions.js — carries whatever the city is set to)
-          var canShoot = ped.carrying && (GAME.chaos.armedChance > 0 || ped.missionArmed) &&
+          // (and anybody at all, once the cheat box has armed the town)
+          var canShoot = ped.carrying && (GAME.chaos.armedChance > 0 || ped.missionArmed || GAME.cheatOn.armed) &&
             (F.kind === 'ped' ? !!F.ped : F.kind === 'player') &&
             ad2 > 36 && ad2 < 30 * 30 &&
             Math.abs(ty - ped.pos.y) < 3 &&
@@ -1030,7 +1072,8 @@ GAME.peds = (function () {
     // against it meant that at CITY: OFF (a ceiling of nothing) a hot-tempered
     // man you punched simply ran away — which the setting promises not to touch.
     var vsPlayer = !foe || foe.kind === 'player';
-    if (!answering && !vsPlayer && ped.state !== 'attack' && fightCount() >= GAME.chaos.maxFights) return false;
+    // (and a riot — FIGHTFIGHTFIGHT, cheats.js — has no ceiling at all)
+    if (!answering && !vsPlayer && ped.state !== 'attack' && !GAME.cheatOn.riot && fightCount() >= GAME.chaos.maxFights) return false;
     ped.state = 'attack';
     ped.attackT = secs || 9;
     ped.foe = foe || null;

@@ -680,9 +680,12 @@ GAME.shops = (function () {
     });
     // hardware over the channel too — on the Puerto Dorado grid, where a
     // tool counter belongs. It used to stand at the ice cream factory's
-    // gates, hard against the storefront on the same forecourt.
+    // gates, hard against the storefront on the same forecourt; and then
+    // mid-grid, where no building of its size fits between the blocks, so
+    // it was only a doormat against somebody else's wall. On the east
+    // street there is a lot it fits, store and all.
     if (GAME.isla) {
-      locations.push({ id: 'hardware1', kind: 'hardware', name: 'VERDE HARDWARE', tag: 'Tools for loud problems', at: clearSpot(935, 100), isla: true, color: 0xffd24a });
+      locations.push({ id: 'hardware1', kind: 'hardware', name: 'VERDE HARDWARE', tag: 'Tools for loud problems', at: clearSpot(990, 70), isla: true, color: 0xffd24a });
       // and the island's cab firm, a block up the Puerto Dorado grid from it,
       // with its cabs in the yard beside the office: for sale, and the more
       // fares you drive while it is yours the more it takes (business.js)
@@ -1165,6 +1168,7 @@ GAME.shops = (function () {
       loc.at = { x: placed.mx, z: placed.mz };
       if (loc.sh) loc.sh.at = loc.at;     // you respawn at the door, not where the mat first landed
       if (loc.sh) loc.sh.face = { x: dir.x, z: dir.z };   // which way is in (homeHeading)
+      loc.inside = { x: dir.x, z: dir.z };                // and for a shop (a thief runs the other way: streetlife.js)
       var gy = GAME.city.groundY(placed.cx, placed.cz);
       // the door face and its outward normal (-dir); everything on the
       // facade hangs off these

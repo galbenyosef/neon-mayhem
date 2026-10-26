@@ -8,8 +8,8 @@ var WEAPONS = {
   // (with refills), and the all-25-jumps arsenal includes it. Scarce as a
   // find, not as a purchase.
   rifle: { name: 'RIFLE', slot: 5, damage: 68, range: 150, rate: 0.85, auto: false, spread: 0.002 },
-  // Hand-to-hand, one at a time (a new one replaces the old, as in Vice
-  // City): `reach` in metres, and the chainsaw keeps cutting while held.
+  // Hand-to-hand, one at a time (a new one replaces the old): `reach` in
+  // metres, and the chainsaw keeps cutting while held.
   bat: { name: 'BASEBALL BAT', melee: true, damage: 26, reach: 2.2, rate: 0.62, swing: 'bat' },
   knife: { name: 'KNIFE', melee: true, damage: 34, reach: 1.8, rate: 0.42, swing: 'knife', blood: true },
   katana: { name: 'KATANA', melee: true, damage: 55, reach: 2.5, rate: 0.58, swing: 'katana', blood: true },
@@ -854,7 +854,7 @@ GAME.combat = (function () {
     var err = (Math.random() * 2 - 1) * spread;
     var yaw = Math.atan2(tx - fromX, tz - fromZ) + err;
     var dx = Math.sin(yaw), dz = Math.cos(yaw);
-    GAME.audio.gunshot('pistol', fromX, fromZ);
+    GAME.audio.gunshot(shooter && shooter.gun || 'pistol', fromX, fromZ);
     // A car in the line takes the round. Only buildings ever stopped these,
     // so the police shot straight through the van you were crouched behind —
     // a quarter of their rounds at twelve metres — while yours stopped dead on

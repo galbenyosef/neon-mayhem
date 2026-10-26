@@ -158,6 +158,7 @@ GAME.police = (function () {
         p.isCop = false;               // released from police.js's control
         p.temper = 0;                  // and not looking for a rematch
         p.aimPose = false;
+        draw(p, false);                // (and the pistol back in its holster)
         p.state = 'flee';
         p.fleeT = 8;
         p.fleeX = GAME.player.pos.x; p.fleeZ = GAME.player.pos.z;
@@ -494,7 +495,7 @@ GAME.police = (function () {
       var car = GAME.vehicles.spawnCar(army ? 'armytruck' : 'police', rp.x, rp.z, heading, { occupied: 'ai', ai: { mode: 'chase' } });
       car.copsOut = 0;
       car.shootT = U.randRange(Math.random, 0.6, 1.6);
-      if (army) { car.isPolice = true; car.armyUnit = true; }
+      if (army) { car.isPolice = true; car.armyUnit = true; enlist(car); }
       car.tactic = tacticFor(stars());
       return car;
     }
@@ -526,11 +527,34 @@ GAME.police = (function () {
     return null;
   }
 
+  // A soldier is not a patrolman in green. A carbine, not a service pistol:
+  // three-round bursts, from twice the range, at a car going flat out as
+  // readily as at somebody on foot, and a steadier hand than the best
+  // officer's. The same goes for the crew of an army truck or a tank.
+  var ARMY = { reach: 55, burst: 3, gap: 0.09, rest: [0.9, 1.4], accuracy: 0.92, damage: 6, skill: [0.7, 0.9] };
+  function enlist(o) {
+    o.gun = 'carbine';
+    o.aimSkill = U.randRange(Math.random, ARMY.skill[0], ARMY.skill[1]);
+    o.burstN = ARMY.burst;
+  }
+  // the wait before the next round: the next of the burst, or a breath
+  function nextRound(o) {
+    if (--o.burstN > 0) return ARMY.gap;
+    o.burstN = ARMY.burst;
+    return U.randRange(Math.random, ARMY.rest[0], ARMY.rest[1]);
+  }
+
+  // an officer's pistol out of its holster, or back in (peds.js)
+  function draw(cop, on) {
+    var g = cop.mesh.userData.pistol;
+    if (g && g.visible !== on) g.visible = on;
+  }
+
   function spawnFootCop(x, z, army) {
     var cop = GAME.peds.spawnPed(x, z, { cop: true, army: army === undefined ? stars() >= 6 : !!army });
     cop.state = 'chase';
     // a soldier takes more stopping
-    if (cop.army) cop.hp = 90;
+    if (cop.army) { cop.hp = 90; enlist(cop); }
     return cop;
   }
 
@@ -664,6 +688,7 @@ GAME.police = (function () {
       }
       var cop = inc.cop;
       var d = stepCop(cop, inc.x, inc.z, dt, 6.4);
+      draw(cop, inc.severity >= 2);   // (a scuffle is broken up empty-handed)
       // A gun is a different call. The officer does not walk up to a man who
       // is shooting: he stops at a distance and draws, and the aim model is
       // the same one that decides whether his round finds the player.
@@ -732,6 +757,7 @@ GAME.police = (function () {
         cop.beatZ = rp.axis === 'z' ? rp.z : rp.z + off;
         if (GAME.city.isInWater(cop.beatX, cop.beatZ)) { cop.beatX = cop.pos.x; cop.beatZ = cop.pos.z; }
       }
+      draw(cop, false);
       stepCop(cop, cop.beatX, cop.beatZ, dt, 2.6);
     }
   }
@@ -889,8 +915,12 @@ GAME.police = (function () {
     var P = GAME.player, SL = GAME.sealife;
     var tx = huntX(), tz = huntZ(), ashore = !atSea();
     if (ashore) {
+      // off where they last saw you: not off the search ashore, which jumps
+      // about the last sighting every few seconds, and sent the launch
+      // dashing up and down the beach after every guess
+      var kx = spotted ? tx : knownX, kz = spotted ? tz : knownZ;
       car.shoreT = (car.shoreT || 0) - dt;
-      if (car.shoreT <= 0 || !car.shoreAt) { car.shoreT = 1; car.shoreAt = SL.seaward(tx, tz, car.pos.x, car.pos.z); }
+      if (car.shoreT <= 0 || !car.shoreAt) { car.shoreT = 1; car.shoreAt = SL.seaward(kx, kz, car.pos.x, car.pos.z); }
       tx = car.shoreAt.x; tz = car.shoreAt.z;
     } else if (spotted && P.inCar && P.car) { tx += (P.car.vx || 0) * 0.4; tz += (P.car.vz || 0) * 0.4; }
     var d = Math.sqrt(U.dist2(car.pos.x, car.pos.z, tx, tz));
@@ -929,10 +959,16 @@ GAME.police = (function () {
         var py2 = P.inCar && P.car ? P.car.pos.y : P.pos.y;
         var d2 = U.dist2(car.pos.x, car.pos.z, px2, pz2);
         // a storey above or below takes a real line up to you (eyesOn)
-        if (d2 < 40 * 40 && eyesOn(car.pos.x, car.pos.y, car.pos.z, px2, py2, pz2, true)) {
-          GAME.combat.npcShoot(car.pos.x, car.pos.y + 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5, car);
+        var reach = car.armyUnit ? ARMY.reach + 5 : 40;
+        var seen = d2 < reach * reach && eyesOn(car.pos.x, car.pos.y, car.pos.z, px2, py2, pz2, true);
+        if (car.armyUnit) {
+          // a soldier in the cab: the carbine, in bursts
+          if (seen) GAME.combat.npcShoot(car.pos.x, car.pos.y + 1.3, car.pos.z, ARMY.accuracy, ARMY.damage, car);
+          car.shootT = seen ? nextRound(car) : 0.4;
+        } else {
+          if (seen) GAME.combat.npcShoot(car.pos.x, car.pos.y + 1.3, car.pos.z, 0.25 + s * 0.07, 5 + s * 1.5, car);
+          car.shootT = U.randRange(Math.random, 1.1, 2.2) / Math.max(1, s * 0.5);
         }
-        car.shootT = U.randRange(Math.random, 1.1, 2.2) / Math.max(1, s * 0.5);
       }
     }
 
@@ -974,17 +1010,21 @@ GAME.police = (function () {
     }
     // on fire (peds.ignite): running blind, no shot and no cuffs in him
     var burning = cop.burnT > 0;
+    draw(cop, !burning);   // (after you: the pistol is out)
     var th = burning ? cop.burnH + Math.sin(GAME.time * 5 + cop.walkPhase) * 0.9 : Math.atan2(hx, hz);
     cop.heading = U.angleLerp(cop.heading, th, Math.min(1, dt * 6));
-    // fire at the player on foot, or at a slow/stopped car
+    // fire at the player on foot, or at a slow/stopped car (a soldier at
+    // either, at any pace, from twice as far)
     var playerSlow = !P.inCar || (P.car && Math.abs(P.car.speed) < 9);
+    var army = cop.army, reach = army ? ARMY.reach : 28;
     // line of sight last: it walks the grid, and every officer asked it
     // every tick even when the stars, the range or your speed had already
     // ruled a shot out
-    var wantShoot = !burning && s >= 2 && dist < 28 && playerSlow && !P.interior
+    var wantShoot = !burning && s >= 2 && dist < reach && (army || playerSlow) && !P.interior
       && eyesOn(cop.pos.x, cop.pos.y, cop.pos.z, f.x, f.y, f.z, true);   // up at a roof edge too
     var chaseSpeed = burning ? 5 : 6.8;   // 0.85x the player's 8 sprint — outrunnable, barely
-    cop.speed = U.damp(cop.speed, wantShoot && dist < 14 ? 0 : chaseSpeed, 5, dt);
+    // (an officer closes in to fire; a soldier holds where he can hit you)
+    cop.speed = U.damp(cop.speed, wantShoot && dist < (army ? 38 : 14) ? 0 : chaseSpeed, 5, dt);
     var cx0 = cop.pos.x, cz0 = cop.pos.z;
     cop.pos.x += Math.sin(cop.heading) * cop.speed * dt;
     cop.pos.z += Math.cos(cop.heading) * cop.speed * dt;
@@ -1004,15 +1044,24 @@ GAME.police = (function () {
     j.legL.rotation.x = sw; j.legR.rotation.x = -sw;
     if (wantShoot) {
       j.armR.rotation.x = -Math.PI / 2;
+      // (the carbine takes both hands)
+      if (army) { j.armL.rotation.x = -Math.PI / 2 + 0.12; j.armL.rotation.z = -0.32; }
       cop.shootT -= dt;
       if (cop.shootT <= 0) {
-        GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, 0.3 + s * 0.06, (5 + s) * (cop.army ? 1.4 : 1), cop);
-        cop.shootT = U.randRange(Math.random, 0.9, 1.8);
+        if (army) {
+          GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, ARMY.accuracy, ARMY.damage, cop);
+          cop.shootT = nextRound(cop);
+        } else {
+          GAME.combat.npcShoot(cop.pos.x, cop.pos.y + 1.35, cop.pos.z, 0.3 + s * 0.06, 5 + s, cop);
+          cop.shootT = U.randRange(Math.random, 0.9, 1.8);
+        }
       }
     } else if (burning) {
       j.armL.rotation.x = -2.4 + Math.sin(GAME.time * 14) * 0.6; j.armR.rotation.x = -2.4 - Math.sin(GAME.time * 14) * 0.6;
+      j.armL.rotation.z = 0;
     } else {
       j.armL.rotation.x = -sw * 0.8; j.armR.rotation.x = sw * 0.8;
+      j.armL.rotation.z = 0;
     }
     // a cop can only cuff you if you're on foot and not sprinting away
     if (!burning && !P.inCar && !P.swimming && !P.interior && dist < 1.7 && Math.abs(f.y - cop.pos.y) < 3 && s <= 3 && P.moveSpeed < 3.4) cop.grabbing = true;
@@ -1038,7 +1087,7 @@ GAME.police = (function () {
       var car = GAME.vehicles.spawnCar(armyBlock ? 'armytruck' : 'police', cx, cz, perp, { occupied: 'ai', ai: { mode: 'roadblock' } });
       car.copsOut = 2;
       car.shootT = 1;
-      if (armyBlock) { car.isPolice = true; car.armyUnit = true; }
+      if (armyBlock) { car.isPolice = true; car.armyUnit = true; enlist(car); }
     }
     spawnFootCop(node.x + Math.sin(perp) * 8, node.z + Math.cos(perp) * 8, armyBlock);
     if (armyBlock) {
@@ -1339,6 +1388,10 @@ GAME.police = (function () {
     get unseenFor() { return lastSeen; },
     setWanted: setWanted,
     clearWanted: clearWanted,
+    // a soldier's carbine for whoever is given it (army.js: the tank's crew)
+    enlist: enlist,
+    ARMY: ARMY,
+    spawnFootCop: spawnFootCop,
     update: update,
     // test-only: lay a roadblock ahead of the player now (see the spike cap)
     _roadblock: placeRoadblock

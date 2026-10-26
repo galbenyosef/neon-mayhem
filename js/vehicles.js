@@ -218,10 +218,12 @@ function buildBikeMesh(colorHex, trim) {
     }
   }), sharedVertexLambert());
   g.add(body);
-  g.add(new THREE.Mesh(cachedGeo('bikewheels', function (wheel) {
+  var bw = new THREE.Mesh(cachedGeo('bikewheels', function (wheel) {
     wheel.addBox(0, 0.34, 0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
     wheel.addBox(0, 0.34, -0.82, 0.16, 0.68, 0.68, 0, 0x0c0c10, 0);
-  }), sharedVertexLambert()));
+  }), sharedVertexLambert());
+  g.add(bw);
+  g.userData.wheels = bw;
   var hl = new THREE.Mesh(sharedBoxGeo(0.2, 0.14, 0.06), sharedBasic(0xfff2c0));
   hl.position.set(0, 0.72, 0.83);
   g.add(hl);
@@ -362,14 +364,16 @@ function buildMonsterMesh(colorHex) {
     b.addBox(0, 1.85, 2.35, 2.2, 0.5, 0.2, 0, 0x22262e, 0);       // bar
   }), sharedVertexLambert());
   g.add(body);
-  g.add(new THREE.Mesh(cachedGeo('monsterwheels', function (wh) {
+  var mw = new THREE.Mesh(cachedGeo('monsterwheels', function (wh) {
     // the tyre tops used to land on exactly the chassis top (both y=2.30) and the
     // two coplanar faces fought for depth wherever they overlapped — tucked under
     // it now, still sitting on the ground at y=0
     [[1.25, 1.5], [-1.25, 1.5], [1.25, -1.5], [-1.25, -1.5]].forEach(function (w) {
       wh.addBox(w[0], 1.06, w[1], 0.62, 2.12, 2.12, 0, 0x0c0c10, 0);
     });
-  }), sharedVertexLambert()));
+  }), sharedVertexLambert());
+  g.add(mw);
+  g.userData.wheels = mw;
   g.add(new THREE.Mesh(cachedGeo('monsterglow', function (glow) {
     glow.addBox(0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
     glow.addBox(-0.7, 2.1, 2.32, 0.4, 0.2, 0.06, 0, 0xfff2c0, 0);
@@ -479,6 +483,12 @@ function buildTankMesh(colorHex) {
 // `parts`: what has come off it (see wear below) — bit 1 the front bumper,
 // bit 2 the rear. A car that has lost one wears a body without it, from the
 // same cache, so the dent costs no more draw calls than the car did.
+// Under WHEELSAREALLINEED or LOADSOFLITTLETHINGS (cheats.js) a car's wheels
+// are not in its body but a mesh of their own beside it — to be all that is
+// left showing, or to be twice the size. `big`: how much bigger.
+var BIG_WHEEL = 1.8;
+function wheelsLoose() { var on = GAME.cheatOn; return !!(on && (on.wheelsOnly || on.bigWheels)); }
+function wheelSize() { var on = GAME.cheatOn; return on && on.bigWheels ? BIG_WHEEL : 1; }
 function buildCarMesh(type, colorHex, parts) {
   var s = VEHICLES[type];
   parts = parts || 0;
@@ -497,7 +507,8 @@ function buildCarMesh(type, colorHex, parts) {
   if (s.bike) return buildBikeMesh(colorHex, s.trim);
   var g = new THREE.Group();
   var hl = s.l / 2, hw = s.w / 2;
-  var body = new THREE.Mesh(cachedGeo('car|' + type + '|' + colorHex + (parts ? '|' + parts : ''), function (b) {
+  var loose = wheelsLoose();
+  var body = new THREE.Mesh(cachedGeo('car|' + type + '|' + colorHex + (parts ? '|' + parts : '') + (loose ? '|bare' : ''), function (b) {
     b.addBox(0, 0.42, 0, s.w, s.bodyH, s.l, 0, colorHex, 0);
     if (type === 'ambulance') {
       // tall box body + red cross panels
@@ -589,16 +600,21 @@ function buildCarMesh(type, colorHex, parts) {
     }
     if (!(parts & 1)) b.addBox(0, 0.28, hl * 0.72, s.w * 0.9, 0.32, 0.55, 0, 0x22262e, 0);
     if (!(parts & 2)) b.addBox(0, 0.28, -hl * 0.72, s.w * 0.9, 0.32, 0.55, 0, 0x22262e, 0);
-    var wy = 0.32, wx = hw - 0.12, wz = hl * 0.56;
-    [[wx, wz], [-wx, wz], [wx, -wz], [-wx, -wz]].forEach(function (w) {
-      b.addBox(w[0], wy, w[1], 0.32, 0.64, 0.72, 0, 0x0c0c10, 0);
-    });
+    if (!loose) carWheels(b, s, hw, hl, 1);
     if (type === 'police') {
       // a centimetre up: its underside used to share the cabin's bottom plane
       b.addBox(0, 0.42 + s.bodyH / 2 + 0.01, s.l * 0.28, s.w * 0.7, 0.1, 1.2, 0, 0x30405a, 0);
     }
   }), sharedVertexLambert());
   g.add(body);
+
+  if (loose) {
+    var k = wheelSize();
+    var wheels = new THREE.Mesh(cachedGeo('carwheels|' + type + '|' + k, function (b) { carWheels(b, s, hw, hl, k); }), sharedVertexLambert());
+    g.add(wheels);
+    g.userData.wheels = wheels;
+    g.userData.wheelsKey = type + '|' + k;
+  }
 
   var glowMesh = new THREE.Mesh(cachedGeo('carglow|' + type, function (glow) {
     glow.addBox(hw * 0.55, 0.5, hl + 0.02, 0.38, 0.16, 0.06, 0, 0xfff2c0, 0);
@@ -620,6 +636,14 @@ function buildCarMesh(type, colorHex, parts) {
   g.userData.bodyMesh = body;
   return g;
 }
+// the four wheels of a car, `k` times their size (and a little wider, so a
+// big one does not read as a disc on its edge)
+function carWheels(b, s, hw, hl, k) {
+  var wy = 0.32 * k, wx = hw - 0.12 + (k > 1 ? 0.12 : 0), wz = hl * 0.56;
+  [[wx, wz], [-wx, wz], [wx, -wz], [-wx, -wz]].forEach(function (w) {
+    b.addBox(w[0], wy, w[1], k > 1 ? 0.42 : 0.32, 0.64 * k, 0.72 * k, 0, 0x0c0c10, 0);
+  });
+}
 
 GAME.vehicles = (function () {
   var world = GAME.world;
@@ -630,6 +654,9 @@ GAME.vehicles = (function () {
     opts = opts || {};
     var spec = VEHICLES[type] || VEHICLES.sedan;
     var color = opts.color !== undefined ? opts.color : U.pick(carRng, spec.colors);
+    // what it came out of the factory in, before any pink or black (cheats)
+    var factory = color;
+    if (opts.color === undefined && paintable(spec) && GAME.cheatOn.paint !== null) color = GAME.cheatOn.paint;
     var mesh = buildCarMesh(type, color);
     // Yaw first, then pitch and roll about the body's own axes. On the default
     // XYZ order the pitch is applied about the world X axis after the heading,
@@ -647,6 +674,8 @@ GAME.vehicles = (function () {
       kind: 'car',
       type: type, spec: spec, mesh: mesh,
       color: color,          // the paint it wears (a respray changes it: repaint)
+      factoryColor: factory, // ...and what it wore before the cheats painted it
+      ownPaint: opts.color !== undefined,   // a colour that means something: never painted over
       resprayT: NaN,         // when it last came out of the paint shop (missions.js)
       pos: mesh.position,
       heading: heading || 0,
@@ -692,11 +721,14 @@ GAME.vehicles = (function () {
       // the parts gone, the tyres burst, the bonnet sprung
       dmgFront: 0, dmgRear: 0, parts: 0, burst: 0, hood: null, sparkT: 0,
       aiSteer: 0, aiTX: NaN, aiTZ: NaN, aiAir: false, airLights: null,
-      copsOut: NaN, shootT: NaN, aimSkill: NaN, deployT: 0, fireT: 0, bailT: 0,
+      copsOut: NaN, shootT: NaN, aimSkill: NaN, deployT: 0, fireT: 0, bailT: 0, gun: null, burstN: 0,
       heliSpeed: 0, rotorSpin: 0, mgT: 0, rkT: 0, pitch: 0, roll: 0, sinkV: 0,
-      wakeT: 0            // a boat's next puff of wake
+      wakeT: 0,           // a boat's next puff of wake
+      cheatFlight: false, // in the air under COMEFLYWITHME or AIRSHIP (cheats.js): no stunt
+      aloft: false        // a boat off the water (AIRSHIP)
     };
     if (car.occupied === 'ai') seatOccupant(car);
+    dress(car);
     world.cars.push(car);
     return car;
   }
@@ -722,6 +754,53 @@ GAME.vehicles = (function () {
     car.dmgFront = car.dmgRear = 0;
     car.burst = 0;
     if (car.parts) { car.parts = 0; repaint(car, car.color); }
+  }
+
+  // The cheats' looks (cheats.js), put on a car or taken off it: its wheels
+  // loose of the body and all that shows (WHEELSAREALLINEED), or twice the
+  // size with the car riding up on them (LOADSOFLITTLETHINGS). A boat, an
+  // aircraft and a tank have no wheels to speak of and are left alone.
+  var BIG_LIFT = 0.64 * (BIG_WHEEL - 1) * 0.55, BIKE_WHEEL = 1.45;
+  function dress(car) {
+    var s = car.spec, on = GAME.cheatOn, g = car.mesh, ud = g.userData;
+    if (s.boat || s.heli || s.plane || s.tank || car.dead) return;
+    var baked = !s.bike && !s.monster;   // a car's wheels are in its body
+    if (baked) {
+      // (the toy racer wears the buggy's own body, wheels and all)
+      var want = wheelsLoose() ? (s.rc ? 'buggy' : car.type) + '|' + wheelSize() : null;
+      if ((ud.wheelsKey || null) !== want) {
+        var fresh = buildCarMesh(car.type, car.color, car.parts);
+        ud.bodyMesh.geometry = fresh.userData.bodyMesh.geometry;
+        if (ud.wheels) g.remove(ud.wheels);
+        ud.wheels = fresh.userData.wheels || null;
+        ud.wheelsKey = want;
+        if (ud.wheels) g.add(ud.wheels);
+      }
+    } else if (s.bike && ud.wheels) {
+      var kb = on.bigWheels ? BIKE_WHEEL : 1;
+      ud.wheels.scale.set(kb > 1 ? 1.3 : 1, kb, kb);
+    }
+    var lift = baked && on.bigWheels ? BIG_LIFT : 0;
+    for (var i = 0; i < g.children.length; i++) {
+      var ch = g.children[i];
+      if (ch === ud.wheels || ch === car.riderMesh) continue;
+      if (ch.userData.y0 === undefined) ch.userData.y0 = ch.position.y;
+      ch.position.y = ch.userData.y0 + lift;
+      ch.visible = !on.wheelsOnly;
+    }
+  }
+  function dressAll() { world.cars.forEach(dress); }
+  // AHAIRDRESSERSCAR and IWANTITPAINTEDBLACK (cheats.js): every car on the
+  // street in the one paint — or, with `color` null, back in its own. A car
+  // whose colour means something (a side's, a job's, one you bought in a
+  // colour) keeps it.
+  function paintable(spec) { return !spec.plane && !spec.heli && !spec.tank; }
+  function paintAll(color) {
+    world.cars.forEach(function (car) {
+      if (car.dead || car.ownPaint || !paintable(car.spec)) return;
+      var to = color !== null ? color : car.factoryColor;
+      if (car.color !== to) repaint(car, to);
+    });
   }
 
   function removeCar(car) {
@@ -835,8 +914,21 @@ GAME.vehicles = (function () {
     // go ballistic off a lip
     var gy = GAME.city.driveSurfaceY(car.pos.x, car.pos.z, car.pos.y);
     var ramp = GAME.city.rampAt(car.pos.x, car.pos.z);
+    // SEAWAYS (cheats.js): the sea is a road. Out over open water the car
+    // rides the swell instead of going under (a bridge or a jetty overhead
+    // is still the surface where it is)
+    var onSea = GAME.cheatOn.seaWays && !car.dead && gy < 0.3 && GAME.city.isOpenWater(car.pos.x, car.pos.z);
+    if (onSea) gy = GAME.city.seaY(car.pos.x, car.pos.z) + 0.12;
     var wasAirborne = (car.air || 0) > 0.05;
     var stickTol = car.air ? 0.08 : 0.6;   // already flying? tight. On wheels? follow the road down.
+    // COMEFLYWITHME (cheats.js): your car flies. Past lift-off speed with the
+    // throttle down the wheels leave the road; up there the throttle climbs,
+    // easing off glides it down, the brake dives and the wheel steers (fly)
+    var winged = GAME.cheatOn.flyCars && car === GAME.player.car && GAME.player.inCar && !spec.rc && !car.dead;
+    if (winged && !car.air && car.speed > FLY_LIFTOFF && c.throttle > 0 && car.pos.y <= gy + stickTol) {
+      car.pos.y = gy + stickTol + 0.05;
+      car.vy = 2;
+    }
     if (car.pos.y > gy + stickTol) {
       if (!car.air) {
         // the velocity the lip handed over, held until the wheels are back down
@@ -863,7 +955,9 @@ GAME.vehicles = (function () {
         }
       }
       car.jumpSpin = (car.jumpSpin || 0) + U.wrapPI(car.heading - (car.lastHeading || car.heading));
-      car.vy = (car.vy || 0) - 24 * dt;
+      if (winged) car.cheatFlight = true;
+      if (winged) fly(car, c, maxSp, accel, dt);
+      else car.vy = (car.vy || 0) - 24 * dt;
       car.pos.y += car.vy * dt;
       car.air = (car.air || 0) + dt;
       if (car.pos.y <= gy) {
@@ -968,7 +1062,57 @@ GAME.vehicles = (function () {
     car.lastHeading = car.heading;
 
     collideStatic(car, dt);
-    if (GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y)) sinkCar(car);
+    if (onSea) {
+      // held to the sea's edges like a boat, and leaving a wake
+      if (GAME.aircraft.enforceSea(car.pos, car !== GAME.player.car)) { car.speed *= Math.exp(-4 * dt); car.lat *= Math.exp(-4 * dt); }
+      var wsp = Math.abs(car.speed);
+      if (wsp > 3 && !car.air) {
+        car.wakeT -= dt;
+        if (car.wakeT <= 0) {
+          car.wakeT = wsp > 15 ? 0.05 : 0.1;
+          GAME.fx.spawn(car.pos.x - fx * (spec.l / 2 + 0.3), gy, car.pos.z - fz * (spec.l / 2 + 0.3), FX_WAKE);
+        }
+      }
+    } else if (GAME.city.isInWater(car.pos.x, car.pos.z, car.pos.y) &&
+      // (flying over it is not being in it)
+      !(car.cheatFlight && car.pos.y > 1)) sinkCar(car);
+  }
+
+  // A car with wings (COMEFLYWITHME): lift that grows with speed, and the
+  // same edges and the same closed channel any aircraft is held to
+  // (aircraft.js). Up and down are the plane's: the stick is a yoke — pull
+  // it back to climb, push it forward to dive — and Space and Shift climb
+  // and dive; on a stick the throttle is only speed, and held with the stick
+  // left alone it keeps you level. On keys alone the throttle climbs and the
+  // brake dives. Off the throttle and the stick, it glides down.
+  var FLY_LIFTOFF = 20, FLY_CLIMB = 7, FLY_CEIL = 160, FLY_DEAD = 0.25;
+  function flyPitch() {
+    var T = GAME.input.touch, p = 0, stick = 0;
+    if (GAME.key('Space')) p += 1;
+    if (GAME.key('ShiftLeft') || GAME.key('ShiftRight')) p -= 1;
+    if (T.active) stick += T.stickY;
+    if (GAME.pad && GAME.pad.on) stick += GAME.pad.ly;
+    // (a thumb steering is never quite level: a little of it is not a climb)
+    if (Math.abs(stick) > FLY_DEAD) p += (stick - FLY_DEAD * Math.sign(stick)) / (1 - FLY_DEAD);
+    return U.clamp(p, -1, 1);
+  }
+  function fly(car, c, maxSp, accel, dt) {
+    var thr = c.throttle;
+    if (thr > 0) { if (car.speed < maxSp) car.speed = Math.min(maxSp, car.speed + accel * 0.7 * thr * dt); }
+    else if (thr < 0) car.speed = Math.max(0, car.speed + accel * 0.9 * thr * dt);
+    car.speed *= Math.exp(-0.06 * dt);
+    // no lift at three-quarters of lift-off speed, all of it by half again
+    var lift = U.clamp((car.speed - FLY_LIFTOFF * 0.75) / (FLY_LIFTOFF * 0.5), 0, 1);
+    var T = GAME.input.touch, onStick = T.active || (GAME.controls && GAME.controls.usingPad && GAME.controls.usingPad());
+    var v = flyPitch();   // up (+) or down (-), or nothing asked
+    if (!v) v = thr > 0 ? (onStick ? 0 : 1) : thr < 0 ? -1 : null;
+    var glide = -12 + lift * 9.5;
+    var want = v === null ? glide : v >= 0 ? -12 + lift * (12 + FLY_CLIMB * v) : glide + (-11 - glide) * -v;
+    if (car.pos.y > FLY_CEIL) want = Math.min(want, 0);
+    car.vy = U.damp(car.vy || 0, want, 2.2, dt);
+    car.airVX = Math.sin(car.heading) * car.speed;
+    car.airVZ = Math.cos(car.heading) * car.speed;
+    GAME.aircraft.turnBack(car, dt);
   }
 
   // How long before the same jump pays again, and what "the same jump" is:
@@ -989,6 +1133,9 @@ GAME.vehicles = (function () {
   function landStunt(car, impact) {
     var airT = car.air || 0;
     car.air = 0;
+    // a flight under COMEFLYWITHME is not a jump, and pays nothing
+    var flown = car.cheatFlight;
+    car.cheatFlight = false;
     // Touching down, the held trajectory becomes the car's motion again, split
     // along wherever the body finished up pointing: what lines up with the nose
     // is speed, what does not is slip. Land straight and you keep everything;
@@ -1004,7 +1151,7 @@ GAME.vehicles = (function () {
     var dist = U.dist(car.pos.x, car.pos.z, car.jumpX || car.pos.x, car.jumpZ || car.pos.z);
     // earned, not stumbled into: rolling off the side of a ramp (or crawling
     // off the lip) is a fall — hang time alone doesn't pay, distance does
-    if (isPlayer && airT > 0.45 && dist > 7) {
+    if (isPlayer && !flown && airT > 0.45 && dist > 7) {
       var spins = Math.floor(Math.abs(car.jumpSpin || 0) / (Math.PI * 2));
       var cash = Math.round(airT * 120 + dist * 6 + spins * 400);
       var label = spins > 0 ? (spins > 1 ? spins + 'x SPIN!' : '360 SPIN!')
@@ -1284,6 +1431,7 @@ GAME.vehicles = (function () {
   // rammed by the player: the share of drivers who get out to have it out
   // with you rather than getting away from you
   var RAM_CONFRONT = 0.35;
+  var TANK_POP = 4;            // closing speed, m/s, past which a tank pops what it meets (collideCars)
   var PLAYER_BIKE_KNOCK = 9;   // what a wall takes to throw you (collideStatic)
   function knockOffRider(bike, other, rel) {
     var d = throwRider(bike);
@@ -1455,6 +1603,28 @@ GAME.vehicles = (function () {
         b.pos.x += nx * overlap / 2; b.pos.z += nz * overlap / 2;
         var avx = a.vx || 0, avz = a.vz || 0, bvx = b.vx || 0, bvz = b.vz || 0;
         var rel = (avx - bvx) * nx + (avz - bvz) * nz;
+        // A tank is not a thing to crash into. Whatever meets one at more than
+        // a crawl — driven into it, or driven over by it — goes up there and
+        // then, yours included (army.js grinds down what it only leans on).
+        // A dent and a bounce off sixty tonnes read as a toy.
+        // The closing speed is the struck vehicle's own way on, and the tank's
+        // only while somebody is driving it: a tank shoved about by the wreck
+        // in front of it is not ramming anything, and a vehicle standing still
+        // is not stepped, so it keeps whatever velocity it last had.
+        var tank = a.spec.tank ? a : b.spec.tank ? b : null, struck = tank === a ? b : a;
+        var closing = 0;
+        if (tank && !struck.spec.tank && !struck.dead) {
+          var sGo = Math.abs(struck.speed) > 0.3 || struck.air ? 1 : 0;
+          var tGo = Math.abs(tank.speed) > 0.3 && (tank.occupied === 'ai' || tank === GAME.player.car) ? 1 : 0;
+          var toward = struck === a ? 1 : -1;   // (n points from a to b)
+          closing = (((struck.vx || 0) * sGo - (tank.vx || 0) * tGo) * nx + ((struck.vz || 0) * sGo - (tank.vz || 0) * tGo) * nz) * toward;
+        }
+        if (closing > TANK_POP) {
+          var pt = GAME.player;
+          explodeCar(struck, 'tank', pt.inCar && (pt.car === tank || pt.car === struck));
+          if (pt.inCar && (pt.car === tank || pt.car === struck)) GAME.cameraShake = 1;
+          continue;
+        }
         // a rider takes the hit in person, whichever side of it they were on
         // — before the damage below, which can blow the bike up under them
         // (on a bike: a boat's helmsman is braced at the wheel, and two
@@ -1925,6 +2095,14 @@ GAME.vehicles = (function () {
   function stepBoat(car, dt) {
     var s = car.spec, c = car.controls, C = GAME.city, P = GAME.player;
     var driven = car === P.car && P.inCar;
+    // AIRSHIP (cheats.js): flat out on the water with the throttle open, the
+    // hull lifts off and flies (stepAloft); and one that is up there, or
+    // that came down somewhere that is not the sea, is flown or carried
+    // there, not sailed
+    if (car.aloft || (GAME.cheatOn.flyBoats && driven && car.speed > FLY_LIFTOFF && c.throttle > 0)) {
+      stepAloft(car, dt, driven);
+      return;
+    }
     // a rival in a boat race steers by the controls the race hands it, and
     // so does a police launch (police.js) and anybody out for the day
     // (sealife.js) — each writes the controls it wants
@@ -2002,6 +2180,54 @@ GAME.vehicles = (function () {
     }
   }
 
+  // A boat in the air (AIRSHIP), flown the way a car with wings is (fly):
+  // lift with speed, the throttle to climb, the brake to dive. Nobody at
+  // the helm — or the cheat switched off — and it falls. Down on the sea it
+  // is a boat again; down anywhere else it is stranded where it lands.
+  function stepAloft(car, dt, driven) {
+    var s = car.spec, c = car.controls, C = GAME.city;
+    if (!car.aloft) {
+      car.aloft = true; car.cheatFlight = true;
+      car.vy = 2; car.pos.y += 0.3;
+    }
+    var winged = GAME.cheatOn.flyBoats && driven;
+    var under = C.isBoatWater(car.pos.x, car.pos.z) ? C.seaY(car.pos.x, car.pos.z) : C.surfaceY(car.pos.x, car.pos.z, car.pos.y);
+    var grounded = car.pos.y <= under + 0.05;
+    if (grounded) {
+      // stranded: no water under the hull, so nothing drives it
+      car.speed *= Math.exp(-3 * dt);
+      if (Math.abs(car.speed) < 0.2) car.speed = 0;
+      car.vy = 0;
+    } else if (winged) {
+      car.heading += c.steer * s.turn * U.clamp(Math.abs(car.speed) / 7, 0, 1) * dt;
+      fly(car, c, s.maxSpeed, s.accel, dt);
+    } else car.vy = (car.vy || 0) - 24 * dt;
+    var fx = fwdX(car), fz = fwdZ(car);
+    car.vx = fx * car.speed; car.vz = fz * car.speed; car.lat = 0;
+    car.pos.x += car.vx * dt; car.pos.z += car.vz * dt;
+    car.pos.y += car.vy * dt;
+    collideStatic(car, dt);
+    if (GAME.aircraft.enforceSea(car.pos, !driven)) car.speed *= Math.exp(-4 * dt);
+    under = C.isBoatWater(car.pos.x, car.pos.z) ? C.seaY(car.pos.x, car.pos.z) : C.surfaceY(car.pos.x, car.pos.z, car.pos.y);
+    if (car.pos.y <= under) {
+      var impact = -(car.vy || 0);
+      car.pos.y = under;
+      car.vy = 0;
+      if (impact > 14) damageCar(car, Math.min(40, (impact - 14) * 2.2), 'wall');
+      if (C.isBoatWater(car.pos.x, car.pos.z)) {
+        // back on the water: a boat again
+        car.aloft = false; car.cheatFlight = false;
+        if (impact > 3) {
+          GAME.audio.splash();
+          GAME.fx.spawn(car.pos.x, under + 0.4, car.pos.z, { count: 12, color: 0x88bbdd, spread: 2.5, vy: 3, life: 0.7 });
+        }
+      }
+    }
+    car.mesh.rotation.y = car.heading;
+    car.mesh.rotation.x = U.damp(car.mesh.rotation.x, grounded ? 0 : -U.clamp((car.vy || 0) * 0.035, -0.5, 0.5), 4, dt);
+    car.mesh.rotation.z = U.damp(car.mesh.rotation.z, grounded ? 0 : -c.steer * 0.25 * (winged ? 1 : 0), 3, dt);
+  }
+
   // ---------- traffic AI ----------
   // keep right of the direction of travel
   function setLane(ai, mx, mz) {
@@ -2018,6 +2244,7 @@ GAME.vehicles = (function () {
     c.throttle = throttle; c.steer = steer; c.handbrake = handbrake;
     return c;
   }
+  var NOBODY = [];   // who mad traffic brakes for on foot
   function trafficControls(car, dt, out) {
     out = out || car.controls;
     var ai = car.ai;
@@ -2186,12 +2413,16 @@ GAME.vehicles = (function () {
       return setControls(out, -0.8, dh > 0 ? -1 : 1, false);
     }
 
-    var desired = ai.desired || 11;
+    // MIAMITRAFFIC (cheats.js): everybody is late for something — faster,
+    // on the horn, round anything in the way, braking late and for nobody on
+    // foot. (Not a cruiser, and not a man already running for his life.)
+    var mad = GAME.cheatOn.madTraffic && !car.isPolice && !ai.bolt;
+    var desired = (ai.desired || 11) * (mad ? 1.7 : 1);
     // shooting back out of the window: slow enough to keep you in range
     if (ai.fireBackT > 0) { stepFireBack(car, dt); desired = Math.min(desired, 9); }
     // a cruiser coming up behind with its siren going: pull over and let it by
     // (yours, or one on somebody else's tail — streetlife.js)
-    var sc = GAME.playerSiren() || (GAME.streetlife && GAME.streetlife.siren());
+    var sc = !mad && (GAME.playerSiren() || (GAME.streetlife && GAME.streetlife.siren()));
     if (sc && sc !== car) {
       var srx = sc.pos.x - car.pos.x, srz = sc.pos.z - car.pos.z;
       var sfd = srx * Math.sin(car.heading) + srz * Math.cos(car.heading);
@@ -2211,10 +2442,10 @@ GAME.vehicles = (function () {
     // wheel is over, so hairpins are taken at hairpin speed instead of
     // overshot onto the grass
     var bend = Math.min(1, Math.abs(dh) / 1.1);
-    desired = Math.max(3.5, desired * (1 - bend * 0.65));
+    desired = Math.max(3.5, desired * (1 - bend * (mad ? 0.45 : 0.65)));
     // brake for things ahead
     var fx = fwdX(car), fz = fwdZ(car);
-    var lookA = 5 + car.speed * 0.8;
+    var lookA = mad ? 3 + car.speed * 0.45 : 5 + car.speed * 0.8;
     var ax = car.pos.x + fx * lookA, az = car.pos.z + fz * lookA;
     var blocked = false, hard = false, blockCar = null, blockD = 1e9;
     var cars = world.cars;
@@ -2259,7 +2490,7 @@ GAME.vehicles = (function () {
       var pfd = pdx * fx + pdz * fz;
       if (pfd > 0 && pfd < lookA + 2 && Math.abs(pdx * fz - pdz * fx) < 2.4) { blocked = true; byPlayer = true; if (pfd < 6) hard = true; }
     }
-    var peds = world.peds;
+    var peds = mad ? NOBODY : world.peds;
     for (var pi = 0; pi < peds.length; pi++) {
       var pd = peds[pi];
       if (pd.dead) continue;
@@ -2281,18 +2512,19 @@ GAME.vehicles = (function () {
     } else if (blocked && (byPlayer || (blockCar && (Math.abs(blockCar.speed) < 1.5 ||
         // (somebody in a hurry — a getaway — goes round anything slow, not
         // only what has stopped, and does not wait long about it)
-        (ai.reckless && blockCar.speed < desired * 0.7))))) {
+        ((ai.reckless || mad) && blockCar.speed < desired * 0.7))))) {
       ai.blockT = (ai.blockT || 0) + dt;
-      if ((byPlayer || ai.reckless) && ai.blockT > (ai.reckless ? 0.3 : 1.2)) honk(car);
-      // (on the run, he goes round at once, oncoming lane or not)
-      if (blockCar && ai.blockT > (ai.bolt ? 0.1 : ai.reckless ? 0.4 : 1.4) && (ai.bolt || otherLaneClear(car, fx, fz))) {
+      if ((byPlayer || ai.reckless || mad) && ai.blockT > (ai.reckless || mad ? 0.3 : 1.2)) honk(car);
+      // (on the run, he goes round at once, oncoming lane or not — and so
+      // does everybody, when the traffic has gone mad)
+      if (blockCar && ai.blockT > (ai.bolt || mad ? 0.1 : ai.reckless ? 0.4 : 1.4) && (ai.bolt || mad || otherLaneClear(car, fx, fz))) {
         ai.passT = 7; ai.passCar = blockCar; ai.blockT = 0;
       }
     } else ai.blockT = 0;
     var throttle;
     if (hard) throttle = car.speed > 0.5 ? -1 : 0;
     else if (blocked) throttle = car.speed > desired * 0.4 ? -0.4 : 0.15;
-    else throttle = car.speed < desired ? 0.55 : 0;
+    else throttle = car.speed < desired ? (mad ? 1 : 0.55) : 0;
     // pulling out round a stopped car: creep round it rather than wait for
     // a gap that is already there
     if (ai.passT > 0 && !hard && car.speed < 5) throttle = Math.max(throttle, 0.45);
@@ -2645,6 +2877,9 @@ GAME.vehicles = (function () {
     TYPES: VEHICLES,
     spawnCar: spawnCar, fillSpot: fillSpot,
     repaint: repaint,
+    // the cheats' looks (cheats.js): put back on every car after a change
+    dressAll: dressAll,
+    paintAll: paintAll,
     mend: mend,
     get wear() { return wearOn; },
     set wear(v) { wearOn = !!v; },

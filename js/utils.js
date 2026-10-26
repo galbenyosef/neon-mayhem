@@ -1,6 +1,15 @@
 window.GAME = {
   time: 0,
   timeScale: 1,
+  // how fast the whole game runs, on top of any slow motion: the cheat box's
+  // ONSPEED and BOOOOOORING (cheats.js), read by the frame loop (main.js)
+  gameSpeed: 1,
+  // what the cheat box has switched on, read where each one bites
+  cheatOn: {
+    flyCars: false, seaWays: false, flyBoats: false,     // vehicles.js
+    wheelsOnly: false, bigWheels: false, paint: null, madTraffic: false,
+    hateYou: false, armed: false, riot: false, hopIn: false   // peds.js, cheats.js
+  },
   started: false,
   paused: false,
   isTouch: false,
@@ -387,6 +396,7 @@ BoxSet.prototype.addBox = function (cx, cy, cz, sx, sy, sz, rotY, color) {
   // column by column: scale, turn about y (addBox's own sense), then place
   this.m.push(c * sx, 0, -s * sx, 0, 0, sy, 0, 0, s * sz, 0, c * sz, 0, cx, cy, cz, 1);
   this.c.push((color >> 16 & 255) / 255, (color >> 8 & 255) / 255, (color & 255) / 255);
+  return this.c.length / 3 - 1;   // its instance in the built mesh
 };
 // One mesh for the lot, or null if nothing was added. The material colours by
 // instance (see sharedInstanceLambert), not by vertex: the cube has none.
@@ -600,6 +610,13 @@ GAME.initInput = function (canvas) {
     // the CONTROLS screen owns the keyboard while it is up (a rebind, or Esc)
     if (GAME.controls && GAME.controls.open) {
       if (!e.repeat) GAME.controls.key(e.code);
+      e.preventDefault();
+      return;
+    }
+    // and so does the cheat list: the letters narrow it, the arrows walk it
+    // (cheats.js) — none of them is a key for the game behind it
+    if (GAME.cheatOpen && GAME.cheats) {
+      GAME.cheats.keyEvent(e);
       e.preventDefault();
       return;
     }

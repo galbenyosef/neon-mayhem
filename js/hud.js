@@ -717,6 +717,8 @@ GAME.hud = (function () {
       g.fillRect(hx - 1.2, hy + 1.4, 2.4, 3.6); // door
     });
     if (catVis('airport')) badge(GAME.city.airport.apron.x, GAME.city.airport.apron.z, '#8de0ff', '✈');
+    // the security van on its rounds (streetlife.js), while it is about
+    if (GAME.streetlife) GAME.streetlife.blips().forEach(function (b) { if (b.ring) badge(b.x, b.z, b.color, '$'); });
     if (catVis('shops') && GAME.city.islaPois) badge(GAME.city.islaPois.factory.x, GAME.city.islaPois.factory.z, DEPOT_HEX, '☀');
     // helipads: a ringed cyan disc with an H, one per pad. Both of them —
     // the Alta Verde summit across the channel, and the one on the downtown
@@ -857,7 +859,7 @@ GAME.hud = (function () {
     '(in a vehicle <b>RT / LT</b> are throttle and brake)<br>' +
     '<b>LB / RB</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>A</b> jump · climb / handbrake &nbsp;·&nbsp; <b>Y</b> enter / exit car &nbsp;·&nbsp; <b>B</b> sprint<br>' +
     '<b>D-pad ↓</b> weapons &nbsp;·&nbsp; <b>D-pad ← / →</b> radio &nbsp;·&nbsp; <b>R3</b> horn / siren &nbsp;·&nbsp; <b>X</b> job &nbsp;·&nbsp; <b>D-pad ↑</b> retry &nbsp;·&nbsp; ' +
-    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound, full screen and the rest are there';
+    '<b>L3</b> photo &nbsp;·&nbsp; <b>BACK</b> map &nbsp;·&nbsp; <b>START</b> pause — Lola, abandon, sound, full screen, the cheats and the rest are there';
   var PAD_BAR = {
     car: '<b>RT / LT</b> drive · <b>stick</b> steer · <b>A</b> handbrake · <b>LB / RB</b> drive-by · <b>Y</b> exit · <b>R3</b> horn · <b>D-pad ← →</b> radio · <b>BACK</b> map',
     foot: '<b>stick</b> move · <b>B</b> sprint · <b>A</b> jump · <b>LT</b> aim · <b>RT</b> fire · <b>D-pad ↓</b> weapons · <b>Y</b> enter car · <b>BACK</b> map',
@@ -876,7 +878,7 @@ GAME.hud = (function () {
     }
     var h = '<b>' + K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD') + '</b> move / drive &nbsp;·&nbsp; <b>Mouse</b> camera &nbsp;·&nbsp; <b>RMB / ' + K('Tab') + '</b> aim lock-on &nbsp;·&nbsp; <b>LMB</b> fire<br>' +
       '<b>' + K('KeyQ') + ' / ' + K('KeyE') + '</b> cycle target · drive-by · plane roll &nbsp;·&nbsp; <b>' + K('Space') + '</b> jump · climb / handbrake &nbsp;·&nbsp; <b>' + K('KeyF') + '</b> enter / exit car &nbsp;·&nbsp; <b>' + K('ShiftLeft') + '</b> sprint<br>' +
-      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo · <b>' + K('KeyV') + '</b> see it &nbsp;·&nbsp; <b>' + K('KeyL') + '</b> Lola &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
+      '<b>1–5</b> weapons &nbsp;·&nbsp; <b>' + K('Comma') + ' / ' + K('Period') + '</b> radio &nbsp;·&nbsp; <b>' + K('KeyG') + '</b> horn / siren &nbsp;·&nbsp; <b>' + K('KeyJ') + '</b> job &nbsp;·&nbsp; <b>' + K('KeyX') + '</b> abandon mission &nbsp;·&nbsp; <b>' + K('KeyC') + '</b> photo · <b>' + K('KeyV') + '</b> see it &nbsp;·&nbsp; <b>' + K('KeyL') + '</b> Lola &nbsp;·&nbsp; <b>' + K('KeyP') + '</b> map &nbsp;·&nbsp; <b>' + K('Backquote') + '</b> cheats &nbsp;·&nbsp; <b>' + K('KeyM') + '</b> mute &nbsp;·&nbsp; <b>' + K('KeyH') + '</b> hide help &nbsp;·&nbsp; <b>Esc</b> pause';
     var card = document.getElementById('controls-card');
     if (card) card.innerHTML = h;
     if (el['pause-controls']) el['pause-controls'].innerHTML = h;
@@ -894,8 +896,8 @@ GAME.hud = (function () {
     ctlMode = mode;
     var wasd = K('KeyW') + K('KeyA') + K('KeyS') + K('KeyD');
     var txt = {
-      car: '<b>' + wasd + '</b> drive · <b>' + K('Space') + '</b> handbrake · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> drive-by · <b>' + K('KeyF') + '</b> exit · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
-      foot: '<b>' + wasd + '</b> move · <b>' + K('ShiftLeft') + '</b> sprint · <b>' + K('Space') + '</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-9</b> · <b>' + K('KeyZ') + '</b> (hold) weapons · <b>' + K('KeyF') + '</b> enter car · <b>' + K('KeyP') + '</b> map · <b>' + K('KeyH') + '</b> hide',
+      car: '<b>' + wasd + '</b> drive · <b>' + K('Space') + '</b> handbrake · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> drive-by · <b>' + K('KeyF') + '</b> exit · <b>' + K('KeyG') + '</b> horn · <b>' + K('Comma') + '/' + K('Period') + '</b> radio · <b>' + K('KeyP') + '</b> map · <b>' + K('Backquote') + '</b> cheats · <b>' + K('KeyH') + '</b> hide',
+      foot: '<b>' + wasd + '</b> move · <b>' + K('ShiftLeft') + '</b> sprint · <b>' + K('Space') + '</b> jump · <b>RMB</b> aim · <b>LMB</b> fire · <b>1-9</b> · <b>' + K('KeyZ') + '</b> (hold) weapons · <b>' + K('KeyF') + '</b> enter car · <b>' + K('KeyP') + '</b> map · <b>' + K('Backquote') + '</b> cheats · <b>' + K('KeyH') + '</b> hide',
       heli: '<b>' + K('Space') + '</b> up · <b>' + K('ShiftLeft') + '</b> down · <b>' + K('KeyW') + '/' + K('KeyS') + '</b> forward · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> yaw · <b>' + K('KeyF') + '</b> exit / bail out · <b>' + K('KeyP') + '</b> map',
       plane: '<b>' + K('KeyW') + '/' + K('KeyS') + '</b> throttle · <b>' + K('Space') + '</b> climb · <b>' + K('ShiftLeft') + '</b> dive · <b>' + K('KeyA') + '/' + K('KeyD') + '</b> turn · <b>' + K('KeyQ') + '/' + K('KeyE') + '</b> barrel roll · <b>' + K('KeyF') + '</b> bail out',
       chute: '<b>' + wasd + '</b> steer your descent · glide down to land',
@@ -1042,6 +1044,18 @@ GAME.hud = (function () {
     g.arc((x - mmPx) * MAP_S, (z - mmPz) * MAP_S, size, 0, Math.PI * 2);
     g.fill();
   }
+  // Something worth going after (the security van: streetlife.js): a dot in
+  // a red ring, pulsing, and held to the rim while it is further off than
+  // the radar reaches, so it says which way to go.
+  function ringBlip(x, z, color) {
+    var g = mmG, lx = (x - mmPx) * MAP_S, lz = (z - mmPz) * MAP_S;
+    var rim = 80 / mmZoom, l = Math.sqrt(lx * lx + lz * lz);
+    if (l > rim) { lx *= rim / l; lz *= rim / l; }
+    g.fillStyle = color;
+    g.beginPath(); g.arc(lx, lz, 4.2 / mmZoom, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#ff3b3b'; g.lineWidth = 1.8 / mmZoom;
+    g.beginPath(); g.arc(lx, lz, (6.4 + 1.2 * Math.sin(GAME.time * 5)) / mmZoom, 0, Math.PI * 2); g.stroke();
+  }
   // airport + helipad landmarks: a ringed cyan blip so they stand out on the radar
   function landmark(x, z) {
     var g = mmG, lx = (x - mmPx) * MAP_S, lz = (z - mmPz) * MAP_S;
@@ -1136,7 +1150,10 @@ GAME.hud = (function () {
     }
     // whatever is going on in the street near you (streetlife.js)
     var sb = GAME.streetlife ? GAME.streetlife.blips() : [];
-    for (var si = 0; si < sb.length; si++) blip(sb[si].x, sb[si].z, sb[si].color, sb[si].size);
+    for (var si = 0; si < sb.length; si++) {
+      if (sb[si].ring) ringBlip(sb[si].x, sb[si].z, sb[si].color);
+      else blip(sb[si].x, sb[si].z, sb[si].color, sb[si].size);
+    }
     // and the strangers with a favour to ask (strangers.js)
     var kb = GAME.strangers ? GAME.strangers.blips() : [];
     for (var ki = 0; ki < kb.length; ki++) blip(kb[ki].x, kb[ki].z, kb[ki].color, kb[ki].size);

@@ -666,6 +666,8 @@ GAME.audio = (function () {
       var b = spatialBus(x, z, 0.35);
       if (type === 'pistol') { noiseBurst(0.12, 2500, 0.5, null, null, b); tone(160, 0.08, 0.4, 'square', 60, null, b); }
       else if (type === 'smg') { noiseBurst(0.07, 3200, 0.35, null, null, b); tone(220, 0.05, 0.3, 'square', 90, null, b); }
+      // a soldier's carbine: a harder crack than the law's pistol, with a tail
+      else if (type === 'carbine') { noiseBurst(0.06, 4200, 0.6, 'highpass', null, b); noiseBurst(0.22, 1100, 0.3, null, ctx.currentTime + 0.02, b); tone(180, 0.06, 0.45, 'square', 70, null, b); }
       else if (type === 'shotgun') { noiseBurst(0.3, 1200, 0.8, null, null, b); tone(90, 0.2, 0.6, 'square', 40, null, b); }
       // the sniper's crack carries, and rolls back off the buildings
       else if (type === 'sniper') { noiseBurst(0.08, 5200, 0.7, 'highpass', null, b); noiseBurst(0.6, 700, 0.45, null, ctx.currentTime + 0.05, b); tone(140, 0.12, 0.5, 'square', 50, null, b); }

@@ -12,7 +12,7 @@ GAME.controls = (function () {
     ['KeyW', 'Forward / throttle'], ['KeyS', 'Back / brake'], ['KeyA', 'Left'], ['KeyD', 'Right'],
     ['Space', 'Jump · climb · handbrake'], ['ShiftLeft', 'Sprint · descend'], ['KeyF', 'Enter / exit vehicle'],
     ['KeyQ', 'Target left · drive-by left'], ['KeyE', 'Target right · drive-by right'], ['Tab', 'Aim lock (toggle)'],
-    ['KeyJ', 'Start a job'], ['KeyX', 'Abandon the mission (twice)'], ['KeyZ', 'Weapon wheel (hold) · next weapon (tap)'], ['KeyC', 'Take a photo'], ['KeyV', 'View your last photo'], ['KeyL', 'Call Lola'], ['KeyG', 'Horn · siren'], ['Comma', 'Radio back'], ['Period', 'Radio next'],
+    ['KeyJ', 'Start a job'], ['KeyX', 'Abandon the mission (twice)'], ['KeyZ', 'Weapon wheel (hold) · next weapon (tap)'], ['KeyC', 'Take a photo'], ['KeyV', 'View your last photo'], ['KeyL', 'Call Lola'], ['Backquote', 'Cheats'], ['KeyG', 'Horn · siren'], ['Comma', 'Radio back'], ['Period', 'Radio next'],
     ['KeyY', 'Retry a failed run'], ['KeyP', 'Map'], ['KeyM', 'Mute'], ['KeyH', 'Hide the hints'], ['KeyT', 'CRT filter'],
     ['KeyR', 'Continue after WASTED / BUSTED']
   ];
@@ -210,6 +210,8 @@ GAME.controls = (function () {
         sent[b] = null;
         continue;
       }
+      // in play, every press is also offered to the cheats' combos
+      if (!menu && GAME.cheats && GAME.cheats.padPress) GAME.cheats.padPress(b);
       var code = codeFor(b, menu);
       sent[b] = code;
       if (code) keyDown(code);

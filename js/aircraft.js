@@ -76,13 +76,15 @@ GAME.aircraft = (function () {
   // Its band is wider: a plane flat out covers ninety metres in a second
   // and a quarter, too little to come round in before the line.
   var EDGE_WARN = 90, CHANNEL_WARN = 150, CEIL_HELI = 200, CEIL_PLANE = 240, edgeToldT = -99, ceilToldT = -99;
-  function edgeTurn(car, lim, dt) {
+  function edgeTurn(car, lim, dt, slow) {
     var west = car.pos.x - WEST_X, east = lim.maxX - car.pos.x;
     var north = car.pos.z - lim.minZ, south = lim.maxZ - car.pos.z;
     var channel = lim.maxX <= CLOSED_X;
     // (measured on the same scale as the other edges: the channel's wider
-    // band counts as being that much closer)
-    if (channel) east *= EDGE_WARN / CHANNEL_WARN;
+    // band counts as being that much closer — for a plane: anything `slow`
+    // comes round in the ordinary band, and that one reached back over the
+    // beach)
+    if (channel && !slow) east *= EDGE_WARN / CHANNEL_WARN;
     var d = Math.min(west, east, north, south);
     if (d >= EDGE_WARN) return false;
     var cx = (WEST_X + lim.maxX) / 2, cz = (lim.minZ + lim.maxZ) / 2;
@@ -97,6 +99,12 @@ GAME.aircraft = (function () {
         : 'Edge of the map — bringing you round.', 3);
     }
     return true;
+  }
+  // Anything else up there (a car with wings, a boat that flies: cheats.js)
+  // is brought round at the same edges and held at the same lines
+  function turnBack(car, dt) {
+    edgeTurn(car, airLimit(), dt, true);
+    enforceSea(car.pos, car !== GAME.player.car);
   }
   function ceilingTold() {
     if (GAME.time - ceilToldT > 10) {
@@ -583,6 +591,7 @@ GAME.aircraft = (function () {
     land: land,
     enforceAirspace: enforceAirspace,
     enforceSea: enforceSea,
+    turnBack: turnBack,
     // where the world stops, for whoever needs to know (and the checks)
     edges: function () { return { west: WEST_X, closed: LIMIT_CLOSED, open: LIMIT_OPEN }; },
     get parachuting() { return GAME.player.parachuting; }

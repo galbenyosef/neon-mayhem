@@ -7,12 +7,19 @@
 // is about and how far anybody can see: fewer people on the pavement, fewer
 // cars, and witnesses and police who need you closer before they notice.
 //
-// AUTO rolls the spells itself; CLEAR and RAIN pin it (the pause screen's
-// WEATHER button, remembered with the other settings).
+// Two more skies besides. OVERCAST is a lid of grey cloud with no rain in
+// it: a flat light, no shadows to speak of, the sky gone the colour of the
+// fog. FOG is a bank rolled in off the sea: the city ends a hundred metres
+// away, and anybody watching you sees about half as far.
+//
+// AUTO rolls the spells itself; CLEAR, OVERCAST, RAIN and FOG pin it (the
+// pause screen's WEATHER button, remembered with the other settings).
 GAME.weather = (function () {
-  var MODES = ['auto', 'clear', 'rain'];
+  var MODES = ['auto', 'clear', 'overcast', 'rain', 'fog'];
   var mode = 'auto';
   var rain = 0, target = 0;          // how hard it is raining now, and heading for
+  var cloud = 0, cloudTo = 0;        // a grey lid with no rain in it
+  var mist = 0, mistTo = 0;          // a fog bank
   var spellT = 240;                  // seconds left of this spell; the first one is dry
   var flash = 0, boltT = 12, thunderT = -1, thunderGain = 0;
   var lastApplied = 0;
@@ -38,6 +45,7 @@ GAME.weather = (function () {
       color: 0xa9bedc, transparent: true, opacity: 0, depthWrite: false
     }));
     lines.frustumCulled = false;   // it is always round the camera
+    lines.name = 'rain';
     lines.visible = false;
     scene.add(lines);
   }
@@ -77,24 +85,45 @@ GAME.weather = (function () {
 
   // ---------- the spells ----------
   function nextSpell() {
-    if (target > 0) {                 // a shower ends: dry for a while
-      target = 0;
+    var roll = Math.random();
+    if (target > 0) {                 // a shower ends: dry for a while,
+      target = 0;                     // now and then under the cloud it left
+      cloudTo = roll < 0.35 ? 0.6 + Math.random() * 0.3 : 0;
+      mistTo = 0;
       spellT = 180 + Math.random() * 240;
-    } else if (Math.random() < 0.45) { // a dry spell ends in rain...
+    } else if (roll < 0.45) {         // a dry spell ends in rain...
       target = 0.55 + Math.random() * 0.45;
+      cloudTo = mistTo = 0;
       spellT = 90 + Math.random() * 150;
-    } else {                          // ...or does not
+    } else if (roll < 0.62) {         // ...or clouds over and stays dry...
+      cloudTo = 0.7 + Math.random() * 0.3;
+      mistTo = 0;
+      spellT = 120 + Math.random() * 180;
+    } else if (roll < 0.68) {         // ...or a bank of fog rolls in...
+      mistTo = 1;
+      cloudTo = 0;
+      spellT = 90 + Math.random() * 90;
+    } else {                          // ...or none of it
+      cloudTo = mistTo = 0;
       spellT = 120 + Math.random() * 180;
     }
+  }
+  // a pinned sky: what each setting holds the weather at
+  function pinned() {
+    target = mode === 'rain' ? 1 : 0;
+    cloudTo = mode === 'overcast' ? 1 : 0;
+    mistTo = mode === 'fog' ? 1 : 0;
   }
 
   function update(dt) {
     if (mode === 'auto') {
       spellT -= dt;
       if (spellT <= 0) nextSpell();
-    } else target = mode === 'rain' ? 1 : 0;
-    var was = rain;
+    } else pinned();
+    var was = rain + cloud + mist;
     rain += U.clamp(target - rain, -dt / RAMP, dt / RAMP);
+    cloud += U.clamp(cloudTo - cloud, -dt / RAMP, dt / RAMP);
+    mist += U.clamp(mistTo - mist, -dt / RAMP, dt / RAMP);
     // lightning in a proper downpour: a flash now, the thunder a beat later
     if (rain > 0.6) {
       boltT -= dt;
@@ -115,10 +144,12 @@ GAME.weather = (function () {
     stepDrops(dt);
     // (muffled to a patter on the roof indoors)
     if (GAME.audio.rain) GAME.audio.rain(GAME.interiors && GAME.interiors.sheltered && GAME.interiors.sheltered() ? rain * 0.25 : rain);
-    // the lighting reads rain and flash (main.js applyTimeOfDay); it is only
-    // re-run by the clock in AUTO time, so run it here while either is live
-    if (rain > 0 || flash > 0 || was !== rain || lastApplied > 0) {
-      lastApplied = rain + flash;
+    // the lighting reads the sky and the flash (main.js applyTimeOfDay); it
+    // is only re-run by the clock in AUTO time, so run it here while any of
+    // them is live
+    var now = rain + cloud + mist;
+    if (now > 0 || flash > 0 || was !== now || lastApplied > 0) {
+      lastApplied = now + flash;
       GAME.applyTimeOfDay(GAME.timeOfDay);
     }
   }
@@ -127,7 +158,7 @@ GAME.weather = (function () {
   // over them and you wake to whatever the sky has come round to, all at
   // once rather than on the eighteen-second ramp. A sleep used to leave the
   // weather exactly as it was: two nights in a row, the same shower. (A
-  // pinned CLEAR or RAIN stays pinned; that is a setting, not the sky.)
+  // pinned sky stays pinned; that is a setting, not the weather.)
   function pass(sec) {
     if (mode === 'auto') {
       while (sec > 0) {
@@ -136,15 +167,15 @@ GAME.weather = (function () {
         spellT -= step; sec -= step;
       }
       if (spellT <= 0) nextSpell();
-    } else target = mode === 'rain' ? 1 : 0;
-    rain = target; flash = 0; thunderT = -1;
+    } else pinned();
+    rain = target; cloud = cloudTo; mist = mistTo; flash = 0; thunderT = -1;
     lastApplied = 1;   // the next update re-lights the sky for it
   }
 
   function setMode(m, quiet) {
     if (MODES.indexOf(m) < 0) m = 'auto';
     mode = m;
-    if (m === 'auto') { target = 0; spellT = 120 + Math.random() * 120; }
+    if (m === 'auto') { target = cloudTo = mistTo = 0; spellT = 120 + Math.random() * 120; }
     if (!quiet && GAME.prefs) { GAME.prefs.weather = m; GAME.save(); }
     return m;
   }
@@ -153,20 +184,30 @@ GAME.weather = (function () {
   return {
     build: build,
     update: update,
+    // the rain alone, falling: behind a scene, which holds the sky's clock
+    // (main.js)
+    drops: stepDrops,
     setMode: setMode,
     pass: pass,
     cycle: function () { return setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); },
     get mode() { return mode; },
     get rain() { return rain; },
+    get cloud() { return cloud; },
+    get mist() { return mist; },
+    // how much of the sky is grey, whatever greyed it
+    get grey() { return Math.max(rain, cloud, mist); },
     get flash() { return flash; },
     // wet roads: a car holds the road a little less well
     grip: function () { return 1 - 0.18 * rain; },
-    // how far somebody notices what you do: shorter at night and in rain
-    visibility: function () { return (1 - 0.35 * night()) * (1 - 0.25 * rain); },
+    // how far somebody notices what you do: shorter at night, in rain, and
+    // shortest in fog
+    visibility: function () { return (1 - 0.35 * night()) * (1 - 0.25 * rain) * (1 - 0.45 * mist); },
     // who is about: fewer on foot at night and fewer still in the rain
-    crowd: function () { return (1 - 0.3 * night()) * (1 - 0.4 * rain); },
+    crowd: function () { return (1 - 0.3 * night()) * (1 - 0.4 * rain) * (1 - 0.15 * mist); },
     traffic: function () { return 1 - 0.25 * night(); },
     // headless: set it raining (or not) right now, with no ramp
-    testSet: function (v) { rain = target = v; flash = 0; }
+    testSet: function (v) { rain = target = v; flash = 0; },
+    // ...and the cloud and the fog
+    testSky: function (c, m) { cloud = cloudTo = c || 0; mist = mistTo = m || 0; }
   };
 })();
