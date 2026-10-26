@@ -23,7 +23,7 @@ GAME.audio = (function () {
     var len = ctx.sampleRate * 1.5;
     var buf = ctx.createBuffer(1, len, ctx.sampleRate);
     var d = buf.getChannelData(0);
-    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    for (var i = 0; i < len; i++) d[i] = GAME.soundRandom() * 2 - 1;
     return buf;
   }
   // Brown noise (white run through a leaky integrator): the low roar a city,
@@ -33,7 +33,7 @@ GAME.audio = (function () {
     var len = Math.floor(ctx.sampleRate * 3.7);
     var buf = ctx.createBuffer(1, len, ctx.sampleRate);
     var d = buf.getChannelData(0), v = 0;
-    for (var i = 0; i < len; i++) { v = (v + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = v * 3.5; }
+    for (var i = 0; i < len; i++) { v = (v + 0.02 * (GAME.soundRandom() * 2 - 1)) / 1.02; d[i] = v * 3.5; }
     // ease the seam, so the loop point is not a click
     for (var k = 0; k < 2048; k++) { var w = k / 2048; d[k] *= w; d[len - 1 - k] *= w; }
     return buf;
@@ -47,7 +47,7 @@ GAME.audio = (function () {
     var buf = ctx.createBuffer(2, len, ctx.sampleRate);
     for (var ch = 0; ch < 2; ch++) {
       var d = buf.getChannelData(ch);
-      for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / span, decay);
+      for (var i = 0; i < len; i++) d[i] = (GAME.soundRandom() * 2 - 1) * Math.pow(1 - i / span, decay);
     }
     return buf;
   }
@@ -213,8 +213,8 @@ GAME.audio = (function () {
     if (t - lastBlipT < 0.035) return 0;
     lastBlipT = t;
     var c = String(ch || 'a').toLowerCase(), code = c.charCodeAt(0) || 97;
-    var semi = SCALE[code % SCALE.length] * (v.spread || 6) / 12 + (Math.random() - 0.5) * 0.6;
-    var f = v.base * Math.pow(2, semi / 12), dur = 0.055 + Math.random() * 0.025;
+    var semi = SCALE[code % SCALE.length] * (v.spread || 6) / 12 + (GAME.soundRandom() - 0.5) * 0.6;
+    var f = v.base * Math.pow(2, semi / 12), dur = 0.055 + GAME.soundRandom() * 0.025;
     var o = ctx.createOscillator(); o.type = v.wave || 'square';
     o.frequency.setValueAtTime(f, t);
     o.frequency.exponentialRampToValueAtTime(f * 0.93, t + dur);
@@ -493,7 +493,7 @@ GAME.audio = (function () {
       randomStation: function () {
         var pool = [];
         for (var i = 0; i < stations.length; i++) if (avail(i)) pool.push(i);
-        return retune(pool[Math.floor(Math.random() * pool.length) % pool.length]);
+        return retune(pool[Math.floor(GAME.soundRandom() * pool.length) % pool.length]);
       },
       // and one you have: where you left it (OFF included)
       tune: function (i) { i = Math.max(0, Math.min(OFF, i | 0)); return retune(avail(i) ? i : 0); },
@@ -681,8 +681,8 @@ GAME.audio = (function () {
       if (!ctx) return;
       var t = ctx.currentTime;
       if (kind === 'chainsaw') {
-        tone(92 + Math.random() * 10, 0.11, 0.16, 'sawtooth', 0, t);
-        tone(184 + Math.random() * 20, 0.11, 0.07, 'square', 0, t);
+        tone(92 + GAME.soundRandom() * 10, 0.11, 0.16, 'sawtooth', 0, t);
+        tone(184 + GAME.soundRandom() * 20, 0.11, 0.07, 'square', 0, t);
         noiseBurst(0.1, 1800, 0.1, 'bandpass', t);
         return;
       }
@@ -705,14 +705,14 @@ GAME.audio = (function () {
       if (!ctx) return;
       var b = spatialBus(x, z, 0.9), t = ctx.currentTime;
       noiseBurst(0.18, 5200, 0.5, 'highpass', t, b);
-      for (var i = 0; i < 4; i++) tone(2400 + Math.random() * 2600, 0.12, 0.05, 'sine', 0, t + i * 0.03, b);
+      for (var i = 0; i < 4; i++) tone(2400 + GAME.soundRandom() * 2600, 0.12, 0.05, 'sine', 0, t + i * 0.03, b);
       noiseBurst(0.6, 320, 0.5, null, t + 0.05, b);
     },
     // fire: a crackle now and then while it burns
     crackle: function (x, z) {
       if (!ctx) return;
       var b = spatialBus(x, z, 0.5), t = ctx.currentTime;
-      for (var i = 0; i < 3; i++) noiseBurst(0.03, 3000, 0.12, 'bandpass', t + Math.random() * 0.25, b);
+      for (var i = 0; i < 3; i++) noiseBurst(0.03, 3000, 0.12, 'bandpass', t + GAME.soundRandom() * 0.25, b);
       noiseBurst(0.4, 500, 0.08, null, t, b);
     },
     ricochet: function () { if (ctx) tone(2400, 0.09, 0.12, 'sine', 700); },
@@ -759,7 +759,7 @@ GAME.audio = (function () {
       hornOn = !!on;
     },
     get hornOn() { return hornOn; },
-    yelp: function (x, z) { if (ctx) tone(500 + Math.random() * 300, 0.18, 0.14, 'triangle', 900, null, spatialBus(x, z, 0.25)); },
+    yelp: function (x, z) { if (ctx) tone(500 + GAME.soundRandom() * 300, 0.18, 0.14, 'triangle', 900, null, spatialBus(x, z, 0.25)); },
     pickup: function () { if (ctx) { tone(880, 0.09, 0.2, 'sine'); tone(1320, 0.14, 0.2, 'sine', 0, ctx.currentTime + 0.08); } },
     // the ice cream chimes: a little run of bells, thin and carrying
     chime: function () {

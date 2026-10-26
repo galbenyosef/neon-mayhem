@@ -4,6 +4,10 @@ window.GAME = {
   // how fast the whole game runs, on top of any slow motion: the cheat box's
   // ONSPEED and BOOOOOORING (cheats.js), read by the frame loop (main.js)
   gameSpeed: 1,
+  // the dice the sound rolls (audio.js, dj.js, ambience.js), kept apart from
+  // the world's: a headless run gives each its own seeded stream, so what the
+  // speakers happen to play when never changes what happens in the street
+  soundRandom: Math.random,
   // what the cheat box has switched on, read where each one bites
   cheatOn: {
     flyCars: false, seaWays: false, flyBoats: false,     // vehicles.js

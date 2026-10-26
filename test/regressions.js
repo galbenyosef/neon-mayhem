@@ -412,6 +412,27 @@ var OVERLAYS = [
   { name: 'map', key: 'map' }
 ];
 
+// mulberry32: small, fast and the same sequence everywhere from one seed.
+// window.__reseed starts the world's dice and the sound's (GAME.soundRandom)
+// over, each on a stream of its own: the sound rolls on the audio clock, and
+// sharing a stream with the world would hand the world whatever the speakers
+// left it.
+function SEED_RANDOM() {
+  function stream(a) {
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  window.__reseed = function () {
+    Math.random = stream(0x5eed1986);
+    if (window.GAME) GAME.soundRandom = stream(0x50a2d);
+  };
+  window.__reseed();
+}
+
 // A page that hangs never rejects, so the one group that can hang gets a
 // deadline in the runner rather than in the browser.
 function withTimeout(p, ms) {
@@ -456,6 +477,13 @@ function withTimeout(p, ms) {
     Element.prototype.requestPointerLock = function () { return Promise.resolve(); };
   });
 
+  // The same dice every run. With Math.random unseeded, a check that waits on
+  // traffic, a crowd or an AI's roll passed or failed by luck: the same commit
+  // went red on one run and green on the next, a different check each time.
+  // Seeded, a commit reads the same on every run, and a failure is one that
+  // comes back when you run it again.
+  await page.addInitScript(SEED_RANDOM);
+
   await page.goto(origin + '/index.html');
   await page.waitForFunction(function () {
     return window.GAME && GAME.test && GAME.city && GAME.city.nodes && GAME.city.nodes.length > 0;
@@ -465,6 +493,14 @@ function withTimeout(p, ms) {
   // the only thing observable from out here is the API that drives them.
   // Record the calls and assert on those.
   await page.evaluate(function () {
+    // The world held: between two calls from here the page's own frames
+    // ticked it on by however many frames that machine drew in the gap, so a
+    // slow runner and a fast one measured different worlds. Held, only
+    // fastForward moves it, the same on every machine.
+    GAME.test.hold(true);
+    // And the dice from here: the title screen behind the loading ran on the
+    // real clock, and rolled them as many times as that machine drew frames
+    window.__reseed();
     GAME.test.start();
     // And the weather dry: rain changes grip, sight and the crowd, and every
     // group measures what it measured before there was any. Group 5a turns it
@@ -1609,6 +1645,10 @@ function withTimeout(p, ms) {
     for (var w = 0; w < 25; w++) {
       var up = await page.evaluate(function () {
         if (GAME.player.state === 'alive') return true;
+        // once R has taken, only the fade is left: another fast-forward
+        // here moved the world on by however many tries the fade's real
+        // clock took, which a slow runner and a fast one count differently
+        if (GAME.player.respawnQueued) return false;
         GAME.test.pressKey('KeyR', true); GAME.test.fastForward(0.7); GAME.test.pressKey('KeyR', false);
         return GAME.player.state === 'alive';
       });
@@ -4379,7 +4419,9 @@ function withTimeout(p, ms) {
   // AUTO-DOWNLOAD: every shot saved the moment it is taken
   var autoName = null;
   try {
-    var dl2 = page.waitForEvent('download', { timeout: 8000 });
+    // (the shot is encoded and saved on the real clock: three suites run at
+    // once on one machine took past 8 s for it once in three)
+    var dl2 = page.waitForEvent('download', { timeout: 20000 });
     await page.evaluate(function () {
       GAME.prefs.photoAuto = true;
       GAME.test.pressKey('KeyC', true); GAME.test.fastForward(1 / 60); GAME.test.pressKey('KeyC', false);
@@ -5454,13 +5496,24 @@ function withTimeout(p, ms) {
     P.health = 100;
     GAME.isla.setOpen(true);
     GAME.godMode = true;
+    // a car left standing on the pad by an earlier group keeps the spot
+    // from filling (vehicles.js only stocks a clear pad): a motorbike four
+    // metres off it did, and the helicopter never came
+    GAME.world.cars.filter(function (c) {
+      return !c.spec.heli && U.dist2(c.pos.x, c.pos.z, H.x, H.z) < 12 * 12;
+    }).forEach(function (c) { GAME.vehicles.removeCar(c); });
     GAME.test.teleport(H.x - 45, H.z - 45);
     GAME.test.fastForward(5);                 // let the pad's parked spot fill
     var heli = GAME.world.cars.filter(function (c) {
       return c.spec.heli && c.ai && c.ai.mode === 'parked';
     })[0];
     r.parked = !!heli;
-    if (!heli) return r;
+    if (!heli) {
+      // (and if it still does not, what is standing there)
+      r.nearPad = GAME.world.cars.filter(function (c) { return U.dist2(c.pos.x, c.pos.z, H.x, H.z) < 20 * 20; })
+        .map(function (c) { return c.type + '/' + (c.ai && c.ai.mode) + ' at ' + Math.round(Math.sqrt(U.dist2(c.pos.x, c.pos.z, H.x, H.z))) + ' m'; });
+      return r;
+    }
     var heliHome = [heli.pos.x, heli.pos.z];
 
     var van = GAME.test.spawnCar('van', 4, 0);
@@ -5517,7 +5570,7 @@ function withTimeout(p, ms) {
   });
   check('helipad: a helicopter is parked on the pad and a van is driving at it (anchor sanity)',
     pad.parked === true && pad.driving === true && pad.radii > 3,
-    'parked=' + pad.parked + ' driving=' + pad.driving + ' radii sum=' + pad.radii + 'm');
+    'parked=' + pad.parked + ' driving=' + pad.driving + ' radii sum=' + pad.radii + 'm' + (pad.parked ? '' : ' ' + JSON.stringify(pad)));
   if (pad.parked && pad.driving) {
     check('helipad: driving into it stops you, rather than taking you through it',
       pad.intoIt.inside === 0 && pad.intoIt.passed === false &&
@@ -8111,7 +8164,9 @@ function withTimeout(p, ms) {
     r.engine = A.testMix().engine;
     // lean on it: a second of horn, measured as it sounds
     GAME.test.pressKey('KeyG');
-    for (var i = 0; i < 6; i++) { car.speed = 15; ff(1 / 60); await wait(150); }
+    // (the world is held, so it is moved on with the clock: a tap's beep
+    // runs out in game time, and let go after a second it has)
+    for (var i = 0; i < 6; i++) { car.speed = 15; ff(0.15); await wait(150); }
     var m = A.testMix();
     r.held = { on: A.hornOn, horn: +m.horn.toFixed(3), engine: +m.engine.toFixed(4) };
     GAME.test.pressKey('KeyG', false);
@@ -10430,7 +10485,13 @@ function withTimeout(p, ms) {
     window.__buzz.length = 0;
     GAME.haptics.testReset();
     window.__frames = 0;
-    (function count() { window.__frames++; requestAnimationFrame(count); })();
+    // the world is held, so each of the first eight frames moves it one tick:
+    // the shake rings down on the real clock, and the world moves the same
+    // eight ticks on every machine
+    (function count() {
+      if (++window.__frames <= 8) GAME.test.fastForward(1 / 60);
+      requestAnimationFrame(count);
+    })();
     GAME.cameraShake = 0.9;
   });
   // enough frames for a per-frame hook to slip several past the 90 ms window
@@ -13600,15 +13661,15 @@ function withTimeout(p, ms) {
       var car = GAME.test.spawnCar('sedan', 4, 0); spawned.push(car);
       ff(0.2); GAME.test.enterNearestCar(car); ff(1.5);
       var D = GAME.dj, dj0 = D.enabled; D.enabled = true;
-      var R = GAME.audio.radio, rnd0 = Math.random;
-      Math.random = function () { return 0.01; };   // an ad, if one is allowed
+      var R = GAME.audio.radio, rnd0 = GAME.soundRandom;
+      GAME.soundRandom = function () { return 0.01; };   // an ad, if one is allowed
       var seg = D.segment();
       r.ads = { roaming: D.roaming(), roamAd: !!seg && seg.who === 'AD' };
       GAME.test.teleport(courier.start.x + 8, courier.start.z); ff(0.2);
       P.car.pos.set(courier.start.x, C.groundY(courier.start.x, courier.start.z), courier.start.z); P.car.speed = 0; ff(1.5);
       var seg2 = M.active ? D.segment() : null;
       r.ads.inJob = !!M.active; r.ads.jobRoaming = D.roaming(); r.ads.jobAd = !!seg2 && seg2.who === 'AD';
-      Math.random = rnd0;
+      GAME.soundRandom = rnd0;
       D.enabled = dj0;
       settle();
       // --- a shop of your own: what it sells is on the house ---

@@ -763,10 +763,14 @@
       if (g0 === MAX_TICKS) accumulator = 0;
     } else if (!GAME.paused && !GAME.mapOpen && !GAME.shareOpen && !GAME.shopOpen && !GAME.lolaOpen) {
       // only while the sim is actually running: a paused or overlaid frame
-      // draws a still city and says nothing about what the crowd costs
-      GAME.perf.sample(rawMs);
-      GAME.perf.update(real);
-      runSim(real);
+      // draws a still city and says nothing about what the crowd costs.
+      // (A headless run can hold the world: then only fastForward moves it,
+      // and how fast the machine draws decides nothing — regressions.js.)
+      if (!GAME.test.held) {
+        GAME.perf.sample(rawMs);
+        GAME.perf.update(real);
+        runSim(real);
+      }
     } else {
       // behind pause, the map, a shop or a result card nothing ticks, so
       // nothing would drain the buffer: keystrokes on an overlay are not
@@ -797,6 +801,13 @@
   // headless-drivable test hooks
   GAME.test = {
     start: function () { GAME.startGame(); },
+    // held, the drawn frames stop ticking the sim and the crowd budget
+    // stops following the frame time; let go, both run as in play
+    held: false,
+    hold: function (on) {
+      GAME.test.held = !!on;
+      if (on) GAME.perf.testReset();
+    },
     teleport: function (x, z) {
       var P = GAME.player;
       if (P.inCar && P.car) {
