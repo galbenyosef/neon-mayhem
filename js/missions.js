@@ -1315,8 +1315,14 @@ GAME.missions = (function () {
   function place(p) {
     if (p === 'lockup') return lockupDrop();
     // (round the corner from the ring, not on it: you finished the job's own
-    // part standing there, and the people it brought are down the street)
-    if (p === 'start') return spotNear(active.def.start.x, active.def.start.z, 60, 95);
+    // part standing there, and the people it brought are down the street —
+    // on the pavement of it. They stood on the road point itself, the boss
+    // in the traffic lane, and a passing car could have run him down before
+    // you got there.)
+    if (p === 'start') {
+      var rp = spotNear(active.def.start.x, active.def.start.z, 60, 95), k = kerbWaitSpot(rp.x, rp.z);
+      return { x: k[0], z: k[1] };
+    }
     if (p === 'here') return active.lastAt;
     if (typeof p === 'function') return p();
     return p;
@@ -1374,8 +1380,18 @@ GAME.missions = (function () {
     for (var i = 0; i < n; i++) who.push({ look: THUG, hp: 50 });
     who.forEach(function (w, k) {
       var ang = k / who.length * Math.PI * 2, r = k === 0 ? 1.5 : 4 + (k % 2) * 3;
+      // round the ring until the spot is off the road, dry and clear of walls
+      // (where there is none, the spot on the ring, as it always was)
       var x = at.x + Math.cos(ang) * r, z = at.z + Math.sin(ang) * r;
       if (GAME.city.isInWater(x, z)) { x = at.x; z = at.z; }
+      for (var q = 0; q < 4; q++) {
+        var tx = at.x + Math.cos(ang + q * Math.PI / 2) * r, tz = at.z + Math.sin(ang + q * Math.PI / 2) * r;
+        if (GAME.city.isInWater(tx, tz) || onCarriageway(tx, tz)) continue;
+        var cl = GAME.resolveCircle(tx, tz, 0.4);
+        if (onCarriageway(cl.x, cl.z)) continue;
+        x = cl.x; z = cl.z;
+        break;
+      }
       var ped = GAME.peds.spawnPed(x, z, { look: w.look });
       if (!ped) return;
       ped.jobPed = true; ped.state = 'wait'; ped.speed = 0; ped.hp = w.hp; ped.boss = !!w.boss;
@@ -1383,6 +1399,11 @@ GAME.missions = (function () {
       s.men.push(ped);
     });
     s.spawned = true;
+  }
+  // where the traffic drives: within a lane's width either side of a road
+  function onCarriageway(x, z) {
+    var rq = GAME.city.nearestRoadPoint(x, z);
+    return U.dist2(rq.x, rq.z, x, z) < 6.6 * 6.6;
   }
   // a member of the cast, as a ped: how cast.js says they stand
   function lookOf(id) {

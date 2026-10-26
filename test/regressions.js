@@ -12623,6 +12623,10 @@ function withTimeout(p, ms) {
       GAME.test.teleport(at[0] + 20, at[1]); GAME.test.fastForward(1);
       r.r1men = M.act && M.act.men;
       r.r1boss = GAME.world.peds.some(function (p) { return p.boss && !p.dead; });
+      // (on the pavement, every one of them: the boss stood in the traffic
+      // lane, and a passing car could run him down before you got there)
+      var crew1 = M.active && M.active.stage && M.active.stage.men || [];
+      r.r1offRoad = crew1.length > 0 && crew1.every(function (p) { var q = GAME.city.nearestRoadPoint(p.pos.x, p.pos.z); return Math.hypot(q.x - p.pos.x, q.z - p.pos.z) >= 6.6; });
       clear();
       r.r1done = !M.active && bests.rampage1 !== undefined;
       if (GAME.share && GAME.share.hide) GAME.share.hide();
@@ -12684,6 +12688,7 @@ function withTimeout(p, ms) {
   check('acts: failed in a later act, the retry starts the job from the top', acts.retryTop, JSON.stringify(acts));
   check('acts: and with them down, it is passed', acts.r0done, JSON.stringify(acts));
   check('acts: the warehouse foreman waits down the street with his crew', acts.r1act === 'crew' && acts.r1away > 40 && acts.r1men >= 4 && acts.r1boss, JSON.stringify(acts));
+  check('acts: and they wait on the pavement, not in the traffic', acts.r1offRoad, JSON.stringify(acts));
   check('acts: and with all of them down, it is passed', acts.r1done, JSON.stringify(acts));
   check('acts: the collector drops his bag, and the bag goes to the lock-up', acts.h0act === 'grab' && acts.h0act2 === 'deliver' && acts.h0lockup && acts.h0done, JSON.stringify(acts));
   check('acts: HIGH TIDE — Rico bails out of the pickup and runs, he does not fight in the street',
