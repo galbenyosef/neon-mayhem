@@ -86,12 +86,12 @@ GAME.dj = (function () {
       }
     }
     stopTalk();
-    talkT = 20 + Math.random() * 25;
+    talkT = 20 + GAME.soundRandom() * 25;
     if (enabled && id && GAME.audio && GAME.audio.radio && GAME.audio.radio.jingle) GAME.audio.radio.jingle(id.jingle, id.wave);
   }
   // the next of a list, round it, never the same twice running
   function next(key, list) {
-    var i = deal[key] === undefined ? Math.floor(Math.random() * list.length) : (deal[key] + 1) % list.length;
+    var i = deal[key] === undefined ? Math.floor(GAME.soundRandom() * list.length) : (deal[key] + 1) % list.length;
     deal[key] = i;
     return list[i];
   }
@@ -104,7 +104,7 @@ GAME.dj = (function () {
     // (an ad is for cruising: never in the middle of a job, a race, a favour
     // or a heist — Gull Downs' horses came on in the middle of a first
     // delivery. The DJ can still say a word; the ads wait.)
-    var ad = roaming() && Math.random() < 0.4;
+    var ad = roaming() && GAME.soundRandom() < 0.4;
     var text = ad ? next('ads', ADS) : next(R.name, id.lines);
     var who = ad ? 'AD' : id.dj;
     var dur = Math.min(9, 2.5 + text.length * 0.045);
@@ -145,7 +145,7 @@ GAME.dj = (function () {
       seg.t += dt;
       var v = seg.voice, want = Math.floor(seg.t * v.cps / 2);
       while (seg.i < want && seg.i * 2 < seg.letters.length) { R.talk(v, seg.letters.charAt(seg.i * 2)); seg.i++; }
-      if (seg.t >= seg.dur) { stopTalk(); talkT = 45 + Math.random() * 35; }
+      if (seg.t >= seg.dur) { stopTalk(); talkT = 45 + GAME.soundRandom() * 35; }
       return;
     }
     talkT -= dt;

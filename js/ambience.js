@@ -27,7 +27,7 @@ GAME.ambience = (function () {
   function loopOf(buf) {
     var ctx = GAME.audio.ctx;
     var s = ctx.createBufferSource(); s.buffer = buf; s.loop = true;
-    s.start(0, Math.random() * buf.duration);
+    s.start(0, GAME.soundRandom() * buf.duration);
     return s;
   }
   function filt(type, f, q) {
@@ -141,23 +141,23 @@ GAME.ambience = (function () {
   // only a touch firmer than a walk.
   var STEP_LEVEL = 0.35;
   function step(kind, hard) {
-    var A = GAME.audio.amb, k = (0.85 + Math.random() * 0.3) * (hard ? 1.15 : 1) * STEP_LEVEL, f = 0.9 + Math.random() * 0.2;
+    var A = GAME.audio.amb, k = (0.85 + GAME.soundRandom() * 0.3) * (hard ? 1.15 : 1) * STEP_LEVEL, f = 0.9 + GAME.soundRandom() * 0.2;
     if (kind === 'sand') { A.noise(0.1, 700 * f, 0.13 * k, 'lowpass'); return; }
     if (kind === 'grass') { A.noise(0.07, 2000 * f, 0.08 * k, 'bandpass'); A.noise(0.05, 450 * f, 0.07 * k, 'lowpass'); return; }
     if (kind === 'wood') { A.noise(0.06, 520 * f, 0.15 * k, 'bandpass'); A.tone(170 * f, 0.07, 0.1 * k, 'sine', 110); return; }
     A.noise(0.045, 1000 * f, 0.15 * k, 'lowpass'); A.tone(95 * f, 0.045, 0.08 * k, 'sine', 65);
   }
   function stroke(strong) {
-    var A = GAME.audio.amb, k = (0.85 + Math.random() * 0.3) * (strong ? 1.25 : 1);
-    A.noise(0.3, 1300 * (0.9 + Math.random() * 0.2), 0.15 * k, 'lowpass');
+    var A = GAME.audio.amb, k = (0.85 + GAME.soundRandom() * 0.3) * (strong ? 1.25 : 1);
+    A.noise(0.3, 1300 * (0.9 + GAME.soundRandom() * 0.2), 0.15 * k, 'lowpass');
     A.noise(0.12, 3200, 0.05 * k, 'bandpass');
   }
   function lap() {
-    GAME.audio.amb.noise(0.6, 480 + Math.random() * 120, 0.07, 'lowpass');
+    GAME.audio.amb.noise(0.6, 480 + GAME.soundRandom() * 120, 0.07, 'lowpass');
   }
   function gull(x, z) {
     var A = GAME.audio.amb, ctx = GAME.audio.ctx, t = ctx.currentTime;
-    var bus = A.at(x, z, 1.6), n = 1 + Math.floor(Math.random() * 3), f = 1250 + Math.random() * 350;
+    var bus = A.at(x, z, 1.6), n = 1 + Math.floor(GAME.soundRandom() * 3), f = 1250 + GAME.soundRandom() * 350;
     for (var i = 0; i < n; i++) {
       A.tone(f, 0.22, 0.016, 'sawtooth', f * 0.62, t + i * 0.3, bus);
       A.tone(f * 2, 0.18, 0.006, 'triangle', f * 1.3, t + i * 0.3, bus);
@@ -214,7 +214,7 @@ GAME.ambience = (function () {
       } else {
         strokeIdx = null;
         lapT -= dt;
-        if (lapT <= 0) { lap(); lapT = 1.4 + Math.random() * 1.2; }
+        if (lapT <= 0) { lap(); lapT = 1.4 + GAME.soundRandom() * 1.2; }
       }
     } else strokeIdx = null;
 
@@ -297,9 +297,9 @@ GAME.ambience = (function () {
     // a gull, now and then, by the sea in the day
     gullT -= 0.1;
     if (gullT <= 0) {
-      gullT = 12 + Math.random() * 22;
+      gullT = 12 + GAME.soundRandom() * 22;
       if (!room && alive && day > 0.5 && !rain && water.d <= 100 && up > 0.5) {
-        var ga = Math.random() * Math.PI * 2;
+        var ga = GAME.soundRandom() * Math.PI * 2;
         gull(fx + Math.sin(ga) * 30, fz + Math.cos(ga) * 30);
         last.gull = gullAt = GAME.time;
       }
