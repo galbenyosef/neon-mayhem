@@ -18,8 +18,11 @@
 //   5. ALIVE     — the clock advances and the player survives settling
 //   6. MEMORY    — after that minute the world stays inside a budget:
 //                  vertex buffers, geometry still held in JS, textures,
-//                  live WebGL contexts, and (on Linux) the page process's
-//                  peak resident memory, which is set while the world builds.
+//                  live WebGL contexts, the JS heap the game still holds
+//                  after a garbage collection, and (on Linux) the page
+//                  process's own peak resident memory once the world is
+//                  built — its peak less what is mapped in from disk (the
+//                  browser's code and fonts).
 //                  The limits sit a margin above what the memory work left
 //                  (see the numbers beside each); crossing one means
 //                  something put back what it took off.
@@ -37,11 +40,36 @@ var ROOT = path.join(__dirname, '..');
 // the world being built). Held geometry later crept back to 2.5 under a
 // budget of 4, as the interiors and shop fronts came in after the city's
 // release and kept theirs; released too, it is 1.1, and the budget is 2.
-var LIMIT = { vbMB: 12, heldMB: 2, texMB: 18, peakMB: 400 };
+//
+// The process peak was read at the end, whole (VmHWM), under 400. Two things
+// had stopped it meaning what it was set for:
+// - The whole peak counts the pages of the browser's own program and fonts
+//   mapped in from disk, about 120 MB, which have nothing to do with the
+//   game and differ by browser build: a local headless shell fifteen
+//   versions older than CI's read 390-480 for the same game, against CI's
+//   302. It is the page's OWN peak now, the whole less those.
+// - Read at the end, it is no longer the world being built that sets it but
+//   the minute of play: ticked in one long call with nothing drawn, and the
+//   first frames after it catching up on all of it at once in a software
+//   GL, by an amount that swung 240-360 MB own from run to run on the same
+//   code. So the peak is read once the world is built, and what the minute
+//   of play leaves is read where a leak would show and nothing else: the JS
+//   heap still held after a garbage collection. The end peak is still
+//   printed, as information.
+// Read on both (own peak with the world built / held heap / end peak own):
+//   CI, Chrome 156: 162.6 / 12.8 / 189 MB (whole peaks 262 and 294, of
+//     which 99 MB the browser's code and fonts);
+//   local, an older headless shell: 123-139 / 12.5-12.9 / 240-360 MB (of
+//     which about 120 MB code and fonts).
+// The newer browser builds the world at the higher peak, so the budget is
+// set from CI's: 200 for the built world, 20 for the held heap.
+var LIMIT = { vbMB: 12, heldMB: 2, texMB: 18, builtOwnMB: 200, heapMB: 20 };
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml' };
 
 // Peak resident memory (MB) of the renderer processes below rootPid, from
 // /proc — Linux only; null elsewhere, and the check says it was skipped.
+// `own` is the peak less what is resident from files right now: the
+// browser's code and fonts, which are steady once it is running.
 function rendererPeakMB(rootPid) {
   if (process.platform !== 'linux' || !rootPid) return null;
   var kids = {}, cmd = {};
@@ -56,18 +84,22 @@ function rendererPeakMB(rootPid) {
       } catch (e) { /* gone already */ }
     });
   } catch (e) { return null; }
-  var peak = 0, stack = [rootPid];
+  var best = null, stack = [rootPid];
   while (stack.length) {
     (kids[stack.pop()] || []).forEach(function (c) {
       stack.push(c);
       if (!cmd[c] || cmd[c].indexOf('--type=renderer') < 0) return;
       try {
-        var m = /VmHWM:\s+(\d+)/.exec(fs.readFileSync('/proc/' + c + '/status', 'utf8'));
-        if (m) peak = Math.max(peak, +m[1]);
+        var st = fs.readFileSync('/proc/' + c + '/status', 'utf8');
+        var hwm = /VmHWM:\s+(\d+)/.exec(st), file = /RssFile:\s+(\d+)/.exec(st);
+        if (!hwm || !file) return;
+        var r = { peak: +hwm[1] / 1024, file: +file[1] / 1024 };
+        r.own = r.peak - r.file;
+        if (!best || r.own > best.own) best = r;
       } catch (e) { /* gone already */ }
     });
   }
-  return peak ? peak / 1024 : null;
+  return best;
 }
 
 function serve() {
@@ -128,6 +160,8 @@ function serve() {
     }, null, { timeout: 30000 });
   } catch (e) { booted = false; }
   check('boot: world built, test API up', booted);
+  // the page's own peak with the world built, before any of the play below
+  var builtPeak = booted ? rendererPeakMB(process.pid) : null;
 
   var churn = { geometriesStart: -1, geometriesEnd: -2, time0: 0, time1: 0, alive: false };
   if (booted) {
@@ -205,15 +239,25 @@ function serve() {
       liveContexts: window.__glContexts.filter(function (c) { return !c.isContextLost(); }).length
     };
   }) : null;
+  // what the JS heap still holds once everything let go of has been collected
+  var heapMB = null;
+  if (booted) {
+    var cdp = await page.context().newCDPSession(page);
+    await cdp.send('HeapProfiler.collectGarbage');
+    heapMB = (await cdp.send('Runtime.getHeapUsage')).usedSize / 1048576;
+  }
   // the browser is this process's child, and its renderers are below it
-  var peakMB = rendererPeakMB(process.pid);
+  var peak = rendererPeakMB(process.pid);
   function mb(x) { return x === null || x === undefined ? 'n/a' : x.toFixed(1) + ' MB'; }
   check('memory: vertex buffers within budget', !!mem && mem.vbMB <= LIMIT.vbMB, mem && mb(mem.vbMB) + ' of ' + LIMIT.vbMB);
   check('memory: geometry held in JS within budget', !!mem && mem.heldMB <= LIMIT.heldMB, mem && mb(mem.heldMB) + ' of ' + LIMIT.heldMB);
   check('memory: textures within budget', !!mem && mem.texMB <= LIMIT.texMB, mem && mb(mem.texMB) + ' of ' + LIMIT.texMB);
   check('memory: one live WebGL context', !!mem && mem.liveContexts === 1, mem && mem.liveContexts + ' live');
-  check('memory: page process peak within budget' + (peakMB === null ? ' (skipped: no /proc)' : ''),
-    peakMB === null || peakMB <= LIMIT.peakMB, mb(peakMB) + ' of ' + LIMIT.peakMB);
+  check('memory: JS heap held after a minute of play within budget', heapMB !== null && heapMB <= LIMIT.heapMB, mb(heapMB) + ' of ' + LIMIT.heapMB + ', after a garbage collection');
+  function ownOf(p, limit) { return p && mb(p.own) + ' of ' + limit + ' (whole peak ' + mb(p.peak) + ', ' + mb(p.file) + ' of it the browser\'s code and fonts)'; }
+  check('memory: the page\'s own peak, building the world, within budget' + (builtPeak === null ? ' (skipped: no /proc)' : ''),
+    builtPeak === null || builtPeak.own <= LIMIT.builtOwnMB, ownOf(builtPeak, LIMIT.builtOwnMB));
+  if (peak) console.log('  info  memory: the page\'s own peak after the minute of play  —  ' + mb(peak.own) + ' (whole peak ' + mb(peak.peak) + ')');
 
   await browser.close();
   srv.close();

@@ -1319,7 +1319,14 @@ GAME.police = (function () {
     if (s <= 2 && P.inCar && P.car && Math.abs(P.car.speed) < 1.5) {
       var pinned = false;
       for (var pc = 0; pc < chasing.length; pc++) {
-        if (U.dist2(chasing[pc].pos.x, chasing[pc].pos.z, P.car.pos.x, P.car.pos.z) < 30) { pinned = true; break; }
+        // (a launch up against your boat nose to tail is as close as two
+        // hulls get, and their middles are more than six metres apart:
+        // beyond the reach that does for two cars, so it pushed at your
+        // stern for as long as you liked and never took you. Boat to boat,
+        // it is a metre short of touching, end on or alongside.)
+        var pcar = chasing[pc];
+        var reach2 = P.car.spec.boat && pcar.spec.boat ? Math.pow((P.car.spec.l + pcar.spec.l) / 2 + 1, 2) : 30;
+        if (U.dist2(pcar.pos.x, pcar.pos.z, P.car.pos.x, P.car.pos.z) < reach2) { pinned = true; break; }
       }
       if (pinned) {
         pinTimer += dt;
