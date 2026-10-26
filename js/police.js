@@ -158,6 +158,7 @@ GAME.police = (function () {
         p.isCop = false;               // released from police.js's control
         p.temper = 0;                  // and not looking for a rematch
         p.aimPose = false;
+        draw(p, false);                // (and the pistol back in its holster)
         p.state = 'flee';
         p.fleeT = 8;
         p.fleeX = GAME.player.pos.x; p.fleeZ = GAME.player.pos.z;
@@ -914,8 +915,12 @@ GAME.police = (function () {
     var P = GAME.player, SL = GAME.sealife;
     var tx = huntX(), tz = huntZ(), ashore = !atSea();
     if (ashore) {
+      // off where they last saw you: not off the search ashore, which jumps
+      // about the last sighting every few seconds, and sent the launch
+      // dashing up and down the beach after every guess
+      var kx = spotted ? tx : knownX, kz = spotted ? tz : knownZ;
       car.shoreT = (car.shoreT || 0) - dt;
-      if (car.shoreT <= 0 || !car.shoreAt) { car.shoreT = 1; car.shoreAt = SL.seaward(tx, tz, car.pos.x, car.pos.z); }
+      if (car.shoreT <= 0 || !car.shoreAt) { car.shoreT = 1; car.shoreAt = SL.seaward(kx, kz, car.pos.x, car.pos.z); }
       tx = car.shoreAt.x; tz = car.shoreAt.z;
     } else if (spotted && P.inCar && P.car) { tx += (P.car.vx || 0) * 0.4; tz += (P.car.vz || 0) * 0.4; }
     var d = Math.sqrt(U.dist2(car.pos.x, car.pos.z, tx, tz));

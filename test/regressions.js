@@ -366,8 +366,8 @@
 //      finished last; a save with both done already finds it and is told.
 //  45. ISLAND LAMPS — a car takes an Isla Verde lamp post down and drives on,
 //      as on the mainland, and the bridge decks' too; up again later.
-//  46. OUT OF THE DOOR — a shop's thief runs out of its door and away, at
-//      every shop that can be held up, not into its front wall.
+//  46. OUT OF THE DOOR — a shop's thief runs out of its door and off down
+//      the street, at every shop that can be held up, not into its wall.
 //  47. A SOLDIER'S CARBINE — the army fights as an army: bursts from twice
 //      the range, a steadier hand, and a car at speed is a target.
 //  48. THE VAN — the security van is ringed on the radar and on the map,
@@ -12962,6 +12962,9 @@ function withTimeout(p, ms) {
       r.armed = GAME.world.cars.filter(function (c) { return c.armyUnit; }).concat(GAME.world.peds.filter(function (q) { return q.army; }))
         .every(function (o) { return o.gun === 'carbine' && (!o.mesh || o.kind !== 'ped' || !!o.mesh.userData.rifle); });
       // its crew out, and it is yours
+      // (gone to it first: with the stars off it is only traffic, and traffic
+      // past 200 m from you is cleared away — it can come from 230 m off)
+      if (t && !t.gone) { t.speed = 0; GAME.test.teleport(t.pos.x + 3.5, t.pos.z); }
       GAME.police.clearWanted();
       GAME.test.fastForward(0.2);
       if (t && !t.gone) {
@@ -14946,6 +14949,9 @@ function withTimeout(p, ms) {
   var rb = await page.evaluate(function () {
     var P = GAME.player, C = GAME.city, S = GAME.streetlife, out = [];
     var keepOpen = GAME.isla ? GAME.isla.isOpen() : false;
+    // (the street to himself: a car knocking him down drops the bag)
+    var keepT = GAME.settings.maxTraffic;
+    GAME.settings.maxTraffic = 0;
     if (GAME.isla) GAME.isla.setOpen(true);   // the island's hardware store too
     if (P.inCar) GAME.exitCar();
     GAME.police.clearWanted();
@@ -14961,6 +14967,7 @@ function withTimeout(p, ms) {
       });
       if (!spot) { o.noSpot = true; out.push(o); return; }
       GAME.test.teleport(spot.x, spot.z); GAME.test.fastForward(0.5);
+      GAME.world.cars.slice().forEach(function (c) { if (!c.parkedSpot && Math.hypot(c.pos.x - l.at.x, c.pos.z - l.at.z) < 90) GAME.vehicles.removeCar(c); });
       if (!S.start('robbery') || S.event.shop.id !== l.id) { o.other = S.event && S.event.shop.id; S.reset(); out.push(o); return; }
       var th = S.event.thief, door = { x: l.at.x, z: l.at.z };
       // which way is in: the storefront's, or for a shop that is only a mat
@@ -14974,17 +14981,19 @@ function withTimeout(p, ms) {
       GAME.test.fastForward(3);
       o.ran = Math.round(Math.hypot(th.pos.x - door.x, th.pos.z - door.z));
       o.outward = Math.round(-((th.pos.x - door.x) * inn.x + (th.pos.z - door.z) * inn.z));
+      o.along = Math.round(Math.abs((th.pos.x - door.x) * -inn.z + (th.pos.z - door.z) * inn.x));
       o.running = th.state === 'flee' && !!th.bag;
       S.reset();
       if (!th.gone) GAME.peds.removePed(th);
       out.push(o);
     });
     if (GAME.isla) GAME.isla.setOpen(keepOpen);
+    GAME.settings.maxTraffic = keepT;
     GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
     return out;
   });
-  check('robbery: at every shop that can be held up, the thief comes out of the door and away',
-    rb.length >= 4 && rb.every(function (o) { return o.running && o.ran > 6 && o.outward > 4; }), JSON.stringify(rb));
+  check('robbery: at every shop that can be held up, the thief comes out of the door and off down the street',
+    rb.length >= 4 && rb.every(function (o) { return o.running && o.ran > 6 && o.outward > 3 && o.along > 6; }), JSON.stringify(rb));
 
   // ---------- 47: a soldier is not a cop in green ----------
   // At six stars the army's men fought exactly as the police did — a pistol
@@ -15200,7 +15209,16 @@ function withTimeout(p, ms) {
       GAME.peds.kill(cop, 'gun', false);
       GAME.test.fastForward(0.1);
       r.down = { inHand: cop.mesh.userData.pistol.visible, dropped: GAME.world.pickups.slice(before).some(function (q) { return q.type === 'pistol'; }) };
+      // and when the stars clear, the officers walk off as anybody else
+      // would: with it back in the holster
+      var cop2 = GAME.police.spawnFootCop(x + 2, z0 + 20, false);
+      made.push(cop2);
+      GAME.test.fastForward(0.3);
+      r.standDown = { drawn: !!cop2.mesh.userData.pistol.visible };
       GAME.police.clearWanted();
+      GAME.test.fastForward(0.1);
+      r.standDown.after = !!cop2.mesh.userData.pistol.visible;
+      r.standDown.released = !cop2.isCop;
       // VERDE HARDWARE: a storefront of its own, on the Puerto Dorado grid
       var l = GAME.shops.locations().filter(function (q) { return q.id === 'hardware1'; })[0];
       var inn = l.inside;
@@ -15228,6 +15246,7 @@ function withTimeout(p, ms) {
   check('police: after you he has it out (a soldier has his carbine, not a pistol)', pv.chase.out && !pv.chase.soldierPistol && pv.chase.soldierRifle,
     JSON.stringify(pv.chase));
   check('police: put him down and the pistol is on the pavement, not in his hand', !pv.down.inHand && pv.down.dropped, JSON.stringify(pv.down));
+  check('police: standing down, it goes back in the holster', pv.standDown.drawn && pv.standDown.released && !pv.standDown.after, JSON.stringify(pv.standDown));
   check('shops: VERDE HARDWARE has a store of its own on the Puerto Dorado grid, facing the street',
     pv.hw.inside && pv.hw.island && pv.hw.district === 'Puerto Dorado' && pv.hw.building && pv.hw.size === '12x20' && pv.hw.matClear && pv.hw.faces && pv.hw.street <= 15,
     JSON.stringify(pv.hw));

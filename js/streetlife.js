@@ -158,18 +158,27 @@ GAME.streetlife = (function () {
     }
     thief.heading = Math.atan2(-inn.x, -inn.z);
     GAME.peds.startFlee(thief, shop.at.x + inn.x * 4, shop.at.z + inn.z * 4, 60);
+    // and once he is out, off down the street one way or the other: running
+    // straight on from the door took him across the road, into the traffic
+    var side = Math.random() < 0.5 ? 1 : -1;
     GAME.audio.yelp(shop.at.x, shop.at.z);
     var stolen = B && B.owns(shop.id) ? B.robbed(shop.id) : 0;
     say(B && B.owns(shop.id)
       ? '"STOP, THIEF!" — your place, ' + shop.name + ', has been held up' + (stolen ? ', and he has the till — $' + stolen.toLocaleString() + '.' : '.') + ' He\'s running for it.'
       : '"STOP, THIEF!" — ' + shop.name + ' has been held up. The thief is running for it.', 4.5);
-    ev = { kind: 'robbery', t: 0, thief: thief, shop: shop, near: false, stolen: stolen };
+    ev = { kind: 'robbery', t: 0, thief: thief, shop: shop, near: false, stolen: stolen,
+      downX: -inn.z * side, downZ: inn.x * side, turned: false };
     return true;
   }
+  var ROB_TURN = 0.8;   // seconds out of the door before he turns down the street
   function stepRobbery() {
     var f = GAME.focus(), th = ev.thief;
     var d = Math.sqrt(U.dist2(th.pos.x, th.pos.z, f.x, f.z));
     if (d < 40) ev.near = true;
+    if (!ev.turned && ev.t >= ROB_TURN && th.state === 'flee') {
+      ev.turned = true;
+      th.fleeX = th.pos.x - ev.downX * 30; th.fleeZ = th.pos.z - ev.downZ * 30;
+    }
     if (th.dead || (th.knockT || 0) > 0 || th.hp < (th.hp0 || 30) * 0.6) {
       // down: the bag goes on the pavement
       if (th.bag) { th.bag.parent.remove(th.bag); th.bag = null; }
