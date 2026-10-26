@@ -376,6 +376,8 @@
 //      scene plays, and the clock still waits.
 //  50. PISTOLS AND A STOREFRONT — an officer's pistol is holstered on the
 //      beat and drawn when he is after you; VERDE HARDWARE has a store.
+//  51. ANY SIDE — stopped in a boat, a launch takes you whether it comes
+//      up astern, ahead or alongside.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -15250,6 +15252,49 @@ function withTimeout(p, ms) {
   check('shops: VERDE HARDWARE has a store of its own on the Puerto Dorado grid, facing the street',
     pv.hw.inside && pv.hw.island && pv.hw.district === 'Puerto Dorado' && pv.hw.building && pv.hw.size === '12x20' && pv.hw.matClear && pv.hw.faces && pv.hw.street <= 15,
     JSON.stringify(pv.hw));
+
+  // ---------- 51: a launch takes you from any side ----------
+  // Stopped in a boat at two stars, the launch comes up and takes you — if
+  // it came up alongside. Nose to tail two hulls are more than six metres
+  // apart in the middle, beyond the reach a car's arrest uses, so a launch
+  // that came up astern (or ahead) pushed at your boat for good and nobody
+  // was taken. The harbour check failed about one run in twenty on it.
+  var ends = [];
+  for (var ek = 0; ek < 3; ek++) {
+    ends.push(await page.evaluate(function (k) {
+      var P = GAME.player, C = GAME.city, ff = function (s) { GAME.test.fastForward(s); }, r = { from: ['astern', 'ahead', 'abeam'][k] };
+      function lc() { return GAME.world.cars.filter(function (c) { return c.spec.boat && c.isPolice && !c.dead && !c.gone && c.ai && c.ai.mode === 'chase'; }); }
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted(); ff(1);
+      lc().forEach(function (c) { GAME.vehicles.removeCar(c); });
+      GAME.test.teleport(505, -62); ff(0.5);
+      var bt = GAME.vehicles.spawnCar('boat', 505, -60, 0);
+      bt.pos.y = C.seaY(505, -60);
+      GAME.test.enterNearestCar(bt); ff(1.2);
+      r.inBoat = P.inCar && P.car === bt;
+      GAME.police.setWanted(2);
+      for (var t = 0; t < 20 * 60 && !lc().length; t++) { ff(1 / 60); if (GAME.police.wanted < 2) GAME.police.setWanted(2); bt.speed = 0; }
+      var L = lc()[0];
+      if (!L) { r.noLaunch = true; GAME.police.clearWanted(); return r; }
+      // the launch fourteen metres off on the side asked, pointed at you
+      var fx = Math.sin(bt.heading), fz = Math.cos(bt.heading);
+      var ox = k === 0 ? -fx : k === 1 ? fx : fz, oz = k === 0 ? -fz : k === 1 ? fz : -fx;
+      var px = bt.pos.x + ox * 14, pz = bt.pos.z + oz * 14;
+      L.pos.set(px, C.seaY(px, pz), pz); L.heading = Math.atan2(bt.pos.x - px, bt.pos.z - pz); L.speed = 0; L.vx = L.vz = 0;
+      var bust = null, minD = 1e9;
+      for (var t2 = 0; t2 < 25 * 60 && bust === null; t2++) {
+        ff(1 / 60);
+        if (GAME.police.wanted < 2 && P.state === 'alive') GAME.police.setWanted(2);
+        if (P.state === 'busted') bust = +(t2 / 60).toFixed(1);
+        minD = Math.min(minD, Math.hypot(L.pos.x - bt.pos.x, L.pos.z - bt.pos.z));
+      }
+      r.taken = bust; r.closest = +minD.toFixed(1);
+      return r;
+    }, ek));
+    await comeBack();
+  }
+  check('patrol: stopped in a boat, the launch takes you wherever it comes up — astern, ahead or alongside',
+    ends.length === 3 && ends.every(function (e) { return e.inBoat && e.taken !== null && e.taken < 25; }), JSON.stringify(ends));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the
