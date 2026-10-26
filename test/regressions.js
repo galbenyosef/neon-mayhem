@@ -374,6 +374,8 @@
 //      keeps its rounds to your part of town, and is about for four minutes.
 //  49. RAIN BEHIND A SCENE — the rain falls and the sea swells while a
 //      scene plays, and the clock still waits.
+//  50. PISTOLS AND A STOREFRONT — an officer's pistol is holstered on the
+//      beat and drawn when he is after you; VERDE HARDWARE has a store.
 //  14. BROADPHASE     — a non-finite lookup has to return, not spin. This
 //      group runs LAST and under a timeout of its own: without the guard the
 //      page does not fail, it stops answering.
@@ -14962,7 +14964,7 @@ function withTimeout(p, ms) {
       if (!S.start('robbery') || S.event.shop.id !== l.id) { o.other = S.event && S.event.shop.id; S.reset(); out.push(o); return; }
       var th = S.event.thief, door = { x: l.at.x, z: l.at.z };
       // which way is in: the storefront's, or for a shop that is only a mat
-      // (VERDE HARDWARE, against an island block) away from its road
+      // away from its road
       var inn = l.inside;
       if (!inn) {
         var rq = C.nearestRoadPoint(door.x, door.z), ql = Math.hypot(door.x - rq.x, door.z - rq.z) || 1;
@@ -15168,6 +15170,67 @@ function withTimeout(p, ms) {
   check('scenes: behind one the rain still falls and the sea still swells, while the clock waits', sw.open && sw.clock && sw.shown && sw.falls && sw.swell,
     JSON.stringify(sw));
   check('scenes: and after it the sea runs on from where it was', sw.closed && sw.noJump, JSON.stringify(sw));
+
+  // ---------- 50: an officer's pistol, and VERDE HARDWARE's store ----------
+  // Officers fired at you from an empty hand, and the island's hardware store
+  // was a doormat against somebody else's wall: mid-grid, no building of its
+  // size fitted, so it never got one.
+  var pv = await page.evaluate(function () {
+    var P = GAME.player, C = GAME.city, r = {}, made = [];
+    try {
+      if (P.inCar) GAME.exitCar();
+      GAME.police.clearWanted();
+      var x = -150 + 3.1, z0 = -40;
+      GAME.test.teleport(x, z0); GAME.test.fastForward(0.5);
+      // on the beat: holstered
+      var beat = GAME.peds.spawnPed(x + 1, z0 + 30, { cop: true });
+      beat.patrol = true; beat.state = 'walk'; beat.armed = true;
+      made.push(beat);
+      GAME.test.fastForward(0.5);
+      var bg = beat.mesh.userData.pistol;
+      r.beat = { has: !!bg, out: !!(bg && bg.visible) };
+      // after you: drawn
+      GAME.police.setWanted(2);
+      var cop = GAME.police.spawnFootCop(x, z0 + 20, false), sol = GAME.police.spawnFootCop(x, z0 - 20, true);
+      made.push(cop, sol);
+      GAME.test.fastForward(0.3);
+      r.chase = { out: !!(cop.mesh.userData.pistol && cop.mesh.userData.pistol.visible), soldierPistol: !!sol.mesh.userData.pistol, soldierRifle: !!sol.mesh.userData.rifle };
+      // down: it is on the pavement, not in his hand
+      var before = GAME.world.pickups.length;
+      GAME.peds.kill(cop, 'gun', false);
+      GAME.test.fastForward(0.1);
+      r.down = { inHand: cop.mesh.userData.pistol.visible, dropped: GAME.world.pickups.slice(before).some(function (q) { return q.type === 'pistol'; }) };
+      GAME.police.clearWanted();
+      // VERDE HARDWARE: a storefront of its own, on the Puerto Dorado grid
+      var l = GAME.shops.locations().filter(function (q) { return q.id === 'hardware1'; })[0];
+      var inn = l.inside;
+      r.hw = { inside: !!inn, island: GAME.isla.contains(l.at.x, l.at.z), district: GAME.isla.districtName(l.at.x, l.at.z) };
+      if (inn) {
+        // the building stands just behind the mat, in the way in
+        var bx = l.at.x + inn.x * 7, bz = l.at.z + inn.z * 7;
+        var own = C.hash.query(bx, bz, 1).filter(function (q) { return q.tag === 'building' && bx > q.minX && bx < q.maxX && bz > q.minZ && bz < q.maxZ; })[0];
+        r.hw.building = !!own;
+        r.hw.size = own ? [Math.round(own.maxX - own.minX), Math.round(own.maxZ - own.minZ)].sort().join('x') : null;
+        // and the mat is clear: nothing solid on it, the street in front
+        var rp = C.nearestRoadPoint(l.at.x, l.at.z);
+        r.hw.matClear = !C.hash.query(l.at.x, l.at.z, 1.2).some(function (q) { return l.at.x > q.minX - 0.4 && l.at.x < q.maxX + 0.4 && l.at.z > q.minZ - 0.4 && l.at.z < q.maxZ + 0.4; });
+        r.hw.street = Math.round(Math.hypot(rp.x - l.at.x, rp.z - l.at.z));
+        r.hw.faces = ((rp.x - l.at.x) * inn.x + (rp.z - l.at.z) * inn.z) < 0;
+      }
+    } finally {
+      made.forEach(function (q) { if (!q.gone) GAME.peds.removePed(q); });
+      GAME.police.clearWanted();
+      GAME.test.teleport(-60, 40); GAME.test.fastForward(0.5);
+    }
+    return r;
+  });
+  check('police: an officer on the beat wears his pistol holstered', pv.beat.has && !pv.beat.out, JSON.stringify(pv.beat));
+  check('police: after you he has it out (a soldier has his carbine, not a pistol)', pv.chase.out && !pv.chase.soldierPistol && pv.chase.soldierRifle,
+    JSON.stringify(pv.chase));
+  check('police: put him down and the pistol is on the pavement, not in his hand', !pv.down.inHand && pv.down.dropped, JSON.stringify(pv.down));
+  check('shops: VERDE HARDWARE has a store of its own on the Puerto Dorado grid, facing the street',
+    pv.hw.inside && pv.hw.island && pv.hw.district === 'Puerto Dorado' && pv.hw.building && pv.hw.size === '12x20' && pv.hw.matClear && pv.hw.faces && pv.hw.street <= 15,
+    JSON.stringify(pv.hw));
 
   // ---------- 14: the broadphase survives a non-finite lookup ----------
   // Math.floor(±Infinity) is ±Infinity and i++ never moves off it, so the

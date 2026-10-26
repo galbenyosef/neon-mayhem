@@ -543,6 +543,12 @@ GAME.police = (function () {
     return U.randRange(Math.random, ARMY.rest[0], ARMY.rest[1]);
   }
 
+  // an officer's pistol out of its holster, or back in (peds.js)
+  function draw(cop, on) {
+    var g = cop.mesh.userData.pistol;
+    if (g && g.visible !== on) g.visible = on;
+  }
+
   function spawnFootCop(x, z, army) {
     var cop = GAME.peds.spawnPed(x, z, { cop: true, army: army === undefined ? stars() >= 6 : !!army });
     cop.state = 'chase';
@@ -681,6 +687,7 @@ GAME.police = (function () {
       }
       var cop = inc.cop;
       var d = stepCop(cop, inc.x, inc.z, dt, 6.4);
+      draw(cop, inc.severity >= 2);   // (a scuffle is broken up empty-handed)
       // A gun is a different call. The officer does not walk up to a man who
       // is shooting: he stops at a distance and draws, and the aim model is
       // the same one that decides whether his round finds the player.
@@ -749,6 +756,7 @@ GAME.police = (function () {
         cop.beatZ = rp.axis === 'z' ? rp.z : rp.z + off;
         if (GAME.city.isInWater(cop.beatX, cop.beatZ)) { cop.beatX = cop.pos.x; cop.beatZ = cop.pos.z; }
       }
+      draw(cop, false);
       stepCop(cop, cop.beatX, cop.beatZ, dt, 2.6);
     }
   }
@@ -997,6 +1005,7 @@ GAME.police = (function () {
     }
     // on fire (peds.ignite): running blind, no shot and no cuffs in him
     var burning = cop.burnT > 0;
+    draw(cop, !burning);   // (after you: the pistol is out)
     var th = burning ? cop.burnH + Math.sin(GAME.time * 5 + cop.walkPhase) * 0.9 : Math.atan2(hx, hz);
     cop.heading = U.angleLerp(cop.heading, th, Math.min(1, dt * 6));
     // fire at the player on foot, or at a slow/stopped car (a soldier at

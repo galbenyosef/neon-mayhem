@@ -159,6 +159,18 @@ function buildPedMesh(opts) {
   var legL = limb(0.16, 0.8, mats.pants, -0.13, 0.82);
   var legR = limb(0.16, 0.8, mats.pants, 0.13, 0.82);
   g.userData.joints = { armL: armL, armR: armR, legL: legL, legR: legR, head: head, torso: torso };
+  if (opts.cop && !opts.army) {
+    // an officer's service pistol: in the holster on his hip on the beat,
+    // in his hand when he is after somebody (police.js draws it)
+    var holster = new THREE.Mesh(sharedBoxGeo(0.08, 0.2, 0.14), sharedLambert(0x1a1a20));
+    holster.position.set(0.25, 0.86, -0.04);
+    g.add(holster);
+    var pistol = new THREE.Mesh(sharedBoxGeo(0.07, 0.26, 0.13), sharedLambert(0x1a1a20));
+    pistol.position.set(0, -0.68, 0.03);
+    pistol.visible = false;
+    armR.add(pistol);
+    g.userData.pistol = pistol;
+  }
   if (opts.army) {
     // and a carbine in his hands: down the arm, so it hangs at his side on
     // the move and comes up level when he fires (police.js)
@@ -300,7 +312,8 @@ GAME.peds = (function () {
       else if (!ped.outlaw) GAME.police.reportCrime('kill_ped', ped.pos);
       GAME.missions.notifyChaos(ped.isCop ? 400 : 150);
     }
-    // drops
+    // drops (an officer's pistol is the one on the pavement now, not in his hand)
+    if (ped.mesh.userData.pistol) ped.mesh.userData.pistol.visible = false;
     if (ped.isCop) GAME.combat.dropPickup(ped.pos.x, ped.pos.z, 'pistol');
     else if (Math.random() < 0.35) GAME.combat.dropPickup(ped.pos.x, ped.pos.z, 'cash');
     panic(ped.pos.x, ped.pos.z, 26);
