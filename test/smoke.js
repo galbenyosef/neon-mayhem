@@ -52,12 +52,18 @@ var ROOT = path.join(__dirname, '..');
 //   the minute of play: ticked in one long call with nothing drawn, and the
 //   first frames after it catching up on all of it at once in a software
 //   GL, by an amount that swung 240-360 MB own from run to run on the same
-//   code. So the peak is read once the world is built (123-138 MB own
-//   there, steady to a few MB: budget 170), and what the minute of play
-//   leaves is read where a leak would show and nothing else: the JS heap
-//   still held after a garbage collection (12.5-12.9 MB there: budget 20).
-//   The end peak is still printed, as information.
-var LIMIT = { vbMB: 12, heldMB: 2, texMB: 18, builtOwnMB: 170, heapMB: 20 };
+//   code. So the peak is read once the world is built, and what the minute
+//   of play leaves is read where a leak would show and nothing else: the JS
+//   heap still held after a garbage collection. The end peak is still
+//   printed, as information.
+// Read on both (own peak with the world built / held heap / end peak own):
+//   CI, Chrome 156: 162.6 / 12.8 / 189 MB (whole peaks 262 and 294, of
+//     which 99 MB the browser's code and fonts);
+//   local, an older headless shell: 123-139 / 12.5-12.9 / 240-360 MB (of
+//     which about 120 MB code and fonts).
+// The newer browser builds the world at the higher peak, so the budget is
+// set from CI's: 200 for the built world, 20 for the held heap.
+var LIMIT = { vbMB: 12, heldMB: 2, texMB: 18, builtOwnMB: 200, heapMB: 20 };
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml' };
 
 // Peak resident memory (MB) of the renderer processes below rootPid, from
